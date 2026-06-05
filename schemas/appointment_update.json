@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "appointments.appointments.update",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["appointment_id", "customer_name", "start_datetime", "end_datetime", "duration_minutes"],
+  "properties": {
+    "appointment_id": { "type": "string", "minLength": 1 },
+    "customer_name": { "type": "string", "minLength": 1, "maxLength": 200 },
+    "customer_phone": { "type": "string", "default": "", "maxLength": 50 },
+    "customer_email": { "type": "string", "default": "", "maxLength": 254 },
+    "service_id": { "type": ["string", "null"], "default": null },
+    "service_name": { "type": "string", "default": "", "maxLength": 200 },
+    "staff_id": { "type": ["string", "null"], "default": null },
+    "staff_name": { "type": "string", "default": "", "maxLength": 200 },
+    "start_datetime": { "type": "string", "format": "date-time" },
+    "end_datetime": { "type": "string", "format": "date-time" },
+    "duration_minutes": { "type": "integer", "minimum": 1 },
+    "notes": { "type": "string", "default": "" },
+    "internal_notes": { "type": "string", "default": "" }
+  }
+}

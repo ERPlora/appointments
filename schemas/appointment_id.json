@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "appointments.appointment_id",
+  "description": "Payload común de comandos que solo identifican una cita (confirm, start, complete, no_show, delete).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["appointment_id"],
+  "properties": {
+    "appointment_id": { "type": "string", "minLength": 1 }
+  }
+}

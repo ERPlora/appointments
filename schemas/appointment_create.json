@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "appointments.appointments.create",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["customer_name", "start_datetime"],
+  "properties": {
+    "customer_name": { "type": "string", "minLength": 1, "maxLength": 200 },
+    "customer_phone": { "type": "string", "default": "", "maxLength": 50 },
+    "customer_email": { "type": "string", "default": "", "maxLength": 254 },
+    "customer_id": { "type": ["string", "null"], "default": null },
+    "service_id": { "type": ["string", "null"], "default": null },
+    "service_name": { "type": "string", "default": "", "maxLength": 200 },
+    "staff_id": { "type": ["string", "null"], "default": null },
+    "staff_name": { "type": "string", "default": "", "maxLength": 200 },
+    "start_datetime": { "type": "string", "format": "date-time" },
+    "duration_minutes": { "type": "integer", "minimum": 1, "default": 60 },
+    "notes": { "type": "string", "default": "" },
+    "booked_online": { "type": "boolean", "default": false }
+  }
+}

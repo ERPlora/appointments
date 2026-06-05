@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "appointments.appointments.cancel",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["appointment_id"],
+  "properties": {
+    "appointment_id": { "type": "string", "minLength": 1 },
+    "reason": { "type": "string", "default": "" }
+  }
+}

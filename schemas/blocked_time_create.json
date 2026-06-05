@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "appointments.blocked_times.create",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["title", "start_datetime", "end_datetime"],
+  "properties": {
+    "title": { "type": "string", "minLength": 1, "maxLength": 200 },
+    "block_type": {
+      "type": "string",
+      "enum": ["holiday", "vacation", "break", "maintenance", "other"],
+      "default": "other"
+    },
+    "start_datetime": { "type": "string", "format": "date-time" },
+    "end_datetime": { "type": "string", "format": "date-time" },
+    "all_day": { "type": "boolean", "default": false },
+    "staff_id": { "type": ["string", "null"], "default": null },
+    "reason": { "type": "string", "default": "" },
+    "is_recurring": { "type": "boolean", "default": false },
+    "recurrence_rule": { "type": "string", "default": "", "maxLength": 200 }
+  }
+}

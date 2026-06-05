@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "appointments.appointments.reschedule",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["appointment_id", "start_datetime", "end_datetime", "duration_minutes"],
+  "properties": {
+    "appointment_id": { "type": "string", "minLength": 1 },
+    "start_datetime": { "type": "string", "format": "date-time" },
+    "end_datetime": { "type": "string", "format": "date-time" },
+    "duration_minutes": { "type": "integer", "minimum": 1 }
+  }
+}

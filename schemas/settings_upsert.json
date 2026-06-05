@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "appointments.settings.upsert",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "default_duration": { "type": "integer", "minimum": 1, "default": 60 },
+    "min_booking_notice": { "type": "integer", "minimum": 0, "default": 60 },
+    "max_advance_booking": { "type": "integer", "minimum": 0, "default": 90 },
+    "allow_overlapping": { "type": "boolean", "default": false },
+    "send_reminders": { "type": "boolean", "default": true },
+    "reminder_hours_before": { "type": "integer", "minimum": 0, "default": 24 },
+    "allow_customer_cancellation": { "type": "boolean", "default": true },
+    "cancellation_notice_hours": { "type": "integer", "minimum": 0, "default": 24 },
+    "calendar_start_hour": { "type": "integer", "minimum": 0, "maximum": 23, "default": 8 },
+    "calendar_end_hour": { "type": "integer", "minimum": 1, "maximum": 24, "default": 20 },
+    "slot_interval": { "type": "integer", "minimum": 1, "default": 15 }
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "appointments.timeslot_id",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["timeslot_id"],
+  "properties": {
+    "timeslot_id": { "type": "string", "minLength": 1 }
+  }
+}

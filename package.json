@@ -1,0 +1,10 @@
+{
+  "name": "@erplora/module-appointments",
+  "private": true,
+  "version": "1.1.6",
+  "type": "module",
+  "description": "Módulo appointments (manifest declarativo + Web Component Stencil): agenda de citas con estados, horarios/disponibilidad, tiempos bloqueados y citas recurrentes. La lógica de solapamiento, contador de nº de cita y materialización de recurrencias va a handler WASM (ver WASM-TODO.md). Se compila con @erplora/module-cli.",
+  "dependencies": {
+    "@stencil/core": "^4.20.0"
+  }
+}
