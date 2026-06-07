@@ -2,7 +2,7 @@
 -- Modelos: AppointmentsSettings (singleton/hub), Schedule + ScheduleTimeSlot (plantillas de
 -- disponibilidad), BlockedTime (huecos bloqueados), Appointment (la cita en sí),
 -- AppointmentHistory (audit-trail de transiciones) y RecurringAppointment (plantilla recurrente).
--- Contrato de fila estándar de hub-next (§2.5): hub_id + soft-delete + auditoría en TODAS.
+-- Contrato de fila estándar de hub (§2.5): hub_id + soft-delete + auditoría en TODAS.
 -- Depende (vía datos, FK lógica sin constraint cross-módulo) de customers y services.
 
 -- Ajustes de reservas: un único registro por hub (lo garantiza el índice único de hub_id).

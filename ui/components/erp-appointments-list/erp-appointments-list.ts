@@ -1,16 +1,8 @@
-import { Component, State, h } from '@stencil/core';
-// Importa el DataTable compartido (Stencil) para que se auto-registre y esbuild lo
-// empaquete dentro del bundle del módulo. El shell provee los `ion-*`.
-import '../../../../_shared/ui/components/data-table/data-table';
-import type { DataTableColumn } from '../../../../_shared/ui/components/data-table/data-table';
-
-// Web Component del módulo `appointments` (Stencil). Mini-app: agenda de citas de un día
-// (lista + alta rápida + acciones de estado por fila). Es la pieza `ui.entry` que el shell
-// carga en runtime (modules/appointments/dist/appointments.esm.js).
-//
-// La lógica de negocio vive en Rust/WASM (solape, contador de nº, recurrencia): este
-// componente NO toca la BD; llama al SDK (erplora.query/command/on). El listado usa el
-// DataTable compartido + Ionic.
+import { LitElement, html, css, nothing } from 'lit';
+import { state } from 'lit/decorators.js';
+import { define } from '@erplora/outfitkit/define';
+import '@erplora/outfitkit/ok-data-table';
+import type { DataTableColumn } from '@erplora/outfitkit';
 
 interface ErploraClientLike {
   query<T = unknown>(name: string, params?: Record<string, unknown>): Promise<T>;
@@ -62,10 +54,8 @@ function fmtTime(iso: string): string {
   return Number.isNaN(d.getTime()) ? iso : d.toISOString().slice(11, 16);
 }
 
-@Component({
-  tag: 'erp-appointments-list',
-  shadow: true,
-  styles: `
+export class ErpAppointmentsList extends LitElement {
+  static styles = css`
     :host { display:block; font-family: system-ui, sans-serif; color: var(--ink, #1c1b18); }
     header { display:flex; gap:.5rem; align-items:center; margin-bottom:.75rem; }
     h2 { margin:0; font-size:1.15rem; flex:1; }
@@ -76,24 +66,29 @@ function fmtTime(iso: string): string {
       border-radius:8px; min-width:8rem;
     }
     .err { color:#d9480f; font-weight:600; }
-  `,
-})
-export class ErpAppointmentsList {
-  @State() items: Appointment[] = [];
-  @State() loading = true;
-  @State() error = '';
-  @State() saving = false;
+  `;
 
-  // Filtro de día y estado
-  @State() day = todayISO();
-  @State() statusFilter = '';
+  @state() items: Appointment[] = [];
 
-  // Alta rápida
-  @State() newCustomer = '';
-  @State() newPhone = '';
-  @State() newService = '';
-  @State() newStart = '';
-  @State() newDuration = '60';
+  @state() loading = true;
+
+  @state() error = '';
+
+  @state() saving = false;
+
+  @state() day = todayISO();
+
+  @state() statusFilter = '';
+
+  @state() newCustomer = '';
+
+  @state() newPhone = '';
+
+  @state() newService = '';
+
+  @state() newStart = '';
+
+  @state() newDuration = '60';
 
   private unsub?: () => void;
 
@@ -118,7 +113,11 @@ export class ErpAppointmentsList {
     { id: 'delete', label: 'Borrar', icon: 'trash-outline', color: 'danger' },
   ];
 
-  async componentWillLoad() {
+  // TODO-LIT: componentWillLoad → connectedCallback. Recuerda: connectedCallback se dispara
+  // en CADA reconexión al DOM (no solo en el primer montaje). Si la init debe correr una
+  // sola vez tras el primer render, considera firstUpdated() en su lugar.
+  async connectedCallback() {
+    super.connectedCallback();
     await this.refresh();
     try {
       const events = [
@@ -140,6 +139,7 @@ export class ErpAppointmentsList {
   }
 
   disconnectedCallback() {
+    super.disconnectedCallback();
     this.unsub?.();
   }
 
@@ -220,83 +220,35 @@ export class ErpAppointmentsList {
   }
 
   render() {
-    return (
-      <div>
+    return html`<div>
         <header>
           <h2>Citas</h2>
         </header>
-
         <div class="filters">
-          <ion-input
-            type="date"
-            value={this.day}
-            onIonInput={(e: any) => {
+          <ion-input type="date" .value=${this.day} @ionInput=${(e: any) => {
               this.day = e.target.value;
               this.refresh();
-            }}
-          />
-          <ion-select
-            placeholder="Todos los estados"
-            value={this.statusFilter}
-            onIonChange={(e: any) => {
+            }}></ion-input>
+          <ion-select placeholder="Todos los estados" .value=${this.statusFilter} @ionChange=${(e: any) => {
               this.statusFilter = e.target.value;
               this.refresh();
-            }}
-          >
+            }}>
             <ion-select-option value="">Todos</ion-select-option>
-            {Object.entries(STATUS_LABELS).map(([k, v]) => (
-              <ion-select-option value={k} key={k}>
-                {v}
-              </ion-select-option>
-            ))}
+            ${Object.entries(STATUS_LABELS).map(([k, v]) => html`<ion-select-option .value=${k}>${v}</ion-select-option>`)}
           </ion-select>
         </div>
-
-        <form class="form" onSubmit={(e) => this.createAppointment(e)}>
-          <ion-input
-            placeholder="Cliente"
-            value={this.newCustomer}
-            onIonInput={(e: any) => (this.newCustomer = e.target.value)}
-          />
-          <ion-input
-            placeholder="Teléfono"
-            value={this.newPhone}
-            onIonInput={(e: any) => (this.newPhone = e.target.value)}
-          />
-          <ion-input
-            placeholder="Servicio"
-            value={this.newService}
-            onIonInput={(e: any) => (this.newService = e.target.value)}
-          />
-          <ion-input
-            type="datetime-local"
-            value={this.newStart}
-            onIonInput={(e: any) => (this.newStart = e.target.value)}
-          />
-          <ion-input
-            type="number"
-            min="1"
-            placeholder="Min."
-            value={this.newDuration}
-            onIonInput={(e: any) => (this.newDuration = e.target.value)}
-          />
-          <ion-button type="submit" size="small" disabled={this.saving || !this.newCustomer || !this.newStart}>
-            {this.saving ? 'Guardando…' : 'Añadir cita'}
-          </ion-button>
+        <form class="form" @submit=${(e) => this.createAppointment(e)}>
+          <ion-input placeholder="Cliente" .value=${this.newCustomer} @ionInput=${(e: any) => (this.newCustomer = e.target.value)}></ion-input>
+          <ion-input placeholder="Teléfono" .value=${this.newPhone} @ionInput=${(e: any) => (this.newPhone = e.target.value)}></ion-input>
+          <ion-input placeholder="Servicio" .value=${this.newService} @ionInput=${(e: any) => (this.newService = e.target.value)}></ion-input>
+          <ion-input type="datetime-local" .value=${this.newStart} @ionInput=${(e: any) => (this.newStart = e.target.value)}></ion-input>
+          <ion-input type="number" min="1" placeholder="Min." .value=${this.newDuration} @ionInput=${(e: any) => (this.newDuration = e.target.value)}></ion-input>
+          <ion-button type="submit" size="small" ?disabled=${this.saving || !this.newCustomer || !this.newStart}>${this.saving ? 'Guardando…' : 'Añadir cita'}</ion-button>
         </form>
-
-        {this.error && <p class="err">{this.error}</p>}
-
-        <data-table
-          columns={this.columns}
-          rows={this.items as unknown as Record<string, unknown>[]}
-          searchKeys={['appointment_number', 'customer_name', 'service_name', 'staff_name']}
-          searchPlaceholder="Buscar nº, cliente o servicio…"
-          actions={this.rowActions}
-          onRowAction={(e: CustomEvent) => this.onRowAction(e)}
-          emptyMessage={this.loading ? 'Cargando…' : 'Sin citas para este día.'}
-        />
-      </div>
-    );
+        ${this.error ? html`<p class="err">${this.error}</p>` : nothing}
+        <ok-data-table .columns=${this.columns} .rows=${this.items as unknown as Record<string, unknown>[]} .searchKeys=${['appointment_number', 'customer_name', 'service_name', 'staff_name']} .searchPlaceholder=${"Buscar nº, cliente o servicio…"} .actions=${this.rowActions} @rowAction=${(e: CustomEvent) => this.onRowAction(e)} .emptyMessage=${this.loading ? 'Cargando…' : 'Sin citas para este día.'}></ok-data-table>
+      </div>`;
   }
 }
+
+define('erp-appointments-list', ErpAppointmentsList);

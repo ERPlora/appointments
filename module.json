@@ -4,9 +4,20 @@
   "version": "1.1.6",
   "agent": {
     "description": "Schedules and manages client appointments: books slots against services and staff, tracks status lifecycle (pending → confirmed → in_progress → completed / cancelled / no_show), manages staff availability and blocked time, and handles recurring appointment templates.",
-    "keywords": ["appointment", "booking", "schedule", "availability", "calendar", "timeslot", "recurring"]
+    "keywords": [
+      "appointment",
+      "booking",
+      "schedule",
+      "availability",
+      "calendar",
+      "timeslot",
+      "recurring"
+    ]
   },
-  "depends_on": ["customers", "services"],
+  "depends_on": [
+    "customers",
+    "services"
+  ],
   "permissions": [
     "appointments.view_appointment",
     "appointments.add_appointment",
@@ -17,7 +28,9 @@
     "appointments.manage_settings"
   ],
   "role_permissions": {
-    "admin": ["*"],
+    "admin": [
+      "*"
+    ],
     "manager": [
       "appointments.view_appointment",
       "appointments.add_appointment",
@@ -41,7 +54,10 @@
   ],
   "ai_context": {
     "summary": "Schedule and manage client appointments and availability. Books appointments against services and customers, tracks status (pending → confirmed → in_progress → completed / cancelled / no_show), manages staff schedules with weekly time slots, blocked time (holidays/vacations) and recurring appointment templates.",
-    "depends_on": ["customers", "services"]
+    "depends_on": [
+      "customers",
+      "services"
+    ]
   },
   "migrations": {
     "sqlite": [
@@ -52,42 +68,188 @@
     "appointments.appointments.list": {
       "permission": "appointments.view_appointment",
       "sql": "queries/appointments_list.sql",
-      "ai": { "description": "Lists scheduled appointments with their status and associated customer and service data." }
+      "ai": {
+        "description": "Lists scheduled appointments with their status and associated customer and service data."
+      }
     },
     "appointments.appointments.get": {
       "permission": "appointments.view_appointment",
       "sql": "queries/appointment_get.sql",
-      "ai": { "description": "Retrieves the full detail of an appointment by its identifier." }
+      "ai": {
+        "description": "Retrieves the full detail of an appointment by its identifier."
+      }
     },
     "appointments.appointments.history": {
       "permission": "appointments.view_appointment",
       "sql": "queries/appointment_history.sql",
-      "ai": { "description": "Retrieves the status-change history of a specific appointment." }
+      "ai": {
+        "description": "Retrieves the status-change history of a specific appointment."
+      }
     },
     "appointments.schedules.list": {
       "permission": "appointments.view_schedule",
       "sql": "queries/schedules_list.sql",
-      "ai": { "description": "Lists the availability schedules configured for staff members." }
+      "list": {
+        "search": [
+          "name",
+          "description"
+        ],
+        "sort": [
+          "id",
+          "name",
+          "description",
+          "is_default",
+          "is_active"
+        ],
+        "default_sort": "name",
+        "default_dir": "asc",
+        "filters": {
+          "name": {
+            "op": "eq"
+          },
+          "description": {
+            "op": "eq"
+          },
+          "is_default": {
+            "op": "eq"
+          },
+          "is_active": {
+            "op": "eq"
+          }
+        },
+        "page_size": 50
+      },
+      "ai": {
+        "description": "Lists the availability schedules configured for staff members."
+      }
     },
     "appointments.schedules.timeslots": {
       "permission": "appointments.view_schedule",
       "sql": "queries/schedule_timeslots.sql",
-      "ai": { "description": "Retrieves the available time slots for a given staff schedule." }
+      "ai": {
+        "description": "Retrieves the available time slots for a given staff schedule."
+      }
     },
     "appointments.blocked_times.list": {
       "permission": "appointments.view_schedule",
       "sql": "queries/blocked_times_list.sql",
-      "ai": { "description": "Lists blocked time periods (holidays, vacations) for staff members." }
+      "list": {
+        "search": [
+          "title"
+        ],
+        "sort": [
+          "id",
+          "title",
+          "block_type",
+          "start_datetime",
+          "end_datetime",
+          "all_day",
+          "staff_id",
+          "reason"
+        ],
+        "default_sort": "id",
+        "default_dir": "asc",
+        "filters": {
+          "title": {
+            "op": "eq"
+          },
+          "block_type": {
+            "op": "eq"
+          },
+          "start_datetime": {
+            "op": "eq"
+          },
+          "end_datetime": {
+            "op": "eq"
+          },
+          "all_day": {
+            "op": "eq"
+          },
+          "staff_id": {
+            "op": "eq"
+          },
+          "reason": {
+            "op": "eq"
+          }
+        },
+        "page_size": 50
+      },
+      "ai": {
+        "description": "Lists blocked time periods (holidays, vacations) for staff members."
+      }
     },
     "appointments.recurring.list": {
       "permission": "appointments.view_appointment",
       "sql": "queries/recurring_list.sql",
-      "ai": { "description": "Lists configured recurring appointment templates." }
+      "list": {
+        "search": [
+          "customer_name",
+          "service_name",
+          "staff_name"
+        ],
+        "sort": [
+          "id",
+          "customer_name",
+          "service_name",
+          "staff_name",
+          "frequency",
+          "day_of_week",
+          "time",
+          "duration_minutes",
+          "start_date",
+          "end_date",
+          "max_occurrences",
+          "is_active"
+        ],
+        "default_sort": "id",
+        "default_dir": "asc",
+        "filters": {
+          "customer_name": {
+            "op": "eq"
+          },
+          "service_name": {
+            "op": "eq"
+          },
+          "staff_name": {
+            "op": "eq"
+          },
+          "frequency": {
+            "op": "eq"
+          },
+          "day_of_week": {
+            "op": "eq"
+          },
+          "time": {
+            "op": "eq"
+          },
+          "duration_minutes": {
+            "op": "eq"
+          },
+          "start_date": {
+            "op": "range"
+          },
+          "end_date": {
+            "op": "range"
+          },
+          "max_occurrences": {
+            "op": "range"
+          },
+          "is_active": {
+            "op": "eq"
+          }
+        },
+        "page_size": 50
+      },
+      "ai": {
+        "description": "Lists configured recurring appointment templates."
+      }
     },
     "appointments.settings.get": {
       "permission": "appointments.view_appointment",
       "sql": "queries/settings_get.sql",
-      "ai": { "description": "Retrieves the general settings of the appointments module." }
+      "ai": {
+        "description": "Retrieves the general settings of the appointments module."
+      }
     }
   },
   "commands": {
@@ -99,72 +261,124 @@
         "file": "dist/handler.wasm",
         "function": "create_appointment"
       },
-      "emit": ["appointments.appointment.created"],
-      "ai": { "description": "Creates a new appointment for a customer with a specified service and date/time." }
+      "emit": [
+        "appointments.appointment.created"
+      ],
+      "ai": {
+        "description": "Creates a new appointment for a customer with a specified service and date/time."
+      }
     },
     "appointments.appointments.update": {
       "permission": "appointments.change_appointment",
       "transaction": true,
-      "sql": ["commands/appointment_update.sql"],
+      "sql": [
+        "commands/appointment_update.sql"
+      ],
       "schema": "schemas/appointment_update.json",
-      "emit": ["appointments.appointment.updated"],
-      "ai": { "description": "Updates an existing appointment's details such as notes, duration, or assigned employee." }
+      "emit": [
+        "appointments.appointment.updated"
+      ],
+      "ai": {
+        "description": "Updates an existing appointment's details such as notes, duration, or assigned employee."
+      }
     },
     "appointments.appointments.confirm": {
       "permission": "appointments.change_appointment",
       "transaction": true,
-      "sql": ["commands/appointment_confirm.sql"],
+      "sql": [
+        "commands/appointment_confirm.sql"
+      ],
       "schema": "schemas/appointment_id.json",
-      "emit": ["appointments.appointment.confirmed"],
-      "ai": { "description": "Confirms a pending appointment, changing its status to confirmed." }
+      "emit": [
+        "appointments.appointment.confirmed"
+      ],
+      "ai": {
+        "description": "Confirms a pending appointment, changing its status to confirmed."
+      }
     },
     "appointments.appointments.start": {
       "permission": "appointments.change_appointment",
       "transaction": true,
-      "sql": ["commands/appointment_start.sql"],
+      "sql": [
+        "commands/appointment_start.sql"
+      ],
       "schema": "schemas/appointment_id.json",
-      "emit": ["appointments.appointment.started"],
-      "ai": { "description": "Marks a confirmed appointment as in progress (service started)." }
+      "emit": [
+        "appointments.appointment.started"
+      ],
+      "ai": {
+        "description": "Marks a confirmed appointment as in progress (service started)."
+      }
     },
     "appointments.appointments.complete": {
       "permission": "appointments.change_appointment",
       "transaction": true,
-      "sql": ["commands/appointment_complete.sql"],
+      "sql": [
+        "commands/appointment_complete.sql"
+      ],
       "schema": "schemas/appointment_id.json",
-      "emit": ["appointments.appointment.completed"],
-      "ai": { "description": "Marks an in-progress appointment as completed." }
+      "emit": [
+        "appointments.appointment.completed"
+      ],
+      "ai": {
+        "description": "Marks an in-progress appointment as completed."
+      }
     },
     "appointments.appointments.cancel": {
       "permission": "appointments.change_appointment",
       "transaction": true,
-      "sql": ["commands/appointment_cancel.sql"],
+      "sql": [
+        "commands/appointment_cancel.sql"
+      ],
       "schema": "schemas/appointment_cancel.json",
-      "emit": ["appointments.appointment.cancelled"],
-      "ai": { "description": "Cancels an appointment with a specified cancellation reason." }
+      "emit": [
+        "appointments.appointment.cancelled"
+      ],
+      "ai": {
+        "description": "Cancels an appointment with a specified cancellation reason."
+      }
     },
     "appointments.appointments.no_show": {
       "permission": "appointments.change_appointment",
       "transaction": true,
-      "sql": ["commands/appointment_no_show.sql"],
+      "sql": [
+        "commands/appointment_no_show.sql"
+      ],
       "schema": "schemas/appointment_id.json",
-      "emit": ["appointments.appointment.no_show"],
-      "ai": { "description": "Records that the customer did not show up for their scheduled appointment." }
+      "emit": [
+        "appointments.appointment.no_show"
+      ],
+      "ai": {
+        "description": "Records that the customer did not show up for their scheduled appointment."
+      }
     },
     "appointments.appointments.reschedule": {
       "permission": "appointments.change_appointment",
       "transaction": true,
-      "sql": ["commands/appointment_reschedule.sql"],
+      "sql": [
+        "commands/appointment_reschedule.sql"
+      ],
       "schema": "schemas/appointment_reschedule.json",
-      "emit": ["appointments.appointment.rescheduled"],
-      "ai": { "description": "Reschedules an appointment to a new date and time." }
+      "emit": [
+        "appointments.appointment.rescheduled"
+      ],
+      "ai": {
+        "description": "Reschedules an appointment to a new date and time."
+      }
     },
     "appointments.appointments.delete": {
       "permission": "appointments.delete_appointment",
       "transaction": true,
-      "sql": ["commands/appointment_delete.sql"],
+      "sql": [
+        "commands/appointment_delete.sql"
+      ],
       "schema": "schemas/appointment_id.json",
-      "emit": ["appointments.appointment.deleted"],
-      "ai": { "description": "Permanently deletes an appointment from the system (destructive)." }
+      "emit": [
+        "appointments.appointment.deleted"
+      ],
+      "ai": {
+        "description": "Permanently deletes an appointment from the system (destructive)."
+      }
     },
     "appointments.appointments.bulk_create": {
       "permission": "appointments.add_appointment",
@@ -174,7 +388,9 @@
         "file": "dist/handler.wasm",
         "function": "bulk_create"
       },
-      "ai": { "description": "Creates multiple appointments in bulk from a list of appointment data." }
+      "ai": {
+        "description": "Creates multiple appointments in bulk from a list of appointment data."
+      }
     },
     "appointments.appointments.bulk_delete": {
       "permission": "appointments.delete_appointment",
@@ -183,7 +399,9 @@
         "file": "dist/handler.wasm",
         "function": "bulk_delete"
       },
-      "ai": { "description": "Permanently deletes multiple appointments in bulk (destructive)." }
+      "ai": {
+        "description": "Permanently deletes multiple appointments in bulk (destructive)."
+      }
     },
     "appointments.recurring.materialize": {
       "permission": "appointments.add_appointment",
@@ -192,83 +410,135 @@
         "file": "dist/handler.wasm",
         "function": "materialize_recurring"
       },
-      "ai": { "description": "Generates concrete appointment instances from a recurring appointment template." }
+      "ai": {
+        "description": "Generates concrete appointment instances from a recurring appointment template."
+      }
     },
     "appointments._insert_appointment": {
       "permission": "appointments.add_appointment",
-      "sql": ["commands/_insert_appointment.sql"]
+      "sql": [
+        "commands/_insert_appointment.sql"
+      ]
     },
     "appointments._insert_history": {
       "permission": "appointments.change_appointment",
-      "sql": ["commands/_insert_history.sql"]
+      "sql": [
+        "commands/_insert_history.sql"
+      ]
     },
     "appointments.schedules.create": {
       "permission": "appointments.manage_schedule",
       "transaction": true,
-      "sql": ["commands/schedule_create.sql"],
+      "sql": [
+        "commands/schedule_create.sql"
+      ],
       "schema": "schemas/schedule_create.json",
-      "emit": ["appointments.schedule.created"],
-      "ai": { "description": "Creates a new availability schedule for an employee or resource." }
+      "emit": [
+        "appointments.schedule.created"
+      ],
+      "ai": {
+        "description": "Creates a new availability schedule for an employee or resource."
+      }
     },
     "appointments.schedules.delete": {
       "permission": "appointments.manage_schedule",
       "transaction": true,
-      "sql": ["commands/schedule_delete.sql"],
+      "sql": [
+        "commands/schedule_delete.sql"
+      ],
       "schema": "schemas/schedule_id.json",
-      "emit": ["appointments.schedule.deleted"],
-      "ai": { "description": "Deletes an existing staff availability schedule (destructive)." }
+      "emit": [
+        "appointments.schedule.deleted"
+      ],
+      "ai": {
+        "description": "Deletes an existing staff availability schedule (destructive)."
+      }
     },
     "appointments.timeslots.create": {
       "permission": "appointments.manage_schedule",
       "transaction": true,
-      "sql": ["commands/timeslot_create.sql"],
+      "sql": [
+        "commands/timeslot_create.sql"
+      ],
       "schema": "schemas/timeslot_create.json",
-      "ai": { "description": "Adds a time slot block to a staff availability schedule." }
+      "ai": {
+        "description": "Adds a time slot block to a staff availability schedule."
+      }
     },
     "appointments.timeslots.delete": {
       "permission": "appointments.manage_schedule",
       "transaction": true,
-      "sql": ["commands/timeslot_delete.sql"],
+      "sql": [
+        "commands/timeslot_delete.sql"
+      ],
       "schema": "schemas/timeslot_id.json",
-      "ai": { "description": "Removes a time slot block from a staff availability schedule (destructive)." }
+      "ai": {
+        "description": "Removes a time slot block from a staff availability schedule (destructive)."
+      }
     },
     "appointments.blocked_times.create": {
       "permission": "appointments.manage_schedule",
       "transaction": true,
-      "sql": ["commands/blocked_time_create.sql"],
+      "sql": [
+        "commands/blocked_time_create.sql"
+      ],
       "schema": "schemas/blocked_time_create.json",
-      "emit": ["appointments.blocked_time.created"],
-      "ai": { "description": "Registers a blocked time period for an employee (holiday, vacation, etc.)." }
+      "emit": [
+        "appointments.blocked_time.created"
+      ],
+      "ai": {
+        "description": "Registers a blocked time period for an employee (holiday, vacation, etc.)."
+      }
     },
     "appointments.blocked_times.delete": {
       "permission": "appointments.manage_schedule",
       "transaction": true,
-      "sql": ["commands/blocked_time_delete.sql"],
+      "sql": [
+        "commands/blocked_time_delete.sql"
+      ],
       "schema": "schemas/blocked_time_id.json",
-      "ai": { "description": "Removes a blocked time period from an employee's schedule (destructive)." }
+      "ai": {
+        "description": "Removes a blocked time period from an employee's schedule (destructive)."
+      }
     },
     "appointments.recurring.create": {
       "permission": "appointments.add_appointment",
       "transaction": true,
-      "sql": ["commands/recurring_create.sql"],
+      "sql": [
+        "commands/recurring_create.sql"
+      ],
       "schema": "schemas/recurring_create.json",
-      "emit": ["appointments.recurring.created"],
-      "ai": { "description": "Creates a recurring appointment template with its repetition pattern." }
+      "emit": [
+        "appointments.recurring.created"
+      ],
+      "ai": {
+        "description": "Creates a recurring appointment template with its repetition pattern."
+      }
     },
     "appointments.recurring.delete": {
       "permission": "appointments.change_appointment",
       "transaction": true,
-      "sql": ["commands/recurring_delete.sql"],
+      "sql": [
+        "commands/recurring_delete.sql"
+      ],
       "schema": "schemas/recurring_id.json",
-      "ai": { "description": "Deletes a recurring appointment template (destructive)." }
+      "ai": {
+        "description": "Deletes a recurring appointment template (destructive)."
+      }
     },
     "appointments.settings.upsert": {
       "permission": "appointments.manage_settings",
       "transaction": true,
-      "sql": ["commands/settings_upsert.sql"],
+      "sql": [
+        "commands/settings_upsert.sql"
+      ],
       "schema": "schemas/settings_upsert.json",
-      "emit": ["appointments.settings.updated"],
-      "ai": { "description": "Creates or updates the general settings for the appointments module." }
+      "emit": [
+        "appointments.settings.updated"
+      ],
+      "ai": {
+        "description": "Creates or updates the general settings for the appointments module."
+      }
     }
   },
   "ui": {
