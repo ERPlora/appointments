@@ -11,11 +11,30 @@
     "customer_id": { "type": ["string", "null"], "default": null },
     "service_id": { "type": ["string", "null"], "default": null },
     "service_name": { "type": "string", "default": "", "maxLength": 200 },
+    "service_price": { "type": "number", "minimum": 0, "default": 0 },
     "staff_id": { "type": ["string", "null"], "default": null },
     "staff_name": { "type": "string", "default": "", "maxLength": 200 },
     "start_datetime": { "type": "string", "format": "date-time" },
     "duration_minutes": { "type": "integer", "minimum": 1, "default": 60 },
     "notes": { "type": "string", "default": "" },
-    "booked_online": { "type": "boolean", "default": false }
+    "internal_notes": { "type": "string", "default": "" },
+    "booked_online": { "type": "boolean", "default": false },
+
+    "settings": {
+      "description": "Lectura aportada por el caller (fila de appointments.settings.get): el runtime no precarga lecturas para el handler WASM; el guest usa allow_overlapping/default_duration de aquí.",
+      "type": ["object", "null"],
+      "default": null
+    },
+    "existing_appointments": {
+      "description": "Lectura aportada por el caller (citas candidatas a solape, de appointments.appointments.list del día).",
+      "type": "array",
+      "default": [],
+      "items": { "type": "object" }
+    },
+    "service": {
+      "description": "Lectura aportada por el caller ({name, price} resuelto vía el contrato público del módulo services) para denormalizar cuando service_name viene vacío.",
+      "type": ["object", "null"],
+      "default": null
+    }
   }
 }

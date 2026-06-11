@@ -1,5 +1,13 @@
 # appointments — lógica para handler Rust→WASM (Tier 2)
 
+> **Estado 2026-06-11**: piezas **1, 2, 3, 5 y 6** implementadas en `handler/src/lib.rs`
+> (→ `dist/handler.wasm`: `create_appointment`, `bulk_create`, `bulk_delete`,
+> `materialize_recurring` + contador atómico `_bump_counter`/`002_counter.sql`).
+> Pieza **8** implementada como **queries declarativas Tier 0**
+> (`appointments.availability.slots` / `.check`) — el contrato runtime↔WASM devuelve
+> intenciones, no datos al caller, así que la lógica de calendario vive en SQL.
+> Piezas 4 y 7: no bloqueantes (el WHERE/la UI ya protegen). Pendientes: 9 y 10.
+
 El CRUD plano y las transiciones de estado simples ya están en SQL declarativo Tier 0
 (`commands/*.sql`): update, confirm/start/complete/cancel/no_show/reschedule, soft-delete,
 CRUD de schedules/timeslots/blocked_time/recurring y upsert de settings. Lo que sigue es

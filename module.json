@@ -61,7 +61,8 @@
   },
   "migrations": {
     "sqlite": [
-      "migrations/sqlite/001_init.sql"
+      "migrations/sqlite/001_init.sql",
+      "migrations/sqlite/002_counter.sql"
     ]
   },
   "queries": {
@@ -382,7 +383,7 @@
     },
     "appointments.appointments.bulk_create": {
       "permission": "appointments.add_appointment",
-      "schema": "schemas/appointment_create.json",
+      "schema": "schemas/appointment_bulk_create.json",
       "handler": {
         "type": "wasm",
         "file": "dist/handler.wasm",
@@ -394,6 +395,7 @@
     },
     "appointments.appointments.bulk_delete": {
       "permission": "appointments.delete_appointment",
+      "schema": "schemas/appointment_bulk_delete.json",
       "handler": {
         "type": "wasm",
         "file": "dist/handler.wasm",
@@ -405,6 +407,7 @@
     },
     "appointments.recurring.materialize": {
       "permission": "appointments.add_appointment",
+      "schema": "schemas/recurring_materialize.json",
       "handler": {
         "type": "wasm",
         "file": "dist/handler.wasm",
@@ -413,6 +416,12 @@
       "ai": {
         "description": "Generates concrete appointment instances from a recurring appointment template."
       }
+    },
+    "appointments._bump_counter": {
+      "permission": "appointments.add_appointment",
+      "sql": [
+        "commands/_bump_counter.sql"
+      ]
     },
     "appointments._insert_appointment": {
       "permission": "appointments.add_appointment",

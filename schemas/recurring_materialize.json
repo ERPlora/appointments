@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "appointments.recurring.materialize",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["recurring"],
+  "properties": {
+    "recurring": {
+      "description": "La plantilla recurrente (fila de appointments.recurring.list): el runtime no precarga lecturas para el handler WASM, la aporta el caller.",
+      "type": "object",
+      "required": ["customer_name", "frequency", "time", "start_date"],
+      "properties": {
+        "id": { "type": ["string", "null"] },
+        "customer_id": { "type": ["string", "null"] },
+        "customer_name": { "type": "string", "minLength": 1 },
+        "service_id": { "type": ["string", "null"] },
+        "service_name": { "type": "string", "default": "" },
+        "staff_id": { "type": ["string", "null"] },
+        "staff_name": { "type": "string", "default": "" },
+        "frequency": { "type": "string", "enum": ["daily", "weekly", "biweekly", "monthly"] },
+        "day_of_week": { "type": ["integer", "null"], "minimum": 0, "maximum": 6 },
+        "time": { "type": "string", "pattern": "^\\d{2}:\\d{2}" },
+        "duration_minutes": { "type": "integer", "minimum": 1 },
+        "start_date": { "type": "string", "format": "date" },
+        "end_date": { "type": ["string", "null"] },
+        "max_occurrences": { "type": ["integer", "null"], "minimum": 1 },
+        "is_active": { "type": ["boolean", "integer"], "default": true }
+      }
+    },
+    "from": {
+      "description": "Inicio de la ventana a materializar (YYYY-MM-DD, default: hoy).",
+      "type": ["string", "null"],
+      "default": null
+    },
+    "to": {
+      "description": "Fin de la ventana (YYYY-MM-DD, default: from + max_advance_booking días).",
+      "type": ["string", "null"],
+      "default": null
+    },
+    "settings": {
+      "description": "Lectura aportada por el caller (fila de appointments.settings.get).",
+      "type": ["object", "null"],
+      "default": null
+    },
+    "existing_appointments": {
+      "description": "Lectura aportada por el caller (citas candidatas a solape de la ventana).",
+      "type": "array",
+      "default": [],
+      "items": { "type": "object" }
+    },
+    "service": {
+      "description": "Lectura aportada por el caller ({name, price} del módulo services).",
+      "type": ["object", "null"],
+      "default": null
+    }
+  }
+}

@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "appointments.appointments.bulk_create",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["appointments"],
+  "properties": {
+    "appointments": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 50,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["customer_name", "start_datetime"],
+        "properties": {
+          "customer_name": { "type": "string", "minLength": 1, "maxLength": 200 },
+          "customer_phone": { "type": "string", "default": "", "maxLength": 50 },
+          "customer_email": { "type": "string", "default": "", "maxLength": 254 },
+          "customer_id": { "type": ["string", "null"], "default": null },
+          "service_id": { "type": ["string", "null"], "default": null },
+          "service_name": { "type": "string", "default": "", "maxLength": 200 },
+          "service_price": { "type": "number", "minimum": 0, "default": 0 },
+          "staff_id": { "type": ["string", "null"], "default": null },
+          "staff_name": { "type": "string", "default": "", "maxLength": 200 },
+          "start_datetime": { "type": "string", "format": "date-time" },
+          "duration_minutes": { "type": "integer", "minimum": 1, "default": 60 },
+          "notes": { "type": "string", "default": "" },
+          "internal_notes": { "type": "string", "default": "" },
+          "booked_online": { "type": "boolean", "default": false }
+        }
+      }
+    },
+    "settings": {
+      "description": "Lectura aportada por el caller (fila de appointments.settings.get).",
+      "type": ["object", "null"],
+      "default": null
+    },
+    "existing_appointments": {
+      "description": "Lectura aportada por el caller (citas candidatas a solape del rango afectado).",
+      "type": "array",
+      "default": [],
+      "items": { "type": "object" }
+    },
+    "service": {
+      "description": "Lectura aportada por el caller ({name, price} del módulo services).",
+      "type": ["object", "null"],
+      "default": null
+    }
+  }
+}
