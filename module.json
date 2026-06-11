@@ -131,6 +131,20 @@
         "description": "Retrieves the available time slots for a given staff schedule."
       }
     },
+    "appointments.availability.slots": {
+      "permission": "appointments.view_schedule",
+      "sql": "queries/availability_slots.sql",
+      "ai": {
+        "description": "Returns the free booking slots for a given date (optionally for a specific staff member and duration), crossing schedules, blocked time and existing appointments with the booking-notice settings."
+      }
+    },
+    "appointments.availability.check": {
+      "permission": "appointments.view_schedule",
+      "sql": "queries/availability_check.sql",
+      "ai": {
+        "description": "Checks whether a specific date/time slot is available for booking and returns the reason when it is not (too_soon, too_far, outside_schedule, blocked or overlap)."
+      }
+    },
     "appointments.blocked_times.list": {
       "permission": "appointments.view_schedule",
       "sql": "queries/blocked_times_list.sql",
