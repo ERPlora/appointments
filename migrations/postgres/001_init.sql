@@ -5,7 +5,7 @@
 -- Tipos: subconjunto portable "ERPlora SQL" (ADR-0007):
 --   * ids/refs → TEXT (UUIDs del runtime como texto);
 --   * flags 0/1 → INTEGER (los commands bindean 0/1; Postgres no castea entero→bool);
---   * importes → NUMERIC;
+--   * importes → INTEGER en céntimos (ADR-0007);
 --   * FECHAS → TEXT ISO-8601 (NO TIMESTAMPTZ): el motor de sync (ADR-0031) compara
 --     updated_at como string lexicográfico; timestamptz rompería el LWW entre dialectos.
 
@@ -109,7 +109,7 @@ CREATE TABLE IF NOT EXISTS appointments_appointment (
     staff_name          TEXT NOT NULL DEFAULT '',
     service_id          TEXT,
     service_name        TEXT NOT NULL,
-    service_price       NUMERIC NOT NULL DEFAULT 0,
+    service_price       INTEGER NOT NULL DEFAULT 0,  -- céntimos (ADR-0007)
     start_datetime      TEXT NOT NULL,               -- ISO 8601 con tz
     end_datetime        TEXT NOT NULL,               -- ISO 8601 con tz
     duration_minutes    INTEGER NOT NULL,

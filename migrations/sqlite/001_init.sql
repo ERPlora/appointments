@@ -106,7 +106,7 @@ CREATE TABLE IF NOT EXISTS appointments_appointment (
     staff_name          TEXT NOT NULL DEFAULT '',
     service_id          TEXT,
     service_name        TEXT NOT NULL,
-    service_price       NUMERIC NOT NULL DEFAULT 0,
+    service_price       INTEGER NOT NULL DEFAULT 0,  -- céntimos (ADR-0007)
     start_datetime      TEXT NOT NULL,               -- ISO 8601 con tz
     end_datetime        TEXT NOT NULL,               -- ISO 8601 con tz
     duration_minutes    INTEGER NOT NULL,

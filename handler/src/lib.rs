@@ -96,6 +96,22 @@ fn as_i64(v: &Value, d: i64) -> i64 {
     }
 }
 
+/// Lee un importe **en céntimos** (`i64`): entero, string de entero, o (robustez) decimal
+/// como céntimos ya escalados (round half-to-even). ADR-0007: el dinero viaja en céntimos.
+fn cents(v: &Value, d: i64) -> i64 {
+    match v {
+        Value::Number(n) => n.as_i64().or_else(|| n.as_f64().map(|x| {
+            let fl = x.floor();
+            let diff = x - fl;
+            (if (diff - 0.5).abs() < 1e-9 {
+                if (fl as i64) % 2 == 0 { fl } else { fl + 1.0 }
+            } else { x.round() }) as i64
+        })).unwrap_or(d),
+        Value::String(s) => s.trim().parse::<i64>().unwrap_or(d),
+        _ => d,
+    }
+}
+
 fn as_bool(v: &Value) -> bool {
     match v {
         Value::Bool(b) => *b,
@@ -416,13 +432,14 @@ fn prepare_appointment(
     // Resolución de servicio: nombre/precio del ítem, con fallback a la lectura
     // `service` {name, price} aportada por el caller (contrato público de `services`).
     let mut service_name = str_or(item, "service_name", "");
-    let mut service_price = item.get("service_price").map(|v| as_f64(v, 0.0)).unwrap_or(0.0);
+    // service_price en CÉNTIMOS (ADR-0007): del ítem o, si 0, del catálogo `services` (cents).
+    let mut service_price = cents(item.get("service_price").unwrap_or(&Value::Null), 0);
     if let Some(svc) = fallback_service {
         if service_name.is_empty() {
             service_name = str_or(svc, "name", "");
         }
-        if service_price == 0.0 {
-            service_price = svc.get("price").map(|v| as_f64(v, 0.0)).unwrap_or(0.0);
+        if service_price == 0 {
+            service_price = cents(svc.get("price").unwrap_or(&Value::Null), 0);
         }
     }
 
