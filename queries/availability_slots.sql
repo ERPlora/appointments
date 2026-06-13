@@ -15,7 +15,9 @@
 -- Binds: :date (YYYY-MM-DD, requerido) · :staff_id (opcional; ausente = agenda global)
 --        · :duration_minutes (opcional; default = settings.default_duration).
 -- Runtime inyecta :hub_id y :now. Un bind ausente llega como NULL (centinela del adapter).
--- printf()/strftime()/datetime() son de SQLite (portabilidad SQL §14, igual que sales).
+-- Fechas/horas vía funciones-puente erp_* (ADR-0007 §4a): erp_dt (datetime comparable),
+-- erp_date (parte fecha), erp_dateadd (suma intervalo), erp_dow_mon0 (día de semana 0=lunes),
+-- erp_timefmt (HH:MM). Las fechas se guardan como TEXT ISO-8601.
 WITH RECURSIVE
 cfg AS (
     SELECT COALESCE(MAX(calendar_start_hour), 8)   AS start_hour,
@@ -25,7 +27,7 @@ cfg AS (
            COALESCE(MAX(min_booking_notice),  60)  AS notice_min,
            COALESCE(MAX(max_advance_booking), 90)  AS advance_days,
            COALESCE(MAX(allow_overlapping),    0)  AS allow_overlapping,
-           CAST((CAST(strftime('%w', :date) AS INTEGER) + 6) % 7 AS INTEGER) AS dow
+           erp_dow_mon0(:date) AS dow
     FROM appointments_settings
     WHERE hub_id = :hub_id AND is_deleted = 0
 ),
@@ -37,20 +39,20 @@ slots(m) AS (
 cand AS (
     SELECT s.m AS start_min,
            s.m + c.dur AS end_min,
-           :date || 'T' || printf('%02d:%02d:00', s.m / 60, s.m % 60) AS slot_start,
-           :date || 'T' || printf('%02d:%02d:00', (s.m + c.dur) / 60, (s.m + c.dur) % 60) AS slot_end
+           :date || 'T' || erp_timefmt(s.m / 60, s.m % 60) || ':00' AS slot_start,
+           :date || 'T' || erp_timefmt((s.m + c.dur) / 60, (s.m + c.dur) % 60) || ':00' AS slot_end
     FROM slots s, cfg c
     WHERE s.m + c.dur <= c.end_hour * 60
 )
 SELECT c.slot_start,
        c.slot_end,
-       printf('%02d:%02d', c.start_min / 60, c.start_min % 60) AS start_time,
-       printf('%02d:%02d', c.end_min / 60, c.end_min % 60)     AS end_time
+       erp_timefmt(c.start_min / 60, c.start_min % 60) AS start_time,
+       erp_timefmt(c.end_min / 60, c.end_min % 60)     AS end_time
 FROM cand c, cfg
 WHERE
     -- antelación mínima / máxima respecto a :now
-    datetime(c.slot_start) >= datetime(:now, '+' || cfg.notice_min || ' minutes')
-    AND date(:date) <= date(:now, '+' || cfg.advance_days || ' days')
+    erp_dt(c.slot_start) >= erp_dateadd(:now, cfg.notice_min, 'minutes')
+    AND erp_date(:date) <= erp_date(erp_dateadd(:now, cfg.advance_days, 'days'))
     -- dentro de un tramo activo del horario (si el hub tiene horarios configurados)
     AND (
         NOT EXISTS (
@@ -81,10 +83,10 @@ WHERE
           AND (b.staff_id IS NULL OR b.staff_id = ''
                OR (:staff_id IS NOT NULL AND b.staff_id = :staff_id))
           AND (
-              (b.all_day = 1 AND date(b.start_datetime) <= date(:date)
-                             AND date(:date) <= date(b.end_datetime))
-              OR (datetime(b.start_datetime) < datetime(c.slot_end)
-                  AND datetime(b.end_datetime) > datetime(c.slot_start))
+              (b.all_day = 1 AND erp_date(b.start_datetime) <= erp_date(:date)
+                             AND erp_date(:date) <= erp_date(b.end_datetime))
+              OR (erp_dt(b.start_datetime) < erp_dt(c.slot_end)
+                  AND erp_dt(b.end_datetime) > erp_dt(c.slot_start))
           )
     )
     -- sin citas vivas que solapen (salvo allow_overlapping); con :staff_id solo su agenda
@@ -96,8 +98,8 @@ WHERE
             WHERE a.hub_id = :hub_id AND a.is_deleted = 0
               AND a.status NOT IN ('cancelled', 'no_show')
               AND (:staff_id IS NULL OR a.staff_id = :staff_id)
-              AND datetime(a.start_datetime) < datetime(c.slot_end)
-              AND datetime(a.end_datetime) > datetime(c.slot_start)
+              AND erp_dt(a.start_datetime) < erp_dt(c.slot_end)
+              AND erp_dt(a.end_datetime) > erp_dt(c.slot_start)
         )
     )
 ORDER BY c.start_min;

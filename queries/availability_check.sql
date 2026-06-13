@@ -5,7 +5,9 @@
 --
 -- Binds: :start_datetime (ISO 8601, requerido) · :duration_minutes (opcional; default =
 -- settings.default_duration) · :staff_id (opcional; ausente = agenda global).
--- Runtime inyecta :hub_id y :now. printf()/strftime()/datetime() son de SQLite (§14).
+-- Runtime inyecta :hub_id y :now. Fechas/horas vía funciones-puente erp_* (ADR-0007 §4a):
+-- erp_dt (datetime comparable), erp_date (parte fecha), erp_dateadd (suma intervalo),
+-- erp_dow_mon0 (día de semana 0=lunes), erp_extract (hora/minuto). Fechas en TEXT ISO-8601.
 WITH cfg AS (
     SELECT COALESCE(COALESCE(:duration_minutes, MAX(default_duration)), 60) AS dur,
            COALESCE(MAX(min_booking_notice),  60) AS notice_min,
@@ -15,21 +17,21 @@ WITH cfg AS (
     WHERE hub_id = :hub_id AND is_deleted = 0
 ),
 win AS (
-    SELECT datetime(:start_datetime) AS s_start,
-           datetime(:start_datetime, '+' || c.dur || ' minutes') AS s_end,
-           CAST((CAST(strftime('%w', :start_datetime) AS INTEGER) + 6) % 7 AS INTEGER) AS dow,
-           CAST(strftime('%H', :start_datetime) AS INTEGER) * 60
-             + CAST(strftime('%M', :start_datetime) AS INTEGER) AS start_min,
-           CAST(strftime('%H', :start_datetime) AS INTEGER) * 60
-             + CAST(strftime('%M', :start_datetime) AS INTEGER) + c.dur AS end_min
+    SELECT erp_dt(:start_datetime) AS s_start,
+           erp_dateadd(:start_datetime, c.dur, 'minutes') AS s_end,
+           erp_dow_mon0(:start_datetime) AS dow,
+           erp_extract('hour', :start_datetime) * 60
+             + erp_extract('minute', :start_datetime) AS start_min,
+           erp_extract('hour', :start_datetime) * 60
+             + erp_extract('minute', :start_datetime) + c.dur AS end_min
     FROM cfg c
 ),
 checks AS (
     SELECT
         CASE WHEN w.s_start IS NULL THEN 1 ELSE 0 END AS invalid_start,
-        CASE WHEN w.s_start < datetime(:now, '+' || c.notice_min || ' minutes')
+        CASE WHEN w.s_start < erp_dateadd(:now, c.notice_min, 'minutes')
              THEN 1 ELSE 0 END AS too_soon,
-        CASE WHEN date(w.s_start) > date(:now, '+' || c.advance_days || ' days')
+        CASE WHEN erp_date(w.s_start) > erp_date(erp_dateadd(:now, c.advance_days, 'days'))
              THEN 1 ELSE 0 END AS too_far,
         CASE WHEN EXISTS (
                  SELECT 1
@@ -58,10 +60,10 @@ checks AS (
                    AND (b.staff_id IS NULL OR b.staff_id = ''
                         OR (:staff_id IS NOT NULL AND b.staff_id = :staff_id))
                    AND (
-                       (b.all_day = 1 AND date(b.start_datetime) <= date(w.s_start)
-                                      AND date(w.s_start) <= date(b.end_datetime))
-                       OR (datetime(b.start_datetime) < w.s_end
-                           AND datetime(b.end_datetime) > w.s_start)
+                       (b.all_day = 1 AND erp_date(b.start_datetime) <= erp_date(w.s_start)
+                                      AND erp_date(w.s_start) <= erp_date(b.end_datetime))
+                       OR (erp_dt(b.start_datetime) < w.s_end
+                           AND erp_dt(b.end_datetime) > w.s_start)
                    )
              )
              THEN 1 ELSE 0 END AS blocked,
@@ -71,8 +73,8 @@ checks AS (
                  WHERE a.hub_id = :hub_id AND a.is_deleted = 0
                    AND a.status NOT IN ('cancelled', 'no_show')
                    AND (:staff_id IS NULL OR a.staff_id = :staff_id)
-                   AND datetime(a.start_datetime) < w.s_end
-                   AND datetime(a.end_datetime) > w.s_start
+                   AND erp_dt(a.start_datetime) < w.s_end
+                   AND erp_dt(a.end_datetime) > w.s_start
              )
              THEN 1 ELSE 0 END AS overlap
     FROM win w, cfg c
