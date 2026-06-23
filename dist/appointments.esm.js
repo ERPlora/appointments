@@ -9,7 +9,7 @@ var __decorateClass = (decorators, target, key, kind) => {
   return result;
 };
 
-// ../../node_modules/.pnpm/@lit-labs+ssr-dom-shim@1.6.0/node_modules/@lit-labs/ssr-dom-shim/lib/element-internals.js
+// node_modules/@lit-labs/ssr-dom-shim/lib/element-internals.js
 var ElementInternalsShim = class ElementInternals {
   get shadowRoot() {
     return this.__host.__shadowRoot;
@@ -88,7 +88,7 @@ var ElementInternalsShim = class ElementInternals {
   }
 };
 
-// ../../node_modules/.pnpm/@lit-labs+ssr-dom-shim@1.6.0/node_modules/@lit-labs/ssr-dom-shim/lib/events.js
+// node_modules/@lit-labs/ssr-dom-shim/lib/events.js
 var __classPrivateFieldSet = function(receiver, state, value, kind, f3) {
   if (kind === "m") throw new TypeError("Private method is not writable");
   if (kind === "a" && !f3) throw new TypeError("Private accessor was defined without a setter");
@@ -246,7 +246,7 @@ Object.defineProperties(CustomEventShim.prototype, {
 var EventShimWithRealType = EventShim;
 var CustomEventShimWithRealType = CustomEventShim;
 
-// ../../node_modules/.pnpm/@lit-labs+ssr-dom-shim@1.6.0/node_modules/@lit-labs/ssr-dom-shim/lib/css.js
+// node_modules/@lit-labs/ssr-dom-shim/lib/css.js
 var _a2;
 var CSSRuleShim = (_a2 = class CSSRule {
   constructor() {
@@ -277,7 +277,7 @@ var CSSRuleShim = (_a2 = class CSSRule {
   }
 }, _a2.STYLE_RULE = 1, _a2.CHARSET_RULE = 2, _a2.IMPORT_RULE = 3, _a2.MEDIA_RULE = 4, _a2.FONT_FACE_RULE = 5, _a2.PAGE_RULE = 6, _a2.NAMESPACE_RULE = 10, _a2.KEYFRAMES_RULE = 7, _a2.KEYFRAME_RULE = 8, _a2.SUPPORTS_RULE = 12, _a2.COUNTER_STYLE_RULE = 11, _a2.FONT_FEATURE_VALUES_RULE = 14, _a2.MARGIN_RULE = 9, _a2);
 
-// ../../node_modules/.pnpm/@lit-labs+ssr-dom-shim@1.6.0/node_modules/@lit-labs/ssr-dom-shim/index.js
+// node_modules/@lit-labs/ssr-dom-shim/index.js
 globalThis.Event ??= EventShimWithRealType;
 globalThis.CustomEvent ??= CustomEventShimWithRealType;
 var constructionToken = Symbol();
@@ -674,7 +674,7 @@ var CustomElementRegistryShimWithRealType = CustomElementRegistry;
 var customElements2 = new CustomElementRegistryShimWithRealType();
 var windowShim = new WindowShim(constructionToken);
 
-// ../../node_modules/.pnpm/@lit+reactive-element@2.1.2/node_modules/@lit/reactive-element/node/css-tag.js
+// node_modules/@lit/reactive-element/node/css-tag.js
 var t = globalThis;
 var e = t.ShadowRoot && (void 0 === t.ShadyCSS || t.ShadyCSS.nativeShadow) && "adoptedStyleSheets" in Document.prototype && "replace" in CSSStyleSheet.prototype;
 var s = Symbol();
@@ -719,7 +719,7 @@ var c = e || void 0 === t.CSSStyleSheet ? (t5) => t5 : (t5) => t5 instanceof CSS
   return r(e5);
 })(t5) : t5;
 
-// ../../node_modules/.pnpm/@lit+reactive-element@2.1.2/node_modules/@lit/reactive-element/node/reactive-element.js
+// node_modules/@lit/reactive-element/node/reactive-element.js
 var { is: h, defineProperty: r2, getOwnPropertyDescriptor: o2, getOwnPropertyNames: n2, getOwnPropertySymbols: a, getPrototypeOf: c2 } = Object;
 var l = globalThis;
 l.customElements ??= customElements2;
@@ -942,7 +942,7 @@ var g = class extends (globalThis.HTMLElement ?? HTMLElementShimWithRealType) {
 };
 g.elementStyles = [], g.shadowRootOptions = { mode: "open" }, g[f("elementProperties")] = /* @__PURE__ */ new Map(), g[f("finalized")] = /* @__PURE__ */ new Map(), u?.({ ReactiveElement: g }), (l.reactiveElementVersions ??= []).push("2.1.2");
 
-// ../../node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/lit-html.js
+// node_modules/lit-html/lit-html.js
 var t2 = globalThis;
 var i2 = (t5) => t5;
 var s2 = t2.trustedTypes;
@@ -1197,7 +1197,7 @@ var D = (t5, i7, s5) => {
   return h4._$AI(t5), h4;
 };
 
-// ../../node_modules/.pnpm/lit-element@4.2.2/node_modules/lit-element/lit-element.js
+// node_modules/lit-element/lit-element.js
 var s3 = globalThis;
 var i3 = class extends g {
   constructor() {
@@ -1226,7 +1226,7 @@ var o4 = s3.litElementPolyfillSupport;
 o4?.({ LitElement: i3 });
 (s3.litElementVersions ??= []).push("4.2.2");
 
-// ../../node_modules/.pnpm/@lit+reactive-element@2.1.2/node_modules/@lit/reactive-element/node/decorators/property.js
+// node_modules/@lit/reactive-element/node/decorators/property.js
 var o5 = { attribute: true, type: String, converter: b, reflect: false, hasChanged: m };
 var r4 = (t5 = o5, e5, r6) => {
   const { kind: n6, metadata: i7 } = r6;
@@ -1256,19 +1256,19 @@ function n4(t5) {
   })(t5, e5, o7);
 }
 
-// ../../node_modules/.pnpm/@lit+reactive-element@2.1.2/node_modules/@lit/reactive-element/node/decorators/state.js
+// node_modules/@lit/reactive-element/node/decorators/state.js
 function r5(r6) {
   return n4({ ...r6, state: true, attribute: false });
 }
 
-// ../../node_modules/.pnpm/@outfitkit+core@file+..+outfitkit/node_modules/@outfitkit/core/dist/define.js
+// ../outfitkit/dist/define.js
 function define(tag, ctor) {
   if (typeof customElements !== "undefined" && !customElements.get(tag)) {
     customElements.define(tag, ctor);
   }
 }
 
-// ../../node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directive.js
+// node_modules/lit-html/directive.js
 var t3 = { ATTRIBUTE: 1, CHILD: 2, PROPERTY: 3, BOOLEAN_ATTRIBUTE: 4, EVENT: 5, ELEMENT: 6 };
 var e4 = (t5) => (...e5) => ({ _$litDirective$: t5, values: e5 });
 var i4 = class {
@@ -1288,7 +1288,7 @@ var i4 = class {
   }
 };
 
-// ../../node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directive-helpers.js
+// node_modules/lit-html/directive-helpers.js
 var { I: t4 } = j;
 var i5 = (o7) => o7;
 var s4 = () => document.createComment("");
@@ -1321,7 +1321,7 @@ var h3 = (o7) => {
   o7._$AR(), o7._$AA.remove();
 };
 
-// ../../node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directives/repeat.js
+// node_modules/lit-html/directives/repeat.js
 var u4 = (e5, s5, t5) => {
   const r6 = /* @__PURE__ */ new Map();
   for (let l3 = s5; l3 <= t5; l3++) r6.set(e5[l3], l3);
@@ -1374,7 +1374,7 @@ var c4 = e4(class extends i4 {
   }
 });
 
-// ../../node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directives/style-map.js
+// node_modules/lit-html/directives/style-map.js
 var n5 = "important";
 var i6 = " !" + n5;
 var o6 = e4(class extends i4 {
@@ -1403,7 +1403,7 @@ var o6 = e4(class extends i4 {
   }
 });
 
-// ../../node_modules/.pnpm/@outfitkit+core@file+..+outfitkit/node_modules/@outfitkit/core/dist/ok-data-table.js
+// ../outfitkit/dist/ok-data-table.js
 var __defProp2 = Object.defineProperty;
 var __decorateClass2 = (decorators, target, key, kind) => {
   var result = void 0;
@@ -1571,12 +1571,15 @@ var OkDataTable = class extends i3 {
 
     /* ── Topbar / cabecera (relieve) ─────────────────────────────────────────────────────── */
     .bar { display: flex; flex-direction: column; gap: 0.6rem; padding: 0.65rem 1rem; border-bottom: 1px solid var(--border-color); background: var(--header-background); }
-    /* Toolbar CONSOLIDADA: TODOS los controles (buscador, filtros, page-size, vistas, columnas,
-     * CSV, ⋮, alta) son hijos directos de UNA sola fila flex que envuelve ELEMENTO A ELEMENTO
-     * (no por bloques): caben en una línea → una línea; los que no caben bajan a la(s) línea(s)
-     * que hagan falta. El cluster derecho se empuja al borde con .tk-spacer (hueco flexible)
-     * solo cuando todo cabe en una línea; al envolver, el spacer se oculta y todo se apila a la
-     * izquierda. */
+    /* Toolbar CONSOLIDADA: TODOS los controles son hijos directos de UNA sola fila flex que
+     * envuelve ELEMENTO A ELEMENTO (no por bloques): caben en una línea → una línea; los que no
+     * caben bajan a la(s) línea(s) que hagan falta. El cluster derecho se empuja al borde con
+     * .tk-spacer (hueco flexible) solo cuando todo cabe en una línea; al envolver, el spacer se
+     * oculta y todo se apila a la izquierda.
+     * ORDEN CANÓNICO (2026-06-22, izquierda→derecha): [buscador] · [filtros en línea] · ‹spacer› ·
+     * [SELECTORES: columnas → filas/página] · [BOTONES: vistas → filtros(funnel) → import → export →
+     * alta → ⋮ → acción primaria]. Es decir: buscador al inicio, filtros en medio, y al final los
+     * selectores (columnas, luego «N por página») seguidos de los botones de acción. */
     .bar-main { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
     .bar-main > ion-button { --padding-start: 0.5rem; --padding-end: 0.5rem; margin: 0; }
     /* Spacer que absorbe el hueco libre en pantallas anchas (empuja el cluster derecho al borde).
@@ -2287,6 +2290,19 @@ var OkDataTable = class extends i3 {
                   ${this.hasSearch ? b2`<div class="search">${searchbar}</div>` : A}
                   ${this.inlineFilters ? this.renderInlineFilters() : A}
                   <span class="tk-spacer"></span>
+                    ${this.effColumnPicker ? b2`
+                          <ion-select
+                            class="tk-cols"
+                            multiple
+                            interface="popover"
+                            aria-label=${this.t.columnsVisible}
+                            .value=${this.visibleColumns.map((c5) => c5.key)}
+                            .selectedText=${this.t.columns}
+                            @ionChange=${(e5) => this.setVisibleColumns(e5.detail.value)}
+                          >
+                            ${this.columns.map((c5) => b2`<ion-select-option value=${c5.key}>${c5.header}</ion-select-option>`)}
+                          </ion-select>
+                        ` : A}
                     ${this.effPageSizes.length ? b2`
                           <ion-select
                             class="tk-psize"
@@ -2303,19 +2319,6 @@ var OkDataTable = class extends i3 {
                             ${this.toolButton("list-outline", this.viewMode === "table", () => this.setViewMode("table"), this.t.viewList)}
                             ${this.toolButton("grid-outline", this.viewMode === "cards", () => this.setViewMode("cards"), this.t.viewCards)}
                           </span>
-                        ` : A}
-                    ${this.effColumnPicker ? b2`
-                          <ion-select
-                            class="tk-cols"
-                            multiple
-                            interface="popover"
-                            aria-label=${this.t.columnsVisible}
-                            .value=${this.visibleColumns.map((c5) => c5.key)}
-                            .selectedText=${this.t.columns}
-                            @ionChange=${(e5) => this.setVisibleColumns(e5.detail.value)}
-                          >
-                            ${this.columns.map((c5) => b2`<ion-select-option value=${c5.key}>${c5.header}</ion-select-option>`)}
-                          </ion-select>
                         ` : A}
                     ${this.hasFilterRow && !this.inlineFilters ? this.toolButton("funnel-outline", this.panel === "filters" || this.activeFilterCount > 0, () => this.toggle("filters"), this.t.filters, this.serverSide ? void 0 : this.activeFilterCount) : A}
                     ${this.effImport ? b2`
@@ -2678,14 +2681,103 @@ __decorateClass2([
 ], OkDataTable.prototype, "menuOpen");
 define("ok-data-table", OkDataTable);
 
-// ui/components/erp-appointments-list/erp-appointments-list.ts
-var STATUS_LABELS = {
-  pending: "Pendiente",
-  confirmed: "Confirmada",
-  in_progress: "En curso",
-  completed: "Completada",
-  cancelled: "Cancelada",
-  no_show: "No-show"
+// ../modules-workspace/modules/appointments/locales/es.json
+var es_default = {
+  name: "Citas",
+  navigation: {
+    appointments: {
+      label: "Citas"
+    }
+  },
+  ui: {
+    title: "Citas",
+    allStatuses: "Todos los estados",
+    statusAll: "Todos",
+    statusPending: "Pendiente",
+    statusConfirmed: "Confirmada",
+    statusInProgress: "En curso",
+    statusCompleted: "Completada",
+    statusCancelled: "Cancelada",
+    statusNoShow: "No-show",
+    colTime: "Hora",
+    colNumber: "N\xBA",
+    colCustomer: "Cliente",
+    colService: "Servicio",
+    colStaff: "Personal",
+    colStatus: "Estado",
+    actionConfirm: "Confirmar",
+    actionStart: "Iniciar",
+    actionComplete: "Completar",
+    actionCancel: "Cancelar",
+    actionDelete: "Borrar",
+    fieldCustomer: "Cliente",
+    fieldPhone: "Tel\xE9fono",
+    fieldService: "Servicio",
+    fieldMinutes: "Min.",
+    saving: "Guardando\u2026",
+    addAppointment: "A\xF1adir cita",
+    searchPlaceholder: "Buscar n\xBA, cliente o servicio\u2026",
+    loading: "Cargando\u2026",
+    empty: "Sin citas para este d\xEDa.",
+    errLoad: "Error cargando citas",
+    errCreate: "No se pudo crear la cita",
+    errAction: "No se pudo ejecutar la acci\xF3n"
+  }
+};
+
+// ../modules-workspace/modules/appointments/locales/en.json
+var en_default = {
+  name: "Appointments",
+  navigation: {
+    appointments: {
+      label: "Appointments"
+    }
+  },
+  ui: {
+    title: "Appointments",
+    allStatuses: "All statuses",
+    statusAll: "All",
+    statusPending: "Pending",
+    statusConfirmed: "Confirmed",
+    statusInProgress: "In progress",
+    statusCompleted: "Completed",
+    statusCancelled: "Cancelled",
+    statusNoShow: "No-show",
+    colTime: "Time",
+    colNumber: "No.",
+    colCustomer: "Customer",
+    colService: "Service",
+    colStaff: "Staff",
+    colStatus: "Status",
+    actionConfirm: "Confirm",
+    actionStart: "Start",
+    actionComplete: "Complete",
+    actionCancel: "Cancel",
+    actionDelete: "Delete",
+    fieldCustomer: "Customer",
+    fieldPhone: "Phone",
+    fieldService: "Service",
+    fieldMinutes: "Min.",
+    saving: "Saving\u2026",
+    addAppointment: "Add appointment",
+    searchPlaceholder: "Search no., customer or service\u2026",
+    loading: "Loading\u2026",
+    empty: "No appointments for this day.",
+    errLoad: "Error loading appointments",
+    errCreate: "Could not create the appointment",
+    errAction: "Could not perform the action"
+  }
+};
+
+// ../modules-workspace/modules/appointments/ui/components/erp-appointments-list/erp-appointments-list.ts
+var CATALOG = { es: es_default, en: en_default };
+var STATUS_KEYS = {
+  pending: "ui.statusPending",
+  confirmed: "ui.statusConfirmed",
+  in_progress: "ui.statusInProgress",
+  completed: "ui.statusCompleted",
+  cancelled: "ui.statusCancelled",
+  no_show: "ui.statusNoShow"
 };
 function erplora() {
   const c5 = globalThis.erplora;
@@ -2719,25 +2811,8 @@ var ErpAppointmentsList = class extends i3 {
     this.newService = "";
     this.newStart = "";
     this.newDuration = "60";
-    this.columns = [
-      { key: "start_datetime", header: "Hora", format: (r6) => fmtTime(r6.start_datetime) },
-      { key: "appointment_number", header: "N\xBA" },
-      { key: "customer_name", header: "Cliente" },
-      { key: "service_name", header: "Servicio" },
-      { key: "staff_name", header: "Personal", format: (r6) => r6.staff_name || "\u2014" },
-      {
-        key: "status",
-        header: "Estado",
-        format: (r6) => STATUS_LABELS[r6.status] ?? r6.status
-      }
-    ];
-    this.rowActions = [
-      { id: "confirm", label: "Confirmar", icon: "checkmark-circle-outline", color: "success" },
-      { id: "start", label: "Iniciar", icon: "play-circle-outline", color: "primary" },
-      { id: "complete", label: "Completar", icon: "checkmark-done-outline", color: "success" },
-      { id: "cancel", label: "Cancelar", icon: "close-circle-outline", color: "danger" },
-      { id: "delete", label: "Borrar", icon: "trash-outline", color: "danger" }
-    ];
+    // i18n (ADR-0055): re-renderiza al recibir `erplora:locale-changed`.
+    this.onLocaleChange = () => this.requestUpdate();
   }
   static {
     this.styles = i`
@@ -2753,11 +2828,42 @@ var ErpAppointmentsList = class extends i3 {
     .err { color:#d9480f; font-weight:600; }
   `;
   }
+  statusLabel(status) {
+    const key = STATUS_KEYS[status];
+    return key ? erplora().t(CATALOG, key) : status;
+  }
+  // Getters (no campos): se re-evalúan en cada render para seguir el idioma activo.
+  get columns() {
+    const t5 = (k2) => erplora().t(CATALOG, k2);
+    return [
+      { key: "start_datetime", header: t5("ui.colTime"), format: (r6) => fmtTime(r6.start_datetime) },
+      { key: "appointment_number", header: t5("ui.colNumber") },
+      { key: "customer_name", header: t5("ui.colCustomer") },
+      { key: "service_name", header: t5("ui.colService") },
+      { key: "staff_name", header: t5("ui.colStaff"), format: (r6) => r6.staff_name || "\u2014" },
+      {
+        key: "status",
+        header: t5("ui.colStatus"),
+        format: (r6) => this.statusLabel(r6.status)
+      }
+    ];
+  }
+  get rowActions() {
+    const t5 = (k2) => erplora().t(CATALOG, k2);
+    return [
+      { id: "confirm", label: t5("ui.actionConfirm"), icon: "checkmark-circle-outline", color: "success" },
+      { id: "start", label: t5("ui.actionStart"), icon: "play-circle-outline", color: "primary" },
+      { id: "complete", label: t5("ui.actionComplete"), icon: "checkmark-done-outline", color: "success" },
+      { id: "cancel", label: t5("ui.actionCancel"), icon: "close-circle-outline", color: "danger" },
+      { id: "delete", label: t5("ui.actionDelete"), icon: "trash-outline", color: "danger" }
+    ];
+  }
   // TODO-LIT: componentWillLoad → connectedCallback. Recuerda: connectedCallback se dispara
   // en CADA reconexión al DOM (no solo en el primer montaje). Si la init debe correr una
   // sola vez tras el primer render, considera firstUpdated() en su lugar.
   async connectedCallback() {
     super.connectedCallback();
+    window.addEventListener("erplora:locale-changed", this.onLocaleChange);
     await this.refresh();
     try {
       const events = [
@@ -2777,6 +2883,7 @@ var ErpAppointmentsList = class extends i3 {
     }
   }
   disconnectedCallback() {
+    window.removeEventListener("erplora:locale-changed", this.onLocaleChange);
     super.disconnectedCallback();
     this.unsub?.();
   }
@@ -2794,7 +2901,7 @@ var ErpAppointmentsList = class extends i3 {
       });
       this.items = rows ?? [];
     } catch (e5) {
-      this.error = e5 instanceof Error ? e5.message : "Error cargando citas";
+      this.error = e5 instanceof Error ? e5.message : erplora().t(CATALOG, "ui.errLoad");
     } finally {
       this.loading = false;
     }
@@ -2820,7 +2927,7 @@ var ErpAppointmentsList = class extends i3 {
       this.newDuration = "60";
       await this.refresh();
     } catch (e5) {
-      this.error = e5 instanceof Error ? e5.message : "No se pudo crear la cita";
+      this.error = e5 instanceof Error ? e5.message : erplora().t(CATALOG, "ui.errCreate");
     } finally {
       this.saving = false;
     }
@@ -2849,37 +2956,38 @@ var ErpAppointmentsList = class extends i3 {
       }
       await this.refresh();
     } catch (e5) {
-      this.error = e5 instanceof Error ? e5.message : "No se pudo ejecutar la acci\xF3n";
+      this.error = e5 instanceof Error ? e5.message : erplora().t(CATALOG, "ui.errAction");
     }
   }
   render() {
+    const t5 = (k2) => erplora().t(CATALOG, k2);
     return b2`<div>
         <header>
-          <h2>Citas</h2>
+          <h2>${t5("ui.title")}</h2>
         </header>
         <div class="filters">
           <ion-input type="date" .value=${this.day} @ionInput=${(e5) => {
       this.day = e5.target.value;
       this.refresh();
     }}></ion-input>
-          <ion-select placeholder="Todos los estados" .value=${this.statusFilter} @ionChange=${(e5) => {
+          <ion-select placeholder=${t5("ui.allStatuses")} .value=${this.statusFilter} @ionChange=${(e5) => {
       this.statusFilter = e5.target.value;
       this.refresh();
     }}>
-            <ion-select-option value="">Todos</ion-select-option>
-            ${Object.entries(STATUS_LABELS).map(([k2, v3]) => b2`<ion-select-option .value=${k2}>${v3}</ion-select-option>`)}
+            <ion-select-option value="">${t5("ui.statusAll")}</ion-select-option>
+            ${Object.keys(STATUS_KEYS).map((k2) => b2`<ion-select-option .value=${k2}>${this.statusLabel(k2)}</ion-select-option>`)}
           </ion-select>
         </div>
         <form class="form" @submit=${(e5) => this.createAppointment(e5)}>
-          <ion-input placeholder="Cliente" .value=${this.newCustomer} @ionInput=${(e5) => this.newCustomer = e5.target.value}></ion-input>
-          <ion-input placeholder="Teléfono" .value=${this.newPhone} @ionInput=${(e5) => this.newPhone = e5.target.value}></ion-input>
-          <ion-input placeholder="Servicio" .value=${this.newService} @ionInput=${(e5) => this.newService = e5.target.value}></ion-input>
+          <ion-input placeholder=${t5("ui.fieldCustomer")} .value=${this.newCustomer} @ionInput=${(e5) => this.newCustomer = e5.target.value}></ion-input>
+          <ion-input placeholder=${t5("ui.fieldPhone")} .value=${this.newPhone} @ionInput=${(e5) => this.newPhone = e5.target.value}></ion-input>
+          <ion-input placeholder=${t5("ui.fieldService")} .value=${this.newService} @ionInput=${(e5) => this.newService = e5.target.value}></ion-input>
           <ion-input type="datetime-local" .value=${this.newStart} @ionInput=${(e5) => this.newStart = e5.target.value}></ion-input>
-          <ion-input type="number" min="1" placeholder="Min." .value=${this.newDuration} @ionInput=${(e5) => this.newDuration = e5.target.value}></ion-input>
-          <ion-button type="submit" size="small" ?disabled=${this.saving || !this.newCustomer || !this.newStart}>${this.saving ? "Guardando\u2026" : "A\xF1adir cita"}</ion-button>
+          <ion-input type="number" min="1" placeholder=${t5("ui.fieldMinutes")} .value=${this.newDuration} @ionInput=${(e5) => this.newDuration = e5.target.value}></ion-input>
+          <ion-button type="submit" size="small" ?disabled=${this.saving || !this.newCustomer || !this.newStart}>${this.saving ? t5("ui.saving") : t5("ui.addAppointment")}</ion-button>
         </form>
         ${this.error ? b2`<p class="err">${this.error}</p>` : A}
-        <ok-data-table .columns=${this.columns} .rows=${this.items} .searchKeys=${["appointment_number", "customer_name", "service_name", "staff_name"]} .searchPlaceholder=${"Buscar n\xBA, cliente o servicio\u2026"} .actions=${this.rowActions} @rowAction=${(e5) => this.onRowAction(e5)} .emptyMessage=${this.loading ? "Cargando\u2026" : "Sin citas para este d\xEDa."}></ok-data-table>
+        <ok-data-table .columns=${this.columns} .rows=${this.items} .searchKeys=${["appointment_number", "customer_name", "service_name", "staff_name"]} .searchPlaceholder=${t5("ui.searchPlaceholder")} .actions=${this.rowActions} @rowAction=${(e5) => this.onRowAction(e5)} .emptyMessage=${this.loading ? t5("ui.loading") : t5("ui.empty")}></ok-data-table>
       </div>`;
   }
 };

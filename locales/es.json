@@ -4,5 +4,39 @@
     "appointments": {
       "label": "Citas"
     }
+  },
+  "ui": {
+    "title": "Citas",
+    "allStatuses": "Todos los estados",
+    "statusAll": "Todos",
+    "statusPending": "Pendiente",
+    "statusConfirmed": "Confirmada",
+    "statusInProgress": "En curso",
+    "statusCompleted": "Completada",
+    "statusCancelled": "Cancelada",
+    "statusNoShow": "No-show",
+    "colTime": "Hora",
+    "colNumber": "Nº",
+    "colCustomer": "Cliente",
+    "colService": "Servicio",
+    "colStaff": "Personal",
+    "colStatus": "Estado",
+    "actionConfirm": "Confirmar",
+    "actionStart": "Iniciar",
+    "actionComplete": "Completar",
+    "actionCancel": "Cancelar",
+    "actionDelete": "Borrar",
+    "fieldCustomer": "Cliente",
+    "fieldPhone": "Teléfono",
+    "fieldService": "Servicio",
+    "fieldMinutes": "Min.",
+    "saving": "Guardando…",
+    "addAppointment": "Añadir cita",
+    "searchPlaceholder": "Buscar nº, cliente o servicio…",
+    "loading": "Cargando…",
+    "empty": "Sin citas para este día.",
+    "errLoad": "Error cargando citas",
+    "errCreate": "No se pudo crear la cita",
+    "errAction": "No se pudo ejecutar la acción"
   }
 }

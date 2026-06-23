@@ -4,5 +4,39 @@
     "appointments": {
       "label": "Appointments"
     }
+  },
+  "ui": {
+    "title": "Appointments",
+    "allStatuses": "All statuses",
+    "statusAll": "All",
+    "statusPending": "Pending",
+    "statusConfirmed": "Confirmed",
+    "statusInProgress": "In progress",
+    "statusCompleted": "Completed",
+    "statusCancelled": "Cancelled",
+    "statusNoShow": "No-show",
+    "colTime": "Time",
+    "colNumber": "No.",
+    "colCustomer": "Customer",
+    "colService": "Service",
+    "colStaff": "Staff",
+    "colStatus": "Status",
+    "actionConfirm": "Confirm",
+    "actionStart": "Start",
+    "actionComplete": "Complete",
+    "actionCancel": "Cancel",
+    "actionDelete": "Delete",
+    "fieldCustomer": "Customer",
+    "fieldPhone": "Phone",
+    "fieldService": "Service",
+    "fieldMinutes": "Min.",
+    "saving": "Saving…",
+    "addAppointment": "Add appointment",
+    "searchPlaceholder": "Search no., customer or service…",
+    "loading": "Loading…",
+    "empty": "No appointments for this day.",
+    "errLoad": "Error loading appointments",
+    "errCreate": "Could not create the appointment",
+    "errAction": "Could not perform the action"
   }
 }

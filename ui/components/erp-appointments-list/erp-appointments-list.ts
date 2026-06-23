@@ -3,11 +3,19 @@ import { state } from 'lit/decorators.js';
 import { define } from '@erplora/outfitkit/define';
 import '@erplora/outfitkit/ok-data-table';
 import type { DataTableColumn } from '@erplora/outfitkit';
+// i18n (ADR-0055): catálogo `ui` inlineado por esbuild; los textos internos se resuelven
+// con `erplora.t(CATALOG, 'ui.clave')` (idioma activo, fallback locale→en→clave).
+import esLocale from '../../../locales/es.json';
+import enLocale from '../../../locales/en.json';
+const CATALOG: Record<string, unknown> = { es: esLocale, en: enLocale };
 
 interface ErploraClientLike {
   query<T = unknown>(name: string, params?: Record<string, unknown>): Promise<T>;
   command<T = unknown>(name: string, payload?: Record<string, unknown>): Promise<T>;
   on(event: string, cb: (payload: unknown) => void): () => void;
+  /** i18n del módulo (ADR-0055): idioma activo + traducción del catálogo `ui`. */
+  locale: string;
+  t(catalog: Record<string, unknown>, key: string, params?: Record<string, unknown>): string;
 }
 
 interface Appointment {
@@ -23,13 +31,13 @@ interface Appointment {
   status: string;
 }
 
-const STATUS_LABELS: Record<string, string> = {
-  pending: 'Pendiente',
-  confirmed: 'Confirmada',
-  in_progress: 'En curso',
-  completed: 'Completada',
-  cancelled: 'Cancelada',
-  no_show: 'No-show',
+const STATUS_KEYS: Record<string, string> = {
+  pending: 'ui.statusPending',
+  confirmed: 'ui.statusConfirmed',
+  in_progress: 'ui.statusInProgress',
+  completed: 'ui.statusCompleted',
+  cancelled: 'ui.statusCancelled',
+  no_show: 'ui.statusNoShow',
 };
 
 function erplora(): ErploraClientLike {
@@ -92,32 +100,48 @@ export class ErpAppointmentsList extends LitElement {
 
   private unsub?: () => void;
 
-  private columns: DataTableColumn[] = [
-    { key: 'start_datetime', header: 'Hora', format: (r) => fmtTime(r.start_datetime as string) },
-    { key: 'appointment_number', header: 'Nº' },
-    { key: 'customer_name', header: 'Cliente' },
-    { key: 'service_name', header: 'Servicio' },
-    { key: 'staff_name', header: 'Personal', format: (r) => (r.staff_name as string) || '—' },
-    {
-      key: 'status',
-      header: 'Estado',
-      format: (r) => STATUS_LABELS[r.status as string] ?? (r.status as string),
-    },
-  ];
+  // i18n (ADR-0055): re-renderiza al recibir `erplora:locale-changed`.
+  private readonly onLocaleChange = (): void => this.requestUpdate();
 
-  private rowActions = [
-    { id: 'confirm', label: 'Confirmar', icon: 'checkmark-circle-outline', color: 'success' },
-    { id: 'start', label: 'Iniciar', icon: 'play-circle-outline', color: 'primary' },
-    { id: 'complete', label: 'Completar', icon: 'checkmark-done-outline', color: 'success' },
-    { id: 'cancel', label: 'Cancelar', icon: 'close-circle-outline', color: 'danger' },
-    { id: 'delete', label: 'Borrar', icon: 'trash-outline', color: 'danger' },
-  ];
+  private statusLabel(status: string): string {
+    const key = STATUS_KEYS[status];
+    return key ? erplora().t(CATALOG, key) : status;
+  }
+
+  // Getters (no campos): se re-evalúan en cada render para seguir el idioma activo.
+  private get columns(): DataTableColumn[] {
+    const t = (k: string): string => erplora().t(CATALOG, k);
+    return [
+      { key: 'start_datetime', header: t('ui.colTime'), format: (r) => fmtTime(r.start_datetime as string) },
+      { key: 'appointment_number', header: t('ui.colNumber') },
+      { key: 'customer_name', header: t('ui.colCustomer') },
+      { key: 'service_name', header: t('ui.colService') },
+      { key: 'staff_name', header: t('ui.colStaff'), format: (r) => (r.staff_name as string) || '—' },
+      {
+        key: 'status',
+        header: t('ui.colStatus'),
+        format: (r) => this.statusLabel(r.status as string),
+      },
+    ];
+  }
+
+  private get rowActions() {
+    const t = (k: string): string => erplora().t(CATALOG, k);
+    return [
+      { id: 'confirm', label: t('ui.actionConfirm'), icon: 'checkmark-circle-outline', color: 'success' },
+      { id: 'start', label: t('ui.actionStart'), icon: 'play-circle-outline', color: 'primary' },
+      { id: 'complete', label: t('ui.actionComplete'), icon: 'checkmark-done-outline', color: 'success' },
+      { id: 'cancel', label: t('ui.actionCancel'), icon: 'close-circle-outline', color: 'danger' },
+      { id: 'delete', label: t('ui.actionDelete'), icon: 'trash-outline', color: 'danger' },
+    ];
+  }
 
   // TODO-LIT: componentWillLoad → connectedCallback. Recuerda: connectedCallback se dispara
   // en CADA reconexión al DOM (no solo en el primer montaje). Si la init debe correr una
   // sola vez tras el primer render, considera firstUpdated() en su lugar.
   async connectedCallback() {
     super.connectedCallback();
+    window.addEventListener('erplora:locale-changed', this.onLocaleChange);
     await this.refresh();
     try {
       const events = [
@@ -139,6 +163,7 @@ export class ErpAppointmentsList extends LitElement {
   }
 
   disconnectedCallback() {
+    window.removeEventListener('erplora:locale-changed', this.onLocaleChange);
     super.disconnectedCallback();
     this.unsub?.();
   }
@@ -157,7 +182,7 @@ export class ErpAppointmentsList extends LitElement {
       });
       this.items = rows ?? [];
     } catch (e) {
-      this.error = e instanceof Error ? e.message : 'Error cargando citas';
+      this.error = e instanceof Error ? e.message : erplora().t(CATALOG, 'ui.errLoad');
     } finally {
       this.loading = false;
     }
@@ -185,7 +210,7 @@ export class ErpAppointmentsList extends LitElement {
       this.newDuration = '60';
       await this.refresh();
     } catch (e) {
-      this.error = e instanceof Error ? e.message : 'No se pudo crear la cita';
+      this.error = e instanceof Error ? e.message : erplora().t(CATALOG, 'ui.errCreate');
     } finally {
       this.saving = false;
     }
@@ -215,38 +240,39 @@ export class ErpAppointmentsList extends LitElement {
       }
       await this.refresh();
     } catch (e) {
-      this.error = e instanceof Error ? e.message : 'No se pudo ejecutar la acción';
+      this.error = e instanceof Error ? e.message : erplora().t(CATALOG, 'ui.errAction');
     }
   }
 
   render() {
+    const t = (k: string): string => erplora().t(CATALOG, k);
     return html`<div>
         <header>
-          <h2>Citas</h2>
+          <h2>${t('ui.title')}</h2>
         </header>
         <div class="filters">
           <ion-input type="date" .value=${this.day} @ionInput=${(e: any) => {
               this.day = e.target.value;
               this.refresh();
             }}></ion-input>
-          <ion-select placeholder="Todos los estados" .value=${this.statusFilter} @ionChange=${(e: any) => {
+          <ion-select placeholder=${t('ui.allStatuses')} .value=${this.statusFilter} @ionChange=${(e: any) => {
               this.statusFilter = e.target.value;
               this.refresh();
             }}>
-            <ion-select-option value="">Todos</ion-select-option>
-            ${Object.entries(STATUS_LABELS).map(([k, v]) => html`<ion-select-option .value=${k}>${v}</ion-select-option>`)}
+            <ion-select-option value="">${t('ui.statusAll')}</ion-select-option>
+            ${Object.keys(STATUS_KEYS).map((k) => html`<ion-select-option .value=${k}>${this.statusLabel(k)}</ion-select-option>`)}
           </ion-select>
         </div>
         <form class="form" @submit=${(e) => this.createAppointment(e)}>
-          <ion-input placeholder="Cliente" .value=${this.newCustomer} @ionInput=${(e: any) => (this.newCustomer = e.target.value)}></ion-input>
-          <ion-input placeholder="Teléfono" .value=${this.newPhone} @ionInput=${(e: any) => (this.newPhone = e.target.value)}></ion-input>
-          <ion-input placeholder="Servicio" .value=${this.newService} @ionInput=${(e: any) => (this.newService = e.target.value)}></ion-input>
+          <ion-input placeholder=${t('ui.fieldCustomer')} .value=${this.newCustomer} @ionInput=${(e: any) => (this.newCustomer = e.target.value)}></ion-input>
+          <ion-input placeholder=${t('ui.fieldPhone')} .value=${this.newPhone} @ionInput=${(e: any) => (this.newPhone = e.target.value)}></ion-input>
+          <ion-input placeholder=${t('ui.fieldService')} .value=${this.newService} @ionInput=${(e: any) => (this.newService = e.target.value)}></ion-input>
           <ion-input type="datetime-local" .value=${this.newStart} @ionInput=${(e: any) => (this.newStart = e.target.value)}></ion-input>
-          <ion-input type="number" min="1" placeholder="Min." .value=${this.newDuration} @ionInput=${(e: any) => (this.newDuration = e.target.value)}></ion-input>
-          <ion-button type="submit" size="small" ?disabled=${this.saving || !this.newCustomer || !this.newStart}>${this.saving ? 'Guardando…' : 'Añadir cita'}</ion-button>
+          <ion-input type="number" min="1" placeholder=${t('ui.fieldMinutes')} .value=${this.newDuration} @ionInput=${(e: any) => (this.newDuration = e.target.value)}></ion-input>
+          <ion-button type="submit" size="small" ?disabled=${this.saving || !this.newCustomer || !this.newStart}>${this.saving ? t('ui.saving') : t('ui.addAppointment')}</ion-button>
         </form>
         ${this.error ? html`<p class="err">${this.error}</p>` : nothing}
-        <ok-data-table .columns=${this.columns} .rows=${this.items as unknown as Record<string, unknown>[]} .searchKeys=${['appointment_number', 'customer_name', 'service_name', 'staff_name']} .searchPlaceholder=${"Buscar nº, cliente o servicio…"} .actions=${this.rowActions} @rowAction=${(e: CustomEvent) => this.onRowAction(e)} .emptyMessage=${this.loading ? 'Cargando…' : 'Sin citas para este día.'}></ok-data-table>
+        <ok-data-table .columns=${this.columns} .rows=${this.items as unknown as Record<string, unknown>[]} .searchKeys=${['appointment_number', 'customer_name', 'service_name', 'staff_name']} .searchPlaceholder=${t('ui.searchPlaceholder')} .actions=${this.rowActions} @rowAction=${(e: CustomEvent) => this.onRowAction(e)} .emptyMessage=${this.loading ? t('ui.loading') : t('ui.empty')}></ok-data-table>
       </div>`;
   }
 }
