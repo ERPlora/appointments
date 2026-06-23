@@ -1,0 +1,8 @@
+{
+  "name": "Citas",
+  "navigation": {
+    "appointments": {
+      "label": "Citas"
+    }
+  }
+}

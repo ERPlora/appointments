@@ -1,0 +1,8 @@
+{
+  "name": "Appointments",
+  "navigation": {
+    "appointments": {
+      "label": "Appointments"
+    }
+  }
+}
