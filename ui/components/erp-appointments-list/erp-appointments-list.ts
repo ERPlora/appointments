@@ -67,11 +67,10 @@ export class ErpAppointmentsList extends LitElement {
     :host { display:block; font-family: system-ui, sans-serif; color: var(--ink, #1c1b18); }
     header { display:flex; gap:.5rem; align-items:center; margin-bottom:.75rem; }
     h2 { margin:0; font-size:1.15rem; flex:1; }
-    .filters { display:flex; gap:.5rem; align-items:end; margin:.25rem 0 1rem; flex-wrap:wrap; }
-    .form { display:flex; gap:.5rem; flex-wrap:wrap; align-items:end; margin:.5rem 0 1rem; }
+    .filters { display:flex; gap:.75rem; align-items:end; margin:.25rem 0 1rem; flex-wrap:wrap; }
+    .form { display:flex; gap:.75rem; flex-wrap:wrap; align-items:end; margin:.5rem 0 1rem; }
     .form ion-input, .form ion-select, .filters ion-input, .filters ion-select {
-      --background:var(--surface-2,#f7f4ec); border:1px solid var(--line,#e7e2d6);
-      border-radius:8px; min-width:8rem;
+      flex:1 1 11rem; min-width:9rem;
     }
     .err { color:#d9480f; font-weight:600; }
   `;
@@ -251,11 +250,11 @@ export class ErpAppointmentsList extends LitElement {
           <h2>${t('ui.title')}</h2>
         </header>
         <div class="filters">
-          <ion-input type="date" .value=${this.day} @ionInput=${(e: any) => {
+          <ion-input fill="outline" label-placement="floating" label=${t('ui.fieldDate')} type="date" .value=${this.day} @ionInput=${(e: any) => {
               this.day = e.target.value;
               this.refresh();
             }}></ion-input>
-          <ion-select placeholder=${t('ui.allStatuses')} .value=${this.statusFilter} @ionChange=${(e: any) => {
+          <ion-select fill="outline" label-placement="floating" label=${t('ui.colStatus')} placeholder=${t('ui.allStatuses')} .value=${this.statusFilter} @ionChange=${(e: any) => {
               this.statusFilter = e.target.value;
               this.refresh();
             }}>
@@ -264,11 +263,11 @@ export class ErpAppointmentsList extends LitElement {
           </ion-select>
         </div>
         <form class="form" @submit=${(e) => this.createAppointment(e)}>
-          <ion-input placeholder=${t('ui.fieldCustomer')} .value=${this.newCustomer} @ionInput=${(e: any) => (this.newCustomer = e.target.value)}></ion-input>
-          <ion-input placeholder=${t('ui.fieldPhone')} .value=${this.newPhone} @ionInput=${(e: any) => (this.newPhone = e.target.value)}></ion-input>
-          <ion-input placeholder=${t('ui.fieldService')} .value=${this.newService} @ionInput=${(e: any) => (this.newService = e.target.value)}></ion-input>
-          <ion-input type="datetime-local" .value=${this.newStart} @ionInput=${(e: any) => (this.newStart = e.target.value)}></ion-input>
-          <ion-input type="number" min="1" placeholder=${t('ui.fieldMinutes')} .value=${this.newDuration} @ionInput=${(e: any) => (this.newDuration = e.target.value)}></ion-input>
+          <ion-input fill="outline" label-placement="floating" label=${t('ui.colCustomer')} .value=${this.newCustomer} @ionInput=${(e: any) => (this.newCustomer = e.target.value)}></ion-input>
+          <ion-input fill="outline" label-placement="floating" label=${t('ui.fieldPhone')} .value=${this.newPhone} @ionInput=${(e: any) => (this.newPhone = e.target.value)}></ion-input>
+          <ion-input fill="outline" label-placement="floating" label=${t('ui.colService')} .value=${this.newService} @ionInput=${(e: any) => (this.newService = e.target.value)}></ion-input>
+          <ion-input fill="outline" label-placement="floating" label=${t('ui.fieldStart')} type="datetime-local" .value=${this.newStart} @ionInput=${(e: any) => (this.newStart = e.target.value)}></ion-input>
+          <ion-input fill="outline" label-placement="floating" label=${t('ui.fieldMinutes')} type="number" min="1" .value=${this.newDuration} @ionInput=${(e: any) => (this.newDuration = e.target.value)}></ion-input>
           <ion-button type="submit" size="small" ?disabled=${this.saving || !this.newCustomer || !this.newStart}>${this.saving ? t('ui.saving') : t('ui.addAppointment')}</ion-button>
         </form>
         ${this.error ? html`<p class="err">${this.error}</p>` : nothing}
