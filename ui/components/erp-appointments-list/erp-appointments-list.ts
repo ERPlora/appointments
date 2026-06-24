@@ -64,7 +64,7 @@ function fmtTime(iso: string): string {
 
 export class ErpAppointmentsList extends LitElement {
   static styles = css`
-    :host { display:block; font-family: system-ui, sans-serif; color: var(--ink, #1c1b18); }
+    :host { display:block; font-family: system-ui, sans-serif; color: var(--ion-text-color, #1c1b18); }
     header { display:flex; gap:.5rem; align-items:center; margin-bottom:.75rem; }
     h2 { margin:0; font-size:1.15rem; flex:1; }
     .filters { display:flex; gap:.75rem; align-items:end; margin:.25rem 0 1rem; flex-wrap:wrap; }
