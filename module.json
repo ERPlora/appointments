@@ -1,7 +1,7 @@
 {
   "id": "appointments",
   "name": "Appointments",
-  "version": "1.1.7",
+  "version": "1.1.8",
   "agent": {
     "description": "Schedules and manages client appointments: books slots against services and staff, tracks status lifecycle (pending → confirmed → in_progress → completed / cancelled / no_show), manages staff availability and blocked time, and handles recurring appointment templates.",
     "keywords": [
@@ -50,6 +50,12 @@
       "label": "Appointments",
       "icon": "calendar-outline",
       "component": "erp-appointments-list"
+    },
+    {
+      "id": "settings",
+      "label": "Settings",
+      "icon": "settings-outline",
+      "component": "erp-appointments-settings"
     }
   ],
   "ai_context": {
@@ -71,21 +77,24 @@
       "sql": "queries/appointments_list.sql",
       "ai": {
         "description": "Lists scheduled appointments with their status and associated customer and service data."
-      }
+      },
+      "expose_api": true
     },
     "appointments.appointments.get": {
       "permission": "appointments.view_appointment",
       "sql": "queries/appointment_get.sql",
       "ai": {
         "description": "Retrieves the full detail of an appointment by its identifier."
-      }
+      },
+      "expose_api": true
     },
     "appointments.appointments.history": {
       "permission": "appointments.view_appointment",
       "sql": "queries/appointment_history.sql",
       "ai": {
         "description": "Retrieves the status-change history of a specific appointment."
-      }
+      },
+      "expose_api": true
     },
     "appointments.schedules.list": {
       "permission": "appointments.view_schedule",
@@ -122,28 +131,32 @@
       },
       "ai": {
         "description": "Lists the availability schedules configured for staff members."
-      }
+      },
+      "expose_api": true
     },
     "appointments.schedules.timeslots": {
       "permission": "appointments.view_schedule",
       "sql": "queries/schedule_timeslots.sql",
       "ai": {
         "description": "Retrieves the available time slots for a given staff schedule."
-      }
+      },
+      "expose_api": true
     },
     "appointments.availability.slots": {
       "permission": "appointments.view_schedule",
       "sql": "queries/availability_slots.sql",
       "ai": {
         "description": "Returns the free booking slots for a given date (optionally for a specific staff member and duration), crossing schedules, blocked time and existing appointments with the booking-notice settings."
-      }
+      },
+      "expose_api": true
     },
     "appointments.availability.check": {
       "permission": "appointments.view_schedule",
       "sql": "queries/availability_check.sql",
       "ai": {
         "description": "Checks whether a specific date/time slot is available for booking and returns the reason when it is not (too_soon, too_far, outside_schedule, blocked or overlap)."
-      }
+      },
+      "expose_api": true
     },
     "appointments.blocked_times.list": {
       "permission": "appointments.view_schedule",
@@ -191,7 +204,8 @@
       },
       "ai": {
         "description": "Lists blocked time periods (holidays, vacations) for staff members."
-      }
+      },
+      "expose_api": true
     },
     "appointments.recurring.list": {
       "permission": "appointments.view_appointment",
@@ -257,7 +271,8 @@
       },
       "ai": {
         "description": "Lists configured recurring appointment templates."
-      }
+      },
+      "expose_api": true
     },
     "appointments.settings.get": {
       "permission": "appointments.view_appointment",
@@ -281,7 +296,8 @@
       ],
       "ai": {
         "description": "Creates a new appointment for a customer with a specified service and date/time."
-      }
+      },
+      "expose_api": true
     },
     "appointments.appointments.update": {
       "permission": "appointments.change_appointment",
@@ -295,7 +311,8 @@
       ],
       "ai": {
         "description": "Updates an existing appointment's details such as notes, duration, or assigned employee."
-      }
+      },
+      "expose_api": true
     },
     "appointments.appointments.confirm": {
       "permission": "appointments.change_appointment",
@@ -309,7 +326,8 @@
       ],
       "ai": {
         "description": "Confirms a pending appointment, changing its status to confirmed."
-      }
+      },
+      "expose_api": true
     },
     "appointments.appointments.start": {
       "permission": "appointments.change_appointment",
@@ -379,7 +397,8 @@
       ],
       "ai": {
         "description": "Reschedules an appointment to a new date and time."
-      }
+      },
+      "expose_api": true
     },
     "appointments.appointments.delete": {
       "permission": "appointments.delete_appointment",

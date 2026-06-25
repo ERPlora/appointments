@@ -4,7 +4,8 @@
 --   invalid_start | too_soon | too_far | outside_schedule | blocked | overlap | ''
 --
 -- Binds: :start_datetime (ISO 8601, requerido) · :duration_minutes (opcional; default =
--- settings.default_duration) · :staff_id (opcional; ausente = agenda global).
+-- settings.default_duration) · :staff_id (opcional; ausente = agenda global) ·
+-- :exclude_appointment_id (opcional; al REPROGRAMAR, excluye la propia cita del solape).
 -- Runtime inyecta :hub_id y :now. Fechas/horas vía funciones-puente erp_* (ADR-0007 §4a):
 -- erp_dt (datetime comparable), erp_date (parte fecha), erp_dateadd (suma intervalo),
 -- erp_dow_mon0 (día de semana 0=lunes), erp_extract (hora/minuto). Fechas en TEXT ISO-8601.
@@ -73,6 +74,8 @@ checks AS (
                  WHERE a.hub_id = :hub_id AND a.is_deleted = 0
                    AND a.status NOT IN ('cancelled', 'no_show')
                    AND (:staff_id IS NULL OR a.staff_id = :staff_id)
+                   -- al reprogramar, la cita no debe contar como solape consigo misma
+                   AND (:exclude_appointment_id IS NULL OR a.id <> :exclude_appointment_id)
                    AND erp_dt(a.start_datetime) < w.s_end
                    AND erp_dt(a.end_datetime) > w.s_start
              )

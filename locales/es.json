@@ -3,6 +3,9 @@
   "navigation": {
     "appointments": {
       "label": "Citas"
+    },
+    "settings": {
+      "label": "Ajustes"
     }
   },
   "ui": {
@@ -25,11 +28,15 @@
     "actionStart": "Iniciar",
     "actionComplete": "Completar",
     "actionCancel": "Cancelar",
+    "actionReschedule": "Reprogramar",
     "actionDelete": "Borrar",
     "fieldDate": "Día",
     "fieldCustomer": "Cliente",
     "fieldPhone": "Teléfono",
     "fieldService": "Servicio",
+    "fieldServicePlaceholder": "Elige un servicio…",
+    "fieldStaffPlaceholder": "Elige profesional…",
+    "staffAny": "Cualquier profesional",
     "fieldStart": "Inicio",
     "fieldMinutes": "Min.",
     "saving": "Guardando…",
@@ -37,8 +44,30 @@
     "searchPlaceholder": "Buscar nº, cliente o servicio…",
     "loading": "Cargando…",
     "empty": "Sin citas para este día.",
+    "reschedulePrompt": "Nueva fecha y hora (YYYY-MM-DDTHH:MM):",
     "errLoad": "Error cargando citas",
     "errCreate": "No se pudo crear la cita",
-    "errAction": "No se pudo ejecutar la acción"
+    "errAction": "No se pudo ejecutar la acción",
+    "errNoService": "Elige primero un servicio: define la duración de la cita.",
+    "errInvalidDate": "Fecha/hora no válida.",
+    "errOverlap": "Ese horario ya está ocupado para este profesional. Elige otra hora.",
+    "errOutsideSchedule": "Ese horario está fuera del horario de trabajo del profesional.",
+    "errBlocked": "Ese horario está bloqueado (festivo, ausencia o descanso).",
+    "errTooSoon": "Ese horario es demasiado pronto: no respeta la antelación mínima de reserva.",
+    "errTooFar": "Esa fecha supera la antelación máxima de reserva.",
+    "errSlotUnavailable": "La franja no está disponible. Elige otra hora.",
+    "settingsTitle": "Ajustes de la agenda",
+    "settingsSaved": "Ajustes guardados.",
+    "errLoadSettings": "Error cargando los ajustes",
+    "errSaveSettings": "No se pudieron guardar los ajustes",
+    "buttonSave": "Guardar",
+    "labelAllowOverlapping": "Permitir citas solapadas",
+    "hintAllowOverlapping": "Activado: varias citas a la misma hora. Desactivado: solo se puede reservar si la profesional está libre.",
+    "labelDefaultDuration": "Duración por defecto (min)",
+    "labelMinNotice": "Antelación mínima de reserva (min)",
+    "labelMaxAdvance": "Antelación máxima de reserva (días)",
+    "labelCalendarStart": "Hora de inicio del calendario",
+    "labelCalendarEnd": "Hora de fin del calendario",
+    "labelSlotInterval": "Intervalo de franjas (min)"
   }
 }

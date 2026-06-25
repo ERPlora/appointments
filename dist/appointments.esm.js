@@ -9,7 +9,7 @@ var __decorateClass = (decorators, target, key, kind) => {
   return result;
 };
 
-// node_modules/.pnpm/@lit-labs+ssr-dom-shim@1.6.0/node_modules/@lit-labs/ssr-dom-shim/lib/element-internals.js
+// module-toolkit/node_modules/@lit-labs/ssr-dom-shim/lib/element-internals.js
 var ElementInternalsShim = class ElementInternals {
   get shadowRoot() {
     return this.__host.__shadowRoot;
@@ -88,7 +88,7 @@ var ElementInternalsShim = class ElementInternals {
   }
 };
 
-// node_modules/.pnpm/@lit-labs+ssr-dom-shim@1.6.0/node_modules/@lit-labs/ssr-dom-shim/lib/events.js
+// module-toolkit/node_modules/@lit-labs/ssr-dom-shim/lib/events.js
 var __classPrivateFieldSet = function(receiver, state, value, kind, f3) {
   if (kind === "m") throw new TypeError("Private method is not writable");
   if (kind === "a" && !f3) throw new TypeError("Private accessor was defined without a setter");
@@ -246,7 +246,7 @@ Object.defineProperties(CustomEventShim.prototype, {
 var EventShimWithRealType = EventShim;
 var CustomEventShimWithRealType = CustomEventShim;
 
-// node_modules/.pnpm/@lit-labs+ssr-dom-shim@1.6.0/node_modules/@lit-labs/ssr-dom-shim/lib/css.js
+// module-toolkit/node_modules/@lit-labs/ssr-dom-shim/lib/css.js
 var _a2;
 var CSSRuleShim = (_a2 = class CSSRule {
   constructor() {
@@ -277,7 +277,7 @@ var CSSRuleShim = (_a2 = class CSSRule {
   }
 }, _a2.STYLE_RULE = 1, _a2.CHARSET_RULE = 2, _a2.IMPORT_RULE = 3, _a2.MEDIA_RULE = 4, _a2.FONT_FACE_RULE = 5, _a2.PAGE_RULE = 6, _a2.NAMESPACE_RULE = 10, _a2.KEYFRAMES_RULE = 7, _a2.KEYFRAME_RULE = 8, _a2.SUPPORTS_RULE = 12, _a2.COUNTER_STYLE_RULE = 11, _a2.FONT_FEATURE_VALUES_RULE = 14, _a2.MARGIN_RULE = 9, _a2);
 
-// node_modules/.pnpm/@lit-labs+ssr-dom-shim@1.6.0/node_modules/@lit-labs/ssr-dom-shim/index.js
+// module-toolkit/node_modules/@lit-labs/ssr-dom-shim/index.js
 globalThis.Event ??= EventShimWithRealType;
 globalThis.CustomEvent ??= CustomEventShimWithRealType;
 var constructionToken = Symbol();
@@ -674,7 +674,7 @@ var CustomElementRegistryShimWithRealType = CustomElementRegistry;
 var customElements2 = new CustomElementRegistryShimWithRealType();
 var windowShim = new WindowShim(constructionToken);
 
-// node_modules/.pnpm/@lit+reactive-element@2.1.2/node_modules/@lit/reactive-element/node/css-tag.js
+// module-toolkit/node_modules/@lit/reactive-element/node/css-tag.js
 var t = globalThis;
 var e = t.ShadowRoot && (void 0 === t.ShadyCSS || t.ShadyCSS.nativeShadow) && "adoptedStyleSheets" in Document.prototype && "replace" in CSSStyleSheet.prototype;
 var s = Symbol();
@@ -719,7 +719,7 @@ var c = e || void 0 === t.CSSStyleSheet ? (t5) => t5 : (t5) => t5 instanceof CSS
   return r(e5);
 })(t5) : t5;
 
-// node_modules/.pnpm/@lit+reactive-element@2.1.2/node_modules/@lit/reactive-element/node/reactive-element.js
+// module-toolkit/node_modules/@lit/reactive-element/node/reactive-element.js
 var { is: h, defineProperty: r2, getOwnPropertyDescriptor: o2, getOwnPropertyNames: n2, getOwnPropertySymbols: a, getPrototypeOf: c2 } = Object;
 var l = globalThis;
 l.customElements ??= customElements2;
@@ -942,7 +942,7 @@ var g = class extends (globalThis.HTMLElement ?? HTMLElementShimWithRealType) {
 };
 g.elementStyles = [], g.shadowRootOptions = { mode: "open" }, g[f("elementProperties")] = /* @__PURE__ */ new Map(), g[f("finalized")] = /* @__PURE__ */ new Map(), u?.({ ReactiveElement: g }), (l.reactiveElementVersions ??= []).push("2.1.2");
 
-// node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/lit-html.js
+// module-toolkit/node_modules/lit-html/lit-html.js
 var t2 = globalThis;
 var i2 = (t5) => t5;
 var s2 = t2.trustedTypes;
@@ -1197,7 +1197,7 @@ var D = (t5, i7, s5) => {
   return h4._$AI(t5), h4;
 };
 
-// node_modules/.pnpm/lit-element@4.2.2/node_modules/lit-element/lit-element.js
+// module-toolkit/node_modules/lit-element/lit-element.js
 var s3 = globalThis;
 var i3 = class extends g {
   constructor() {
@@ -1226,7 +1226,7 @@ var o4 = s3.litElementPolyfillSupport;
 o4?.({ LitElement: i3 });
 (s3.litElementVersions ??= []).push("4.2.2");
 
-// node_modules/.pnpm/@lit+reactive-element@2.1.2/node_modules/@lit/reactive-element/node/decorators/property.js
+// module-toolkit/node_modules/@lit/reactive-element/node/decorators/property.js
 var o5 = { attribute: true, type: String, converter: b, reflect: false, hasChanged: m };
 var r4 = (t5 = o5, e5, r6) => {
   const { kind: n6, metadata: i7 } = r6;
@@ -1256,19 +1256,19 @@ function n4(t5) {
   })(t5, e5, o7);
 }
 
-// node_modules/.pnpm/@lit+reactive-element@2.1.2/node_modules/@lit/reactive-element/node/decorators/state.js
+// module-toolkit/node_modules/@lit/reactive-element/node/decorators/state.js
 function r5(r6) {
   return n4({ ...r6, state: true, attribute: false });
 }
 
-// node_modules/.pnpm/@outfitkit+core@file+..+outfitkit/node_modules/@outfitkit/core/dist/define.js
+// outfitkit/dist/define.js
 function define(tag, ctor) {
   if (typeof customElements !== "undefined" && !customElements.get(tag)) {
     customElements.define(tag, ctor);
   }
 }
 
-// node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directive.js
+// module-toolkit/node_modules/lit-html/directive.js
 var t3 = { ATTRIBUTE: 1, CHILD: 2, PROPERTY: 3, BOOLEAN_ATTRIBUTE: 4, EVENT: 5, ELEMENT: 6 };
 var e4 = (t5) => (...e5) => ({ _$litDirective$: t5, values: e5 });
 var i4 = class {
@@ -1288,7 +1288,7 @@ var i4 = class {
   }
 };
 
-// node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directive-helpers.js
+// module-toolkit/node_modules/lit-html/directive-helpers.js
 var { I: t4 } = j;
 var i5 = (o7) => o7;
 var s4 = () => document.createComment("");
@@ -1321,7 +1321,7 @@ var h3 = (o7) => {
   o7._$AR(), o7._$AA.remove();
 };
 
-// node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directives/repeat.js
+// module-toolkit/node_modules/lit-html/directives/repeat.js
 var u4 = (e5, s5, t5) => {
   const r6 = /* @__PURE__ */ new Map();
   for (let l3 = s5; l3 <= t5; l3++) r6.set(e5[l3], l3);
@@ -1374,7 +1374,7 @@ var c4 = e4(class extends i4 {
   }
 });
 
-// node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directives/style-map.js
+// module-toolkit/node_modules/lit-html/directives/style-map.js
 var n5 = "important";
 var i6 = " !" + n5;
 var o6 = e4(class extends i4 {
@@ -1403,7 +1403,7 @@ var o6 = e4(class extends i4 {
   }
 });
 
-// node_modules/.pnpm/@outfitkit+core@file+..+outfitkit/node_modules/@outfitkit/core/dist/ok-data-table.js
+// outfitkit/dist/ok-data-table.js
 var __defProp2 = Object.defineProperty;
 var __decorateClass2 = (decorators, target, key, kind) => {
   var result = void 0;
@@ -1550,13 +1550,7 @@ var OkDataTable = class extends i3 {
     .fblock { display: flex; flex-direction: column; gap: 0.45rem; }
     .flabel { font-size: 13px; font-weight: 500; color: var(--color); }
     .frange { display: flex; gap: 0.5rem; }
-    /* Filtros cliente: chips multi-select (estilo Hub) + rango de fechas. */
-    .chips { display: flex; flex-wrap: wrap; gap: 0.4rem; }
-    .chip { display: inline-flex; align-items: center; gap: 0.25rem; padding: 0.25rem 0.6rem; border: 1px solid var(--border-color); border-radius: 999px; background: var(--background); color: var(--color-muted); font-size: 12px; cursor: pointer; transition: color 0.12s, background 0.12s, border-color 0.12s; }
-    .chip:hover { color: var(--color); }
-    .chip.on { border-color: var(--primary); color: var(--primary); background: color-mix(in srgb, var(--primary) 15%, transparent); }
-    .chip ion-icon { font-size: 12px; }
-    .chip-empty { font-size: 12px; color: var(--color-muted); }
+    /* Filtros cliente: multi-select con ion-select (ventana flotante de Ionic) + rango de fechas. */
     .daterange { display: flex; gap: 0.6rem; }
     .daterange ion-input { flex: 1; }
     /* Pie del drawer de filtros: Limpiar / Aplicar. */
@@ -1568,6 +1562,10 @@ var OkDataTable = class extends i3 {
     :host([fill]) .card { flex: 1 1 auto; min-height: 0; }
     :host([fill]) .bar, :host([fill]) .panel, :host([fill]) .pager { flex: 0 0 auto; }
     :host([fill]) .scroll, :host([fill]) .cards-grid { flex: 1 1 auto; min-height: 0; overflow: auto; }
+    /* Sin filas, renderTable/renderCards devuelven SOLO el bloque .empty (sin .scroll). En modo
+       fill hay que estirarlo para que ocupe el hueco entre toolbar y pager y centre su contenido
+       (icono + mensaje) en vertical; si no, queda pegado arriba con el pager a media altura. */
+    :host([fill]) .empty { flex: 1 1 auto; min-height: 0; }
 
     /* ── Topbar / cabecera (relieve) ─────────────────────────────────────────────────────── */
     .bar { display: flex; flex-direction: column; gap: 0.6rem; padding: 0.65rem 1rem; border-bottom: 1px solid var(--border-color); background: var(--header-background); }
@@ -1672,27 +1670,35 @@ var OkDataTable = class extends i3 {
     .range { display: flex; gap: 0.25rem; }
 
     /* ── Vista tarjetas ──────────────────────────────────────────────────────────────────── */
-    .cards-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 0.75rem; padding: 1rem; }
-    /* Flat: sin borde ni elevación — las tarjetas se delimitan por la superficie (no por sombra). */
-    .rcard { display: flex; flex-direction: column; border: 0; border-radius: 12px; overflow: hidden; background: var(--header-background); box-shadow: none; transition: background-color var(--ok-transition, 150ms ease), color var(--ok-transition, 150ms ease), box-shadow var(--ok-transition, 150ms ease), transform 120ms ease; }
-    @media (hover: hover) {
-      .rcard:hover { background: var(--row-hover); }
-    }
-    .rcard:active { transform: scale(0.995); }
+    /* Cada tarjeta mide SU contenido (no se estira al alto de la fila ni del contenedor):
+       - grid-auto-rows: max-content → cada fila implícita = alto de su contenido. CLAVE: sin esto,
+         en modo fill (grid de alto fijo + align-content:start) cuando las tarjetas no caben el
+         navegador encoge los tracks de fila y las tarjetas se solapan.
+       - align-content: start → empaqueta las filas arriba (no reparte el hueco sobrante estirando).
+       - align-items: start → en una fila multi-columna cada tarjeta mide su propio contenido.
+       En modo fill el grid es flex-child con overflow:auto → cuando las tarjetas no caben aparece el
+       scroll DENTRO de la tabla (no crece hacia fuera). */
+    .cards-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 0.75rem; padding: 1rem; grid-auto-rows: max-content; align-content: start; align-items: start; }
+    /* Tarjeta = ion-card NATIVO de Ionic: su fondo, radio, elevación y padding son los de Ionic y NO
+       se sobrescriben. Aquí solo se ajusta lo que el contexto de rejilla exige (margin) y los huecos
+       que Ionic no trae (cabecera en fila, filas clave-valor, barra de acciones, resalte de selección). */
+    ion-card.rcard { margin: 0; } /* la rejilla aporta el gap → sin esto el margin por defecto de ion-card lo duplica */
+    ion-card.rcard.selected { outline: 2px solid var(--primary); outline-offset: -2px; }
     @media (prefers-reduced-motion: reduce) {
       .gh.sortable:hover, .gh.sortable:active,
-      .grow-data:hover, .grow-data:active,
-      .rcard:hover, .rcard:active { transform: none; }
+      .grow-data:hover, .grow-data:active { transform: none; }
     }
-    .rcard.selected { background: color-mix(in srgb, var(--primary) 12%, var(--header-background)); }
-    .rcard-head { display: flex; align-items: center; gap: 0.5rem; padding: 0.55rem 0.75rem; border-bottom: 1px solid var(--border-color); background: var(--header-background); }
+    /* Cabecera: ion-card-header en fila (icono + título + checkbox); se conserva su padding Ionic. */
+    ion-card-header.rcard-head { display: flex; align-items: center; gap: 0.5rem; }
     .rcard-head .rc-icon { display: inline-flex; color: var(--primary); }
     .rcard-head .rc-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
-    .rcard-body { flex: 1; padding: 0.6rem 0.85rem; display: flex; flex-direction: column; gap: 0.4rem; }
+    /* Cuerpo: ion-card-content (padding Ionic por defecto) con las filas clave-valor apiladas. */
+    ion-card-content.rcard-body { display: flex; flex-direction: column; gap: 0.4rem; }
     .rrow { display: flex; justify-content: space-between; gap: 0.5rem; font-size: 13px; }
     .rrow .rk { color: var(--color-muted); }
-    .rrow .rv { font-weight: 500; text-align: right; }
-    .ractions { display: flex; justify-content: flex-end; gap: 0.25rem; padding: 0.25rem 0.5rem; border-top: 1px solid var(--border-color-soft); background: var(--header-background); }
+    .rrow .rv { font-weight: 500; text-align: right; color: var(--color); }
+    /* Barra de acciones (Ionic no trae "card actions"): pie alineado a la derecha, fondo transparente. */
+    .ractions { display: flex; justify-content: flex-end; gap: 0.25rem; padding: 0 0.5rem 0.5rem; }
 
     /* ── Estado vacío ────────────────────────────────────────────────────────────────────── */
     .empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.75rem; padding: 3.5rem 1rem; text-align: center; color: var(--color-muted); }
@@ -1866,12 +1872,12 @@ var OkDataTable = class extends i3 {
     }
     return out;
   }
-  toggleFilterValue(key, value) {
+  // Fija el conjunto de valores seleccionados de una columna (multi-select del drawer = ion-select).
+  setFilterValues(key, values) {
     const next = this.cloneFilters(this.filterDraft);
-    const values = new Set(next[key]?.values ?? []);
-    if (values.has(value)) values.delete(value);
-    else values.add(value);
-    next[key] = { ...next[key], values };
+    const clean = (values ?? []).filter((v3) => v3 != null && v3 !== "");
+    if (clean.length) next[key] = { ...next[key], values: new Set(clean) };
+    else next[key] = { ...next[key], values: void 0 };
     this.filterDraft = next;
   }
   setFilterRange(key, edge, value) {
@@ -2066,6 +2072,13 @@ var OkDataTable = class extends i3 {
     this.menuEv = ev;
     this.menuOpen = true;
   }
+  // Aplica la vista inicial declarada (`default-view`) una sola vez, tras el primer render. Es la
+  // forma robusta de arrancar en tarjetas sin depender de fijar `viewMode` por referencia (que
+  // falla si la tabla monta detrás de un `v-if`/loading y el ref aún es null).
+  firstUpdated() {
+    if (this.defaultView === "cards" && this.cardViewEnabled) this.viewMode = "cards";
+    else if (this.defaultView === "table") this.viewMode = "table";
+  }
   setViewMode(mode) {
     if (this.viewMode === mode) return;
     this.viewMode = mode;
@@ -2082,13 +2095,14 @@ var OkDataTable = class extends i3 {
         <ion-select
           label=${col.header}
           label-placement="stacked"
+          fill="outline"
           ?multiple=${multi}
           interface="modal"
           .interfaceOptions=${{ cssClass: "ok-overlay" }}
-          placeholder=${col.header}
+          placeholder=${this.t.select}
           @ionChange=${(e5) => this.onFilterSelect(col, e5.detail.value, multi)}
         >
-          ${multi ? A : b2`<ion-select-option value="">${col.header}</ion-select-option>`}
+          ${multi ? A : b2`<ion-select-option value="">${this.t.select}</ion-select-option>`}
           ${opts.map((o7) => b2`<ion-select-option value=${o7.value}>${o7.label}</ion-select-option>`)}
         </ion-select>
       `;
@@ -2420,21 +2434,23 @@ var OkDataTable = class extends i3 {
         </div>
       `;
     }
-    const distinct = this.distinctValues(col);
-    const selected = this.filterDraft[col.key]?.values ?? /* @__PURE__ */ new Set();
+    const opts = col.options ?? this.distinctValues(col).map((v3) => ({ value: v3, label: v3 }));
+    const selected = [...this.filterDraft[col.key]?.values ?? /* @__PURE__ */ new Set()];
     return b2`
       <div class="fblock">
-        <span class="flabel">${label}</span>
-        <div class="chips">
-          ${distinct.length === 0 ? b2`<span class="chip-empty">${this.t.noValues}</span>` : distinct.map((v3) => {
-      const on = selected.has(v3);
-      return b2`
-                  <button class=${`chip${on ? " on" : ""}`} @click=${() => this.toggleFilterValue(col.key, v3)}>
-                    ${on ? b2`<ion-icon name="checkmark-outline"></ion-icon>` : A}${v3}
-                  </button>
-                `;
-    })}
-        </div>
+        <ion-select
+          label=${label}
+          label-placement="stacked"
+          fill="outline"
+          multiple
+          interface="modal"
+          .interfaceOptions=${{ cssClass: "ok-overlay" }}
+          placeholder=${this.t.select}
+          .value=${selected}
+          @ionChange=${(e5) => this.setFilterValues(col.key, e5.detail.value ?? [])}
+        >
+          ${opts.length === 0 ? b2`<ion-select-option .disabled=${true} value="">${this.t.noValues}</ion-select-option>` : opts.map((o7) => b2`<ion-select-option value=${o7.value}>${o7.label}</ion-select-option>`)}
+        </ion-select>
       </div>
     `;
   }
@@ -2513,21 +2529,21 @@ var OkDataTable = class extends i3 {
         const selected = this.selectable && this.selection.has(key);
         const icon = this.cardIcon?.(row);
         return b2`
-              <div class=${`rcard${selected ? " selected" : ""}`}>
+              <ion-card class=${`rcard${selected ? " selected" : ""}`}>
                 ${hasHead ? b2`
-                      <header class="rcard-head">
+                      <ion-card-header class="rcard-head">
                         ${icon != null && icon !== "" ? b2`<span class="rc-icon">${typeof icon === "string" ? b2`<ion-icon name=${icon}></ion-icon>` : icon}</span>` : A}
                         <span class="rc-title">${this.cardTitle ? this.cardTitle(row) : A}</span>
                         ${this.selectable ? b2`<ion-checkbox .checked=${selected} aria-label=${this.t.select} @ionChange=${() => this.toggleRow(key)}></ion-checkbox>` : A}
-                      </header>
+                      </ion-card-header>
                     ` : A}
-                <div class="rcard-body">
+                <ion-card-content class="rcard-body">
                   ${this.renderCard ? this.renderCard(row) : this.visibleColumns.map(
           (c5) => b2`<div class="rrow"><span class="rk">${c5.header}</span><span class="rv">${c5.render ? c5.render(row) : this.cell(c5, row)}</span></div>`
         )}
-                </div>
+                </ion-card-content>
                 ${this.actions.length ? b2`<div class="ractions">${this.actionButtons(row)}</div>` : A}
-              </div>
+              </ion-card>
             `;
       }
     )}
@@ -2608,6 +2624,9 @@ __decorateClass2([
   n4({ attribute: false })
 ], OkDataTable.prototype, "views");
 __decorateClass2([
+  n4({ attribute: "default-view" })
+], OkDataTable.prototype, "defaultView");
+__decorateClass2([
   n4({ type: Boolean })
 ], OkDataTable.prototype, "exportable");
 __decorateClass2([
@@ -2681,12 +2700,15 @@ __decorateClass2([
 ], OkDataTable.prototype, "menuOpen");
 define("ok-data-table", OkDataTable);
 
-// modules/appointments/locales/es.json
+// modules-workspace/modules/appointments/locales/es.json
 var es_default = {
   name: "Citas",
   navigation: {
     appointments: {
       label: "Citas"
+    },
+    settings: {
+      label: "Ajustes"
     }
   },
   ui: {
@@ -2709,11 +2731,15 @@ var es_default = {
     actionStart: "Iniciar",
     actionComplete: "Completar",
     actionCancel: "Cancelar",
+    actionReschedule: "Reprogramar",
     actionDelete: "Borrar",
     fieldDate: "D\xEDa",
     fieldCustomer: "Cliente",
     fieldPhone: "Tel\xE9fono",
     fieldService: "Servicio",
+    fieldServicePlaceholder: "Elige un servicio\u2026",
+    fieldStaffPlaceholder: "Elige profesional\u2026",
+    staffAny: "Cualquier profesional",
     fieldStart: "Inicio",
     fieldMinutes: "Min.",
     saving: "Guardando\u2026",
@@ -2721,18 +2747,43 @@ var es_default = {
     searchPlaceholder: "Buscar n\xBA, cliente o servicio\u2026",
     loading: "Cargando\u2026",
     empty: "Sin citas para este d\xEDa.",
+    reschedulePrompt: "Nueva fecha y hora (YYYY-MM-DDTHH:MM):",
     errLoad: "Error cargando citas",
     errCreate: "No se pudo crear la cita",
-    errAction: "No se pudo ejecutar la acci\xF3n"
+    errAction: "No se pudo ejecutar la acci\xF3n",
+    errNoService: "Elige primero un servicio: define la duraci\xF3n de la cita.",
+    errInvalidDate: "Fecha/hora no v\xE1lida.",
+    errOverlap: "Ese horario ya est\xE1 ocupado para este profesional. Elige otra hora.",
+    errOutsideSchedule: "Ese horario est\xE1 fuera del horario de trabajo del profesional.",
+    errBlocked: "Ese horario est\xE1 bloqueado (festivo, ausencia o descanso).",
+    errTooSoon: "Ese horario es demasiado pronto: no respeta la antelaci\xF3n m\xEDnima de reserva.",
+    errTooFar: "Esa fecha supera la antelaci\xF3n m\xE1xima de reserva.",
+    errSlotUnavailable: "La franja no est\xE1 disponible. Elige otra hora.",
+    settingsTitle: "Ajustes de la agenda",
+    settingsSaved: "Ajustes guardados.",
+    errLoadSettings: "Error cargando los ajustes",
+    errSaveSettings: "No se pudieron guardar los ajustes",
+    buttonSave: "Guardar",
+    labelAllowOverlapping: "Permitir citas solapadas",
+    hintAllowOverlapping: "Activado: varias citas a la misma hora. Desactivado: solo se puede reservar si la profesional est\xE1 libre.",
+    labelDefaultDuration: "Duraci\xF3n por defecto (min)",
+    labelMinNotice: "Antelaci\xF3n m\xEDnima de reserva (min)",
+    labelMaxAdvance: "Antelaci\xF3n m\xE1xima de reserva (d\xEDas)",
+    labelCalendarStart: "Hora de inicio del calendario",
+    labelCalendarEnd: "Hora de fin del calendario",
+    labelSlotInterval: "Intervalo de franjas (min)"
   }
 };
 
-// modules/appointments/locales/en.json
+// modules-workspace/modules/appointments/locales/en.json
 var en_default = {
   name: "Appointments",
   navigation: {
     appointments: {
       label: "Appointments"
+    },
+    settings: {
+      label: "Settings"
     }
   },
   ui: {
@@ -2755,11 +2806,15 @@ var en_default = {
     actionStart: "Start",
     actionComplete: "Complete",
     actionCancel: "Cancel",
+    actionReschedule: "Reschedule",
     actionDelete: "Delete",
     fieldDate: "Day",
     fieldCustomer: "Customer",
     fieldPhone: "Phone",
     fieldService: "Service",
+    fieldServicePlaceholder: "Select a service\u2026",
+    fieldStaffPlaceholder: "Select staff\u2026",
+    staffAny: "Any staff",
     fieldStart: "Start",
     fieldMinutes: "Min.",
     saving: "Saving\u2026",
@@ -2767,13 +2822,35 @@ var en_default = {
     searchPlaceholder: "Search no., customer or service\u2026",
     loading: "Loading\u2026",
     empty: "No appointments for this day.",
+    reschedulePrompt: "New date and time (YYYY-MM-DDTHH:MM):",
     errLoad: "Error loading appointments",
     errCreate: "Could not create the appointment",
-    errAction: "Could not perform the action"
+    errAction: "Could not perform the action",
+    errNoService: "Select a service first: it sets the appointment duration.",
+    errInvalidDate: "Invalid date/time.",
+    errOverlap: "That time slot is already booked for this staff member. Pick another time.",
+    errOutsideSchedule: "That time is outside the staff member's working hours.",
+    errBlocked: "That time is blocked (holiday, time off or break).",
+    errTooSoon: "That time is too soon \u2014 it does not meet the minimum booking notice.",
+    errTooFar: "That date is too far ahead of the maximum advance booking.",
+    errSlotUnavailable: "That slot is not available. Pick another time.",
+    settingsTitle: "Appointment settings",
+    settingsSaved: "Settings saved.",
+    errLoadSettings: "Error loading settings",
+    errSaveSettings: "Could not save the settings",
+    buttonSave: "Save",
+    labelAllowOverlapping: "Allow overlapping appointments",
+    hintAllowOverlapping: "On: several appointments at the same time. Off: a slot is only bookable if the staff member is free.",
+    labelDefaultDuration: "Default duration (min)",
+    labelMinNotice: "Minimum booking notice (min)",
+    labelMaxAdvance: "Maximum advance booking (days)",
+    labelCalendarStart: "Calendar start hour",
+    labelCalendarEnd: "Calendar end hour",
+    labelSlotInterval: "Slot interval (min)"
   }
 };
 
-// modules/appointments/ui/components/erp-appointments-list/erp-appointments-list.ts
+// modules-workspace/modules/appointments/ui/components/erp-appointments-list/erp-appointments-list.ts
 var CATALOG = { es: es_default, en: en_default };
 var STATUS_KEYS = {
   pending: "ui.statusPending",
@@ -2801,6 +2878,22 @@ function fmtTime(iso) {
   const d3 = new Date(iso);
   return Number.isNaN(d3.getTime()) ? iso : d3.toISOString().slice(11, 16);
 }
+function reasonKey(reason) {
+  switch (reason) {
+    case "overlap":
+      return "ui.errOverlap";
+    case "outside_schedule":
+      return "ui.errOutsideSchedule";
+    case "blocked":
+      return "ui.errBlocked";
+    case "too_soon":
+      return "ui.errTooSoon";
+    case "too_far":
+      return "ui.errTooFar";
+    default:
+      return "ui.errSlotUnavailable";
+  }
+}
 var ErpAppointmentsList = class extends i3 {
   constructor() {
     super(...arguments);
@@ -2810,17 +2903,19 @@ var ErpAppointmentsList = class extends i3 {
     this.saving = false;
     this.day = todayISO();
     this.statusFilter = "";
+    this.services = [];
+    this.staff = [];
     this.newCustomer = "";
     this.newPhone = "";
-    this.newService = "";
+    this.newServiceId = "";
+    this.newStaffId = "";
     this.newStart = "";
-    this.newDuration = "60";
     // i18n (ADR-0055): re-renderiza al recibir `erplora:locale-changed`.
     this.onLocaleChange = () => this.requestUpdate();
   }
   static {
     this.styles = i`
-    :host { display:block; font-family: system-ui, sans-serif; color: var(--ink, #1c1b18); }
+    :host { display:block; font-family: system-ui, sans-serif; color: var(--ion-text-color, #1c1b18); }
     header { display:flex; gap:.5rem; align-items:center; margin-bottom:.75rem; }
     h2 { margin:0; font-size:1.15rem; flex:1; }
     .filters { display:flex; gap:.75rem; align-items:end; margin:.25rem 0 1rem; flex-wrap:wrap; }
@@ -2834,6 +2929,11 @@ var ErpAppointmentsList = class extends i3 {
   statusLabel(status) {
     const key = STATUS_KEYS[status];
     return key ? erplora().t(CATALOG, key) : status;
+  }
+  /** Duración (min) del servicio seleccionado; sin servicio no hay ventana → no se crea. */
+  get selectedDuration() {
+    const svc = this.services.find((s5) => s5.id === this.newServiceId);
+    return svc ? Number(svc.duration_minutes) || 0 : 0;
   }
   // Getters (no campos): se re-evalúan en cada render para seguir el idioma activo.
   get columns() {
@@ -2867,7 +2967,7 @@ var ErpAppointmentsList = class extends i3 {
   async connectedCallback() {
     super.connectedCallback();
     window.addEventListener("erplora:locale-changed", this.onLocaleChange);
-    await this.refresh();
+    await Promise.all([this.refresh(), this.loadCatalogs()]);
     try {
       const events = [
         "appointments.appointment.created",
@@ -2890,6 +2990,22 @@ var ErpAppointmentsList = class extends i3 {
     super.disconnectedCallback();
     this.unsub?.();
   }
+  /** Carga servicios y staff (contratos públicos cross-módulo). Degrada sin romper si el
+   *  módulo no está instalado/no hay permiso: el formulario sigue funcionando con lo que haya. */
+  async loadCatalogs() {
+    try {
+      const svc = await erplora().query("services.services.list", { limit: 200 });
+      this.services = Array.isArray(svc) ? svc : [];
+    } catch {
+      this.services = [];
+    }
+    try {
+      const st = await erplora().query("staff.members.list", { is_bookable: 1, limit: 200 });
+      this.staff = Array.isArray(st) ? st : [];
+    } catch {
+      this.staff = [];
+    }
+  }
   async refresh() {
     this.loading = true;
     this.error = "";
@@ -2909,25 +3025,63 @@ var ErpAppointmentsList = class extends i3 {
       this.loading = false;
     }
   }
+  /** Motor de disponibilidad autoritativo (req. #3): pregunta a `appointments.availability.check`
+   *  POR `staff_id` antes de materializar create/reschedule. Devuelve la clave i18n del error si
+   *  la franja no está libre, o `null` si está disponible. El `staff_id` solo se pasa si hay
+   *  profesional elegida (sin ella → comprobación global). */
+  async availabilityError(startIso, duration, staffId, excludeAppointmentId) {
+    const p4 = { start_datetime: startIso, duration_minutes: duration };
+    if (staffId) p4.staff_id = staffId;
+    if (excludeAppointmentId) p4.exclude_appointment_id = excludeAppointmentId;
+    try {
+      const check = await erplora().query(
+        "appointments.availability.check",
+        p4
+      );
+      const slot = Array.isArray(check) ? check[0] : void 0;
+      if (slot && Number(slot.available) === 0) {
+        return reasonKey(slot.reason);
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }
   async createAppointment(ev) {
     ev.preventDefault();
-    if (!this.newCustomer.trim() || !this.newStart) return;
+    if (!this.newCustomer.trim() || !this.newServiceId || !this.newStart) return;
+    const duration = this.selectedDuration;
+    if (duration < 1) {
+      this.error = erplora().t(CATALOG, "ui.errNoService");
+      return;
+    }
     this.saving = true;
     this.error = "";
     try {
       const startIso = new Date(this.newStart).toISOString();
+      const errKey = await this.availabilityError(startIso, duration, this.newStaffId);
+      if (errKey) {
+        this.error = erplora().t(CATALOG, errKey);
+        this.saving = false;
+        return;
+      }
+      const svc = this.services.find((s5) => s5.id === this.newServiceId);
+      const staff = this.staff.find((s5) => s5.id === this.newStaffId);
       await erplora().command("appointments.appointments.create", {
         customer_name: this.newCustomer.trim(),
         customer_phone: this.newPhone.trim(),
-        service_name: this.newService.trim(),
+        service_id: this.newServiceId,
+        service_name: svc?.name ?? "",
+        staff_id: this.newStaffId || null,
+        staff_name: staff?.full_name ?? "",
         start_datetime: startIso,
-        duration_minutes: Number(this.newDuration) || 60
+        duration_minutes: duration
       });
       this.newCustomer = "";
       this.newPhone = "";
-      this.newService = "";
+      this.newServiceId = "";
+      this.newStaffId = "";
       this.newStart = "";
-      this.newDuration = "60";
       await this.refresh();
     } catch (e5) {
       this.error = e5 instanceof Error ? e5.message : erplora().t(CATALOG, "ui.errCreate");
@@ -2953,6 +3107,9 @@ var ErpAppointmentsList = class extends i3 {
         case "cancel":
           await erplora().command("appointments.appointments.cancel", { appointment_id: id, reason: "" });
           break;
+        case "reschedule":
+          await this.reschedule(row);
+          break;
         case "delete":
           await erplora().command("appointments.appointments.delete", { appointment_id: id });
           break;
@@ -2962,8 +3119,42 @@ var ErpAppointmentsList = class extends i3 {
       this.error = e5 instanceof Error ? e5.message : erplora().t(CATALOG, "ui.errAction");
     }
   }
+  /** Reprograma una cita a nueva fecha/hora, consultando el motor de disponibilidad POR el
+   *  `staff_id` de la cita (req. #2/#3) y excluyendo la propia cita del chequeo de solape. */
+  async reschedule(appt) {
+    const t5 = (k2) => erplora().t(CATALOG, k2);
+    const current = appt.start_datetime ? new Date(appt.start_datetime) : /* @__PURE__ */ new Date();
+    const suggestion = Number.isNaN(current.getTime()) ? "" : current.toISOString().slice(0, 16);
+    const answer = window.prompt(t5("ui.reschedulePrompt"), suggestion);
+    if (!answer) return;
+    const parsed = new Date(answer);
+    if (Number.isNaN(parsed.getTime())) {
+      this.error = t5("ui.errInvalidDate");
+      return;
+    }
+    const startIso = parsed.toISOString();
+    const duration = Number(appt.duration_minutes) || 0;
+    const errKey = await this.availabilityError(startIso, duration, appt.staff_id ?? "", appt.id);
+    if (errKey) {
+      this.error = t5(errKey);
+      return;
+    }
+    const endIso = new Date(parsed.getTime() + duration * 60 * 1e3).toISOString();
+    await erplora().command("appointments.appointments.reschedule", {
+      appointment_id: appt.id,
+      start_datetime: startIso,
+      end_datetime: endIso,
+      duration_minutes: duration
+    });
+  }
   render() {
     const t5 = (k2) => erplora().t(CATALOG, k2);
+    const canCreate = !!this.newCustomer && !!this.newServiceId && !!this.newStart;
+    const rowActions = [
+      ...this.rowActions.slice(0, 4),
+      { id: "reschedule", label: t5("ui.actionReschedule"), icon: "calendar-outline", color: "primary" },
+      this.rowActions[4]
+    ];
     return b2`<div>
         <header>
           <h2>${t5("ui.title")}</h2>
@@ -2984,13 +3175,18 @@ var ErpAppointmentsList = class extends i3 {
         <form class="form" @submit=${(e5) => this.createAppointment(e5)}>
           <ion-input fill="outline" label-placement="floating" label=${t5("ui.colCustomer")} .value=${this.newCustomer} @ionInput=${(e5) => this.newCustomer = e5.target.value}></ion-input>
           <ion-input fill="outline" label-placement="floating" label=${t5("ui.fieldPhone")} .value=${this.newPhone} @ionInput=${(e5) => this.newPhone = e5.target.value}></ion-input>
-          <ion-input fill="outline" label-placement="floating" label=${t5("ui.colService")} .value=${this.newService} @ionInput=${(e5) => this.newService = e5.target.value}></ion-input>
+          <ion-select fill="outline" label-placement="floating" label=${t5("ui.colService")} placeholder=${t5("ui.fieldServicePlaceholder")} .value=${this.newServiceId} @ionChange=${(e5) => this.newServiceId = e5.target.value}>
+            ${this.services.map((s5) => b2`<ion-select-option .value=${s5.id}>${s5.name}${s5.duration_minutes ? ` (${s5.duration_minutes}\u202Fmin)` : ""}</ion-select-option>`)}
+          </ion-select>
+          <ion-select fill="outline" label-placement="floating" label=${t5("ui.colStaff")} placeholder=${t5("ui.fieldStaffPlaceholder")} .value=${this.newStaffId} @ionChange=${(e5) => this.newStaffId = e5.target.value}>
+            <ion-select-option value="">${t5("ui.staffAny")}</ion-select-option>
+            ${this.staff.map((s5) => b2`<ion-select-option .value=${s5.id}>${s5.full_name}</ion-select-option>`)}
+          </ion-select>
           <ion-input fill="outline" label-placement="floating" label=${t5("ui.fieldStart")} type="datetime-local" .value=${this.newStart} @ionInput=${(e5) => this.newStart = e5.target.value}></ion-input>
-          <ion-input fill="outline" label-placement="floating" label=${t5("ui.fieldMinutes")} type="number" min="1" .value=${this.newDuration} @ionInput=${(e5) => this.newDuration = e5.target.value}></ion-input>
-          <ion-button type="submit" size="small" ?disabled=${this.saving || !this.newCustomer || !this.newStart}>${this.saving ? t5("ui.saving") : t5("ui.addAppointment")}</ion-button>
+          <ion-button type="submit" size="small" ?disabled=${this.saving || !canCreate}>${this.saving ? t5("ui.saving") : t5("ui.addAppointment")}</ion-button>
         </form>
         ${this.error ? b2`<p class="err">${this.error}</p>` : A}
-        <ok-data-table .columns=${this.columns} .rows=${this.items} .searchKeys=${["appointment_number", "customer_name", "service_name", "staff_name"]} .searchPlaceholder=${t5("ui.searchPlaceholder")} .actions=${this.rowActions} @rowAction=${(e5) => this.onRowAction(e5)} .emptyMessage=${this.loading ? t5("ui.loading") : t5("ui.empty")}></ok-data-table>
+        <ok-data-table .columns=${this.columns} .rows=${this.items} .searchKeys=${["appointment_number", "customer_name", "service_name", "staff_name"]} .searchPlaceholder=${t5("ui.searchPlaceholder")} .actions=${rowActions} @rowAction=${(e5) => this.onRowAction(e5)} .emptyMessage=${this.loading ? t5("ui.loading") : t5("ui.empty")}></ok-data-table>
       </div>`;
   }
 };
@@ -3014,20 +3210,171 @@ __decorateClass([
 ], ErpAppointmentsList.prototype, "statusFilter", 2);
 __decorateClass([
   r5()
+], ErpAppointmentsList.prototype, "services", 2);
+__decorateClass([
+  r5()
+], ErpAppointmentsList.prototype, "staff", 2);
+__decorateClass([
+  r5()
 ], ErpAppointmentsList.prototype, "newCustomer", 2);
 __decorateClass([
   r5()
 ], ErpAppointmentsList.prototype, "newPhone", 2);
 __decorateClass([
   r5()
-], ErpAppointmentsList.prototype, "newService", 2);
+], ErpAppointmentsList.prototype, "newServiceId", 2);
+__decorateClass([
+  r5()
+], ErpAppointmentsList.prototype, "newStaffId", 2);
 __decorateClass([
   r5()
 ], ErpAppointmentsList.prototype, "newStart", 2);
+define("erp-appointments-list", ErpAppointmentsList);
+
+// modules-workspace/modules/appointments/ui/components/erp-appointments-settings/erp-appointments-settings.ts
+var CATALOG2 = { es: es_default, en: en_default };
+var DEFAULTS = {
+  default_duration: 60,
+  min_booking_notice: 60,
+  max_advance_booking: 90,
+  allow_overlapping: 0,
+  calendar_start_hour: 8,
+  calendar_end_hour: 20,
+  slot_interval: 15
+};
+function erplora2() {
+  const c5 = globalThis.erplora;
+  if (!c5) throw new Error("erplora SDK no inicializado por el shell");
+  return c5;
+}
+var ErpAppointmentsSettings = class extends i3 {
+  constructor() {
+    super(...arguments);
+    this.s = { ...DEFAULTS };
+    this.loading = true;
+    this.saving = false;
+    this.error = "";
+    this.saved = false;
+    this.onLocaleChange = () => this.requestUpdate();
+  }
+  static {
+    this.styles = i`
+    :host { display:block; font-family: system-ui, sans-serif; color: var(--ion-text-color, #1c1b18); }
+    header { display:flex; gap:.5rem; align-items:center; margin-bottom:.75rem; }
+    h2 { margin:0; font-size:1.15rem; flex:1; }
+    .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(14rem,1fr)); gap:.75rem; margin-bottom:1rem; }
+    .field { display:flex; flex-direction:column; gap:.25rem; }
+    label { font-size:.85rem; color: var(--ion-color-medium,#6b6557); }
+    .toggle-row { display:flex; align-items:center; gap:.75rem; margin:.75rem 0 1rem; }
+    .toggle-row .hint { font-size:.8rem; color: var(--ion-color-medium,#6b6557); }
+    .err { color:#d9480f; font-weight:600; }
+    .ok { color:#2b8a3e; font-weight:600; }
+    .actions { display:flex; gap:.5rem; margin-top:.5rem; }
+  `;
+  }
+  async connectedCallback() {
+    super.connectedCallback();
+    window.addEventListener("erplora:locale-changed", this.onLocaleChange);
+    await this.refresh();
+  }
+  disconnectedCallback() {
+    window.removeEventListener("erplora:locale-changed", this.onLocaleChange);
+    super.disconnectedCallback();
+  }
+  async refresh() {
+    this.loading = true;
+    this.error = "";
+    try {
+      const rows = await erplora2().query("appointments.settings.get");
+      const row = Array.isArray(rows) ? rows[0] : rows;
+      this.s = row ? { ...DEFAULTS, ...row } : { ...DEFAULTS };
+    } catch (e5) {
+      this.error = e5 instanceof Error ? e5.message : erplora2().t(CATALOG2, "ui.errLoadSettings");
+    } finally {
+      this.loading = false;
+    }
+  }
+  set(key, value) {
+    this.s = { ...this.s, [key]: value };
+    this.saved = false;
+  }
+  async save(ev) {
+    ev.preventDefault();
+    this.saving = true;
+    this.error = "";
+    this.saved = false;
+    try {
+      await erplora2().command("appointments.settings.upsert", {
+        default_duration: Number(this.s.default_duration) || 60,
+        min_booking_notice: Number(this.s.min_booking_notice) || 0,
+        max_advance_booking: Number(this.s.max_advance_booking) || 1,
+        allow_overlapping: !!this.s.allow_overlapping,
+        calendar_start_hour: Number(this.s.calendar_start_hour) || 0,
+        calendar_end_hour: Number(this.s.calendar_end_hour) || 24,
+        slot_interval: Number(this.s.slot_interval) || 15
+      });
+      this.saved = true;
+      await this.refresh();
+    } catch (e5) {
+      this.error = e5 instanceof Error ? e5.message : erplora2().t(CATALOG2, "ui.errSaveSettings");
+    } finally {
+      this.saving = false;
+    }
+  }
+  render() {
+    const t5 = (k2) => erplora2().t(CATALOG2, k2);
+    return b2`<form @submit=${(e5) => this.save(e5)}>
+        <header>
+          <h2>${t5("ui.settingsTitle")}</h2>
+        </header>
+        ${this.error ? b2`<p class="err">${this.error}</p>` : A}
+        ${this.saved ? b2`<p class="ok">${t5("ui.settingsSaved")}</p>` : A}
+        <div class="toggle-row">
+          <ion-toggle ?checked=${!!this.s.allow_overlapping} @ionChange=${(e5) => this.set("allow_overlapping", e5.target.checked ? 1 : 0)}></ion-toggle>
+          <div>
+            <label>${t5("ui.labelAllowOverlapping")}</label>
+            <div class="hint">${t5("ui.hintAllowOverlapping")}</div>
+          </div>
+        </div>
+        <div class="grid">
+          <div class="field">
+            <ion-input fill="outline" label-placement="floating" label=${t5("ui.labelDefaultDuration")} type="number" min="1" max="480" .value=${String(this.s.default_duration)} @ionInput=${(e5) => this.set("default_duration", Number(e5.target.value))}></ion-input>
+          </div>
+          <div class="field">
+            <ion-input fill="outline" label-placement="floating" label=${t5("ui.labelMinNotice")} type="number" min="0" max="10080" .value=${String(this.s.min_booking_notice)} @ionInput=${(e5) => this.set("min_booking_notice", Number(e5.target.value))}></ion-input>
+          </div>
+          <div class="field">
+            <ion-input fill="outline" label-placement="floating" label=${t5("ui.labelMaxAdvance")} type="number" min="1" max="730" .value=${String(this.s.max_advance_booking)} @ionInput=${(e5) => this.set("max_advance_booking", Number(e5.target.value))}></ion-input>
+          </div>
+          <div class="field">
+            <ion-input fill="outline" label-placement="floating" label=${t5("ui.labelCalendarStart")} type="number" min="0" max="23" .value=${String(this.s.calendar_start_hour)} @ionInput=${(e5) => this.set("calendar_start_hour", Number(e5.target.value))}></ion-input>
+          </div>
+          <div class="field">
+            <ion-input fill="outline" label-placement="floating" label=${t5("ui.labelCalendarEnd")} type="number" min="1" max="24" .value=${String(this.s.calendar_end_hour)} @ionInput=${(e5) => this.set("calendar_end_hour", Number(e5.target.value))}></ion-input>
+          </div>
+          <div class="field">
+            <ion-input fill="outline" label-placement="floating" label=${t5("ui.labelSlotInterval")} type="number" min="5" max="120" .value=${String(this.s.slot_interval)} @ionInput=${(e5) => this.set("slot_interval", Number(e5.target.value))}></ion-input>
+          </div>
+        </div>
+        <div class="actions">
+          <ion-button type="submit" ?disabled=${this.saving || this.loading}>${this.saving ? t5("ui.saving") : t5("ui.buttonSave")}</ion-button>
+        </div>
+      </form>`;
+  }
+};
 __decorateClass([
   r5()
-], ErpAppointmentsList.prototype, "newDuration", 2);
-define("erp-appointments-list", ErpAppointmentsList);
-export {
-  ErpAppointmentsList
-};
+], ErpAppointmentsSettings.prototype, "s", 2);
+__decorateClass([
+  r5()
+], ErpAppointmentsSettings.prototype, "loading", 2);
+__decorateClass([
+  r5()
+], ErpAppointmentsSettings.prototype, "saving", 2);
+__decorateClass([
+  r5()
+], ErpAppointmentsSettings.prototype, "error", 2);
+__decorateClass([
+  r5()
+], ErpAppointmentsSettings.prototype, "saved", 2);
+define("erp-appointments-settings", ErpAppointmentsSettings);

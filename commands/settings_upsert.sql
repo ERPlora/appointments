@@ -7,10 +7,14 @@ INSERT INTO appointments_settings
    send_reminders, reminder_hours_before, allow_customer_cancellation, cancellation_notice_hours,
    calendar_start_hour, calendar_end_hour, slot_interval,
    is_deleted, created_by, updated_by, created_at, updated_at)
+-- GUARDARRAÍL QA (2026-06-25): el binder del runtime no aplica los defaults del JSON Schema
+-- (gap sistémico P0); COALESCE espeja los defaults del schema para que un upsert parcial funcione.
 VALUES
-  (:new_id, :hub_id, :default_duration, :min_booking_notice, :max_advance_booking, :allow_overlapping,
-   :send_reminders, :reminder_hours_before, :allow_customer_cancellation, :cancellation_notice_hours,
-   :calendar_start_hour, :calendar_end_hour, :slot_interval,
+  (:new_id, :hub_id, COALESCE(:default_duration, 60), COALESCE(:min_booking_notice, 60),
+   COALESCE(:max_advance_booking, 90), COALESCE(:allow_overlapping, 0),
+   COALESCE(:send_reminders, 1), COALESCE(:reminder_hours_before, 24),
+   COALESCE(:allow_customer_cancellation, 1), COALESCE(:cancellation_notice_hours, 24),
+   COALESCE(:calendar_start_hour, 8), COALESCE(:calendar_end_hour, 20), COALESCE(:slot_interval, 15),
    0, :current_user_id, :current_user_id, :now, :now)
 ON CONFLICT(hub_id) DO UPDATE SET
   default_duration            = excluded.default_duration,

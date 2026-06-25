@@ -3,6 +3,9 @@
   "navigation": {
     "appointments": {
       "label": "Appointments"
+    },
+    "settings": {
+      "label": "Settings"
     }
   },
   "ui": {
@@ -25,11 +28,15 @@
     "actionStart": "Start",
     "actionComplete": "Complete",
     "actionCancel": "Cancel",
+    "actionReschedule": "Reschedule",
     "actionDelete": "Delete",
     "fieldDate": "Day",
     "fieldCustomer": "Customer",
     "fieldPhone": "Phone",
     "fieldService": "Service",
+    "fieldServicePlaceholder": "Select a service…",
+    "fieldStaffPlaceholder": "Select staff…",
+    "staffAny": "Any staff",
     "fieldStart": "Start",
     "fieldMinutes": "Min.",
     "saving": "Saving…",
@@ -37,8 +44,30 @@
     "searchPlaceholder": "Search no., customer or service…",
     "loading": "Loading…",
     "empty": "No appointments for this day.",
+    "reschedulePrompt": "New date and time (YYYY-MM-DDTHH:MM):",
     "errLoad": "Error loading appointments",
     "errCreate": "Could not create the appointment",
-    "errAction": "Could not perform the action"
+    "errAction": "Could not perform the action",
+    "errNoService": "Select a service first: it sets the appointment duration.",
+    "errInvalidDate": "Invalid date/time.",
+    "errOverlap": "That time slot is already booked for this staff member. Pick another time.",
+    "errOutsideSchedule": "That time is outside the staff member's working hours.",
+    "errBlocked": "That time is blocked (holiday, time off or break).",
+    "errTooSoon": "That time is too soon — it does not meet the minimum booking notice.",
+    "errTooFar": "That date is too far ahead of the maximum advance booking.",
+    "errSlotUnavailable": "That slot is not available. Pick another time.",
+    "settingsTitle": "Appointment settings",
+    "settingsSaved": "Settings saved.",
+    "errLoadSettings": "Error loading settings",
+    "errSaveSettings": "Could not save the settings",
+    "buttonSave": "Save",
+    "labelAllowOverlapping": "Allow overlapping appointments",
+    "hintAllowOverlapping": "On: several appointments at the same time. Off: a slot is only bookable if the staff member is free.",
+    "labelDefaultDuration": "Default duration (min)",
+    "labelMinNotice": "Minimum booking notice (min)",
+    "labelMaxAdvance": "Maximum advance booking (days)",
+    "labelCalendarStart": "Calendar start hour",
+    "labelCalendarEnd": "Calendar end hour",
+    "labelSlotInterval": "Slot interval (min)"
   }
 }
