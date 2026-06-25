@@ -16,7 +16,8 @@
   },
   "depends_on": [
     "customers",
-    "services"
+    "services",
+    "staff"
   ],
   "permissions": [
     "appointments.view_appointment",
@@ -62,19 +63,25 @@
     "summary": "Schedule and manage client appointments and availability. Books appointments against services and customers, tracks status (pending → confirmed → in_progress → completed / cancelled / no_show), manages staff schedules with weekly time slots, blocked time (holidays/vacations) and recurring appointment templates.",
     "depends_on": [
       "customers",
-      "services"
+      "services",
+      "staff"
     ]
   },
   "migrations": {
     "sqlite": [
       "migrations/sqlite/001_init.sql",
       "migrations/sqlite/002_counter.sql"
+    ],
+    "postgres": [
+      "migrations/postgres/001_init.sql",
+      "migrations/postgres/002_counter.sql"
     ]
   },
   "queries": {
     "appointments.appointments.list": {
       "permission": "appointments.view_appointment",
       "sql": "queries/appointments_list.sql",
+      "schema": "schemas/appointments_list.json",
       "ai": {
         "description": "Lists scheduled appointments with their status and associated customer and service data."
       },
@@ -414,6 +421,17 @@
         "description": "Permanently deletes an appointment from the system (destructive)."
       }
     },
+    "appointments.appointments.mark_converted": {
+      "permission": "appointments.change_appointment",
+      "transaction": true,
+      "sql": [
+        "commands/appointment_mark_converted.sql"
+      ],
+      "schema": "schemas/appointment_mark_converted.json",
+      "ai": {
+        "description": "Marks an appointment as converted/completed when a sale has been created from it (seam fired by the sales module event)."
+      }
+    },
     "appointments.appointments.bulk_create": {
       "permission": "appointments.add_appointment",
       "schema": "schemas/appointment_bulk_create.json",
@@ -580,6 +598,13 @@
       ],
       "ai": {
         "description": "Creates or updates the general settings for the appointments module."
+      }
+    }
+  },
+  "events": {
+    "listen": {
+      "sales.sale.created_from_appointment": {
+        "command": "appointments.appointments.mark_converted"
       }
     }
   },

@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "appointments.appointments.list",
+  "description": "Filtros de la lista de citas. Todos opcionales: el binder de defaults (ADR-0073) rellena los que falten, de modo que un payload mínimo {} devuelve todas las citas sin disparar 'datatype mismatch' por binds NULL. El rango de día se aplica como [day_start, day_end) sobre start_datetime (ISO 8601 lexicográfico); los defaults abren la ventana completa.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "day_start": {
+      "type": "string",
+      "description": "Inicio del rango (inclusive). ISO 8601. Default = antes de cualquier fecha (ventana abierta).",
+      "default": "0000-01-01"
+    },
+    "day_end": {
+      "type": "string",
+      "description": "Fin del rango (exclusivo). ISO 8601. Default = después de cualquier fecha (ventana abierta).",
+      "default": "9999-12-31"
+    },
+    "status": {
+      "type": "string",
+      "description": "Filtra por estado exacto; '' = todos.",
+      "default": ""
+    },
+    "staff_id": {
+      "type": "string",
+      "description": "Filtra por profesional; '' = cualquiera.",
+      "default": ""
+    },
+    "limit": {
+      "type": "integer",
+      "description": "Número máximo de filas a devolver.",
+      "minimum": 1,
+      "maximum": 500,
+      "default": 200
+    }
+  }
+}
