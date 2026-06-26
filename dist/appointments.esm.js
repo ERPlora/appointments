@@ -9,7 +9,7 @@ var __decorateClass = (decorators, target, key, kind) => {
   return result;
 };
 
-// module-toolkit/node_modules/@lit-labs/ssr-dom-shim/lib/element-internals.js
+// node_modules/@lit-labs/ssr-dom-shim/lib/element-internals.js
 var ElementInternalsShim = class ElementInternals {
   get shadowRoot() {
     return this.__host.__shadowRoot;
@@ -88,7 +88,7 @@ var ElementInternalsShim = class ElementInternals {
   }
 };
 
-// module-toolkit/node_modules/@lit-labs/ssr-dom-shim/lib/events.js
+// node_modules/@lit-labs/ssr-dom-shim/lib/events.js
 var __classPrivateFieldSet = function(receiver, state, value, kind, f3) {
   if (kind === "m") throw new TypeError("Private method is not writable");
   if (kind === "a" && !f3) throw new TypeError("Private accessor was defined without a setter");
@@ -246,7 +246,7 @@ Object.defineProperties(CustomEventShim.prototype, {
 var EventShimWithRealType = EventShim;
 var CustomEventShimWithRealType = CustomEventShim;
 
-// module-toolkit/node_modules/@lit-labs/ssr-dom-shim/lib/css.js
+// node_modules/@lit-labs/ssr-dom-shim/lib/css.js
 var _a2;
 var CSSRuleShim = (_a2 = class CSSRule {
   constructor() {
@@ -277,7 +277,7 @@ var CSSRuleShim = (_a2 = class CSSRule {
   }
 }, _a2.STYLE_RULE = 1, _a2.CHARSET_RULE = 2, _a2.IMPORT_RULE = 3, _a2.MEDIA_RULE = 4, _a2.FONT_FACE_RULE = 5, _a2.PAGE_RULE = 6, _a2.NAMESPACE_RULE = 10, _a2.KEYFRAMES_RULE = 7, _a2.KEYFRAME_RULE = 8, _a2.SUPPORTS_RULE = 12, _a2.COUNTER_STYLE_RULE = 11, _a2.FONT_FEATURE_VALUES_RULE = 14, _a2.MARGIN_RULE = 9, _a2);
 
-// module-toolkit/node_modules/@lit-labs/ssr-dom-shim/index.js
+// node_modules/@lit-labs/ssr-dom-shim/index.js
 globalThis.Event ??= EventShimWithRealType;
 globalThis.CustomEvent ??= CustomEventShimWithRealType;
 var constructionToken = Symbol();
@@ -674,7 +674,7 @@ var CustomElementRegistryShimWithRealType = CustomElementRegistry;
 var customElements2 = new CustomElementRegistryShimWithRealType();
 var windowShim = new WindowShim(constructionToken);
 
-// module-toolkit/node_modules/@lit/reactive-element/node/css-tag.js
+// node_modules/@lit/reactive-element/node/css-tag.js
 var t = globalThis;
 var e = t.ShadowRoot && (void 0 === t.ShadyCSS || t.ShadyCSS.nativeShadow) && "adoptedStyleSheets" in Document.prototype && "replace" in CSSStyleSheet.prototype;
 var s = Symbol();
@@ -719,7 +719,7 @@ var c = e || void 0 === t.CSSStyleSheet ? (t5) => t5 : (t5) => t5 instanceof CSS
   return r(e5);
 })(t5) : t5;
 
-// module-toolkit/node_modules/@lit/reactive-element/node/reactive-element.js
+// node_modules/@lit/reactive-element/node/reactive-element.js
 var { is: h, defineProperty: r2, getOwnPropertyDescriptor: o2, getOwnPropertyNames: n2, getOwnPropertySymbols: a, getPrototypeOf: c2 } = Object;
 var l = globalThis;
 l.customElements ??= customElements2;
@@ -942,7 +942,7 @@ var g = class extends (globalThis.HTMLElement ?? HTMLElementShimWithRealType) {
 };
 g.elementStyles = [], g.shadowRootOptions = { mode: "open" }, g[f("elementProperties")] = /* @__PURE__ */ new Map(), g[f("finalized")] = /* @__PURE__ */ new Map(), u?.({ ReactiveElement: g }), (l.reactiveElementVersions ??= []).push("2.1.2");
 
-// module-toolkit/node_modules/lit-html/lit-html.js
+// node_modules/lit-html/lit-html.js
 var t2 = globalThis;
 var i2 = (t5) => t5;
 var s2 = t2.trustedTypes;
@@ -1197,7 +1197,7 @@ var D = (t5, i7, s5) => {
   return h4._$AI(t5), h4;
 };
 
-// module-toolkit/node_modules/lit-element/lit-element.js
+// node_modules/lit-element/lit-element.js
 var s3 = globalThis;
 var i3 = class extends g {
   constructor() {
@@ -1226,7 +1226,7 @@ var o4 = s3.litElementPolyfillSupport;
 o4?.({ LitElement: i3 });
 (s3.litElementVersions ??= []).push("4.2.2");
 
-// module-toolkit/node_modules/@lit/reactive-element/node/decorators/property.js
+// node_modules/@lit/reactive-element/node/decorators/property.js
 var o5 = { attribute: true, type: String, converter: b, reflect: false, hasChanged: m };
 var r4 = (t5 = o5, e5, r6) => {
   const { kind: n6, metadata: i7 } = r6;
@@ -1256,19 +1256,19 @@ function n4(t5) {
   })(t5, e5, o7);
 }
 
-// module-toolkit/node_modules/@lit/reactive-element/node/decorators/state.js
+// node_modules/@lit/reactive-element/node/decorators/state.js
 function r5(r6) {
   return n4({ ...r6, state: true, attribute: false });
 }
 
-// outfitkit/dist/define.js
+// ../outfitkit/dist/define.js
 function define(tag, ctor) {
   if (typeof customElements !== "undefined" && !customElements.get(tag)) {
     customElements.define(tag, ctor);
   }
 }
 
-// module-toolkit/node_modules/lit-html/directive.js
+// node_modules/lit-html/directive.js
 var t3 = { ATTRIBUTE: 1, CHILD: 2, PROPERTY: 3, BOOLEAN_ATTRIBUTE: 4, EVENT: 5, ELEMENT: 6 };
 var e4 = (t5) => (...e5) => ({ _$litDirective$: t5, values: e5 });
 var i4 = class {
@@ -1288,7 +1288,7 @@ var i4 = class {
   }
 };
 
-// module-toolkit/node_modules/lit-html/directive-helpers.js
+// node_modules/lit-html/directive-helpers.js
 var { I: t4 } = j;
 var i5 = (o7) => o7;
 var s4 = () => document.createComment("");
@@ -1321,7 +1321,7 @@ var h3 = (o7) => {
   o7._$AR(), o7._$AA.remove();
 };
 
-// module-toolkit/node_modules/lit-html/directives/repeat.js
+// node_modules/lit-html/directives/repeat.js
 var u4 = (e5, s5, t5) => {
   const r6 = /* @__PURE__ */ new Map();
   for (let l3 = s5; l3 <= t5; l3++) r6.set(e5[l3], l3);
@@ -1374,7 +1374,7 @@ var c4 = e4(class extends i4 {
   }
 });
 
-// module-toolkit/node_modules/lit-html/directives/style-map.js
+// node_modules/lit-html/directives/style-map.js
 var n5 = "important";
 var i6 = " !" + n5;
 var o6 = e4(class extends i4 {
@@ -1403,7 +1403,7 @@ var o6 = e4(class extends i4 {
   }
 });
 
-// outfitkit/dist/ok-data-table.js
+// ../outfitkit/dist/ok-data-table.js
 var __defProp2 = Object.defineProperty;
 var __decorateClass2 = (decorators, target, key, kind) => {
   var result = void 0;
@@ -2700,7 +2700,7 @@ __decorateClass2([
 ], OkDataTable.prototype, "menuOpen");
 define("ok-data-table", OkDataTable);
 
-// modules-workspace/modules/appointments/locales/es.json
+// ../modules-workspace/modules/appointments/locales/es.json
 var es_default = {
   name: "Citas",
   navigation: {
@@ -2775,7 +2775,7 @@ var es_default = {
   }
 };
 
-// modules-workspace/modules/appointments/locales/en.json
+// ../modules-workspace/modules/appointments/locales/en.json
 var en_default = {
   name: "Appointments",
   navigation: {
@@ -2850,7 +2850,7 @@ var en_default = {
   }
 };
 
-// modules-workspace/modules/appointments/ui/components/erp-appointments-list/erp-appointments-list.ts
+// ../modules-workspace/modules/appointments/ui/components/erp-appointments-list/erp-appointments-list.ts
 var CATALOG = { es: es_default, en: en_default };
 var STATUS_KEYS = {
   pending: "ui.statusPending",
@@ -3230,151 +3230,6 @@ __decorateClass([
   r5()
 ], ErpAppointmentsList.prototype, "newStart", 2);
 define("erp-appointments-list", ErpAppointmentsList);
-
-// modules-workspace/modules/appointments/ui/components/erp-appointments-settings/erp-appointments-settings.ts
-var CATALOG2 = { es: es_default, en: en_default };
-var DEFAULTS = {
-  default_duration: 60,
-  min_booking_notice: 60,
-  max_advance_booking: 90,
-  allow_overlapping: 0,
-  calendar_start_hour: 8,
-  calendar_end_hour: 20,
-  slot_interval: 15
+export {
+  ErpAppointmentsList
 };
-function erplora2() {
-  const c5 = globalThis.erplora;
-  if (!c5) throw new Error("erplora SDK no inicializado por el shell");
-  return c5;
-}
-var ErpAppointmentsSettings = class extends i3 {
-  constructor() {
-    super(...arguments);
-    this.s = { ...DEFAULTS };
-    this.loading = true;
-    this.saving = false;
-    this.error = "";
-    this.saved = false;
-    this.onLocaleChange = () => this.requestUpdate();
-  }
-  static {
-    this.styles = i`
-    :host { display:block; font-family: system-ui, sans-serif; color: var(--ion-text-color, #1c1b18); }
-    header { display:flex; gap:.5rem; align-items:center; margin-bottom:.75rem; }
-    h2 { margin:0; font-size:1.15rem; flex:1; }
-    .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(14rem,1fr)); gap:.75rem; margin-bottom:1rem; }
-    .field { display:flex; flex-direction:column; gap:.25rem; }
-    label { font-size:.85rem; color: var(--ion-color-medium,#6b6557); }
-    .toggle-row { display:flex; align-items:center; gap:.75rem; margin:.75rem 0 1rem; }
-    .toggle-row .hint { font-size:.8rem; color: var(--ion-color-medium,#6b6557); }
-    .err { color:#d9480f; font-weight:600; }
-    .ok { color:#2b8a3e; font-weight:600; }
-    .actions { display:flex; gap:.5rem; margin-top:.5rem; }
-  `;
-  }
-  async connectedCallback() {
-    super.connectedCallback();
-    window.addEventListener("erplora:locale-changed", this.onLocaleChange);
-    await this.refresh();
-  }
-  disconnectedCallback() {
-    window.removeEventListener("erplora:locale-changed", this.onLocaleChange);
-    super.disconnectedCallback();
-  }
-  async refresh() {
-    this.loading = true;
-    this.error = "";
-    try {
-      const rows = await erplora2().query("appointments.settings.get");
-      const row = Array.isArray(rows) ? rows[0] : rows;
-      this.s = row ? { ...DEFAULTS, ...row } : { ...DEFAULTS };
-    } catch (e5) {
-      this.error = e5 instanceof Error ? e5.message : erplora2().t(CATALOG2, "ui.errLoadSettings");
-    } finally {
-      this.loading = false;
-    }
-  }
-  set(key, value) {
-    this.s = { ...this.s, [key]: value };
-    this.saved = false;
-  }
-  async save(ev) {
-    ev.preventDefault();
-    this.saving = true;
-    this.error = "";
-    this.saved = false;
-    try {
-      await erplora2().command("appointments.settings.upsert", {
-        default_duration: Number(this.s.default_duration) || 60,
-        min_booking_notice: Number(this.s.min_booking_notice) || 0,
-        max_advance_booking: Number(this.s.max_advance_booking) || 1,
-        allow_overlapping: !!this.s.allow_overlapping,
-        calendar_start_hour: Number(this.s.calendar_start_hour) || 0,
-        calendar_end_hour: Number(this.s.calendar_end_hour) || 24,
-        slot_interval: Number(this.s.slot_interval) || 15
-      });
-      this.saved = true;
-      await this.refresh();
-    } catch (e5) {
-      this.error = e5 instanceof Error ? e5.message : erplora2().t(CATALOG2, "ui.errSaveSettings");
-    } finally {
-      this.saving = false;
-    }
-  }
-  render() {
-    const t5 = (k2) => erplora2().t(CATALOG2, k2);
-    return b2`<form @submit=${(e5) => this.save(e5)}>
-        <header>
-          <h2>${t5("ui.settingsTitle")}</h2>
-        </header>
-        ${this.error ? b2`<p class="err">${this.error}</p>` : A}
-        ${this.saved ? b2`<p class="ok">${t5("ui.settingsSaved")}</p>` : A}
-        <div class="toggle-row">
-          <ion-toggle ?checked=${!!this.s.allow_overlapping} @ionChange=${(e5) => this.set("allow_overlapping", e5.target.checked ? 1 : 0)}></ion-toggle>
-          <div>
-            <label>${t5("ui.labelAllowOverlapping")}</label>
-            <div class="hint">${t5("ui.hintAllowOverlapping")}</div>
-          </div>
-        </div>
-        <div class="grid">
-          <div class="field">
-            <ion-input fill="outline" label-placement="floating" label=${t5("ui.labelDefaultDuration")} type="number" min="1" max="480" .value=${String(this.s.default_duration)} @ionInput=${(e5) => this.set("default_duration", Number(e5.target.value))}></ion-input>
-          </div>
-          <div class="field">
-            <ion-input fill="outline" label-placement="floating" label=${t5("ui.labelMinNotice")} type="number" min="0" max="10080" .value=${String(this.s.min_booking_notice)} @ionInput=${(e5) => this.set("min_booking_notice", Number(e5.target.value))}></ion-input>
-          </div>
-          <div class="field">
-            <ion-input fill="outline" label-placement="floating" label=${t5("ui.labelMaxAdvance")} type="number" min="1" max="730" .value=${String(this.s.max_advance_booking)} @ionInput=${(e5) => this.set("max_advance_booking", Number(e5.target.value))}></ion-input>
-          </div>
-          <div class="field">
-            <ion-input fill="outline" label-placement="floating" label=${t5("ui.labelCalendarStart")} type="number" min="0" max="23" .value=${String(this.s.calendar_start_hour)} @ionInput=${(e5) => this.set("calendar_start_hour", Number(e5.target.value))}></ion-input>
-          </div>
-          <div class="field">
-            <ion-input fill="outline" label-placement="floating" label=${t5("ui.labelCalendarEnd")} type="number" min="1" max="24" .value=${String(this.s.calendar_end_hour)} @ionInput=${(e5) => this.set("calendar_end_hour", Number(e5.target.value))}></ion-input>
-          </div>
-          <div class="field">
-            <ion-input fill="outline" label-placement="floating" label=${t5("ui.labelSlotInterval")} type="number" min="5" max="120" .value=${String(this.s.slot_interval)} @ionInput=${(e5) => this.set("slot_interval", Number(e5.target.value))}></ion-input>
-          </div>
-        </div>
-        <div class="actions">
-          <ion-button type="submit" ?disabled=${this.saving || this.loading}>${this.saving ? t5("ui.saving") : t5("ui.buttonSave")}</ion-button>
-        </div>
-      </form>`;
-  }
-};
-__decorateClass([
-  r5()
-], ErpAppointmentsSettings.prototype, "s", 2);
-__decorateClass([
-  r5()
-], ErpAppointmentsSettings.prototype, "loading", 2);
-__decorateClass([
-  r5()
-], ErpAppointmentsSettings.prototype, "saving", 2);
-__decorateClass([
-  r5()
-], ErpAppointmentsSettings.prototype, "error", 2);
-__decorateClass([
-  r5()
-], ErpAppointmentsSettings.prototype, "saved", 2);
-define("erp-appointments-settings", ErpAppointmentsSettings);

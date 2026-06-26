@@ -4,16 +4,16 @@
   "type": "object",
   "additionalProperties": false,
   "properties": {
-    "default_duration": { "type": "integer", "minimum": 1, "default": 60 },
-    "min_booking_notice": { "type": "integer", "minimum": 0, "default": 60 },
-    "max_advance_booking": { "type": "integer", "minimum": 0, "default": 90 },
-    "allow_overlapping": { "type": "boolean", "default": false },
-    "send_reminders": { "type": "boolean", "default": true },
-    "reminder_hours_before": { "type": "integer", "minimum": 0, "default": 24 },
-    "allow_customer_cancellation": { "type": "boolean", "default": true },
-    "cancellation_notice_hours": { "type": "integer", "minimum": 0, "default": 24 },
-    "calendar_start_hour": { "type": "integer", "minimum": 0, "maximum": 23, "default": 8 },
-    "calendar_end_hour": { "type": "integer", "minimum": 1, "maximum": 24, "default": 20 },
-    "slot_interval": { "type": "integer", "minimum": 1, "default": 15 }
+    "default_duration": { "type": "integer", "minimum": 1, "default": 60, "title": "Duración por defecto (min)" },
+    "min_booking_notice": { "type": "integer", "minimum": 0, "default": 60, "title": "Antelación mínima de reserva (min)" },
+    "max_advance_booking": { "type": "integer", "minimum": 0, "default": 90, "title": "Antelación máxima de reserva (días)" },
+    "allow_overlapping": { "type": "boolean", "default": false, "title": "Permitir citas solapadas" },
+    "send_reminders": { "type": "boolean", "default": true, "title": "Enviar recordatorios" },
+    "reminder_hours_before": { "type": "integer", "minimum": 0, "default": 24, "title": "Horas antes del recordatorio" },
+    "allow_customer_cancellation": { "type": "boolean", "default": true, "title": "Permitir cancelación del cliente" },
+    "cancellation_notice_hours": { "type": "integer", "minimum": 0, "default": 24, "title": "Antelación mínima de cancelación (horas)" },
+    "calendar_start_hour": { "type": "integer", "minimum": 0, "maximum": 23, "default": 8, "title": "Hora de inicio del calendario" },
+    "calendar_end_hour": { "type": "integer", "minimum": 1, "maximum": 24, "default": 20, "title": "Hora de fin del calendario" },
+    "slot_interval": { "type": "integer", "minimum": 1, "default": 15, "title": "Intervalo de franjas (min)" }
   }
 }
