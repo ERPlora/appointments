@@ -11,7 +11,7 @@
     "customer_id": { "type": ["string", "null"], "default": null },
     "service_id": { "type": ["string", "null"], "default": null },
     "service_name": { "type": "string", "default": "", "maxLength": 200 },
-    "service_price": { "type": "number", "minimum": 0, "default": 0 },
+    "service_price": { "type": "integer", "minimum": 0, "default": 0 },
     "staff_id": { "type": ["string", "null"], "default": null },
     "staff_name": { "type": "string", "default": "", "maxLength": 200 },
     "start_datetime": { "type": "string", "format": "date-time" },
