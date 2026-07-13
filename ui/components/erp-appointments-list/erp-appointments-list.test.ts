@@ -145,3 +145,24 @@ describe('el alta sigue funcionando desde el panel', () => {
     expect(tabla(el)?.panel, 'el panel de alta se queda abierto tras crear').toBe('none');
   });
 });
+
+// La HORA de la cita: el módulo guarda en UTC (el propio alta hace `new Date(local).toISOString()`),
+// así que al PINTARLA hay que devolverla a la hora LOCAL del salón. Se pintaba con
+// `toISOString().slice(11,16)` — o sea, en UTC —, y una cita creada a las 09:30 en Madrid (07:30Z)
+// se listaba como «07:30»: la recepcionista veía el salón lleno dos horas antes de abrir.
+describe('hora de la cita (se guarda en UTC, se pinta en LOCAL)', () => {
+  it('una cita de las 09:30 en Madrid (07:30Z) se lista a las 09:30', async () => {
+    const el = await montar();
+    const cols = (el as unknown as { columns: { key: string; format?: (r: unknown) => string }[] })
+      .columns;
+    const colHora = cols.find((c) => c.key === 'start_datetime');
+
+    // 07:30Z = 09:30 en Europe/Madrid (verano). El test corre con TZ=Europe/Madrid (vitest.config).
+    const pintada = colHora?.format?.({ start_datetime: '2026-07-20T07:30:00.000Z' });
+    const esperada = new Date('2026-07-20T07:30:00.000Z').toLocaleTimeString('es-ES', {
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+    expect(pintada, 'la agenda pinta la hora en UTC, no en la hora del salón').toBe(esperada);
+  });
+});
