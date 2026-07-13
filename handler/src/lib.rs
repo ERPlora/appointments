@@ -28,6 +28,7 @@
 //! reparte (`appointment_id`). El id de cada fila de historial lo pone el host
 //! (`:new_id` fresco por operación).
 
+use erplora_guest_sdk::money;
 use erplora_guest_sdk::{Operation, Output};
 use serde_json::{json, Map, Value};
 
@@ -79,14 +80,6 @@ fn as_str(v: &Value) -> String {
     }
 }
 
-fn as_f64(v: &Value, d: f64) -> f64 {
-    match v {
-        Value::Number(n) => n.as_f64().unwrap_or(d),
-        Value::String(s) => s.trim().parse::<f64>().unwrap_or(d),
-        _ => d,
-    }
-}
-
 fn as_i64(v: &Value, d: i64) -> i64 {
     match v {
         Value::Number(n) => n.as_i64().unwrap_or(d),
@@ -96,21 +89,7 @@ fn as_i64(v: &Value, d: i64) -> i64 {
     }
 }
 
-/// Lee un importe **en céntimos** (`i64`): entero, string de entero, o (robustez) decimal
-/// como céntimos ya escalados (round half-to-even). ADR-0007: el dinero viaja en céntimos.
-fn cents(v: &Value, d: i64) -> i64 {
-    match v {
-        Value::Number(n) => n.as_i64().or_else(|| n.as_f64().map(|x| {
-            let fl = x.floor();
-            let diff = x - fl;
-            (if (diff - 0.5).abs() < 1e-9 {
-                if (fl as i64) % 2 == 0 { fl } else { fl + 1.0 }
-            } else { x.round() }) as i64
-        })).unwrap_or(d),
-        Value::String(s) => s.trim().parse::<i64>().unwrap_or(d),
-        _ => d,
-    }
-}
+// El DINERO lo lee `erplora_guest_sdk::money` (ADR-0123): una sola implementación para todo el hub.
 
 fn as_bool(v: &Value) -> bool {
     match v {
@@ -433,13 +412,13 @@ fn prepare_appointment(
     // `service` {name, price} aportada por el caller (contrato público de `services`).
     let mut service_name = str_or(item, "service_name", "");
     // service_price en CÉNTIMOS (ADR-0007): del ítem o, si 0, del catálogo `services` (cents).
-    let mut service_price = cents(item.get("service_price").unwrap_or(&Value::Null), 0);
+    let mut service_price = money::from_json(item.get("service_price").unwrap_or(&Value::Null), 0);
     if let Some(svc) = fallback_service {
         if service_name.is_empty() {
             service_name = str_or(svc, "name", "");
         }
         if service_price == 0 {
-            service_price = cents(svc.get("price").unwrap_or(&Value::Null), 0);
+            service_price = money::from_json(svc.get("price").unwrap_or(&Value::Null), 0);
         }
     }
 
