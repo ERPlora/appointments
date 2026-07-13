@@ -106,10 +106,10 @@
         "default_dir": "asc",
         "filters": {
           "name": {
-            "op": "eq"
+            "op": "like"
           },
           "description": {
-            "op": "eq"
+            "op": "like"
           },
           "is_default": {
             "op": "eq"
@@ -166,7 +166,7 @@
         "default_dir": "asc",
         "filters": {
           "title": {
-            "op": "eq"
+            "op": "like"
           },
           "block_type": {
             "op": "eq"
@@ -184,7 +184,7 @@
             "op": "eq"
           },
           "reason": {
-            "op": "eq"
+            "op": "like"
           }
         },
         "page_size": 50
@@ -220,13 +220,13 @@
         "default_dir": "asc",
         "filters": {
           "customer_name": {
-            "op": "eq"
+            "op": "like"
           },
           "service_name": {
-            "op": "eq"
+            "op": "like"
           },
           "staff_name": {
-            "op": "eq"
+            "op": "like"
           },
           "frequency": {
             "op": "eq"
