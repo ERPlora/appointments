@@ -9,7 +9,7 @@ var __decorateClass = (decorators, target, key, kind) => {
   return result;
 };
 
-// ../../module-toolkit/node_modules/@lit-labs/ssr-dom-shim/lib/element-internals.js
+// node_modules/.pnpm/@lit-labs+ssr-dom-shim@1.6.0/node_modules/@lit-labs/ssr-dom-shim/lib/element-internals.js
 var ElementInternalsShim = class ElementInternals {
   get shadowRoot() {
     return this.__host.__shadowRoot;
@@ -88,7 +88,7 @@ var ElementInternalsShim = class ElementInternals {
   }
 };
 
-// ../../module-toolkit/node_modules/@lit-labs/ssr-dom-shim/lib/events.js
+// node_modules/.pnpm/@lit-labs+ssr-dom-shim@1.6.0/node_modules/@lit-labs/ssr-dom-shim/lib/events.js
 var __classPrivateFieldSet = function(receiver, state, value, kind, f3) {
   if (kind === "m") throw new TypeError("Private method is not writable");
   if (kind === "a" && !f3) throw new TypeError("Private accessor was defined without a setter");
@@ -246,7 +246,7 @@ Object.defineProperties(CustomEventShim.prototype, {
 var EventShimWithRealType = EventShim;
 var CustomEventShimWithRealType = CustomEventShim;
 
-// ../../module-toolkit/node_modules/@lit-labs/ssr-dom-shim/lib/css.js
+// node_modules/.pnpm/@lit-labs+ssr-dom-shim@1.6.0/node_modules/@lit-labs/ssr-dom-shim/lib/css.js
 var _a2;
 var CSSRuleShim = (_a2 = class CSSRule {
   constructor() {
@@ -277,7 +277,7 @@ var CSSRuleShim = (_a2 = class CSSRule {
   }
 }, _a2.STYLE_RULE = 1, _a2.CHARSET_RULE = 2, _a2.IMPORT_RULE = 3, _a2.MEDIA_RULE = 4, _a2.FONT_FACE_RULE = 5, _a2.PAGE_RULE = 6, _a2.NAMESPACE_RULE = 10, _a2.KEYFRAMES_RULE = 7, _a2.KEYFRAME_RULE = 8, _a2.SUPPORTS_RULE = 12, _a2.COUNTER_STYLE_RULE = 11, _a2.FONT_FEATURE_VALUES_RULE = 14, _a2.MARGIN_RULE = 9, _a2);
 
-// ../../module-toolkit/node_modules/@lit-labs/ssr-dom-shim/index.js
+// node_modules/.pnpm/@lit-labs+ssr-dom-shim@1.6.0/node_modules/@lit-labs/ssr-dom-shim/index.js
 globalThis.Event ??= EventShimWithRealType;
 globalThis.CustomEvent ??= CustomEventShimWithRealType;
 var constructionToken = Symbol();
@@ -674,7 +674,7 @@ var CustomElementRegistryShimWithRealType = CustomElementRegistry;
 var customElements2 = new CustomElementRegistryShimWithRealType();
 var windowShim = new WindowShim(constructionToken);
 
-// ../../module-toolkit/node_modules/@lit/reactive-element/node/css-tag.js
+// node_modules/.pnpm/@lit+reactive-element@2.1.2/node_modules/@lit/reactive-element/node/css-tag.js
 var t = globalThis;
 var e = t.ShadowRoot && (void 0 === t.ShadyCSS || t.ShadyCSS.nativeShadow) && "adoptedStyleSheets" in Document.prototype && "replace" in CSSStyleSheet.prototype;
 var s = Symbol();
@@ -719,7 +719,7 @@ var c = e || void 0 === t.CSSStyleSheet ? (t5) => t5 : (t5) => t5 instanceof CSS
   return r(e5);
 })(t5) : t5;
 
-// ../../module-toolkit/node_modules/@lit/reactive-element/node/reactive-element.js
+// node_modules/.pnpm/@lit+reactive-element@2.1.2/node_modules/@lit/reactive-element/node/reactive-element.js
 var { is: h, defineProperty: r2, getOwnPropertyDescriptor: o2, getOwnPropertyNames: n2, getOwnPropertySymbols: a, getPrototypeOf: c2 } = Object;
 var l = globalThis;
 l.customElements ??= customElements2;
@@ -942,7 +942,7 @@ var g = class extends (globalThis.HTMLElement ?? HTMLElementShimWithRealType) {
 };
 g.elementStyles = [], g.shadowRootOptions = { mode: "open" }, g[f("elementProperties")] = /* @__PURE__ */ new Map(), g[f("finalized")] = /* @__PURE__ */ new Map(), u?.({ ReactiveElement: g }), (l.reactiveElementVersions ??= []).push("2.1.2");
 
-// ../../module-toolkit/node_modules/lit-html/lit-html.js
+// node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/lit-html.js
 var t2 = globalThis;
 var i2 = (t5) => t5;
 var s2 = t2.trustedTypes;
@@ -1197,7 +1197,7 @@ var D = (t5, i7, s5) => {
   return h4._$AI(t5), h4;
 };
 
-// ../../module-toolkit/node_modules/lit-element/lit-element.js
+// node_modules/.pnpm/lit-element@4.2.2/node_modules/lit-element/lit-element.js
 var s3 = globalThis;
 var i3 = class extends g {
   constructor() {
@@ -1226,7 +1226,7 @@ var o4 = s3.litElementPolyfillSupport;
 o4?.({ LitElement: i3 });
 (s3.litElementVersions ??= []).push("4.2.2");
 
-// ../../module-toolkit/node_modules/@lit/reactive-element/node/decorators/property.js
+// node_modules/.pnpm/@lit+reactive-element@2.1.2/node_modules/@lit/reactive-element/node/decorators/property.js
 var o5 = { attribute: true, type: String, converter: b, reflect: false, hasChanged: m };
 var r4 = (t5 = o5, e5, r6) => {
   const { kind: n6, metadata: i7 } = r6;
@@ -1256,19 +1256,19 @@ function n4(t5) {
   })(t5, e5, o7);
 }
 
-// ../../module-toolkit/node_modules/@lit/reactive-element/node/decorators/state.js
+// node_modules/.pnpm/@lit+reactive-element@2.1.2/node_modules/@lit/reactive-element/node/decorators/state.js
 function r5(r6) {
   return n4({ ...r6, state: true, attribute: false });
 }
 
-// ../../outfitkit/dist/define.js
+// node_modules/.pnpm/@erplora+outfitkit@file+..+outfitkit/node_modules/@erplora/outfitkit/dist/define.js
 function define(tag, ctor) {
   if (typeof customElements !== "undefined" && !customElements.get(tag)) {
     customElements.define(tag, ctor);
   }
 }
 
-// ../../module-toolkit/node_modules/lit-html/directive.js
+// node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directive.js
 var t3 = { ATTRIBUTE: 1, CHILD: 2, PROPERTY: 3, BOOLEAN_ATTRIBUTE: 4, EVENT: 5, ELEMENT: 6 };
 var e4 = (t5) => (...e5) => ({ _$litDirective$: t5, values: e5 });
 var i4 = class {
@@ -1288,7 +1288,7 @@ var i4 = class {
   }
 };
 
-// ../../module-toolkit/node_modules/lit-html/directive-helpers.js
+// node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directive-helpers.js
 var { I: t4 } = j;
 var i5 = (o7) => o7;
 var s4 = () => document.createComment("");
@@ -1321,7 +1321,7 @@ var h3 = (o7) => {
   o7._$AR(), o7._$AA.remove();
 };
 
-// ../../module-toolkit/node_modules/lit-html/directives/repeat.js
+// node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directives/repeat.js
 var u4 = (e5, s5, t5) => {
   const r6 = /* @__PURE__ */ new Map();
   for (let l3 = s5; l3 <= t5; l3++) r6.set(e5[l3], l3);
@@ -1374,7 +1374,7 @@ var c4 = e4(class extends i4 {
   }
 });
 
-// ../../module-toolkit/node_modules/lit-html/directives/style-map.js
+// node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directives/style-map.js
 var n5 = "important";
 var i6 = " !" + n5;
 var o6 = e4(class extends i4 {
@@ -1403,7 +1403,7 @@ var o6 = e4(class extends i4 {
   }
 });
 
-// ../../outfitkit/dist/shared/icons.js
+// node_modules/.pnpm/@erplora+outfitkit@file+..+outfitkit/node_modules/@erplora/outfitkit/dist/shared/icons.js
 var rawAdd = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="M256 112v288m144-144H112"/></svg>';
 var rawAlertCircle = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="currentColor" d="M256 48C141.31 48 48 141.31 48 256s93.31 208 208 208s208-93.31 208-208S370.69 48 256 48m0 319.91a20 20 0 1 1 20-20a20 20 0 0 1-20 20m21.72-201.15l-5.74 122a16 16 0 0 1-32 0l-5.74-121.94v-.05a21.74 21.74 0 1 1 43.44 0Z"/></svg>';
 var rawAlertCircleOutline = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-miterlimit="10" stroke-width="32" d="M448 256c0-106-86-192-192-192S64 150 64 256s86 192 192 192s192-86 192-192Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="M250.26 166.05L256 288l5.73-121.95a5.74 5.74 0 0 0-5.79-6h0a5.74 5.74 0 0 0-5.68 6"/><path fill="currentColor" d="M256 367.91a20 20 0 1 1 20-20a20 20 0 0 1-20 20"/></svg>';
@@ -1551,7 +1551,7 @@ function okIcon(value) {
   return BY_NAME[value] ?? value;
 }
 
-// ../../outfitkit/dist/ok-data-table.js
+// node_modules/.pnpm/@erplora+outfitkit@file+..+outfitkit/node_modules/@erplora/outfitkit/dist/ok-data-table.js
 var __defProp2 = Object.defineProperty;
 var __decorateClass2 = (decorators, target, key, kind) => {
   var result = void 0;
@@ -2858,7 +2858,7 @@ __decorateClass2([
 ], OkDataTable.prototype, "menuOpen");
 define("ok-data-table", OkDataTable);
 
-// appointments/locales/es.json
+// modules/appointments/locales/es.json
 var es_default = {
   name: "Citas",
   navigation: {
@@ -2904,7 +2904,7 @@ var es_default = {
   }
 };
 
-// appointments/locales/en.json
+// modules/appointments/locales/en.json
 var en_default = {
   name: "Appointments",
   navigation: {
@@ -2950,7 +2950,7 @@ var en_default = {
   }
 };
 
-// appointments/ui/components/erp-appointments-list/erp-appointments-list.ts
+// modules/appointments/ui/components/erp-appointments-list/erp-appointments-list.ts
 var CATALOG = { es: es_default, en: en_default };
 var STATUS_KEYS = {
   pending: "ui.statusPending",
@@ -2997,14 +2997,16 @@ var ErpAppointmentsList = class extends i3 {
   }
   static {
     this.styles = i`
-    :host { display:block; font-family: system-ui, sans-serif; color: var(--ion-text-color, #1c1b18); }
-    header { display:flex; gap:.5rem; align-items:center; margin-bottom:.75rem; }
-    h2 { margin:0; font-size:1.15rem; flex:1; }
-    .filters { display:flex; gap:.75rem; align-items:end; margin:.25rem 0 1rem; flex-wrap:wrap; }
-    .form { display:flex; gap:.75rem; flex-wrap:wrap; align-items:end; margin:.5rem 0 1rem; }
-    .form ion-input, .form ion-select, .filters ion-input, .filters ion-select {
-      flex:1 1 11rem; min-width:9rem;
-    }
+    :host { display:flex; flex-direction:column; height:100%; min-height:0; font-family: system-ui, sans-serif; color: var(--ion-text-color, #1c1b18); }
+    /* La vista llena el alto: el data-table ocupa el resto (scroll interno, pie fijo). */
+    .page { display:flex; flex-direction:column; min-height:0; flex:1 1 auto; }
+    .page > ok-data-table { flex:1 1 auto; min-height:0; }
+    /* ALCANCE de la consulta (día + estado), no filtros de columna: se queda fuera de la tabla. */
+    .filters { display:flex; gap:.75rem; align-items:end; margin:0 0 .75rem; flex-wrap:wrap; }
+    .filters ion-input, .filters ion-select { flex:1 1 11rem; min-width:9rem; }
+    /* Formulario del panel de alta (drawer estrecho) → una columna, no en fila. */
+    .form { display:flex; flex-direction:column; gap:.7rem; }
+    .form ion-button { align-self:flex-end; }
     .err { color:#d9480f; font-weight:600; }
   `;
   }
@@ -3086,6 +3088,10 @@ var ErpAppointmentsList = class extends i3 {
       this.loading = false;
     }
   }
+  // Referencia al ok-data-table para abrir/cerrar su panel lateral (el «+» de su barra).
+  dataTable() {
+    return this.renderRoot.querySelector("ok-data-table");
+  }
   async createAppointment(ev) {
     ev.preventDefault();
     if (!this.newCustomer.trim() || !this.newStart) return;
@@ -3105,6 +3111,7 @@ var ErpAppointmentsList = class extends i3 {
       this.newService = "";
       this.newStart = "";
       this.newDuration = "60";
+      this.dataTable()?.close();
       await this.refresh();
     } catch (e5) {
       this.error = e5 instanceof Error ? e5.message : erplora().t(CATALOG, "ui.errCreate");
@@ -3139,12 +3146,13 @@ var ErpAppointmentsList = class extends i3 {
       this.error = e5 instanceof Error ? e5.message : erplora().t(CATALOG, "ui.errAction");
     }
   }
+  // El título de la vista lo pinta el topbar del shell: repetirlo aquí lo duplicaba en pantalla.
   render() {
     const t5 = (k2) => erplora().t(CATALOG, k2);
-    return b2`<div>
-        <header>
-          <h2>${t5("ui.title")}</h2>
-        </header>
+    return b2`<div class="page">
+        <!-- Día y estado NO son filtros de columna: son el ALCANCE de la consulta (los binds
+             day_start/day_end/status de appointments.appointments.list, que no es una lista
+             paginada del motor). Deciden QUÉ se carga → viven fuera del embudo de la tabla. -->
         <div class="filters">
           <ion-input fill="outline" label-placement="floating" label=${t5("ui.fieldDate")} type="date" .value=${this.day} @ionInput=${(e5) => {
       this.day = e5.target.value;
@@ -3158,16 +3166,19 @@ var ErpAppointmentsList = class extends i3 {
             ${Object.keys(STATUS_KEYS).map((k2) => b2`<ion-select-option .value=${k2}>${this.statusLabel(k2)}</ion-select-option>`)}
           </ion-select>
         </div>
-        <form class="form" @submit=${(e5) => this.createAppointment(e5)}>
-          <ion-input fill="outline" label-placement="floating" label=${t5("ui.colCustomer")} .value=${this.newCustomer} @ionInput=${(e5) => this.newCustomer = e5.target.value}></ion-input>
-          <ion-input fill="outline" label-placement="floating" label=${t5("ui.fieldPhone")} .value=${this.newPhone} @ionInput=${(e5) => this.newPhone = e5.target.value}></ion-input>
-          <ion-input fill="outline" label-placement="floating" label=${t5("ui.colService")} .value=${this.newService} @ionInput=${(e5) => this.newService = e5.target.value}></ion-input>
-          <ion-input fill="outline" label-placement="floating" label=${t5("ui.fieldStart")} type="datetime-local" .value=${this.newStart} @ionInput=${(e5) => this.newStart = e5.target.value}></ion-input>
-          <ion-input fill="outline" label-placement="floating" label=${t5("ui.fieldMinutes")} type="number" min="1" .value=${this.newDuration} @ionInput=${(e5) => this.newDuration = e5.target.value}></ion-input>
-          <ion-button type="submit" size="small" ?disabled=${this.saving || !this.newCustomer || !this.newStart}>${this.saving ? t5("ui.saving") : t5("ui.addAppointment")}</ion-button>
-        </form>
         ${this.error ? b2`<p class="err">${this.error}</p>` : A}
-        <ok-data-table .columns=${this.columns} .rows=${this.items} .searchKeys=${["appointment_number", "customer_name", "service_name", "staff_name"]} .searchPlaceholder=${t5("ui.searchPlaceholder")} .actions=${this.rowActions} @rowAction=${(e5) => this.onRowAction(e5)} .emptyMessage=${this.loading ? t5("ui.loading") : t5("ui.empty")}></ok-data-table>
+        <ok-data-table .fill=${true} .addable=${true} .columns=${this.columns} .rows=${this.items} .searchKeys=${["appointment_number", "customer_name", "service_name", "staff_name"]} .searchPlaceholder=${t5("ui.searchPlaceholder")} .actions=${this.rowActions} @rowAction=${(e5) => this.onRowAction(e5)} .emptyMessage=${this.loading ? t5("ui.loading") : t5("ui.empty")}>
+          <!-- Alta de cita: se proyecta SIEMPRE (aunque el panel esté cerrado); si solo se pintara
+               al abrirlo, el «+» desplegaría un panel vacío en el primer clic. -->
+          <form slot="create" class="form" @submit=${(e5) => this.createAppointment(e5)}>
+            <ion-input fill="outline" label-placement="floating" label=${t5("ui.colCustomer")} .value=${this.newCustomer} @ionInput=${(e5) => this.newCustomer = e5.target.value}></ion-input>
+            <ion-input fill="outline" label-placement="floating" label=${t5("ui.fieldPhone")} .value=${this.newPhone} @ionInput=${(e5) => this.newPhone = e5.target.value}></ion-input>
+            <ion-input fill="outline" label-placement="floating" label=${t5("ui.colService")} .value=${this.newService} @ionInput=${(e5) => this.newService = e5.target.value}></ion-input>
+            <ion-input fill="outline" label-placement="floating" label=${t5("ui.fieldStart")} type="datetime-local" .value=${this.newStart} @ionInput=${(e5) => this.newStart = e5.target.value}></ion-input>
+            <ion-input fill="outline" label-placement="floating" label=${t5("ui.fieldMinutes")} type="number" min="1" .value=${this.newDuration} @ionInput=${(e5) => this.newDuration = e5.target.value}></ion-input>
+            <ion-button type="submit" size="small" ?disabled=${this.saving || !this.newCustomer || !this.newStart}>${this.saving ? t5("ui.saving") : t5("ui.addAppointment")}</ion-button>
+          </form>
+        </ok-data-table>
       </div>`;
   }
 };

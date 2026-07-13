@@ -64,14 +64,16 @@ function fmtTime(iso: string): string {
 
 export class ErpAppointmentsList extends LitElement {
   static styles = css`
-    :host { display:block; font-family: system-ui, sans-serif; color: var(--ion-text-color, #1c1b18); }
-    header { display:flex; gap:.5rem; align-items:center; margin-bottom:.75rem; }
-    h2 { margin:0; font-size:1.15rem; flex:1; }
-    .filters { display:flex; gap:.75rem; align-items:end; margin:.25rem 0 1rem; flex-wrap:wrap; }
-    .form { display:flex; gap:.75rem; flex-wrap:wrap; align-items:end; margin:.5rem 0 1rem; }
-    .form ion-input, .form ion-select, .filters ion-input, .filters ion-select {
-      flex:1 1 11rem; min-width:9rem;
-    }
+    :host { display:flex; flex-direction:column; height:100%; min-height:0; font-family: system-ui, sans-serif; color: var(--ion-text-color, #1c1b18); }
+    /* La vista llena el alto: el data-table ocupa el resto (scroll interno, pie fijo). */
+    .page { display:flex; flex-direction:column; min-height:0; flex:1 1 auto; }
+    .page > ok-data-table { flex:1 1 auto; min-height:0; }
+    /* ALCANCE de la consulta (día + estado), no filtros de columna: se queda fuera de la tabla. */
+    .filters { display:flex; gap:.75rem; align-items:end; margin:0 0 .75rem; flex-wrap:wrap; }
+    .filters ion-input, .filters ion-select { flex:1 1 11rem; min-width:9rem; }
+    /* Formulario del panel de alta (drawer estrecho) → una columna, no en fila. */
+    .form { display:flex; flex-direction:column; gap:.7rem; }
+    .form ion-button { align-self:flex-end; }
     .err { color:#d9480f; font-weight:600; }
   `;
 
@@ -187,6 +189,13 @@ export class ErpAppointmentsList extends LitElement {
     }
   }
 
+  // Referencia al ok-data-table para abrir/cerrar su panel lateral (el «+» de su barra).
+  private dataTable(): { open(p?: 'filters' | 'create'): void; close(): void } | null {
+    return this.renderRoot.querySelector('ok-data-table') as
+      | { open(p?: 'filters' | 'create'): void; close(): void }
+      | null;
+  }
+
   private async createAppointment(ev: Event) {
     ev.preventDefault();
     if (!this.newCustomer.trim() || !this.newStart) return;
@@ -207,6 +216,7 @@ export class ErpAppointmentsList extends LitElement {
       this.newService = '';
       this.newStart = '';
       this.newDuration = '60';
+      this.dataTable()?.close(); // el panel del «+» taparía la tabla y la cita recién creada
       await this.refresh();
     } catch (e) {
       this.error = e instanceof Error ? e.message : erplora().t(CATALOG, 'ui.errCreate');
@@ -243,12 +253,13 @@ export class ErpAppointmentsList extends LitElement {
     }
   }
 
+  // El título de la vista lo pinta el topbar del shell: repetirlo aquí lo duplicaba en pantalla.
   render() {
     const t = (k: string): string => erplora().t(CATALOG, k);
-    return html`<div>
-        <header>
-          <h2>${t('ui.title')}</h2>
-        </header>
+    return html`<div class="page">
+        <!-- Día y estado NO son filtros de columna: son el ALCANCE de la consulta (los binds
+             day_start/day_end/status de appointments.appointments.list, que no es una lista
+             paginada del motor). Deciden QUÉ se carga → viven fuera del embudo de la tabla. -->
         <div class="filters">
           <ion-input fill="outline" label-placement="floating" label=${t('ui.fieldDate')} type="date" .value=${this.day} @ionInput=${(e: any) => {
               this.day = e.target.value;
@@ -262,16 +273,19 @@ export class ErpAppointmentsList extends LitElement {
             ${Object.keys(STATUS_KEYS).map((k) => html`<ion-select-option .value=${k}>${this.statusLabel(k)}</ion-select-option>`)}
           </ion-select>
         </div>
-        <form class="form" @submit=${(e) => this.createAppointment(e)}>
-          <ion-input fill="outline" label-placement="floating" label=${t('ui.colCustomer')} .value=${this.newCustomer} @ionInput=${(e: any) => (this.newCustomer = e.target.value)}></ion-input>
-          <ion-input fill="outline" label-placement="floating" label=${t('ui.fieldPhone')} .value=${this.newPhone} @ionInput=${(e: any) => (this.newPhone = e.target.value)}></ion-input>
-          <ion-input fill="outline" label-placement="floating" label=${t('ui.colService')} .value=${this.newService} @ionInput=${(e: any) => (this.newService = e.target.value)}></ion-input>
-          <ion-input fill="outline" label-placement="floating" label=${t('ui.fieldStart')} type="datetime-local" .value=${this.newStart} @ionInput=${(e: any) => (this.newStart = e.target.value)}></ion-input>
-          <ion-input fill="outline" label-placement="floating" label=${t('ui.fieldMinutes')} type="number" min="1" .value=${this.newDuration} @ionInput=${(e: any) => (this.newDuration = e.target.value)}></ion-input>
-          <ion-button type="submit" size="small" ?disabled=${this.saving || !this.newCustomer || !this.newStart}>${this.saving ? t('ui.saving') : t('ui.addAppointment')}</ion-button>
-        </form>
         ${this.error ? html`<p class="err">${this.error}</p>` : nothing}
-        <ok-data-table .columns=${this.columns} .rows=${this.items as unknown as Record<string, unknown>[]} .searchKeys=${['appointment_number', 'customer_name', 'service_name', 'staff_name']} .searchPlaceholder=${t('ui.searchPlaceholder')} .actions=${this.rowActions} @rowAction=${(e: CustomEvent) => this.onRowAction(e)} .emptyMessage=${this.loading ? t('ui.loading') : t('ui.empty')}></ok-data-table>
+        <ok-data-table .fill=${true} .addable=${true} .columns=${this.columns} .rows=${this.items as unknown as Record<string, unknown>[]} .searchKeys=${['appointment_number', 'customer_name', 'service_name', 'staff_name']} .searchPlaceholder=${t('ui.searchPlaceholder')} .actions=${this.rowActions} @rowAction=${(e: CustomEvent) => this.onRowAction(e)} .emptyMessage=${this.loading ? t('ui.loading') : t('ui.empty')}>
+          <!-- Alta de cita: se proyecta SIEMPRE (aunque el panel esté cerrado); si solo se pintara
+               al abrirlo, el «+» desplegaría un panel vacío en el primer clic. -->
+          <form slot="create" class="form" @submit=${(e: Event) => this.createAppointment(e)}>
+            <ion-input fill="outline" label-placement="floating" label=${t('ui.colCustomer')} .value=${this.newCustomer} @ionInput=${(e: any) => (this.newCustomer = e.target.value)}></ion-input>
+            <ion-input fill="outline" label-placement="floating" label=${t('ui.fieldPhone')} .value=${this.newPhone} @ionInput=${(e: any) => (this.newPhone = e.target.value)}></ion-input>
+            <ion-input fill="outline" label-placement="floating" label=${t('ui.colService')} .value=${this.newService} @ionInput=${(e: any) => (this.newService = e.target.value)}></ion-input>
+            <ion-input fill="outline" label-placement="floating" label=${t('ui.fieldStart')} type="datetime-local" .value=${this.newStart} @ionInput=${(e: any) => (this.newStart = e.target.value)}></ion-input>
+            <ion-input fill="outline" label-placement="floating" label=${t('ui.fieldMinutes')} type="number" min="1" .value=${this.newDuration} @ionInput=${(e: any) => (this.newDuration = e.target.value)}></ion-input>
+            <ion-button type="submit" size="small" ?disabled=${this.saving || !this.newCustomer || !this.newStart}>${this.saving ? t('ui.saving') : t('ui.addAppointment')}</ion-button>
+          </form>
+        </ok-data-table>
       </div>`;
   }
 }
