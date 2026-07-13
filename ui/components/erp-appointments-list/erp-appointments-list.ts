@@ -56,10 +56,14 @@ function dayBounds(day: string): { day_start: string; day_end: string } {
   return { day_start: start.toISOString(), day_end: end.toISOString() };
 }
 
+/** Hora de la cita EN LOCAL. La cita se guarda en UTC (el alta hace `new Date(local).toISOString()`),
+ *  así que pintarla con `toISOString()` la devolvía en UTC: una cita de las 09:30 en Madrid (07:30Z)
+ *  se listaba como «07:30» — el salón parecía lleno dos horas antes de abrir. */
 function fmtTime(iso: string): string {
   if (!iso) return '';
   const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? iso : d.toISOString().slice(11, 16);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleTimeString(erplora().locale || 'es', { hour: '2-digit', minute: '2-digit' });
 }
 
 export class ErpAppointmentsList extends LitElement {

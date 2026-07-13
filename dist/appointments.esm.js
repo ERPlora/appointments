@@ -2976,7 +2976,8 @@ function dayBounds(day) {
 function fmtTime(iso) {
   if (!iso) return "";
   const d3 = new Date(iso);
-  return Number.isNaN(d3.getTime()) ? iso : d3.toISOString().slice(11, 16);
+  if (Number.isNaN(d3.getTime())) return iso;
+  return d3.toLocaleTimeString(erplora().locale || "es", { hour: "2-digit", minute: "2-digit" });
 }
 var ErpAppointmentsList = class extends i3 {
   constructor() {
