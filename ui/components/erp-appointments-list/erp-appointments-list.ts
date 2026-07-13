@@ -145,18 +145,19 @@ export class ErpAppointmentsList extends LitElement {
     window.addEventListener('erplora:locale-changed', this.onLocaleChange);
     await this.refresh();
     try {
-      const events = [
-        'appointments.appointment.created',
-        'appointments.appointment.updated',
-        'appointments.appointment.confirmed',
-        'appointments.appointment.started',
-        'appointments.appointment.completed',
-        'appointments.appointment.cancelled',
-        'appointments.appointment.no_show',
-        'appointments.appointment.rescheduled',
-        'appointments.appointment.deleted',
+            // Una suscripción por evento, con su literal EN la llamada (ADR-0127: el extractor
+      // de contratos no sigue arrays; el nombre vive donde se usa).
+      const offs = [
+        erplora().on('appointments.appointment.created', () => this.refresh()),
+        erplora().on('appointments.appointment.updated', () => this.refresh()),
+        erplora().on('appointments.appointment.confirmed', () => this.refresh()),
+        erplora().on('appointments.appointment.started', () => this.refresh()),
+        erplora().on('appointments.appointment.completed', () => this.refresh()),
+        erplora().on('appointments.appointment.cancelled', () => this.refresh()),
+        erplora().on('appointments.appointment.no_show', () => this.refresh()),
+        erplora().on('appointments.appointment.rescheduled', () => this.refresh()),
+        erplora().on('appointments.appointment.deleted', () => this.refresh()),
       ];
-      const offs = events.map((e) => erplora().on(e, () => this.refresh()));
       this.unsub = () => offs.forEach((off) => off());
     } catch {
       /* sin SDK (preview) → sin reactividad en vivo */

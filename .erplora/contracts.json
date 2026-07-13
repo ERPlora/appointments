@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "module": "appointments",
+  "consumes": {
+    "queries": [
+      "appointments.appointments.list"
+    ],
+    "optional_queries": [],
+    "commands": [
+      "appointments.appointments.cancel",
+      "appointments.appointments.complete",
+      "appointments.appointments.confirm",
+      "appointments.appointments.create",
+      "appointments.appointments.delete",
+      "appointments.appointments.start"
+    ],
+    "events": [
+      "appointments.appointment.cancelled",
+      "appointments.appointment.completed",
+      "appointments.appointment.confirmed",
+      "appointments.appointment.created",
+      "appointments.appointment.deleted",
+      "appointments.appointment.no_show",
+      "appointments.appointment.rescheduled",
+      "appointments.appointment.started",
+      "appointments.appointment.updated"
+    ],
+    "slots": []
+  }
+}

@@ -3048,18 +3048,17 @@ var ErpAppointmentsList = class extends i3 {
     window.addEventListener("erplora:locale-changed", this.onLocaleChange);
     await this.refresh();
     try {
-      const events = [
-        "appointments.appointment.created",
-        "appointments.appointment.updated",
-        "appointments.appointment.confirmed",
-        "appointments.appointment.started",
-        "appointments.appointment.completed",
-        "appointments.appointment.cancelled",
-        "appointments.appointment.no_show",
-        "appointments.appointment.rescheduled",
-        "appointments.appointment.deleted"
+      const offs = [
+        erplora().on("appointments.appointment.created", () => this.refresh()),
+        erplora().on("appointments.appointment.updated", () => this.refresh()),
+        erplora().on("appointments.appointment.confirmed", () => this.refresh()),
+        erplora().on("appointments.appointment.started", () => this.refresh()),
+        erplora().on("appointments.appointment.completed", () => this.refresh()),
+        erplora().on("appointments.appointment.cancelled", () => this.refresh()),
+        erplora().on("appointments.appointment.no_show", () => this.refresh()),
+        erplora().on("appointments.appointment.rescheduled", () => this.refresh()),
+        erplora().on("appointments.appointment.deleted", () => this.refresh())
       ];
-      const offs = events.map((e5) => erplora().on(e5, () => this.refresh()));
       this.unsub = () => offs.forEach((off) => off());
     } catch {
     }
