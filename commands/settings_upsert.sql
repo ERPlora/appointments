@@ -1,3 +1,7 @@
+-- PG-compat (auditoría pm#16, 07-17): los binds BOOLEANOS del schema van envueltos en
+-- CASE WHEN :x THEN 1 WHEN NOT :x THEN 0 END — las columnas son INTEGER 0/1 por contrato
+-- (§2.5) y Postgres NO castea boolean→bigint (SQLite sí lo toleraba). El tri-estado
+-- preserva NULL para los COALESCE de opcionales.
 -- Upsert de los ajustes de reservas del hub (singleton: un registro por hub_id, garantizado
 -- por uq_appointments_settings_hub). Portado de AppointmentsSettings. Runtime inyecta
 -- :new_id/:hub_id/:current_user_id/:now. En el conflicto por hub_id sobrescribe los campos
@@ -8,8 +12,8 @@ INSERT INTO appointments_settings
    calendar_start_hour, calendar_end_hour, slot_interval,
    is_deleted, created_by, updated_by, created_at, updated_at)
 VALUES
-  (:new_id, :hub_id, :default_duration, :min_booking_notice, :max_advance_booking, :allow_overlapping,
-   :send_reminders, :reminder_hours_before, :allow_customer_cancellation, :cancellation_notice_hours,
+  (:new_id, :hub_id, :default_duration, :min_booking_notice, :max_advance_booking, CASE WHEN :allow_overlapping THEN 1 WHEN NOT :allow_overlapping THEN 0 END,
+   CASE WHEN :send_reminders THEN 1 WHEN NOT :send_reminders THEN 0 END, :reminder_hours_before, CASE WHEN :allow_customer_cancellation THEN 1 WHEN NOT :allow_customer_cancellation THEN 0 END, :cancellation_notice_hours,
    :calendar_start_hour, :calendar_end_hour, :slot_interval,
    0, :current_user_id, :current_user_id, :now, :now)
 ON CONFLICT(hub_id) DO UPDATE SET
