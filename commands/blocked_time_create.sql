@@ -8,6 +8,6 @@ INSERT INTO appointments_blocked_time
    is_deleted, created_by, updated_by, created_at, updated_at)
 VALUES
   (:new_id, :hub_id, :title, :block_type, :start_datetime, :end_datetime,
-   CASE WHEN :all_day THEN 1 ELSE 0 END, :staff_id,
-   :reason, CASE WHEN :is_recurring THEN 1 ELSE 0 END, :recurrence_rule,
+   :all_day, :staff_id,
+   :reason, :is_recurring, :recurrence_rule,
    0, :current_user_id, :current_user_id, :now, :now);

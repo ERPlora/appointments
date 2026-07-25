@@ -4,5 +4,5 @@ INSERT INTO appointments_schedule
   (id, hub_id, name, description, is_default, is_active,
    is_deleted, created_by, updated_by, created_at, updated_at)
 VALUES
-  (:new_id, :hub_id, :name, :description, CASE WHEN :is_default THEN 1 ELSE 0 END, 1,
+  (:new_id, :hub_id, :name, :description, :is_default, 1,
    0, :current_user_id, :current_user_id, :now, :now);

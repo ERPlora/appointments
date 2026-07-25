@@ -13,10 +13,10 @@ INSERT INTO appointments_settings
    is_deleted, created_by, updated_by, created_at, updated_at)
 VALUES
   (:new_id, :hub_id, :default_duration, :min_booking_notice, :max_advance_booking,
-   CASE WHEN :allow_overlapping THEN 1 ELSE 0 END,
-   CASE WHEN :send_reminders THEN 1 ELSE 0 END,
+   :allow_overlapping,
+   :send_reminders,
    :reminder_hours_before,
-   CASE WHEN :allow_customer_cancellation THEN 1 ELSE 0 END,
+   :allow_customer_cancellation,
    :cancellation_notice_hours,
    :calendar_start_hour, :calendar_end_hour, :slot_interval,
    0, :current_user_id, :current_user_id, :now, :now)
