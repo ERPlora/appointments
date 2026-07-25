@@ -2,14 +2,22 @@
 -- por uq_appointments_settings_hub). Portado de AppointmentsSettings. Runtime inyecta
 -- :new_id/:hub_id/:current_user_id/:now. En el conflicto por hub_id sobrescribe los campos
 -- editables y actualiza la auditoría (conserva id/created_*).
+-- Los flags booleanos del schema (allow_overlapping/send_reminders/allow_customer_cancellation)
+-- se castean a INTEGER 0/1 con CASE WHEN: el runtime bindea el booleano JSON como boolean nativo
+-- y las columnas son INTEGER (contrato de fila 2.5) — Postgres NO castea boolean a integer
+-- (SQLite sí colaba por tipado dinámico). Ver appointments#25.
 INSERT INTO appointments_settings
   (id, hub_id, default_duration, min_booking_notice, max_advance_booking, allow_overlapping,
    send_reminders, reminder_hours_before, allow_customer_cancellation, cancellation_notice_hours,
    calendar_start_hour, calendar_end_hour, slot_interval,
    is_deleted, created_by, updated_by, created_at, updated_at)
 VALUES
-  (:new_id, :hub_id, :default_duration, :min_booking_notice, :max_advance_booking, :allow_overlapping,
-   :send_reminders, :reminder_hours_before, :allow_customer_cancellation, :cancellation_notice_hours,
+  (:new_id, :hub_id, :default_duration, :min_booking_notice, :max_advance_booking,
+   CASE WHEN :allow_overlapping THEN 1 ELSE 0 END,
+   CASE WHEN :send_reminders THEN 1 ELSE 0 END,
+   :reminder_hours_before,
+   CASE WHEN :allow_customer_cancellation THEN 1 ELSE 0 END,
+   :cancellation_notice_hours,
    :calendar_start_hour, :calendar_end_hour, :slot_interval,
    0, :current_user_id, :current_user_id, :now, :now)
 ON CONFLICT(hub_id) DO UPDATE SET
