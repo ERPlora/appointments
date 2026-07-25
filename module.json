@@ -1,7 +1,7 @@
 {
   "id": "appointments",
   "name": "Appointments",
-  "version": "1.1.18",
+  "version": "1.1.19",
   "agent": {
     "description": "Schedules and manages client appointments: books slots against services and staff, tracks status lifecycle (pending → confirmed → in_progress → completed / cancelled / no_show), manages staff availability and blocked time, and handles recurring appointment templates.",
     "keywords": [
