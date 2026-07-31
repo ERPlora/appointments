@@ -316,14 +316,32 @@ struct Candidate {
     label: String,
 }
 
-/// Extrae las citas vivas de `existing_appointments` (ignora cancelled/no_show/borradas).
-fn candidates_from(payload: &Value) -> Vec<Candidate> {
-    let empty: Vec<Value> = Vec::new();
-    payload
-        .get("existing_appointments")
-        .and_then(|v| v.as_array())
-        .unwrap_or(&empty)
-        .iter()
+/// Extrae las citas vivas candidatas a solape (ignora cancelled/no_show/borradas).
+///
+/// **Prioriza `context.reads["appointments.appointments.conflicting"]`** (autoritativa, la
+/// precarga el runtime vía `reads` del manifest — ADR-0069, appointments#110). Si la read no
+/// está (manifest viejo, query caída o el comando no la declaró), degrada a
+/// `payload.existing_appointments` (lectura aportada por el caller). Antes el handler SOLO miraba
+/// el payload, así que si el caller omitía esa lectura no detectaba solape.
+fn candidates_from(input: &Value) -> Vec<Candidate> {
+    // Read autoritativa: `context.reads["appointments.appointments.conflicting"]` (la precarga el
+    // runtime vía `reads` del manifest — ADR-0069). Si está presente (aunque sea []) se usa y NO se
+    // mira el payload. Si falta (manifest viejo/query caída), fallback a `existing_appointments`.
+    let read_rows = input
+        .get("context")
+        .and_then(|c| c.get("reads"))
+        .and_then(|r| r.get("appointments.appointments.conflicting"))
+        .and_then(|v| v.as_array());
+    let rows: &[Value] = match read_rows {
+        Some(r) => r,
+        None => input
+            .get("payload")
+            .and_then(|p| p.get("existing_appointments"))
+            .and_then(|v| v.as_array())
+            .map(|v| v.as_slice())
+            .unwrap_or(&[]),
+    };
+    rows.iter()
         .filter_map(|row| {
             let status = as_str(row.get("status").unwrap_or(&Value::Null));
             if status == "cancelled" || status == "no_show" {
@@ -486,7 +504,7 @@ pub fn create_appointment_pure(input: Value) -> Result<Output, String> {
         .cloned()
         .ok_or_else(|| "context.new_ids vacío (lo inyecta el host)".to_string())?;
 
-    let mut candidates = candidates_from(&payload);
+    let mut candidates = candidates_from(&input);
     let ops = prepare_appointment(
         &payload,
         payload.get("service"),
@@ -518,7 +536,7 @@ pub fn bulk_create_pure(input: Value) -> Result<Output, String> {
 
     let allow_overlap = allow_overlapping(&payload);
     let default_dur = default_duration(&payload);
-    let mut candidates = candidates_from(&payload);
+    let mut candidates = candidates_from(&input);
     let mut ops: Vec<Operation> = Vec::new();
     let mut errors: Vec<String> = Vec::new();
     let mut created = 0usize;
@@ -736,7 +754,7 @@ pub fn materialize_recurring_pure(input: Value) -> Result<Output, String> {
     }
 
     let allow_overlap = allow_overlapping(&payload);
-    let mut candidates = candidates_from(&payload);
+    let mut candidates = candidates_from(&input);
     let mut ops: Vec<Operation> = Vec::new();
     let mut created = 0usize;
 
@@ -798,4 +816,72 @@ fn parse_hhmm(s: &str) -> Option<(i64, i64)> {
     let h: i64 = it.next()?.parse().ok()?;
     let m: i64 = it.next()?.parse().ok()?;
     ((0..24).contains(&h) && (0..60).contains(&m)).then_some((h, m))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn input(payload: Value, reads: Option<Value>) -> Value {
+        let mut ctx = json!({ "now": "2026-07-31T10:00:00Z", "new_ids": ["apt-1"] });
+        if let Some(r) = reads {
+            ctx["reads"] = r;
+        }
+        json!({ "payload": payload, "context": ctx })
+    }
+
+    fn item(start: &str, dur: i64, staff: &str) -> Value {
+        json!({
+            "customer_name": "Ada",
+            "start_datetime": start,
+            "duration_minutes": dur,
+            "staff_id": staff,
+            "service_name": " Corte",
+            "service_price": 2000
+        })
+    }
+
+    /// appointments#110: la read autoritativa (context.reads) debe detectar el solape incluso
+    /// cuando el caller NO aporta `existing_appointments`. Antes no había read y el solape pasaba.
+    #[test]
+    fn create_rejects_overlap_from_context_reads() {
+        // Cita existente 10:00–10:30 (la trae la read autoritativa del runtime).
+        let reads = json!({ "appointments.appointments.conflicting": [
+            { "id": "apt-x", "appointment_number": "APT-1", "staff_id": "s1",
+              "start_datetime": "2026-07-31T10:00:00Z", "end_datetime": "2026-07-31T10:30:00Z",
+              "status": "confirmed" }
+        ]});
+        // Misma franja 10:15–10:45, mismo staff → debe solapar y rechazar.
+        let inp = input(item("2026-07-31T10:15:00Z", 30, "s1"), Some(reads));
+        let err = create_appointment_pure(inp).unwrap_err();
+        assert!(err.starts_with("overlap:"), "esperaba rechazo overlap, llegó: {err}");
+    }
+
+    /// appointments#110: sin solape en la read autoritativa → se crea sin error.
+    #[test]
+    fn create_ok_when_no_overlap_in_context_reads() {
+        let reads = json!({ "appointments.appointments.conflicting": [
+            { "id": "apt-x", "appointment_number": "APT-1", "staff_id": "s1",
+              "start_datetime": "2026-07-31T10:00:00Z", "end_datetime": "2026-07-31T10:30:00Z",
+              "status": "confirmed" }
+        ]});
+        // Franja distinta 11:00–11:30 → sin solape.
+        let inp = input(item("2026-07-31T11:00:00Z", 30, "s1"), Some(reads));
+        assert!(create_appointment_pure(inp).is_ok());
+    }
+
+    /// appointments#110: sin `context.reads` (manifest viejo / read caída) → fallback al
+    /// `payload.existing_appointments` del caller (comportamiento histórico no se rompe).
+    #[test]
+    fn create_falls_back_to_payload_existing_appointments_without_reads() {
+        let mut payload = item("2026-07-31T10:15:00Z", 30, "s1");
+        payload["existing_appointments"] = json!([
+            { "appointment_number": "APT-1", "staff_id": "s1",
+              "start_datetime": "2026-07-31T10:00:00Z", "end_datetime": "2026-07-31T10:30:00Z",
+              "status": "confirmed" }
+        ]);
+        let inp = input(payload, None); // sin reads → usa el payload
+        let err = create_appointment_pure(inp).unwrap_err();
+        assert!(err.starts_with("overlap:"), "fallback no detectó solape: {err}");
+    }
 }
