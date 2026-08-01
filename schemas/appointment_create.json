@@ -26,7 +26,7 @@
       "default": null
     },
     "existing_appointments": {
-      "description": "Lectura aportada por el caller (citas candidatas a solape, de appointments.appointments.list del día).",
+      "description": "Fallback de citas candidatas a solape (de appointments.appointments.list del día) si el runtime NO precargó la read autoritativa. Desde appointments#110 el comando `create` declara `reads` sobre `appointments.appointments.conflicting`, que el runtime inyecta en `context.reads` y el handler prioriza por encima de este campo.",
       "type": "array",
       "default": [],
       "items": { "type": "object" }
