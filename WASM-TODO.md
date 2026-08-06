@@ -82,6 +82,11 @@ Origen: `Appointment.reschedule` / `update` (recalculan `end = start + duration`
 - Los SQL `appointment_update.sql` / `appointment_reschedule.sql` esperan `end_datetime` ya
  resuelto (el SDK/UI lo calcula `start + duration`). Si se quiere blindar server-side,
  moverlo al handler (suma de minutos = capacidad de reloj del host). No bloqueante.
+- ✅ El SOLAPE en reagendar/editar ya NO depende del caller: `reschedule`/`update` llevan
+ `commands/_appointment_overlap_assert.sql` (tabla-gate con CHECK, appointments#20) que
+ revierte la transacción si la nueva franja pisa una cita viva del mismo staff con
+ `allow_overlapping=0`. El de `create` lo cubre la read autoritativa
+ `appointments.appointments.conflicting` (ADR-0069, appointments#110/hub#110).
 
 ## 8. Disponibilidad / slots libres (whatsapp.py: `check_availability`, `get_available_slots`)
 - `check_availability(date, time, service, staff)`: cruzar la plantilla de horario

@@ -63,7 +63,8 @@
   "migrations": {
     "postgres": [
       "migrations/postgres/001_init.sql",
-      "migrations/postgres/002_counter.sql"
+      "migrations/postgres/002_counter.sql",
+      "migrations/postgres/003_gate.sql"
     ]
   },
   "queries": {
@@ -266,6 +267,13 @@
       "ai": {
         "description": "Retrieves the general settings of the appointments module."
       }
+    },
+    "appointments.appointments.conflicting": {
+      "permission": "appointments.view_appointment",
+      "sql": "queries/appointments_conflicting.sql",
+      "ai": {
+        "description": "Loads live appointments for the same day as the requested start, used by the create handler to detect overlapping bookings authoritatively (runtime reads)."
+      }
     }
   },
   "commands": {
@@ -282,13 +290,23 @@
       ],
       "ai": {
         "description": "Creates a new appointment for a customer with a specified service and date/time."
-      }
+      },
+      "reads": [
+        {
+          "query": "appointments.appointments.conflicting",
+          "params": {
+            "staff_id": "payload.staff_id",
+            "start_datetime": "payload.start_datetime"
+          }
+        }
+      ]
     },
     "appointments.appointments.update": {
       "permission": "appointments.change_appointment",
       "transaction": true,
       "sql": [
-        "commands/appointment_update.sql"
+        "commands/appointment_update.sql",
+        "commands/_appointment_overlap_assert.sql"
       ],
       "schema": "schemas/appointment_update.json",
       "emit": [
@@ -372,7 +390,8 @@
       "permission": "appointments.change_appointment",
       "transaction": true,
       "sql": [
-        "commands/appointment_reschedule.sql"
+        "commands/appointment_reschedule.sql",
+        "commands/_appointment_overlap_assert.sql"
       ],
       "schema": "schemas/appointment_reschedule.json",
       "emit": [
