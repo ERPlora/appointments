@@ -63,7 +63,8 @@
   "migrations": {
     "postgres": [
       "migrations/postgres/001_init.sql",
-      "migrations/postgres/002_counter.sql"
+      "migrations/postgres/002_counter.sql",
+      "migrations/postgres/003_gate.sql"
     ]
   },
   "queries": {
@@ -304,7 +305,8 @@
       "permission": "appointments.change_appointment",
       "transaction": true,
       "sql": [
-        "commands/appointment_update.sql"
+        "commands/appointment_update.sql",
+        "commands/_appointment_overlap_assert.sql"
       ],
       "schema": "schemas/appointment_update.json",
       "emit": [
@@ -388,7 +390,8 @@
       "permission": "appointments.change_appointment",
       "transaction": true,
       "sql": [
-        "commands/appointment_reschedule.sql"
+        "commands/appointment_reschedule.sql",
+        "commands/_appointment_overlap_assert.sql"
       ],
       "schema": "schemas/appointment_reschedule.json",
       "emit": [
