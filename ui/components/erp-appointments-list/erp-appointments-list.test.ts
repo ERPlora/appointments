@@ -18,22 +18,38 @@ beforeEach(() => {
   comandos.length = 0;
   consultas.length = 0;
   (globalThis as Record<string, unknown>).erplora = {
+    // Shape-aware mock (appointments#21): the view also loads the linked catalogs
+    // (customers/services/staff, paginated {rows}) and the module settings.
     query: async (name: string, params: Record<string, unknown>) => {
       consultas.push({ name, params });
-      return [
-        {
-          id: 'a1',
-          appointment_number: 'A-001',
-          customer_name: 'Ana',
-          customer_phone: '600',
-          service_name: 'Corte',
-          staff_name: 'Eva',
-          start_datetime: '2026-07-13T10:00:00.000Z',
-          end_datetime: '2026-07-13T10:30:00.000Z',
-          duration_minutes: 30,
-          status: 'pending',
-        },
-      ];
+      switch (name) {
+        case 'customers.list':
+          return { rows: [{ id: 'c1', name: 'Ana', phone: '600', email: '' }], total: 1 };
+        case 'services.services.list':
+          return { rows: [{ id: 'sv1', name: 'Corte', price: 2000, duration_minutes: 30 }], total: 1 };
+        case 'staff.members.list':
+          return { rows: [{ id: 's1', full_name: 'Eva', status: 'active', is_bookable: 1 }], total: 1 };
+        case 'appointments.settings.get':
+          return [{ calendar_start_hour: 8, calendar_end_hour: 20, default_duration: 60 }];
+        default:
+          return [
+            {
+              id: 'a1',
+              appointment_number: 'A-001',
+              customer_id: 'c1',
+              customer_name: 'Ana',
+              customer_phone: '600',
+              service_id: 'sv1',
+              service_name: 'Corte',
+              staff_id: 's1',
+              staff_name: 'Eva',
+              start_datetime: '2026-07-13T10:00:00.000Z',
+              end_datetime: '2026-07-13T10:30:00.000Z',
+              duration_minutes: 30,
+              status: 'pending',
+            },
+          ];
+      }
     },
     command: async (name: string, payload: Record<string, unknown>) => {
       comandos.push({ name, payload });
@@ -118,29 +134,36 @@ describe('el estado de la cita es de dominio cerrado → se elige, no se teclea'
   });
 });
 
+// appointments#21: the create panel books against LINKED records (customer/service/staff
+// ids picked from their modules), no longer free text — the old free-text contract is
+// superseded by the issue spec (a real day needs the links for the per-professional view,
+// availability and the appointment→sale handoff).
 describe('el alta sigue funcionando desde el panel', () => {
-  it('crear una cita manda appointments.appointments.create y CIERRA el panel', async () => {
+  it('crear una cita manda appointments.appointments.create con los IDs y CIERRA el panel', async () => {
     const el = await montar();
     tabla(el)?.open('create');
     const wc = el as unknown as {
-      newCustomer: string;
-      newPhone: string;
-      newService: string;
+      newCustomerId: string;
+      newServiceId: string;
+      newStaffId: string;
       newStart: string;
       newDuration: string;
       createAppointment: (ev: Event) => Promise<void>;
     };
-    wc.newCustomer = 'Ana';
-    wc.newPhone = '600123123';
-    wc.newService = 'Corte';
+    wc.newCustomerId = 'c1';
+    wc.newServiceId = 'sv1';
+    wc.newStaffId = 's1';
     wc.newStart = '2026-07-13T10:00';
     wc.newDuration = '45';
     await wc.createAppointment(new Event('submit'));
 
     const alta = comandos.find((c) => c.name === 'appointments.appointments.create');
     expect(alta, 'no se mandó el alta de la cita').toBeTruthy();
+    expect(alta!.payload.customer_id).toBe('c1');
     expect(alta!.payload.customer_name).toBe('Ana');
+    expect(alta!.payload.service_id).toBe('sv1');
     expect(alta!.payload.service_name).toBe('Corte');
+    expect(alta!.payload.staff_id).toBe('s1');
     expect(alta!.payload.duration_minutes).toBe(45);
     expect(tabla(el)?.panel, 'el panel de alta se queda abierto tras crear').toBe('none');
   });

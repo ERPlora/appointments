@@ -28,7 +28,6 @@
     "actionDelete": "Borrar",
     "fieldDate": "Día",
     "fieldCustomer": "Cliente",
-    "fieldPhone": "Teléfono",
     "fieldService": "Servicio",
     "fieldStart": "Inicio",
     "fieldMinutes": "Min.",
@@ -39,6 +38,18 @@
     "empty": "Sin citas para este día.",
     "errLoad": "Error cargando citas",
     "errCreate": "No se pudo crear la cita",
-    "errAction": "No se pudo ejecutar la acción"
+    "errAction": "No se pudo ejecutar la acción",
+    "actionNoShow": "No-show",
+    "fieldStaff": "Profesional",
+    "pickCustomer": "Elige un cliente",
+    "pickService": "Elige un servicio",
+    "pickStaff": "Elige un profesional",
+    "viewList": "Lista",
+    "viewStaff": "Por profesional",
+    "unassigned": "Sin asignar",
+    "prevDay": "Día anterior",
+    "nextDay": "Día siguiente",
+    "noStaff": "Aún no hay profesionales reservables.",
+    "errLoadCatalogs": "Error cargando clientes, servicios o personal"
   }
 }

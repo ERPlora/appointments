@@ -28,7 +28,6 @@
     "actionDelete": "Delete",
     "fieldDate": "Day",
     "fieldCustomer": "Customer",
-    "fieldPhone": "Phone",
     "fieldService": "Service",
     "fieldStart": "Start",
     "fieldMinutes": "Min.",
@@ -39,6 +38,18 @@
     "empty": "No appointments for this day.",
     "errLoad": "Error loading appointments",
     "errCreate": "Could not create the appointment",
-    "errAction": "Could not perform the action"
+    "errAction": "Could not perform the action",
+    "actionNoShow": "No-show",
+    "fieldStaff": "Professional",
+    "pickCustomer": "Pick a customer",
+    "pickService": "Pick a service",
+    "pickStaff": "Pick a professional",
+    "viewList": "List",
+    "viewStaff": "By professional",
+    "unassigned": "Unassigned",
+    "prevDay": "Previous day",
+    "nextDay": "Next day",
+    "noStaff": "No bookable professionals yet.",
+    "errLoadCatalogs": "Error loading customers, services or staff"
   }
 }
