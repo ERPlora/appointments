@@ -1,7 +1,8 @@
 {
   "id": "appointments",
   "name": "Appointments",
-  "version": "1.1.13",
+  "version": "1.1.20",
+  "description": "Book client appointments against services and staff, and track them from booked to completed.",
   "agent": {
     "description": "Schedules and manages client appointments: books slots against services and staff, tracks status lifecycle (pending → confirmed → in_progress → completed / cancelled / no_show), manages staff availability and blocked time, and handles recurring appointment templates.",
     "keywords": [
@@ -60,9 +61,9 @@
     ]
   },
   "migrations": {
-    "sqlite": [
-      "migrations/sqlite/001_init.sql",
-      "migrations/sqlite/002_counter.sql"
+    "postgres": [
+      "migrations/postgres/001_init.sql",
+      "migrations/postgres/002_counter.sql"
     ]
   },
   "queries": {
