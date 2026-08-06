@@ -942,7 +942,7 @@ var g = class extends (globalThis.HTMLElement ?? HTMLElementShimWithRealType) {
 };
 g.elementStyles = [], g.shadowRootOptions = { mode: "open" }, g[f("elementProperties")] = /* @__PURE__ */ new Map(), g[f("finalized")] = /* @__PURE__ */ new Map(), u?.({ ReactiveElement: g }), (l.reactiveElementVersions ??= []).push("2.1.2");
 
-// node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/lit-html.js
+// ../module-toolkit/node_modules/lit-html/lit-html.js
 var t2 = globalThis;
 var i2 = (t5) => t5;
 var s2 = t2.trustedTypes;
@@ -1197,7 +1197,7 @@ var D = (t5, i7, s5) => {
   return h4._$AI(t5), h4;
 };
 
-// node_modules/.pnpm/lit-element@4.2.2/node_modules/lit-element/lit-element.js
+// ../module-toolkit/node_modules/lit-element/lit-element.js
 var s3 = globalThis;
 var i3 = class extends g {
   constructor() {
@@ -1633,7 +1633,7 @@ __decorateClass2([
 ], OkInlineFeedback.prototype, "hasActions");
 define("ok-inline-feedback", OkInlineFeedback);
 
-// node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directive.js
+// ../module-toolkit/node_modules/lit-html/directive.js
 var t3 = { ATTRIBUTE: 1, CHILD: 2, PROPERTY: 3, BOOLEAN_ATTRIBUTE: 4, EVENT: 5, ELEMENT: 6 };
 var e4 = (t5) => (...e5) => ({ _$litDirective$: t5, values: e5 });
 var i4 = class {
@@ -1653,7 +1653,7 @@ var i4 = class {
   }
 };
 
-// node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directive-helpers.js
+// ../module-toolkit/node_modules/lit-html/directive-helpers.js
 var { I: t4 } = j;
 var i5 = (o7) => o7;
 var s4 = () => document.createComment("");
@@ -1686,7 +1686,7 @@ var h3 = (o7) => {
   o7._$AR(), o7._$AA.remove();
 };
 
-// node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directives/repeat.js
+// ../module-toolkit/node_modules/lit-html/directives/repeat.js
 var u4 = (e5, s5, t5) => {
   const r6 = /* @__PURE__ */ new Map();
   for (let l3 = s5; l3 <= t5; l3++) r6.set(e5[l3], l3);
@@ -1739,7 +1739,7 @@ var c4 = e4(class extends i4 {
   }
 });
 
-// node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directives/style-map.js
+// ../module-toolkit/node_modules/lit-html/directives/style-map.js
 var n5 = "important";
 var i6 = " !" + n5;
 var o6 = e4(class extends i4 {
@@ -1860,7 +1860,7 @@ var ES_LABELS = {
   recordSingular: "registro",
   recordPlural: "registros"
 };
-var OkDataTable = class extends i3 {
+var _OkDataTable = class _OkDataTable2 extends i3 {
   constructor() {
     super(...arguments);
     this.columns = [];
@@ -1898,6 +1898,7 @@ var OkDataTable = class extends i3 {
     this.filterDraft = {};
     this.panel = "none";
     this.viewMode = "table";
+    this.isMobile = false;
     this.hiddenKeys = /* @__PURE__ */ new Set();
     this.internalSelection = /* @__PURE__ */ new Set();
     this.menuOpen = false;
@@ -2117,6 +2118,13 @@ var OkDataTable = class extends i3 {
     .empty .empty-ic { display: grid; place-items: center; width: 3.25rem; height: 3.25rem; border-radius: 999px; background: var(--header-background); font-size: 26px; }
 
     .actions { display: flex; gap: 0.25rem; justify-content: flex-end; }
+    /* Las acciones de fila son icon-only y de tamaño small en escritorio. En tablet/móvil se
+     * amplía el host completo (no solo el icono) para que el área táctil alcance 44×44 px. */
+    @media (pointer: coarse), (max-width: 834px) {
+      .actions ion-button { min-width: 44px; min-height: 44px; margin: 0; }
+      .toolbtn { width: 44px; height: 44px; }
+      .pager .nav ion-button { min-width: 44px; min-height: 44px; margin: 0; }
+    }
     /* Spinner de acción en curso (loading): contenido dentro del ion-button small (Ionic lo fija
      * a 28px en el :host, por eso width/height y no font-size). Cubre tabla y tarjetas: los
      * botones de fila siempre van dentro de .actions. */
@@ -2137,15 +2145,36 @@ var OkDataTable = class extends i3 {
     ion-button { --box-shadow: none; }
   `;
   }
+  static {
+    this.MOBILE_BREAKPOINT = 640;
+  }
   connectedCallback() {
     super.connectedCallback();
     if (typeof window !== "undefined") {
       window.addEventListener("erplora:locale-changed", this.onLocaleChanged);
     }
+    if (typeof window !== "undefined" && typeof window.matchMedia === "function") {
+      this.mq = window.matchMedia(`(max-width: ${_OkDataTable2.MOBILE_BREAKPOINT}px)`);
+      this.isMobile = this.mq.matches;
+      const handler = (e5) => {
+        const matches = "matches" in e5 ? e5.matches : this.mq?.matches ?? false;
+        if (this.isMobile === matches) return;
+        this.isMobile = matches;
+        if (matches && this.cardViewEnabled) this.viewMode = "cards";
+        else if (!matches && this.viewMode === "cards") this.viewMode = "table";
+      };
+      this.mq.addEventListener("change", handler);
+      this._mqHandler = handler;
+    }
   }
   disconnectedCallback() {
     if (typeof window !== "undefined") {
       window.removeEventListener("erplora:locale-changed", this.onLocaleChanged);
+    }
+    if (this.mq) {
+      const handler = this._mqHandler;
+      if (handler) this.mq.removeEventListener("change", handler);
+      this.mq = void 0;
     }
     super.disconnectedCallback();
   }
@@ -2274,17 +2303,17 @@ var OkDataTable = class extends i3 {
       out.push(row);
     }
     const headers = out.shift() ?? [];
-    const rows = out.map((r6) => Object.fromEntries(headers.map((h4, i7) => [h4, r6[i7] ?? ""])));
-    return { headers, rows };
+    const rows2 = out.map((r6) => Object.fromEntries(headers.map((h4, i7) => [h4, r6[i7] ?? ""])));
+    return { headers, rows: rows2 };
   }
   async onImportFile(ev) {
     const input = ev.target;
     const file = input.files?.[0];
     if (!file) return;
     const text = decodeCsvBuffer(await file.arrayBuffer());
-    const { headers, rows } = this.parseCsv(text);
-    this.emit("csvImport", { headers, rows });
-    this.emit("import", { headers, rows });
+    const { headers, rows: rows2 } = this.parseCsv(text);
+    this.emit("csvImport", { headers, rows: rows2 });
+    this.emit("import", { headers, rows: rows2 });
     input.value = "";
   }
   toggle(p4) {
@@ -2505,8 +2534,13 @@ var OkDataTable = class extends i3 {
   // forma robusta de arrancar en tarjetas sin depender de fijar `viewMode` por referencia (que
   // falla si la tabla monta detrás de un `v-if`/loading y el ref aún es null).
   firstUpdated() {
-    if (this.defaultView === "cards" && this.cardViewEnabled) this.viewMode = "cards";
-    else if (this.defaultView === "table") this.viewMode = "table";
+    if (this.isMobile && this.cardViewEnabled) {
+      this.viewMode = "cards";
+    } else if (this.defaultView === "cards" && this.cardViewEnabled) {
+      this.viewMode = "cards";
+    } else if (this.defaultView === "table") {
+      this.viewMode = "table";
+    }
   }
   setViewMode(mode) {
     if (this.viewMode === mode) return;
@@ -2990,152 +3024,670 @@ var OkDataTable = class extends i3 {
 };
 __decorateClass3([
   n4({ attribute: false })
-], OkDataTable.prototype, "columns");
+], _OkDataTable.prototype, "columns");
 __decorateClass3([
   n4({ attribute: false })
-], OkDataTable.prototype, "rows");
+], _OkDataTable.prototype, "rows");
 __decorateClass3([
   n4({ attribute: false })
-], OkDataTable.prototype, "searchKeys");
+], _OkDataTable.prototype, "searchKeys");
 __decorateClass3([
   n4({ attribute: "row-key-field" })
-], OkDataTable.prototype, "rowKeyField");
+], _OkDataTable.prototype, "rowKeyField");
 __decorateClass3([
   n4({ attribute: false })
-], OkDataTable.prototype, "rowKey");
+], _OkDataTable.prototype, "rowKey");
 __decorateClass3([
   n4({ type: Number, attribute: "page-size" })
-], OkDataTable.prototype, "pageSize");
+], _OkDataTable.prototype, "pageSize");
 __decorateClass3([
   n4({ attribute: "empty-message" })
-], OkDataTable.prototype, "emptyMessage");
+], _OkDataTable.prototype, "emptyMessage");
 __decorateClass3([
   n4({ attribute: "search-placeholder" })
-], OkDataTable.prototype, "searchPlaceholder");
+], _OkDataTable.prototype, "searchPlaceholder");
 __decorateClass3([
   n4({ attribute: false })
-], OkDataTable.prototype, "labels");
+], _OkDataTable.prototype, "labels");
 __decorateClass3([
   n4({ attribute: false })
-], OkDataTable.prototype, "actions");
+], _OkDataTable.prototype, "actions");
 __decorateClass3([
   n4({ type: Boolean })
-], OkDataTable.prototype, "addable");
+], _OkDataTable.prototype, "addable");
 __decorateClass3([
   n4({ attribute: false })
-], OkDataTable.prototype, "pageSizeOptions");
+], _OkDataTable.prototype, "pageSizeOptions");
 __decorateClass3([
   n4({ type: Boolean, reflect: true })
-], OkDataTable.prototype, "fill");
+], _OkDataTable.prototype, "fill");
 __decorateClass3([
   n4({ type: Boolean, attribute: "column-picker" })
-], OkDataTable.prototype, "columnPicker");
+], _OkDataTable.prototype, "columnPicker");
 __decorateClass3([
   n4({ type: Boolean })
-], OkDataTable.prototype, "csv");
+], _OkDataTable.prototype, "csv");
 __decorateClass3([
   n4({ attribute: "csv-name" })
-], OkDataTable.prototype, "csvName");
+], _OkDataTable.prototype, "csvName");
 __decorateClass3([
   n4({ type: Boolean, attribute: "server-side" })
-], OkDataTable.prototype, "serverSide");
+], _OkDataTable.prototype, "serverSide");
 __decorateClass3([
   n4({ type: Number })
-], OkDataTable.prototype, "total");
+], _OkDataTable.prototype, "total");
 __decorateClass3([
   n4({ type: Number })
-], OkDataTable.prototype, "page");
+], _OkDataTable.prototype, "page");
 __decorateClass3([
   n4({ type: Boolean })
-], OkDataTable.prototype, "searchable");
+], _OkDataTable.prototype, "searchable");
 __decorateClass3([
   n4({ type: String })
-], OkDataTable.prototype, "sort");
+], _OkDataTable.prototype, "sort");
 __decorateClass3([
   n4({ attribute: "sort-dir" })
-], OkDataTable.prototype, "sortDir");
+], _OkDataTable.prototype, "sortDir");
 __decorateClass3([
   n4()
-], OkDataTable.prototype, "title");
+], _OkDataTable.prototype, "title");
 __decorateClass3([
   n4({ attribute: false })
-], OkDataTable.prototype, "views");
+], _OkDataTable.prototype, "views");
 __decorateClass3([
   n4({ attribute: "default-view" })
-], OkDataTable.prototype, "defaultView");
+], _OkDataTable.prototype, "defaultView");
 __decorateClass3([
   n4({ type: Boolean })
-], OkDataTable.prototype, "exportable");
+], _OkDataTable.prototype, "exportable");
 __decorateClass3([
   n4({ type: Boolean })
-], OkDataTable.prototype, "importable");
+], _OkDataTable.prototype, "importable");
 __decorateClass3([
   n4({ type: Boolean, attribute: "column-selector" })
-], OkDataTable.prototype, "columnSelector");
+], _OkDataTable.prototype, "columnSelector");
 __decorateClass3([
   n4({ attribute: false })
-], OkDataTable.prototype, "pageSizes");
+], _OkDataTable.prototype, "pageSizes");
 __decorateClass3([
   n4({ type: Boolean })
-], OkDataTable.prototype, "selectable");
+], _OkDataTable.prototype, "selectable");
 __decorateClass3([
   n4({ attribute: false })
-], OkDataTable.prototype, "selectedKeys");
+], _OkDataTable.prototype, "selectedKeys");
 __decorateClass3([
   n4({ attribute: false })
-], OkDataTable.prototype, "primaryAction");
+], _OkDataTable.prototype, "primaryAction");
 __decorateClass3([
   n4({ type: Boolean })
-], OkDataTable.prototype, "inlineFilters");
+], _OkDataTable.prototype, "inlineFilters");
 __decorateClass3([
   n4({ attribute: false })
-], OkDataTable.prototype, "menuActions");
+], _OkDataTable.prototype, "menuActions");
 __decorateClass3([
   n4({ attribute: false })
-], OkDataTable.prototype, "cardTitle");
+], _OkDataTable.prototype, "cardTitle");
 __decorateClass3([
   n4({ attribute: false })
-], OkDataTable.prototype, "cardIcon");
+], _OkDataTable.prototype, "cardIcon");
 __decorateClass3([
   n4({ attribute: false })
-], OkDataTable.prototype, "renderCard");
+], _OkDataTable.prototype, "renderCard");
 __decorateClass3([
   r5()
-], OkDataTable.prototype, "q");
+], _OkDataTable.prototype, "q");
 __decorateClass3([
   r5()
-], OkDataTable.prototype, "clientPage");
+], _OkDataTable.prototype, "clientPage");
 __decorateClass3([
   r5()
-], OkDataTable.prototype, "clientPageSize");
+], _OkDataTable.prototype, "clientPageSize");
 __decorateClass3([
   r5()
-], OkDataTable.prototype, "clientSort");
+], _OkDataTable.prototype, "clientSort");
 __decorateClass3([
   r5()
-], OkDataTable.prototype, "clientSortDir");
+], _OkDataTable.prototype, "clientSortDir");
 __decorateClass3([
   r5()
-], OkDataTable.prototype, "clientFilters");
+], _OkDataTable.prototype, "clientFilters");
 __decorateClass3([
   r5()
-], OkDataTable.prototype, "filterDraft");
+], _OkDataTable.prototype, "filterDraft");
 __decorateClass3([
   r5()
-], OkDataTable.prototype, "panel");
+], _OkDataTable.prototype, "panel");
 __decorateClass3([
   r5()
-], OkDataTable.prototype, "viewMode");
+], _OkDataTable.prototype, "viewMode");
 __decorateClass3([
   r5()
-], OkDataTable.prototype, "hiddenKeys");
+], _OkDataTable.prototype, "isMobile");
 __decorateClass3([
   r5()
-], OkDataTable.prototype, "internalSelection");
+], _OkDataTable.prototype, "hiddenKeys");
 __decorateClass3([
   r5()
-], OkDataTable.prototype, "menuOpen");
+], _OkDataTable.prototype, "internalSelection");
+__decorateClass3([
+  r5()
+], _OkDataTable.prototype, "menuOpen");
+var OkDataTable = _OkDataTable;
 define("ok-data-table", OkDataTable);
+
+// ../outfitkit/dist/ok-scheduler.js
+var __defProp4 = Object.defineProperty;
+var __decorateClass4 = (decorators, target, key, kind) => {
+  var result = void 0;
+  for (var i7 = decorators.length - 1, decorator; i7 >= 0; i7--)
+    if (decorator = decorators[i7])
+      result = decorator(target, key, result) || result;
+  if (result) __defProp4(target, key, result);
+  return result;
+};
+var DEFAULT_LABELS3 = {
+  prevDay: "Previous day",
+  nextDay: "Next day",
+  empty: "No resources to display."
+};
+var OkScheduler = class extends i3 {
+  constructor() {
+    super(...arguments);
+    this.resources = [];
+    this.events = [];
+    this.date = "";
+    this.startHour = 8;
+    this.endHour = 20;
+    this.slotMin = 60;
+    this.locale = "en-US";
+    this.labels = {};
+    this.cursor = /* @__PURE__ */ new Date();
+    this.seeded = false;
+  }
+  static {
+    this.styles = i`
+    :host {
+      /* Vars overridable (estilo Ionic), default = cadena --ok-* → --ion-* → hex */
+      --color: var(--ok-text, var(--ion-text-color, #1c1b17));
+      --color-muted: var(--ok-text-muted, rgba(var(--ion-text-color-rgb, 28, 27, 23), 0.55));
+      --background: var(--ok-surface, var(--ion-background-color, #ffffff));
+      --primary-color: var(--ok-primary, var(--ion-color-primary, #3880ff));
+      --primary-contrast: var(--ok-primary-contrast, var(--ion-color-primary-contrast, #ffffff));
+      --hover-bg: var(--ok-hover, rgba(var(--ion-text-color-rgb, 28, 27, 23), 0.06));
+      --border-color: var(--ok-border-soft, rgba(var(--ion-text-color-rgb, 28, 27, 23), 0.12));
+      --border-radius: var(--ok-radius, 8px);
+      --resource-width: var(--ok-scheduler-resource-width, 11rem);
+      --hour-width: var(--ok-scheduler-hour-width, 6rem);
+      --row-height: var(--ok-scheduler-row-height, 3.5rem);
+      --font: var(--ok-font, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif);
+
+      /* Por defecto ocupa el ancho del contenedor y es responsive. */
+      display: block;
+      width: 100%;
+      color: var(--color);
+      font-family: var(--font);
+      font-size: 0.95rem;
+      box-sizing: border-box;
+    }
+    * {
+      box-sizing: border-box;
+    }
+
+    /* ── Cabecera de navegación de día ──────────────────────────── */
+    .toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.25rem;
+      margin-bottom: 0.6rem;
+    }
+    .toolbar .title {
+      min-width: 12rem;
+      text-align: center;
+      font-weight: 600;
+      font-size: 1.05rem;
+      text-transform: capitalize;
+    }
+
+    /* ── Contenedor con scroll horizontal ───────────────────────── */
+    .scroll {
+      width: 100%;
+      overflow-x: auto;
+      overflow-y: hidden;
+      border: 1px solid var(--border-color);
+      border-radius: var(--border-radius);
+      -webkit-overflow-scrolling: touch;
+    }
+    /* El grid interior tiene ancho intrínseco = columna recurso + franja horaria. */
+    .grid {
+      display: inline-block;
+      min-width: 100%;
+    }
+
+    /* ── Cabecera horaria ───────────────────────────────────────── */
+    .head-row {
+      display: flex;
+      position: sticky;
+      top: 0;
+      z-index: 3;
+    }
+    .corner {
+      flex: 0 0 var(--resource-width);
+      width: var(--resource-width);
+      position: sticky;
+      left: 0;
+      z-index: 4;
+      background: var(--background);
+      border-right: 1px solid var(--border-color);
+      border-bottom: 1px solid var(--border-color);
+    }
+    .timeline {
+      display: flex;
+      flex: 1 1 auto;
+    }
+    .hour {
+      flex: 0 0 var(--hour-width);
+      width: var(--hour-width);
+      padding: 0.4rem 0.5rem;
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: var(--color-muted);
+      text-align: left;
+      background: var(--background);
+      border-bottom: 1px solid var(--border-color);
+      border-right: 1px solid var(--border-color);
+      font-variant-numeric: tabular-nums;
+    }
+    .hour:last-child {
+      border-right: 0;
+    }
+
+    /* ── Filas de recurso ───────────────────────────────────────── */
+    .row {
+      display: flex;
+      border-top: 1px solid var(--border-color);
+    }
+    .row:first-of-type {
+      border-top: 0;
+    }
+    .resource {
+      flex: 0 0 var(--resource-width);
+      width: var(--resource-width);
+      min-height: var(--row-height);
+      position: sticky;
+      left: 0;
+      z-index: 2;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.4rem 0.6rem;
+      background: var(--background);
+      border-right: 1px solid var(--border-color);
+    }
+    .avatar {
+      flex: 0 0 auto;
+      width: 2rem;
+      height: 2rem;
+      border-radius: 999px;
+      object-fit: cover;
+      background: var(--hover-bg);
+    }
+    .avatar-fallback {
+      flex: 0 0 auto;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 2rem;
+      height: 2rem;
+      border-radius: 999px;
+      background: var(--hover-bg);
+      color: var(--color-muted);
+      font-size: 0.85rem;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+    .resource-label {
+      flex: 1 1 auto;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-weight: 500;
+    }
+
+    /* ── Pista de eventos (lane) de un recurso ──────────────────── */
+    .lane {
+      position: relative;
+      flex: 1 1 auto;
+      min-height: var(--row-height);
+      background: var(--background);
+    }
+    /* Celdas-slot clicables de fondo (para crear turnos). */
+    .slot {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      border-right: 1px solid var(--border-color);
+      cursor: pointer;
+      transition: background-color var(--ok-transition, 150ms ease),
+        color var(--ok-transition, 150ms ease), border-color var(--ok-transition, 150ms ease),
+        box-shadow var(--ok-transition, 150ms ease), transform 120ms ease;
+    }
+    @media (hover: hover) {
+      .slot:hover {
+        background: var(--hover-bg);
+      }
+    }
+    .slot:active {
+      transform: scale(var(--ok-press-scale, 0.97));
+    }
+    .slot:last-child {
+      border-right: 0;
+    }
+
+    /* ── Bloque de evento ───────────────────────────────────────── */
+    .event {
+      position: absolute;
+      top: 0.25rem;
+      bottom: 0.25rem;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      padding: 0.2rem 0.45rem;
+      border-radius: 6px;
+      color: var(--primary-contrast);
+      cursor: pointer;
+      overflow: hidden;
+      z-index: 1;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
+      transition: background-color var(--ok-transition, 150ms ease),
+        color var(--ok-transition, 150ms ease), border-color var(--ok-transition, 150ms ease),
+        box-shadow var(--ok-transition, 150ms ease), transform 120ms ease, filter 0.12s ease;
+    }
+    @media (hover: hover) {
+      .event:hover {
+        filter: brightness(1.05);
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.22);
+      }
+    }
+    .event:active {
+      transform: scale(var(--ok-press-scale, 0.97));
+    }
+    .event-title {
+      font-size: 0.78rem;
+      font-weight: 600;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .event-time {
+      font-size: 0.68rem;
+      opacity: 0.9;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* ── Estado vacío ───────────────────────────────────────────── */
+    .empty {
+      padding: 1.5rem;
+      text-align: center;
+      color: var(--color-muted);
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .slot:active,
+      .event:active {
+        transform: none;
+      }
+    }
+
+    /* ── Responsive (móvil): franja más estrecha, recurso visible ── */
+    @media (max-width: 540px) {
+      :host {
+        --resource-width: 7rem;
+        --hour-width: 3.5rem;
+      }
+      .hour {
+        font-size: 0.7rem;
+        padding: 0.35rem 0.3rem;
+      }
+      .avatar,
+      .avatar-fallback {
+        width: 1.6rem;
+        height: 1.6rem;
+        font-size: 0.7rem;
+      }
+      .event-time {
+        display: none;
+      }
+    }
+  `;
+  }
+  /** Textos efectivos: defaults INGLÉS mezclados con los del consumidor. */
+  get t() {
+    return { ...DEFAULT_LABELS3, ...this.labels };
+  }
+  // ── Helpers de fecha ──────────────────────────────────────────
+  // Convierte una `Date` a clave local `YYYY-MM-DD`.
+  dayKey(d3) {
+    const y3 = d3.getFullYear();
+    const m4 = String(d3.getMonth() + 1).padStart(2, "0");
+    const day = String(d3.getDate()).padStart(2, "0");
+    return `${y3}-${m4}-${day}`;
+  }
+  // Parsea `YYYY-MM-DD` (parte de fecha) a `Date` local; fallback defensivo a hoy.
+  parseDay(s5) {
+    const [y3, m4, d3] = s5.slice(0, 10).split("-").map(Number);
+    if (y3 && m4 && d3) return new Date(y3, m4 - 1, d3);
+    return /* @__PURE__ */ new Date();
+  }
+  // Extrae los minutos desde medianoche de una hora `HH:MM` o ISO (`...THH:MM`).
+  minutesOf(time) {
+    const t5 = time.includes("T") ? time.split("T")[1] : time;
+    const [h4, m4] = (t5 || "").split(":").map(Number);
+    if (Number.isFinite(h4)) return h4 * 60 + (Number.isFinite(m4) ? m4 : 0);
+    return 0;
+  }
+  // Formatea minutos-desde-medianoche a `HH:MM`.
+  fmtTime(mins) {
+    const h4 = Math.floor(mins / 60);
+    const m4 = mins % 60;
+    return `${String(h4).padStart(2, "0")}:${String(m4).padStart(2, "0")}`;
+  }
+  // ── Geometría de la franja ────────────────────────────────────
+  // Rango total de la franja en minutos (defensivo: end > start).
+  get rangeMinutes() {
+    const span = (this.endHour - this.startHour) * 60;
+    return span > 0 ? span : 60;
+  }
+  // Número de celdas-slot de fondo según `slot`.
+  get slotCount() {
+    const step = this.slotMin > 0 ? this.slotMin : 60;
+    return Math.max(1, Math.ceil(this.rangeMinutes / step));
+  }
+  // ── Navegación / eventos ──────────────────────────────────────
+  // Cambia el día visible (delta en días) y emite `ok-nav`.
+  navDay(delta) {
+    const next = new Date(
+      this.cursor.getFullYear(),
+      this.cursor.getMonth(),
+      this.cursor.getDate() + delta
+    );
+    this.cursor = next;
+    this.dispatchEvent(
+      new CustomEvent("ok-nav", {
+        detail: { date: this.dayKey(next) },
+        bubbles: true,
+        composed: true
+      })
+    );
+  }
+  // Emite el click sobre un evento (sin propagar al slot de fondo).
+  clickEvent(ev, e5) {
+    e5.stopPropagation();
+    this.dispatchEvent(
+      new CustomEvent("ok-event-click", {
+        detail: { id: ev.id, event: ev },
+        bubbles: true,
+        composed: true
+      })
+    );
+  }
+  // Emite el click sobre una celda-slot vacía de un recurso.
+  clickSlot(resourceId, mins) {
+    this.dispatchEvent(
+      new CustomEvent("ok-slot-click", {
+        detail: { resourceId, time: this.fmtTime(mins) },
+        bubbles: true,
+        composed: true
+      })
+    );
+  }
+  // ── Etiquetas ─────────────────────────────────────────────────
+  // Etiqueta del día del cursor (capitalizada vía CSS).
+  dayLabel() {
+    return this.cursor.toLocaleDateString(this.locale, {
+      weekday: "long",
+      day: "numeric",
+      month: "long",
+      year: "numeric"
+    });
+  }
+  // Iniciales para el avatar de respaldo (sin imagen).
+  initials(label) {
+    const parts = label.trim().split(/\s+/).filter(Boolean);
+    if (parts.length === 0) return "?";
+    if (parts.length === 1) return parts[0].slice(0, 2);
+    return parts[0][0] + parts[parts.length - 1][0];
+  }
+  // ── Render parcial ────────────────────────────────────────────
+  // Cabecera horaria: una columna por hora del rango.
+  renderTimelineHead() {
+    const hours = [];
+    for (let h4 = this.startHour; h4 < this.endHour; h4++) hours.push(h4);
+    return b2`<div class="timeline">
+      ${hours.map(
+      (h4) => b2`<div class="hour">${String(h4).padStart(2, "0")}:00</div>`
+    )}
+    </div>`;
+  }
+  // Lane (pista) de un recurso: celdas-slot de fondo + bloques de evento posicionados.
+  renderLane(resource) {
+    const total = this.rangeMinutes;
+    const startMin = this.startHour * 60;
+    const step = this.slotMin > 0 ? this.slotMin : 60;
+    const count = this.slotCount;
+    const slots = [];
+    for (let i7 = 0; i7 < count; i7++) {
+      const slotStart = startMin + i7 * step;
+      const left = (slotStart - startMin) / total * 100;
+      const width = step / total * 100;
+      slots.push(
+        b2`<div
+          class="slot"
+          style=${`left:${left}%;width:${width}%`}
+          @click=${() => this.clickSlot(resource.id, slotStart)}
+        ></div>`
+      );
+    }
+    const blocks = this.events.filter((ev) => ev.resourceId === resource.id).map((ev) => {
+      const s5 = Math.max(this.minutesOf(ev.start), startMin);
+      const e5 = Math.min(this.minutesOf(ev.end), startMin + total);
+      if (e5 <= s5) return "";
+      const left = (s5 - startMin) / total * 100;
+      const width = (e5 - s5) / total * 100;
+      return b2`<div
+          class="event"
+          style=${`left:${left}%;width:${width}%;background:${ev.color || "var(--primary-color)"}`}
+          title=${ev.title}
+          @click=${(domEv) => this.clickEvent(ev, domEv)}
+        >
+          <span class="event-title">${ev.title}</span>
+          <span class="event-time"
+            >${this.fmtTime(this.minutesOf(ev.start))} – ${this.fmtTime(this.minutesOf(ev.end))}</span
+          >
+        </div>`;
+    });
+    return b2`<div class="lane">${slots}${blocks}</div>`;
+  }
+  // Fila completa de un recurso: label sticky + lane.
+  renderRow(resource) {
+    return b2`<div class="row">
+      <div class="resource">
+        ${resource.avatar ? b2`<img class="avatar" src=${resource.avatar} alt="" loading="lazy" />` : b2`<span class="avatar-fallback">${this.initials(resource.label)}</span>`}
+        <span class="resource-label">${resource.label}</span>
+      </div>
+      ${this.renderLane(resource)}
+    </div>`;
+  }
+  render() {
+    if (!this.seeded) {
+      if (this.date) this.cursor = this.parseDay(this.date);
+      this.seeded = true;
+    }
+    const hourCount = Math.max(1, this.endHour - this.startHour);
+    const timelineWidth = `calc(${hourCount} * var(--hour-width))`;
+    const gridStyle = `width:calc(var(--resource-width) + ${timelineWidth})`;
+    return b2`<div class="toolbar">
+        <ion-button
+          fill="clear"
+          size="small"
+          aria-label=${this.t.prevDay}
+          @click=${() => this.navDay(-1)}
+        >
+          <ion-icon slot="icon-only" .icon=${iconChevronBackOutline}></ion-icon>
+        </ion-button>
+        <span class="title">${this.dayLabel()}</span>
+        <ion-button
+          fill="clear"
+          size="small"
+          aria-label=${this.t.nextDay}
+          @click=${() => this.navDay(1)}
+        >
+          <ion-icon slot="icon-only" .icon=${iconChevronForwardOutline}></ion-icon>
+        </ion-button>
+      </div>
+      <div class="scroll">
+        <div class="grid" style=${gridStyle}>
+          <div class="head-row">
+            <div class="corner"></div>
+            ${this.renderTimelineHead()}
+          </div>
+          ${this.resources.length ? this.resources.map((r6) => this.renderRow(r6)) : b2`<div class="empty">${this.t.empty}</div>`}
+        </div>
+      </div>`;
+  }
+};
+__decorateClass4([
+  n4({ attribute: false })
+], OkScheduler.prototype, "resources");
+__decorateClass4([
+  n4({ attribute: false })
+], OkScheduler.prototype, "events");
+__decorateClass4([
+  n4()
+], OkScheduler.prototype, "date");
+__decorateClass4([
+  n4({ type: Number, attribute: "start-hour" })
+], OkScheduler.prototype, "startHour");
+__decorateClass4([
+  n4({ type: Number, attribute: "end-hour" })
+], OkScheduler.prototype, "endHour");
+__decorateClass4([
+  n4({ type: Number, attribute: "slot-minutes" })
+], OkScheduler.prototype, "slotMin");
+__decorateClass4([
+  n4()
+], OkScheduler.prototype, "locale");
+__decorateClass4([
+  n4({ attribute: false })
+], OkScheduler.prototype, "labels");
+__decorateClass4([
+  r5()
+], OkScheduler.prototype, "cursor");
+define("ok-scheduler", OkScheduler);
 
 // modules/appointments/locales/es.json
 var es_default = {
@@ -3168,7 +3720,6 @@ var es_default = {
     actionDelete: "Borrar",
     fieldDate: "D\xEDa",
     fieldCustomer: "Cliente",
-    fieldPhone: "Tel\xE9fono",
     fieldService: "Servicio",
     fieldStart: "Inicio",
     fieldMinutes: "Min.",
@@ -3179,7 +3730,19 @@ var es_default = {
     empty: "Sin citas para este d\xEDa.",
     errLoad: "Error cargando citas",
     errCreate: "No se pudo crear la cita",
-    errAction: "No se pudo ejecutar la acci\xF3n"
+    errAction: "No se pudo ejecutar la acci\xF3n",
+    actionNoShow: "No-show",
+    fieldStaff: "Profesional",
+    pickCustomer: "Elige un cliente",
+    pickService: "Elige un servicio",
+    pickStaff: "Elige un profesional",
+    viewList: "Lista",
+    viewStaff: "Por profesional",
+    unassigned: "Sin asignar",
+    prevDay: "D\xEDa anterior",
+    nextDay: "D\xEDa siguiente",
+    noStaff: "A\xFAn no hay profesionales reservables.",
+    errLoadCatalogs: "Error cargando clientes, servicios o personal"
   }
 };
 
@@ -3214,7 +3777,6 @@ var en_default = {
     actionDelete: "Delete",
     fieldDate: "Day",
     fieldCustomer: "Customer",
-    fieldPhone: "Phone",
     fieldService: "Service",
     fieldStart: "Start",
     fieldMinutes: "Min.",
@@ -3225,7 +3787,19 @@ var en_default = {
     empty: "No appointments for this day.",
     errLoad: "Error loading appointments",
     errCreate: "Could not create the appointment",
-    errAction: "Could not perform the action"
+    errAction: "Could not perform the action",
+    actionNoShow: "No-show",
+    fieldStaff: "Professional",
+    pickCustomer: "Pick a customer",
+    pickService: "Pick a service",
+    pickStaff: "Pick a professional",
+    viewList: "List",
+    viewStaff: "By professional",
+    unassigned: "Unassigned",
+    prevDay: "Previous day",
+    nextDay: "Next day",
+    noStaff: "No bookable professionals yet.",
+    errLoadCatalogs: "Error loading customers, services or staff"
   }
 };
 
@@ -3239,6 +3813,15 @@ var STATUS_KEYS = {
   cancelled: "ui.statusCancelled",
   no_show: "ui.statusNoShow"
 };
+var STATUS_COLORS = {
+  pending: "var(--ion-color-medium, #92949c)",
+  confirmed: "var(--ion-color-primary, #3880ff)",
+  in_progress: "var(--ion-color-warning, #ffc409)",
+  completed: "var(--ion-color-success, #2dd36f)",
+  cancelled: "var(--ion-color-danger, #eb445a)",
+  no_show: "var(--ion-color-danger, #eb445a)"
+};
+var UNASSIGNED = "unassigned";
 function erplora() {
   const c5 = globalThis.erplora;
   if (!c5) throw new Error("erplora SDK no inicializado por el shell");
@@ -3252,11 +3835,23 @@ function dayBounds(day) {
   const end = new Date(start.getTime() + 24 * 60 * 60 * 1e3);
   return { day_start: start.toISOString(), day_end: end.toISOString() };
 }
+function rows(r6) {
+  if (Array.isArray(r6)) return r6;
+  if (r6 && typeof r6 === "object" && Array.isArray(r6.rows)) {
+    return r6.rows;
+  }
+  return [];
+}
 function fmtTime(iso) {
   if (!iso) return "";
   const d3 = new Date(iso);
   if (Number.isNaN(d3.getTime())) return iso;
   return d3.toLocaleTimeString(erplora().locale || "es", { hour: "2-digit", minute: "2-digit" });
+}
+function wallClock(iso) {
+  const d3 = new Date(iso);
+  if (Number.isNaN(d3.getTime())) return "00:00";
+  return `${String(d3.getHours()).padStart(2, "0")}:${String(d3.getMinutes()).padStart(2, "0")}`;
 }
 var ErpAppointmentsList = class extends i3 {
   constructor() {
@@ -3267,11 +3862,16 @@ var ErpAppointmentsList = class extends i3 {
     this.saving = false;
     this.day = todayISO();
     this.statusFilter = "";
-    this.newCustomer = "";
-    this.newPhone = "";
-    this.newService = "";
+    this.view = "list";
+    this.customers = [];
+    this.services = [];
+    this.staffMembers = [];
+    this.settings = {};
+    this.newCustomerId = "";
+    this.newServiceId = "";
+    this.newStaffId = "";
     this.newStart = "";
-    this.newDuration = "60";
+    this.newDuration = "";
     // i18n (ADR-0055): re-renderiza al recibir `erplora:locale-changed`.
     this.onLocaleChange = () => this.requestUpdate();
   }
@@ -3280,10 +3880,11 @@ var ErpAppointmentsList = class extends i3 {
     :host { display:flex; flex-direction:column; height:100%; min-height:0; font-family: system-ui, sans-serif; color: var(--ion-text-color, #1c1b18); }
     /* La vista llena el alto: el data-table ocupa el resto (scroll interno, pie fijo). */
     .page { display:flex; flex-direction:column; min-height:0; flex:1 1 auto; }
-    .page > ok-data-table { flex:1 1 auto; min-height:0; }
-    /* ALCANCE de la consulta (día + estado), no filtros de columna: se queda fuera de la tabla. */
+    .page > ok-data-table, .page > ok-scheduler { flex:1 1 auto; min-height:0; }
+    /* ALCANCE de la consulta (día + estado) y modo de vista: no son filtros de columna. */
     .filters { display:flex; gap:.75rem; align-items:end; margin:0 0 .75rem; flex-wrap:wrap; }
     .filters ion-input, .filters ion-select { flex:1 1 11rem; min-width:9rem; }
+    .filters ion-segment { flex:0 0 auto; width:auto; }
     /* Formulario del panel de alta (drawer estrecho) → una columna, no en fila. */
     .form { display:flex; flex-direction:column; gap:.7rem; }
     .form ion-button { align-self:flex-end; }
@@ -3293,6 +3894,22 @@ var ErpAppointmentsList = class extends i3 {
   statusLabel(status) {
     const key = STATUS_KEYS[status];
     return key ? erplora().t(CATALOG, key) : status;
+  }
+  /** Profesionales que pueden recibir citas: los que el módulo `staff` marca reservables. */
+  get bookableStaff() {
+    return this.staffMembers.filter((m4) => Number(m4.is_bookable) === 1 && m4.status !== "terminated");
+  }
+  get selectedService() {
+    return this.services.find((s5) => s5.id === this.newServiceId);
+  }
+  /** Duración efectiva: la tecleada manda; si no, la del servicio; si no, la de los ajustes. */
+  get effectiveDuration() {
+    const typed = Number(this.newDuration);
+    if (Number.isFinite(typed) && typed >= 1) return typed;
+    const fromService = Number(this.selectedService?.duration_minutes);
+    if (Number.isFinite(fromService) && fromService >= 1) return fromService;
+    const fromSettings = Number(this.settings.default_duration);
+    return Number.isFinite(fromSettings) && fromSettings >= 1 ? fromSettings : 60;
   }
   // Getters (no campos): se re-evalúan en cada render para seguir el idioma activo.
   get columns() {
@@ -3316,9 +3933,30 @@ var ErpAppointmentsList = class extends i3 {
       { id: "confirm", label: t5("ui.actionConfirm"), icon: "checkmark-circle-outline", color: "success" },
       { id: "start", label: t5("ui.actionStart"), icon: "play-circle-outline", color: "primary" },
       { id: "complete", label: t5("ui.actionComplete"), icon: "checkmark-done-outline", color: "success" },
+      // El no-show existía en la API desde el día 1 pero no en la barra: la recepcionista no
+      // tenía forma de registrar que la clienta no vino (appointments#21).
+      { id: "no_show", label: t5("ui.actionNoShow"), icon: "person-remove-outline", color: "warning" },
       { id: "cancel", label: t5("ui.actionCancel"), icon: "close-circle-outline", color: "danger" },
       { id: "delete", label: t5("ui.actionDelete"), icon: "trash-outline", color: "danger" }
     ];
+  }
+  /** Carriles del timeline: un profesional reservable por fila + el carril «sin asignar», que
+   *  se pinta SIEMPRE para que ninguna cita heredada (sin `staff_id`) quede invisible. */
+  get schedulerResources() {
+    return [
+      ...this.bookableStaff.map((m4) => ({ id: m4.id, label: m4.full_name })),
+      { id: UNASSIGNED, label: erplora().t(CATALOG, "ui.unassigned") }
+    ];
+  }
+  get schedulerEvents() {
+    return this.items.map((a3) => ({
+      id: a3.id,
+      resourceId: a3.staff_id || UNASSIGNED,
+      start: wallClock(a3.start_datetime),
+      end: wallClock(a3.end_datetime),
+      title: [a3.customer_name, a3.service_name].filter(Boolean).join(" \xB7 "),
+      color: STATUS_COLORS[a3.status]
+    }));
   }
   // TODO-LIT: componentWillLoad → connectedCallback. Recuerda: connectedCallback se dispara
   // en CADA reconexión al DOM (no solo en el primer montaje). Si la init debe correr una
@@ -3327,6 +3965,7 @@ var ErpAppointmentsList = class extends i3 {
     super.connectedCallback();
     window.addEventListener("erplora:locale-changed", this.onLocaleChange);
     await this.refresh();
+    await this.loadCatalogs();
     try {
       const offs = [
         erplora().on("appointments.appointment.created", () => this.refresh()),
@@ -3348,19 +3987,37 @@ var ErpAppointmentsList = class extends i3 {
     super.disconnectedCallback();
     this.unsub?.();
   }
+  /** Catálogos ligados + ajustes. Se cargan una vez: el alta reserva contra registros reales
+   *  (`customers` / `services` / `staff`) vía sus queries PÚBLICAS — nunca sus tablas. */
+  async loadCatalogs() {
+    try {
+      const [customers, services, staffMembers, settings] = await Promise.all([
+        erplora().query("customers.list", { limit: 500, sort: "name", dir: "asc" }).catch(() => []),
+        erplora().query("services.services.list", { limit: 500 }).catch(() => []),
+        erplora().query("staff.members.list", { limit: 500 }).catch(() => []),
+        erplora().query("appointments.settings.get").catch(() => [])
+      ]);
+      this.customers = rows(customers);
+      this.services = rows(services).filter((s5) => s5.is_bookable === void 0 || Number(s5.is_bookable) === 1);
+      this.staffMembers = rows(staffMembers);
+      this.settings = rows(settings)[0] ?? {};
+    } catch (e5) {
+      this.error = e5 instanceof Error ? e5.message : erplora().t(CATALOG, "ui.errLoadCatalogs");
+    }
+  }
   async refresh() {
     this.loading = true;
     this.error = "";
     try {
       const { day_start, day_end } = dayBounds(this.day);
-      const rows = await erplora().query("appointments.appointments.list", {
+      const result = await erplora().query("appointments.appointments.list", {
         day_start,
         day_end,
         status: this.statusFilter,
         staff_id: "",
         limit: 100
       });
-      this.items = rows ?? [];
+      this.items = rows(result);
     } catch (e5) {
       this.error = e5 instanceof Error ? e5.message : erplora().t(CATALOG, "ui.errLoad");
     } finally {
@@ -3373,23 +4030,33 @@ var ErpAppointmentsList = class extends i3 {
   }
   async createAppointment(ev) {
     ev.preventDefault();
-    if (!this.newCustomer.trim() || !this.newStart) return;
+    const customer = this.customers.find((c5) => c5.id === this.newCustomerId);
+    const service = this.selectedService;
+    const staff = this.bookableStaff.find((m4) => m4.id === this.newStaffId);
+    if (!customer || !service || !staff || !this.newStart) return;
     this.saving = true;
     this.error = "";
     try {
       const startIso = new Date(this.newStart).toISOString();
       await erplora().command("appointments.appointments.create", {
-        customer_name: this.newCustomer.trim(),
-        customer_phone: this.newPhone.trim(),
-        service_name: this.newService.trim(),
+        // Vínculos + su snapshot denormalizado (lo que se reservó, aunque la ficha cambie).
+        customer_id: customer.id,
+        customer_name: customer.name,
+        customer_phone: customer.phone ?? "",
+        customer_email: customer.email ?? "",
+        service_id: service.id,
+        service_name: service.name,
+        service_price: Number(service.price) || 0,
+        staff_id: staff.id,
+        staff_name: staff.full_name,
         start_datetime: startIso,
-        duration_minutes: Number(this.newDuration) || 60
+        duration_minutes: this.effectiveDuration
       });
-      this.newCustomer = "";
-      this.newPhone = "";
-      this.newService = "";
+      this.newCustomerId = "";
+      this.newServiceId = "";
+      this.newStaffId = "";
       this.newStart = "";
-      this.newDuration = "60";
+      this.newDuration = "";
       this.dataTable()?.close();
       await this.refresh();
     } catch (e5) {
@@ -3413,6 +4080,9 @@ var ErpAppointmentsList = class extends i3 {
         case "complete":
           await erplora().command("appointments.appointments.complete", { appointment_id: id });
           break;
+        case "no_show":
+          await erplora().command("appointments.appointments.no_show", { appointment_id: id });
+          break;
         case "cancel":
           await erplora().command("appointments.appointments.cancel", { appointment_id: id, reason: "" });
           break;
@@ -3425,13 +4095,28 @@ var ErpAppointmentsList = class extends i3 {
       this.error = e5 instanceof Error ? e5.message : erplora().t(CATALOG, "ui.errAction");
     }
   }
+  /** Hueco libre del timeline → se pre-rellena el alta con ESE profesional y ESA hora y se
+   *  vuelve a la lista, donde vive el panel del «+». Reservar tocando el hueco es el gesto
+   *  estándar de una agenda de salón. */
+  async onSlotClick(ev) {
+    const { resourceId, time } = ev.detail;
+    if (resourceId !== UNASSIGNED) this.newStaffId = resourceId;
+    this.newStart = `${this.day}T${time}`;
+    this.view = "list";
+    await this.updateComplete;
+    this.dataTable()?.open("create");
+  }
   // El título de la vista lo pinta el topbar del shell: repetirlo aquí lo duplicaba en pantalla.
   render() {
     const t5 = (k2) => erplora().t(CATALOG, k2);
+    const startHour = Number(this.settings.calendar_start_hour ?? 8);
+    const endHour = Number(this.settings.calendar_end_hour ?? 20);
     return b2`<div class="page">
         <!-- Día y estado NO son filtros de columna: son el ALCANCE de la consulta (los binds
              day_start/day_end/status de appointments.appointments.list, que no es una lista
-             paginada del motor). Deciden QUÉ se carga → viven fuera del embudo de la tabla. -->
+             paginada del motor). Deciden QUÉ se carga → viven fuera del embudo de la tabla.
+             El conmutador de vista (lista | por profesional) vive aquí por lo mismo: decide
+             CÓMO se pinta lo cargado, no filtra columnas. -->
         <div class="filters">
           <ion-input fill="outline" label-placement="floating" label=${t5("ui.fieldDate")} type="date" .value=${this.day} @ionInput=${(e5) => {
       this.day = e5.target.value;
@@ -3444,20 +4129,52 @@ var ErpAppointmentsList = class extends i3 {
             <ion-select-option value="">${t5("ui.statusAll")}</ion-select-option>
             ${Object.keys(STATUS_KEYS).map((k2) => b2`<ion-select-option .value=${k2}>${this.statusLabel(k2)}</ion-select-option>`)}
           </ion-select>
+          <ion-segment .value=${this.view} @ionChange=${(e5) => this.view = e5.target.value}>
+            <ion-segment-button value="list">
+              <ion-label>${t5("ui.viewList")}</ion-label>
+            </ion-segment-button>
+            <ion-segment-button value="staff">
+              <ion-label>${t5("ui.viewStaff")}</ion-label>
+            </ion-segment-button>
+          </ion-segment>
         </div>
         ${this.error ? b2`<ok-inline-feedback tone="danger" icon="alert-circle-outline">${this.error}</ok-inline-feedback>` : A}
-        <ok-data-table .fill=${true} .addable=${true} .views=${true} .cardTitle=${(row) => String(row.appointment_number ?? row.customer_name ?? "")} .columns=${this.columns} .rows=${this.items} .searchKeys=${["appointment_number", "customer_name", "service_name", "staff_name"]} .searchPlaceholder=${t5("ui.searchPlaceholder")} .actions=${this.rowActions} @rowAction=${(e5) => this.onRowAction(e5)} .emptyMessage=${this.loading ? t5("ui.loading") : t5("ui.empty")}>
+        ${this.view === "staff" ? b2`<ok-scheduler
+              .date=${this.day}
+              .startHour=${startHour}
+              .endHour=${endHour}
+              .locale=${erplora().locale || "es"}
+              .resources=${this.schedulerResources}
+              .events=${this.schedulerEvents}
+              .labels=${{ prevDay: t5("ui.prevDay"), nextDay: t5("ui.nextDay"), empty: t5("ui.noStaff") }}
+              @ok-nav=${(e5) => {
+      this.day = e5.detail.date;
+      this.refresh();
+    }}
+              @ok-slot-click=${(e5) => this.onSlotClick(e5)}
+            ></ok-scheduler>` : b2`<ok-data-table .fill=${true} .addable=${true} .views=${true} .cardTitle=${(row) => String(row.appointment_number ?? row.customer_name ?? "")} .columns=${this.columns} .rows=${this.items} .searchKeys=${["appointment_number", "customer_name", "service_name", "staff_name"]} .searchPlaceholder=${t5("ui.searchPlaceholder")} .actions=${this.rowActions} @rowAction=${(e5) => this.onRowAction(e5)} .emptyMessage=${this.loading ? t5("ui.loading") : t5("ui.empty")}>
           <!-- Alta de cita: se proyecta SIEMPRE (aunque el panel esté cerrado); si solo se pintara
-               al abrirlo, el «+» desplegaría un panel vacío en el primer clic. -->
+               al abrirlo, el «+» desplegaría un panel vacío en el primer clic.
+               Cliente, servicio y profesional se ELIGEN de sus módulos (appointments#21): con
+               texto libre la cita no se podía agrupar por profesional, ni casar con la
+               disponibilidad, ni pasar a la venta sin re-teclear. -->
           <form slot="create" class="form" @submit=${(e5) => this.createAppointment(e5)}>
-            <ion-input fill="outline" label-placement="floating" label=${t5("ui.colCustomer")} .value=${this.newCustomer} @ionInput=${(e5) => this.newCustomer = e5.target.value}></ion-input>
-            <ion-input fill="outline" label-placement="floating" label=${t5("ui.fieldPhone")} .value=${this.newPhone} @ionInput=${(e5) => this.newPhone = e5.target.value}></ion-input>
-            <ion-input fill="outline" label-placement="floating" label=${t5("ui.colService")} .value=${this.newService} @ionInput=${(e5) => this.newService = e5.target.value}></ion-input>
+            <ion-select data-role="customer" fill="outline" label-placement="floating" label=${t5("ui.fieldCustomer")} placeholder=${t5("ui.pickCustomer")} .value=${this.newCustomerId} @ionChange=${(e5) => this.newCustomerId = e5.target.value}>
+              ${this.customers.map((c5) => b2`<ion-select-option .value=${c5.id}>${c5.name}</ion-select-option>`)}
+            </ion-select>
+            <ion-select data-role="service" fill="outline" label-placement="floating" label=${t5("ui.fieldService")} placeholder=${t5("ui.pickService")} .value=${this.newServiceId} @ionChange=${(e5) => this.newServiceId = e5.target.value}>
+              ${this.services.map((s5) => b2`<ion-select-option .value=${s5.id}>${s5.name}</ion-select-option>`)}
+            </ion-select>
+            <ion-select data-role="staff" fill="outline" label-placement="floating" label=${t5("ui.fieldStaff")} placeholder=${t5("ui.pickStaff")} .value=${this.newStaffId} @ionChange=${(e5) => this.newStaffId = e5.target.value}>
+              ${this.bookableStaff.map((m4) => b2`<ion-select-option .value=${m4.id}>${m4.full_name}</ion-select-option>`)}
+            </ion-select>
             <ion-input fill="outline" label-placement="floating" label=${t5("ui.fieldStart")} type="datetime-local" .value=${this.newStart} @ionInput=${(e5) => this.newStart = e5.target.value}></ion-input>
-            <ion-input fill="outline" label-placement="floating" label=${t5("ui.fieldMinutes")} type="number" min="1" .value=${this.newDuration} @ionInput=${(e5) => this.newDuration = e5.target.value}></ion-input>
-            <ion-button type="submit" size="small" ?disabled=${this.saving || !this.newCustomer || !this.newStart}>${this.saving ? t5("ui.saving") : t5("ui.addAppointment")}</ion-button>
+            <!-- Minutos vacío = la duración del servicio elegido (lo normal); se teclea solo para
+                 excepciones (una clienta que necesita más tiempo). -->
+            <ion-input fill="outline" label-placement="floating" label=${t5("ui.fieldMinutes")} type="number" min="1" placeholder=${String(this.effectiveDuration)} .value=${this.newDuration} @ionInput=${(e5) => this.newDuration = e5.target.value}></ion-input>
+            <ion-button type="submit" size="small" ?disabled=${this.saving || !this.newCustomerId || !this.newServiceId || !this.newStaffId || !this.newStart}>${this.saving ? t5("ui.saving") : t5("ui.addAppointment")}</ion-button>
           </form>
-        </ok-data-table>
+        </ok-data-table>`}
       </div>`;
   }
 };
@@ -3481,13 +4198,28 @@ __decorateClass([
 ], ErpAppointmentsList.prototype, "statusFilter", 2);
 __decorateClass([
   r5()
-], ErpAppointmentsList.prototype, "newCustomer", 2);
+], ErpAppointmentsList.prototype, "view", 2);
 __decorateClass([
   r5()
-], ErpAppointmentsList.prototype, "newPhone", 2);
+], ErpAppointmentsList.prototype, "customers", 2);
 __decorateClass([
   r5()
-], ErpAppointmentsList.prototype, "newService", 2);
+], ErpAppointmentsList.prototype, "services", 2);
+__decorateClass([
+  r5()
+], ErpAppointmentsList.prototype, "staffMembers", 2);
+__decorateClass([
+  r5()
+], ErpAppointmentsList.prototype, "settings", 2);
+__decorateClass([
+  r5()
+], ErpAppointmentsList.prototype, "newCustomerId", 2);
+__decorateClass([
+  r5()
+], ErpAppointmentsList.prototype, "newServiceId", 2);
+__decorateClass([
+  r5()
+], ErpAppointmentsList.prototype, "newStaffId", 2);
 __decorateClass([
   r5()
 ], ErpAppointmentsList.prototype, "newStart", 2);

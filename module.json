@@ -17,7 +17,8 @@
   },
   "depends_on": [
     "customers",
-    "services"
+    "services",
+    "staff"
   ],
   "permissions": [
     "appointments.view_appointment",
@@ -57,7 +58,8 @@
     "summary": "Schedule and manage client appointments and availability. Books appointments against services and customers, tracks status (pending → confirmed → in_progress → completed / cancelled / no_show), manages staff schedules with weekly time slots, blocked time (holidays/vacations) and recurring appointment templates.",
     "depends_on": [
       "customers",
-      "services"
+      "services",
+      "staff"
     ]
   },
   "migrations": {
@@ -320,7 +322,8 @@
       "permission": "appointments.change_appointment",
       "transaction": true,
       "sql": [
-        "commands/appointment_confirm.sql"
+        "commands/appointment_confirm.sql",
+        "commands/_history_confirm.sql"
       ],
       "schema": "schemas/appointment_id.json",
       "emit": [
@@ -334,7 +337,8 @@
       "permission": "appointments.change_appointment",
       "transaction": true,
       "sql": [
-        "commands/appointment_start.sql"
+        "commands/appointment_start.sql",
+        "commands/_history_start.sql"
       ],
       "schema": "schemas/appointment_id.json",
       "emit": [
@@ -348,7 +352,8 @@
       "permission": "appointments.change_appointment",
       "transaction": true,
       "sql": [
-        "commands/appointment_complete.sql"
+        "commands/appointment_complete.sql",
+        "commands/_history_complete.sql"
       ],
       "schema": "schemas/appointment_id.json",
       "emit": [
@@ -362,7 +367,8 @@
       "permission": "appointments.change_appointment",
       "transaction": true,
       "sql": [
-        "commands/appointment_cancel.sql"
+        "commands/appointment_cancel.sql",
+        "commands/_history_cancel.sql"
       ],
       "schema": "schemas/appointment_cancel.json",
       "emit": [
@@ -376,7 +382,8 @@
       "permission": "appointments.change_appointment",
       "transaction": true,
       "sql": [
-        "commands/appointment_no_show.sql"
+        "commands/appointment_no_show.sql",
+        "commands/_history_no_show.sql"
       ],
       "schema": "schemas/appointment_id.json",
       "emit": [
@@ -390,8 +397,10 @@
       "permission": "appointments.change_appointment",
       "transaction": true,
       "sql": [
+        "commands/_reschedule_state_assert.sql",
         "commands/appointment_reschedule.sql",
-        "commands/_appointment_overlap_assert.sql"
+        "commands/_appointment_overlap_assert.sql",
+        "commands/_history_reschedule.sql"
       ],
       "schema": "schemas/appointment_reschedule.json",
       "emit": [

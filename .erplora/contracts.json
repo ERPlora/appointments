@@ -3,7 +3,11 @@
   "module": "appointments",
   "consumes": {
     "queries": [
-      "appointments.appointments.list"
+      "appointments.appointments.list",
+      "appointments.settings.get",
+      "customers.list",
+      "services.services.list",
+      "staff.members.list"
     ],
     "optional_queries": [],
     "commands": [
@@ -12,6 +16,7 @@
       "appointments.appointments.confirm",
       "appointments.appointments.create",
       "appointments.appointments.delete",
+      "appointments.appointments.no_show",
       "appointments.appointments.start"
     ],
     "events": [

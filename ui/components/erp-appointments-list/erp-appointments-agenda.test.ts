@@ -157,21 +157,22 @@ describe('linked booking: the create panel books against real records', () => {
     expect(values, 'non-bookable staff must not be offered').not.toContain('s2');
   });
 
+  // `?disabled=` is a boolean ATTRIBUTE binding, and `ion-button` is not upgraded here (Ionic
+  // is not loaded under happy-dom), so there is no `.disabled` property to read — the attribute
+  // IS the observable contract, and it is also what Ionic itself reflects in the browser.
   it('submit stays disabled until customer + service + professional + start are picked', async () => {
     const el = await mount();
     const wc = el as Wc;
     const submit = () =>
-      el.shadowRoot.querySelector('form[slot="create"] ion-button[type="submit"]') as HTMLElement & {
-        disabled: boolean;
-      };
-    expect(submit().disabled, 'empty form must not be submittable').toBe(true);
+      el.shadowRoot.querySelector('form[slot="create"] ion-button[type="submit"]') as HTMLElement;
+    expect(submit().hasAttribute('disabled'), 'empty form must not be submittable').toBe(true);
 
     wc.newCustomerId = 'c1';
     wc.newServiceId = 'sv1';
     wc.newStaffId = 's1';
     wc.newStart = '2026-08-07T10:00';
     await wc.updateComplete;
-    expect(submit().disabled, 'fully linked form must be submittable').toBe(false);
+    expect(submit().hasAttribute('disabled'), 'fully linked form must be submittable').toBe(false);
   });
 
   it('create sends the LINKS (ids) plus the denormalized names/price/duration from the records', async () => {
