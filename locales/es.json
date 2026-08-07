@@ -51,5 +51,9 @@
     "nextDay": "Día siguiente",
     "noStaff": "Aún no hay profesionales reservables.",
     "errLoadCatalogs": "Error cargando clientes, servicios o personal"
+  },
+  "setup": {
+    "title": "Tu horario de trabajo",
+    "description": "Dile al hub qué días y a qué horas trabajas, para que la agenda solo ofrezca huecos cuando estás abierto."
   }
 }
