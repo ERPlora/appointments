@@ -51,5 +51,9 @@
     "nextDay": "Next day",
     "noStaff": "No bookable professionals yet.",
     "errLoadCatalogs": "Error loading customers, services or staff"
+  },
+  "setup": {
+    "title": "Your working hours",
+    "description": "Tell the hub the days and times you work, so the agenda only offers slots while you are open."
   }
 }

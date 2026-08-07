@@ -263,6 +263,13 @@
         "description": "Lists configured recurring appointment templates."
       }
     },
+    "appointments.agenda.status": {
+      "permission": "appointments.view_schedule",
+      "sql": "queries/agenda_status.sql",
+      "ai": {
+        "description": "Reports whether the agenda is set up: how many active schedules and bookable weekly time slots the business has declared."
+      }
+    },
     "appointments.settings.get": {
       "permission": "appointments.view_appointment",
       "sql": "queries/settings_get.sql",
@@ -595,5 +602,22 @@
   },
   "ui": {
     "entry": "dist/appointments.esm.js"
+  },
+  "setup": {
+    "query": "appointments.agenda.status",
+    "configured_when": [
+      {
+        "field": "weekly_time_slots",
+        "truthy": true
+      }
+    ],
+    "title": "Your working hours",
+    "description": "Tell the hub the days and times you work, so the agenda only offers slots while you are open.",
+    "icon": "time-outline",
+    "route": "/m/appointments/appointments",
+    "permission": "appointments.manage_schedule",
+    "countries": [],
+    "order": 101,
+    "required": false
   }
 }
