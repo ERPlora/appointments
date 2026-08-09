@@ -332,6 +332,12 @@
         "commands/appointment_confirm.sql",
         "commands/_history_confirm.sql"
       ],
+      "expect_rows": {
+        "op": "min",
+        "n": 1,
+        "error": "appointments.cannot_confirm",
+        "message": "This appointment can no longer be confirmed: it is not pending any more."
+      },
       "schema": "schemas/appointment_id.json",
       "emit": [
         "appointments.appointment.confirmed"
@@ -347,6 +353,12 @@
         "commands/appointment_start.sql",
         "commands/_history_start.sql"
       ],
+      "expect_rows": {
+        "op": "min",
+        "n": 1,
+        "error": "appointments.cannot_start",
+        "message": "This appointment cannot be started: it is not confirmed."
+      },
       "schema": "schemas/appointment_id.json",
       "emit": [
         "appointments.appointment.started"
@@ -362,6 +374,12 @@
         "commands/appointment_complete.sql",
         "commands/_history_complete.sql"
       ],
+      "expect_rows": {
+        "op": "min",
+        "n": 1,
+        "error": "appointments.cannot_complete",
+        "message": "This appointment cannot be completed: it has not been started."
+      },
       "schema": "schemas/appointment_id.json",
       "emit": [
         "appointments.appointment.completed"
@@ -377,6 +395,12 @@
         "commands/appointment_cancel.sql",
         "commands/_history_cancel.sql"
       ],
+      "expect_rows": {
+        "op": "min",
+        "n": 1,
+        "error": "appointments.cannot_cancel",
+        "message": "This appointment can no longer be cancelled in its current state."
+      },
       "schema": "schemas/appointment_cancel.json",
       "emit": [
         "appointments.appointment.cancelled"
@@ -392,6 +416,12 @@
         "commands/appointment_no_show.sql",
         "commands/_history_no_show.sql"
       ],
+      "expect_rows": {
+        "op": "min",
+        "n": 1,
+        "error": "appointments.cannot_mark_no_show",
+        "message": "This appointment cannot be marked as a no-show in its current state."
+      },
       "schema": "schemas/appointment_id.json",
       "emit": [
         "appointments.appointment.no_show"

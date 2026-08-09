@@ -515,7 +515,10 @@ pub fn create_appointment_pure(input: Value) -> Result<Output, String> {
         &appointment_id,
         "Cita creada",
     )?;
-    Ok(Output { operations: ops, events: vec![] })
+    // `..Default::default()` para que el literal compile contra LAS DOS formas de `Output`: la de
+    // antes de hub#139 y la que ganó `error` (rechazo de dominio). Sin esto el handler deja de
+    // compilar en cuanto el checkout del hub avanza, y nadie puede regenerar el wasm (pm#81).
+    Ok(Output { operations: ops, events: vec![], ..Default::default() })
 }
 
 /// `appointments.appointments.bulk_create` — WASM-TODO pieza 2 (máx. 50 ítems).
@@ -567,7 +570,7 @@ pub fn bulk_create_pure(input: Value) -> Result<Output, String> {
     if created == 0 {
         return Err(format!("bulk_create: 0 citas válidas — {}", errors.join("; ")));
     }
-    Ok(Output { operations: ops, events: vec![] })
+    Ok(Output { operations: ops, events: vec![], ..Default::default() })
 }
 
 /// `appointments.appointments.bulk_delete` — WASM-TODO pieza 3 (máx. 50 ids).
@@ -600,7 +603,7 @@ pub fn bulk_delete_pure(input: Value) -> Result<Output, String> {
             Operation::sql("appointments.appointments.delete", p)
         })
         .collect();
-    Ok(Output { operations: ops, events: vec![] })
+    Ok(Output { operations: ops, events: vec![], ..Default::default() })
 }
 
 /// `appointments.recurring.materialize` — WASM-TODO pieza 6.
@@ -807,7 +810,7 @@ pub fn materialize_recurring_pure(input: Value) -> Result<Output, String> {
                 .to_string(),
         );
     }
-    Ok(Output { operations: ops, events: vec![] })
+    Ok(Output { operations: ops, events: vec![], ..Default::default() })
 }
 
 /// Parsea `HH:MM` (o `HH:MM:SS`) → (hora, minuto).
