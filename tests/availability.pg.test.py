@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The availability engine must PARSE on Postgres with no `:staff_id` (appointments#17).
+"""The availability engine must PARSE on Postgres with no `:staff_id` (appointments#35).
 
 Why this file exists: `queries/availability_slots.sql` and `queries/availability_check.sql` gate
 the staff filter with the sentinel `(:staff_id IS NOT NULL AND b.staff_id = :staff_id)` /
