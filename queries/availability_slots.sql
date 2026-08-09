@@ -15,6 +15,10 @@
 -- Binds: :date (YYYY-MM-DD, requerido) · :staff_id (opcional; ausente = agenda global)
 --        · :duration_minutes (opcional; default = settings.default_duration).
 -- Runtime inyecta :hub_id y :now. Un bind ausente llega como NULL (centinela del adapter).
+-- :staff_id va CASTEADO (`CAST(:staff_id AS TEXT)`) y no es estilo: Postgres fija el tipo de un
+-- bind en su PRIMERA aparición y `IS [NOT] NULL` no aporta ninguno, así que sin :staff_id —la
+-- agenda global, o sea la llamada normal— el bind viajaba sin tipo y el PREPARE moría con 42P08.
+-- Mismo idioma que ya usa queries/appointments_list.sql. Cubierto por tests/availability.pg.test.py.
 -- Fechas/horas vía funciones-puente erp_* (ADR-0007 §4a): erp_dt (datetime comparable),
 -- erp_date (parte fecha), erp_dateadd (suma intervalo), erp_dow_mon0 (día de semana 0=lunes),
 -- erp_timefmt (HH:MM). Las fechas se guardan como TEXT ISO-8601.
@@ -81,7 +85,7 @@ WHERE
         FROM appointments_blocked_time b
         WHERE b.hub_id = :hub_id AND b.is_deleted = 0
           AND (b.staff_id IS NULL OR b.staff_id = ''
-               OR (:staff_id IS NOT NULL AND b.staff_id = :staff_id))
+               OR (CAST(:staff_id AS TEXT) IS NOT NULL AND b.staff_id = :staff_id))
           AND (
               (b.all_day = 1 AND erp_date(b.start_datetime) <= erp_date(:date)
                              AND erp_date(:date) <= erp_date(b.end_datetime))
@@ -97,7 +101,7 @@ WHERE
             FROM appointments_appointment a
             WHERE a.hub_id = :hub_id AND a.is_deleted = 0
               AND a.status NOT IN ('cancelled', 'no_show')
-              AND (:staff_id IS NULL OR a.staff_id = :staff_id)
+              AND (CAST(:staff_id AS TEXT) IS NULL OR a.staff_id = :staff_id)
               AND erp_dt(a.start_datetime) < erp_dt(c.slot_end)
               AND erp_dt(a.end_datetime) > erp_dt(c.slot_start)
         )
