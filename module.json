@@ -630,6 +630,25 @@
       }
     }
   },
+  "events": {
+    "listen": {},
+    "emits": [
+      "appointments.appointment.cancelled",
+      "appointments.appointment.completed",
+      "appointments.appointment.confirmed",
+      "appointments.appointment.created",
+      "appointments.appointment.deleted",
+      "appointments.appointment.no_show",
+      "appointments.appointment.rescheduled",
+      "appointments.appointment.started",
+      "appointments.appointment.updated",
+      "appointments.blocked_time.created",
+      "appointments.recurring.created",
+      "appointments.schedule.created",
+      "appointments.schedule.deleted",
+      "appointments.settings.updated"
+    ]
+  },
   "ui": {
     "entry": "dist/appointments.esm.js"
   },
