@@ -66,7 +66,8 @@
     "postgres": [
       "migrations/postgres/001_init.sql",
       "migrations/postgres/002_counter.sql",
-      "migrations/postgres/003_gate.sql"
+      "migrations/postgres/003_gate.sql",
+      "migrations/postgres/004_converted_sale.sql"
     ]
   },
   "queries": {
@@ -628,10 +629,21 @@
       "ai": {
         "description": "Creates or updates the general settings for the appointments module."
       }
+    },
+    "appointments._mark_converted": {
+      "permission": "appointments.change_appointment",
+      "transaction": true,
+      "sql": [
+        "commands/_mark_converted.sql"
+      ]
     }
   },
   "events": {
-    "listen": {},
+    "listen": {
+      "sales.sale.created_from_appointment": {
+        "command": "appointments._mark_converted"
+      }
+    },
     "emits": [
       "appointments.appointment.cancelled",
       "appointments.appointment.completed",
