@@ -9,7 +9,7 @@ var __decorateClass = (decorators, target, key, kind) => {
   return result;
 };
 
-// module-toolkit/node_modules/@lit-labs/ssr-dom-shim/lib/element-internals.js
+// ../module-toolkit/node_modules/@lit-labs/ssr-dom-shim/lib/element-internals.js
 var ElementInternalsShim = class ElementInternals {
   get shadowRoot() {
     return this.__host.__shadowRoot;
@@ -88,7 +88,7 @@ var ElementInternalsShim = class ElementInternals {
   }
 };
 
-// module-toolkit/node_modules/@lit-labs/ssr-dom-shim/lib/events.js
+// ../module-toolkit/node_modules/@lit-labs/ssr-dom-shim/lib/events.js
 var __classPrivateFieldSet = function(receiver, state, value, kind, f3) {
   if (kind === "m") throw new TypeError("Private method is not writable");
   if (kind === "a" && !f3) throw new TypeError("Private accessor was defined without a setter");
@@ -246,7 +246,7 @@ Object.defineProperties(CustomEventShim.prototype, {
 var EventShimWithRealType = EventShim;
 var CustomEventShimWithRealType = CustomEventShim;
 
-// module-toolkit/node_modules/@lit-labs/ssr-dom-shim/lib/css.js
+// ../module-toolkit/node_modules/@lit-labs/ssr-dom-shim/lib/css.js
 var _a2;
 var CSSRuleShim = (_a2 = class CSSRule {
   constructor() {
@@ -277,7 +277,7 @@ var CSSRuleShim = (_a2 = class CSSRule {
   }
 }, _a2.STYLE_RULE = 1, _a2.CHARSET_RULE = 2, _a2.IMPORT_RULE = 3, _a2.MEDIA_RULE = 4, _a2.FONT_FACE_RULE = 5, _a2.PAGE_RULE = 6, _a2.NAMESPACE_RULE = 10, _a2.KEYFRAMES_RULE = 7, _a2.KEYFRAME_RULE = 8, _a2.SUPPORTS_RULE = 12, _a2.COUNTER_STYLE_RULE = 11, _a2.FONT_FEATURE_VALUES_RULE = 14, _a2.MARGIN_RULE = 9, _a2);
 
-// module-toolkit/node_modules/@lit-labs/ssr-dom-shim/index.js
+// ../module-toolkit/node_modules/@lit-labs/ssr-dom-shim/index.js
 globalThis.Event ??= EventShimWithRealType;
 globalThis.CustomEvent ??= CustomEventShimWithRealType;
 var constructionToken = Symbol();
@@ -674,7 +674,7 @@ var CustomElementRegistryShimWithRealType = CustomElementRegistry;
 var customElements2 = new CustomElementRegistryShimWithRealType();
 var windowShim = new WindowShim(constructionToken);
 
-// module-toolkit/node_modules/@lit/reactive-element/node/css-tag.js
+// ../module-toolkit/node_modules/@lit/reactive-element/node/css-tag.js
 var t = globalThis;
 var e = t.ShadowRoot && (void 0 === t.ShadyCSS || t.ShadyCSS.nativeShadow) && "adoptedStyleSheets" in Document.prototype && "replace" in CSSStyleSheet.prototype;
 var s = Symbol();
@@ -719,7 +719,7 @@ var c = e || void 0 === t.CSSStyleSheet ? (t5) => t5 : (t5) => t5 instanceof CSS
   return r(e5);
 })(t5) : t5;
 
-// module-toolkit/node_modules/@lit/reactive-element/node/reactive-element.js
+// ../module-toolkit/node_modules/@lit/reactive-element/node/reactive-element.js
 var { is: h, defineProperty: r2, getOwnPropertyDescriptor: o2, getOwnPropertyNames: n2, getOwnPropertySymbols: a, getPrototypeOf: c2 } = Object;
 var l = globalThis;
 l.customElements ??= customElements2;
@@ -942,7 +942,7 @@ var g = class extends (globalThis.HTMLElement ?? HTMLElementShimWithRealType) {
 };
 g.elementStyles = [], g.shadowRootOptions = { mode: "open" }, g[f("elementProperties")] = /* @__PURE__ */ new Map(), g[f("finalized")] = /* @__PURE__ */ new Map(), u?.({ ReactiveElement: g }), (l.reactiveElementVersions ??= []).push("2.1.2");
 
-// modules-workspace/node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/lit-html.js
+// node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/lit-html.js
 var t2 = globalThis;
 var i2 = (t5) => t5;
 var s2 = t2.trustedTypes;
@@ -1197,7 +1197,7 @@ var D = (t5, i7, s5) => {
   return h4._$AI(t5), h4;
 };
 
-// modules-workspace/node_modules/.pnpm/lit-element@4.2.2/node_modules/lit-element/lit-element.js
+// node_modules/.pnpm/lit-element@4.2.2/node_modules/lit-element/lit-element.js
 var s3 = globalThis;
 var i3 = class extends g {
   constructor() {
@@ -1226,7 +1226,7 @@ var o4 = s3.litElementPolyfillSupport;
 o4?.({ LitElement: i3 });
 (s3.litElementVersions ??= []).push("4.2.2");
 
-// module-toolkit/node_modules/@lit/reactive-element/node/decorators/property.js
+// ../module-toolkit/node_modules/@lit/reactive-element/node/decorators/property.js
 var o5 = { attribute: true, type: String, converter: b, reflect: false, hasChanged: m };
 var r4 = (t5 = o5, e5, r6) => {
   const { kind: n6, metadata: i7 } = r6;
@@ -1256,19 +1256,19 @@ function n4(t5) {
   })(t5, e5, o7);
 }
 
-// module-toolkit/node_modules/@lit/reactive-element/node/decorators/state.js
+// ../module-toolkit/node_modules/@lit/reactive-element/node/decorators/state.js
 function r5(r6) {
   return n4({ ...r6, state: true, attribute: false });
 }
 
-// outfitkit/dist/define.js
+// ../outfitkit/dist/define.js
 function define(tag, ctor) {
   if (typeof customElements !== "undefined" && !customElements.get(tag)) {
     customElements.define(tag, ctor);
   }
 }
 
-// outfitkit/dist/shared/icons.js
+// ../outfitkit/dist/shared/icons.js
 var rawAdd = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="M256 112v288m144-144H112"/></svg>';
 var rawAlertCircle = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="currentColor" d="M256 48C141.31 48 48 141.31 48 256s93.31 208 208 208s208-93.31 208-208S370.69 48 256 48m0 319.91a20 20 0 1 1 20-20a20 20 0 0 1-20 20m21.72-201.15l-5.74 122a16 16 0 0 1-32 0l-5.74-121.94v-.05a21.74 21.74 0 1 1 43.44 0Z"/></svg>';
 var rawAlertCircleOutline = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-miterlimit="10" stroke-width="32" d="M448 256c0-106-86-192-192-192S64 150 64 256s86 192 192 192s192-86 192-192Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="M250.26 166.05L256 288l5.73-121.95a5.74 5.74 0 0 0-5.79-6h0a5.74 5.74 0 0 0-5.68 6"/><path fill="currentColor" d="M256 367.91a20 20 0 1 1 20-20a20 20 0 0 1-20 20"/></svg>';
@@ -1416,7 +1416,7 @@ function okIcon(value) {
   return BY_NAME[value] ?? value;
 }
 
-// outfitkit/dist/ok-inline-feedback.js
+// ../outfitkit/dist/ok-inline-feedback.js
 var __defProp2 = Object.defineProperty;
 var __decorateClass2 = (decorators, target, key, kind) => {
   var result = void 0;
@@ -1633,7 +1633,7 @@ __decorateClass2([
 ], OkInlineFeedback.prototype, "hasActions");
 define("ok-inline-feedback", OkInlineFeedback);
 
-// modules-workspace/node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directive.js
+// node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directive.js
 var t3 = { ATTRIBUTE: 1, CHILD: 2, PROPERTY: 3, BOOLEAN_ATTRIBUTE: 4, EVENT: 5, ELEMENT: 6 };
 var e4 = (t5) => (...e5) => ({ _$litDirective$: t5, values: e5 });
 var i4 = class {
@@ -1653,7 +1653,7 @@ var i4 = class {
   }
 };
 
-// modules-workspace/node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directive-helpers.js
+// node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directive-helpers.js
 var { I: t4 } = j;
 var i5 = (o7) => o7;
 var s4 = () => document.createComment("");
@@ -1686,7 +1686,7 @@ var h3 = (o7) => {
   o7._$AR(), o7._$AA.remove();
 };
 
-// modules-workspace/node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directives/repeat.js
+// node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directives/repeat.js
 var u4 = (e5, s5, t5) => {
   const r6 = /* @__PURE__ */ new Map();
   for (let l3 = s5; l3 <= t5; l3++) r6.set(e5[l3], l3);
@@ -1739,7 +1739,7 @@ var c4 = e4(class extends i4 {
   }
 });
 
-// modules-workspace/node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directives/style-map.js
+// node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directives/style-map.js
 var n5 = "important";
 var i6 = " !" + n5;
 var o6 = e4(class extends i4 {
@@ -1768,7 +1768,7 @@ var o6 = e4(class extends i4 {
   }
 });
 
-// outfitkit/dist/ok-data-table.js
+// ../outfitkit/dist/ok-data-table.js
 var CSV_BOM = "\uFEFF";
 function decodeCsvBuffer(buf) {
   let text;
@@ -3196,7 +3196,7 @@ __decorateClass3([
 var OkDataTable = _OkDataTable;
 define("ok-data-table", OkDataTable);
 
-// outfitkit/dist/ok-scheduler.js
+// ../outfitkit/dist/ok-scheduler.js
 var __defProp4 = Object.defineProperty;
 var __decorateClass4 = (decorators, target, key, kind) => {
   var result = void 0;
@@ -3710,7 +3710,7 @@ __decorateClass4([
 ], OkScheduler.prototype, "cursor");
 define("ok-scheduler", OkScheduler);
 
-// modules-workspace/modules/appointments-777/locales/es.json
+// modules/appointments/locales/es.json
 var es_default = {
   name: "Citas",
   navigation: {
@@ -3734,6 +3734,7 @@ var es_default = {
     colService: "Servicio",
     colStaff: "Personal",
     colStatus: "Estado",
+    actionCharge: "Cobrar",
     actionConfirm: "Confirmar",
     actionStart: "Iniciar",
     actionComplete: "Completar",
@@ -3771,7 +3772,7 @@ var es_default = {
   }
 };
 
-// modules-workspace/modules/appointments-777/locales/en.json
+// modules/appointments/locales/en.json
 var en_default = {
   name: "Appointments",
   navigation: {
@@ -3795,6 +3796,7 @@ var en_default = {
     colService: "Service",
     colStaff: "Staff",
     colStatus: "Status",
+    actionCharge: "Charge",
     actionConfirm: "Confirm",
     actionStart: "Start",
     actionComplete: "Complete",
@@ -3832,7 +3834,7 @@ var en_default = {
   }
 };
 
-// modules-workspace/modules/appointments-777/ui/components/erp-appointments-list/erp-appointments-list.ts
+// modules/appointments/ui/components/erp-appointments-list/erp-appointments-list.ts
 var CATALOG = { es: es_default, en: en_default };
 var STATUS_KEYS = {
   pending: "ui.statusPending",
@@ -3959,6 +3961,19 @@ var ErpAppointmentsList = class extends i3 {
   get rowActions() {
     const t5 = (k2) => erplora().t(CATALOG, k2);
     return [
+      // COBRAR (sales#89): el eslabón que faltaba. La agenda sabía completar una cita y ahí se
+      // acababa el camino; en un salón el servicio ES la venta.
+      //
+      // Una cita ya convertida se pinta DESHABILITADA, no se esconde: cobrar dos veces a la misma
+      // clienta es el fallo a evitar, pero un botón que desaparece deja al mostrador sin saber por
+      // qué. `converted_sale_id` lo escribe el listener de `sales.sale.created_from_appointment`.
+      {
+        id: "charge",
+        label: t5("ui.actionCharge"),
+        icon: "cash-outline",
+        color: "success",
+        disabled: (row) => !!row.converted_sale_id
+      },
       { id: "confirm", label: t5("ui.actionConfirm"), icon: "checkmark-circle-outline", color: "success" },
       { id: "start", label: t5("ui.actionStart"), icon: "play-circle-outline", color: "primary" },
       { id: "complete", label: t5("ui.actionComplete"), icon: "checkmark-done-outline", color: "success" },
@@ -4094,12 +4109,28 @@ var ErpAppointmentsList = class extends i3 {
       this.saving = false;
     }
   }
+  /** Manda al shell a la pantalla de venta con la cita cargada.
+   *
+   *  Un Web Component no recibe el router: el único canal de navegación módulo→shell es empujar la
+   *  URL y avisar con `popstate`, que es el patrón que ya usa `verifactu`. El id viaja por query
+   *  string y el TPV lo consume y lo borra. */
+  goToTill(appointmentId) {
+    window.history.pushState({}, "", `/m/sales/pos?appointment_id=${encodeURIComponent(appointmentId)}`);
+    window.dispatchEvent(new PopStateEvent("popstate"));
+  }
   async onRowAction(ev) {
     const { actionId, row } = ev.detail;
     const id = row.id;
     this.error = "";
     try {
       switch (actionId) {
+        // ADR-0077: COBRAR es trabajo del TPV, no de la agenda. Aquí no se arma ninguna venta ni
+        // se calcula ningún total: se le entrega el id de la cita y el TPV la lee por la query
+        // pública de este módulo. `appointments` nunca aprende qué es una venta.
+        case "charge":
+          this.goToTill(id);
+          return;
+        // navegamos fuera: refrescar la agenda que abandonamos no tiene sentido
         case "confirm":
           await erplora().command("appointments.appointments.confirm", { appointment_id: id });
           break;
