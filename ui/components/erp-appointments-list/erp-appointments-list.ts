@@ -38,6 +38,10 @@ interface Appointment {
   end_datetime: string;
   duration_minutes: number;
   status: string;
+  /** Venta nacida de esta cita (ADR-0077), o null si aún no se ha cobrado. La escribe el listener
+   *  `_mark_converted` al recibir `sales.sale.created_from_appointment`; sales#89 la saca por fin
+   *  en la query para que la agenda pueda contestar «¿esta cita ya se cobró?». */
+  converted_sale_id: string | null;
 }
 
 /** Ficha mínima de cliente que necesita el alta (de `customers.list`). */
@@ -237,6 +241,16 @@ export class ErpAppointmentsList extends LitElement {
   private get rowActions() {
     const t = (k: string): string => erplora().t(CATALOG, k);
     return [
+      // COBRAR (sales#89): el eslabón que faltaba. La agenda sabía completar una cita y ahí se
+      // acababa el camino; en un salón el servicio ES la venta.
+      //
+      // Una cita ya convertida se pinta DESHABILITADA, no se esconde: cobrar dos veces a la misma
+      // clienta es el fallo a evitar, pero un botón que desaparece deja al mostrador sin saber por
+      // qué. `converted_sale_id` lo escribe el listener de `sales.sale.created_from_appointment`.
+      {
+        id: 'charge', label: t('ui.actionCharge'), icon: 'cash-outline', color: 'success',
+        disabled: (row: Record<string, unknown>) => !!row.converted_sale_id,
+      },
       { id: 'confirm', label: t('ui.actionConfirm'), icon: 'checkmark-circle-outline', color: 'success' },
       { id: 'start', label: t('ui.actionStart'), icon: 'play-circle-outline', color: 'primary' },
       { id: 'complete', label: t('ui.actionComplete'), icon: 'checkmark-done-outline', color: 'success' },
@@ -390,12 +404,28 @@ export class ErpAppointmentsList extends LitElement {
     }
   }
 
+  /** Manda al shell a la pantalla de venta con la cita cargada.
+   *
+   *  Un Web Component no recibe el router: el único canal de navegación módulo→shell es empujar la
+   *  URL y avisar con `popstate`, que es el patrón que ya usa `verifactu`. El id viaja por query
+   *  string y el TPV lo consume y lo borra. */
+  private goToTill(appointmentId: string): void {
+    window.history.pushState({}, '', `/m/sales/pos?appointment_id=${encodeURIComponent(appointmentId)}`);
+    window.dispatchEvent(new PopStateEvent('popstate'));
+  }
+
   private async onRowAction(ev: CustomEvent<{ actionId: string; row: Record<string, unknown> }>) {
     const { actionId, row } = ev.detail;
     const id = row.id as string;
     this.error = '';
     try {
       switch (actionId) {
+        // ADR-0077: COBRAR es trabajo del TPV, no de la agenda. Aquí no se arma ninguna venta ni
+        // se calcula ningún total: se le entrega el id de la cita y el TPV la lee por la query
+        // pública de este módulo. `appointments` nunca aprende qué es una venta.
+        case 'charge':
+          this.goToTill(id);
+          return; // navegamos fuera: refrescar la agenda que abandonamos no tiene sentido
         case 'confirm':
           await erplora().command('appointments.appointments.confirm', { appointment_id: id });
           break;

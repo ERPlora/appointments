@@ -21,6 +21,7 @@
     "colService": "Servicio",
     "colStaff": "Personal",
     "colStatus": "Estado",
+    "actionCharge": "Cobrar",
     "actionConfirm": "Confirmar",
     "actionStart": "Iniciar",
     "actionComplete": "Completar",

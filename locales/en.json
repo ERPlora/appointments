@@ -21,6 +21,7 @@
     "colService": "Service",
     "colStaff": "Staff",
     "colStatus": "Status",
+    "actionCharge": "Charge",
     "actionConfirm": "Confirm",
     "actionStart": "Start",
     "actionComplete": "Complete",
