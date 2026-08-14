@@ -15,7 +15,10 @@
 SELECT id, appointment_number, customer_id, customer_name, customer_phone, customer_email,
        service_id, service_name, service_price, staff_id, staff_name,
        start_datetime, end_datetime,
-       duration_minutes, status
+       -- `converted_sale_id` (sales#89): la venta que nació de esta cita. Lo escribe el listener
+       -- `_mark_converted` desde el día que existe la columna, pero NINGUNA query lo devolvía, así
+       -- que la agenda no podía contestar «¿esta cita ya se cobró?» ni impedir cobrarla dos veces.
+       duration_minutes, status, converted_sale_id
 FROM appointments_appointment
 WHERE hub_id = :hub_id AND is_deleted = 0
   AND start_datetime >= :day_start
