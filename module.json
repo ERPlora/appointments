@@ -553,6 +553,12 @@
       "schema": "schemas/timeslot_create.json",
       "ai": {
         "description": "Adds a time slot block to a staff availability schedule."
+      },
+      "expect_rows": {
+        "op": "min",
+        "n": 1,
+        "error": "appointments.schedule_unavailable",
+        "message": "That schedule is not available: it does not exist in this business or it has been deleted."
       }
     },
     "appointments.timeslots.delete": {
