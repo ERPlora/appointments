@@ -20,7 +20,7 @@ SELECT
         AND sc.is_active = 1) AS active_schedules,
     (SELECT COUNT(*)
        FROM appointments_schedule_timeslot t
-       JOIN appointments_schedule sc ON sc.id = t.schedule_id
+       JOIN appointments_schedule sc ON sc.id = t.schedule_id AND sc.hub_id = :hub_id
       WHERE t.hub_id = :hub_id
         AND t.is_deleted = 0
         AND t.is_active = 1

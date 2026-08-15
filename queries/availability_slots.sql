@@ -62,14 +62,14 @@ WHERE
         NOT EXISTS (
             SELECT 1
             FROM appointments_schedule_timeslot t
-            JOIN appointments_schedule sc ON sc.id = t.schedule_id
+            JOIN appointments_schedule sc ON sc.id = t.schedule_id AND sc.hub_id = :hub_id
             WHERE t.hub_id = :hub_id AND t.is_deleted = 0 AND t.is_active = 1
               AND sc.is_deleted = 0 AND sc.is_active = 1
         )
         OR EXISTS (
             SELECT 1
             FROM appointments_schedule_timeslot t
-            JOIN appointments_schedule sc ON sc.id = t.schedule_id
+            JOIN appointments_schedule sc ON sc.id = t.schedule_id AND sc.hub_id = :hub_id
             WHERE t.hub_id = :hub_id AND t.is_deleted = 0 AND t.is_active = 1
               AND sc.is_deleted = 0 AND sc.is_active = 1
               AND t.day_of_week = cfg.dow
