@@ -1,5 +1,6 @@
 {
   "name": "Citas",
+  "description": "Agenda las citas de tus clientes con sus servicios y profesionales, y síguelas desde que se reservan hasta que se completan.",
   "navigation": {
     "appointments": {
       "label": "Citas"
