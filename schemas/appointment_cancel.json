@@ -6,6 +6,12 @@
   "required": ["appointment_id"],
   "properties": {
     "appointment_id": { "type": "string", "minLength": 1 },
-    "reason": { "type": "string", "default": "" }
+    "reason": { "type": "string", "default": "" },
+    "channel": {
+      "type": "string",
+      "enum": ["staff", "customer"],
+      "default": "staff",
+      "description": "Who is cancelling: `staff` (someone operating the hub, the default) or `customer` (the client through an external channel, subject to allow_customer_cancellation and cancellation_notice_hours)."
+    }
   }
 }

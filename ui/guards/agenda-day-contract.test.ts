@@ -33,10 +33,30 @@ const TRANSITIONS: Record<string, string> = {
   'appointments.appointments.reschedule': 'rescheduled',
 };
 
+// appointments#6: `cancel` is a Tier 2 command now (the cancellation policy lives in the WASM
+// handler, which decides from its pre-loaded reads); its SQL chain is the ordered list of
+// intentions the handler emits — internal commands of this module. The audit-trail contract is
+// the same: the history statement runs after the row UPDATE, pinned to the run.
+const HANDLER_CHAINS: Record<string, string[]> = {
+  'appointments.appointments.cancel': ['appointments._cancel_row', 'appointments._history_cancel'],
+};
+
+/** The SQL files a transition command runs, in order — declared `sql[]` or the handler's chain. */
+const sqlChain = (command: string): string[] => {
+  const def = manifest.commands[command];
+  if (Array.isArray(def.sql)) return def.sql;
+  const chain = HANDLER_CHAINS[command];
+  expect(chain, `${command} has a handler but no known intention chain`).toBeTruthy();
+  return chain!.flatMap((op) => {
+    expect(manifest.commands[op], `intention ${op} is not a declared command`).toBeTruthy();
+    return manifest.commands[op].sql as string[];
+  });
+};
+
 describe('status transitions leave an audit trail (appointments_history)', () => {
   for (const [command, action] of Object.entries(TRANSITIONS)) {
     it(`${command} records action '${action}'`, () => {
-      const sqlFiles: string[] = manifest.commands[command].sql;
+      const sqlFiles = sqlChain(command);
       const historyFile = sqlFiles.find((f) => f.includes('_history_'));
       expect(historyFile, `${command} declares no history statement in its sql[]`).toBeTruthy();
 
@@ -55,7 +75,7 @@ describe('status transitions leave an audit trail (appointments_history)', () =>
     });
 
     it(`${command} runs the history statement AFTER the UPDATE`, () => {
-      const sqlFiles: string[] = manifest.commands[command].sql;
+      const sqlFiles = sqlChain(command);
       const historyIdx = sqlFiles.findIndex((f) => f.includes('_history_'));
       const updateIdx = sqlFiles.findIndex((f) => !f.includes('_history_') && !f.includes('assert'));
       expect(historyIdx, 'history statement missing').toBeGreaterThan(updateIdx);

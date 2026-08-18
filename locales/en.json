@@ -56,5 +56,10 @@
   "setup": {
     "title": "Your working hours",
     "description": "Tell the hub the days and times you work, so the agenda only offers slots while you are open."
+  },
+  "errors": {
+    "appointments.cannot_cancel": "This appointment can no longer be cancelled in its current state.",
+    "appointments.cancellation_notice_required": "This appointment can only be cancelled online with the required advance notice. Please contact the business.",
+    "appointments.customer_cancellation_disabled": "Online cancellation is not available. Please contact the business."
   }
 }
