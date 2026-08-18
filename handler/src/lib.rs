@@ -5,19 +5,19 @@
 //! devuelve **intenciones** (commands SQL del propio módulo) que el host valida
 //! y ejecuta en una transacción (WASM-TODO piezas 1, 2, 3 y 6).
 //!
-//! Contrato real del host (crates/runtime/src/commands.rs): el guest solo recibe
-//! `payload` + `context{hub_id, current_user_id, now, new_ids}` — el runtime NO
-//! precarga lecturas. Por eso las lecturas que la validación necesita las aporta
-//! el **caller** dentro del payload (la UI/SDK las obtiene con las queries del
-//! módulo antes de invocar el command):
-//!   - `settings`                — fila de `appointments.settings.get` (para
-//!                                 `allow_overlapping` / `default_duration`).
-//!   - `existing_appointments`   — citas candidatas a solape (de
-//!                                 `appointments.appointments.list` del día).
-//!   - `service`                 — `{name, price}` resuelto vía el contrato
-//!                                 público del módulo `services` (cross-módulo).
-//! Si faltan, el handler no puede validar solape y lo trata como permitido (la
-//! disponibilidad autoritativa se consulta con `appointments.availability.*`).
+//! Host contract (crates/runtime/src/commands.rs): the guest receives `payload` +
+//! `context{hub_id, current_user_id, now, new_ids, reads}`. Since ADR-0069 the runtime
+//! PRE-LOADS the reads the manifest declares per command into `context.reads["<query>"]`,
+//! and those are authoritative:
+//!   - `appointments.settings.get`            — the settings singleton (`allow_overlapping`,
+//!                                              `default_duration`) — appointments#45.
+//!   - `appointments.appointments.conflicting` — live appointments that may overlap
+//!                                              (appointments#110).
+//! Commands that do not declare a read (bulk_create, materialize_recurring) still degrade to
+//! the caller-provided `payload.settings` / `payload.existing_appointments`; `service`
+//! (`{name, price}` from the public contract of the `services` module) always travels in the
+//! payload. Missing reads mean the handler cannot validate overlap and treats it as allowed
+//! (authoritative availability is `appointments.availability.*`).
 //!
 //! Nº de cita `APT-YYYYMMDD-NNNN`: contador atómico por hub+día (patrón de
 //! `sales`): el handler emite `_bump_counter` (UPSERT) y `_insert_appointment`
@@ -358,19 +358,42 @@ fn candidates_from(input: &Value) -> Vec<Candidate> {
         .collect()
 }
 
-/// `allow_overlapping` de los settings aportados por el caller (default BD: false).
-fn allow_overlapping(payload: &Value) -> bool {
-    payload
-        .get("settings")
-        .and_then(|s| s.get("allow_overlapping"))
+/// The module settings row the handler decides with.
+///
+/// **Prefers `context.reads["appointments.settings.get"]`** — the authoritative singleton the
+/// runtime pre-loads via the manifest `reads` (ADR-0069, appointments#45): it is the very row
+/// the Settings tab edits, so a caller cannot claim `allow_overlapping: true` in the payload to
+/// slip past the double-booking guard. When the read is present it wins even if empty (a fresh
+/// hub without a settings row falls to the DB defaults, never to the payload). Only when the
+/// read is absent (command without `reads`, old manifest) does it degrade to `payload.settings`.
+fn settings_from(input: &Value) -> Value {
+    let read = input
+        .get("context")
+        .and_then(|c| c.get("reads"))
+        .and_then(|r| r.get("appointments.settings.get"))
+        .and_then(|v| v.as_array());
+    match read {
+        Some(rows) => rows.first().cloned().unwrap_or(Value::Null),
+        None => input
+            .get("payload")
+            .and_then(|p| p.get("settings"))
+            .cloned()
+            .unwrap_or(Value::Null),
+    }
+}
+
+/// `allow_overlapping` from the settings row (DB default: false).
+fn allow_overlapping(input: &Value) -> bool {
+    settings_from(input)
+        .get("allow_overlapping")
         .map(as_bool)
         .unwrap_or(false)
 }
 
-fn default_duration(payload: &Value) -> i64 {
-    payload
-        .get("settings")
-        .and_then(|s| s.get("default_duration"))
+/// `default_duration` (minutes) from the settings row (DB default: 60).
+fn default_duration(input: &Value) -> i64 {
+    settings_from(input)
+        .get("default_duration")
         .map(|v| as_i64(v, 60))
         .filter(|d| *d >= 1)
         .unwrap_or(60)
@@ -509,8 +532,8 @@ pub fn create_appointment_pure(input: Value) -> Result<Output, String> {
         &payload,
         payload.get("service"),
         &mut candidates,
-        allow_overlapping(&payload),
-        default_duration(&payload),
+        allow_overlapping(&input),
+        default_duration(&input),
         &ctx.now,
         &appointment_id,
         "Cita creada",
@@ -537,8 +560,8 @@ pub fn bulk_create_pure(input: Value) -> Result<Output, String> {
         return Err(format!("invalid_payload: máximo 50 citas por lote (recibidas {})", items.len()));
     }
 
-    let allow_overlap = allow_overlapping(&payload);
-    let default_dur = default_duration(&payload);
+    let allow_overlap = allow_overlapping(&input);
+    let default_dur = default_duration(&input);
     let mut candidates = candidates_from(&input);
     let mut ops: Vec<Operation> = Vec::new();
     let mut errors: Vec<String> = Vec::new();
@@ -642,7 +665,7 @@ pub fn materialize_recurring_pure(input: Value) -> Result<Output, String> {
         .get("duration_minutes")
         .map(|v| as_i64(v, 0))
         .filter(|d| *d >= 1)
-        .unwrap_or_else(|| default_duration(&payload));
+        .unwrap_or_else(|| default_duration(&input));
 
     // Ventana de materialización: [from, to] en días civiles.
     let today_days = days_from_civil(ctx.now.y, ctx.now.mo, ctx.now.d);
@@ -756,7 +779,7 @@ pub fn materialize_recurring_pure(input: Value) -> Result<Output, String> {
         return Err("no_occurrences: la plantilla no genera ocurrencias en la ventana".to_string());
     }
 
-    let allow_overlap = allow_overlapping(&payload);
+    let allow_overlap = allow_overlapping(&input);
     let mut candidates = candidates_from(&input);
     let mut ops: Vec<Operation> = Vec::new();
     let mut created = 0usize;
@@ -886,5 +909,55 @@ mod tests {
         let inp = input(payload, None); // sin reads → usa el payload
         let err = create_appointment_pure(inp).unwrap_err();
         assert!(err.starts_with("overlap:"), "fallback no detectó solape: {err}");
+    }
+
+    fn overlapping_reads(allow_overlapping: Value) -> Value {
+        json!({
+            "appointments.appointments.conflicting": [
+                { "id": "apt-x", "appointment_number": "APT-1", "staff_id": "s1",
+                  "start_datetime": "2026-07-31T10:00:00Z", "end_datetime": "2026-07-31T10:30:00Z",
+                  "status": "confirmed" }
+            ],
+            "appointments.settings.get": [
+                { "id": "st-1", "allow_overlapping": allow_overlapping, "default_duration": 45 }
+            ]
+        })
+    }
+
+    /// appointments#45: `allow_overlapping` comes from the AUTHORITATIVE read
+    /// `context.reads["appointments.settings.get"]` (the row the Settings tab edits), not from
+    /// `payload.settings`. A caller claiming `allow_overlapping: true` in the payload while the
+    /// table says 0 must still be rejected on overlap.
+    #[test]
+    fn create_ignores_payload_settings_when_settings_read_is_present() {
+        let mut payload = item("2026-07-31T10:15:00Z", 30, "s1");
+        payload["settings"] = json!({ "allow_overlapping": true });
+        let inp = input(payload, Some(overlapping_reads(json!(0))));
+        let err = create_appointment_pure(inp).unwrap_err();
+        assert!(err.starts_with("overlap:"), "payload.settings overrode the table: {err}");
+    }
+
+    /// appointments#45: the table (INTEGER 1) allows overlapping → the same booking is accepted.
+    #[test]
+    fn create_allows_overlap_when_settings_read_says_so() {
+        let inp = input(item("2026-07-31T10:15:00Z", 30, "s1"), Some(overlapping_reads(json!(1))));
+        assert!(create_appointment_pure(inp).is_ok());
+    }
+
+    /// appointments#45: `default_duration` also comes from the settings read (45 here, not the
+    /// hardcoded 60) when the item declares no duration.
+    #[test]
+    fn create_takes_default_duration_from_settings_read() {
+        let mut it = item("2026-07-31T11:00:00Z", 30, "s1");
+        it.as_object_mut().unwrap().remove("duration_minutes");
+        let out = create_appointment_pure(input(it, Some(overlapping_reads(json!(0))))).unwrap();
+        let insert = out
+            .operations
+            .iter()
+            .find(|op| op.command.ends_with("_insert_appointment"))
+            .expect("insert operation");
+        assert_eq!(insert.params.get("duration_minutes"), Some(&json!(45)));
+        let end = insert.params.get("end_datetime").and_then(|v| v.as_str()).unwrap_or("");
+        assert!(end.starts_with("2026-07-31T11:45:00"), "end_datetime = {end}");
     }
 }
