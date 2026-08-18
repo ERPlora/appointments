@@ -99,6 +99,15 @@
         "description": "Retrieves the status-change history of a specific appointment."
       }
     },
+    "appointments.appointments.count_active_for_service": {
+      "permission": "appointments.view_appointment",
+      "sql": "queries/appointments_count_active_for_service.sql",
+      "schema": "schemas/count_active_for_service.json",
+      "ai": {
+        "description": "Counts the upcoming live appointments (pending/confirmed, starting from now) of one service, with the earliest start. Public read used by `services` to warn before archiving a service."
+      },
+      "expose_api": true
+    },
     "appointments.schedules.list": {
       "permission": "appointments.view_schedule",
       "sql": "queries/schedules_list.sql",

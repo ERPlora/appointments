@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "appointments.appointments.count_active_for_service params",
+  "description": "Params of queries/appointments_count_active_for_service.sql. `hub_id` and `now` are injected by the runtime (§2.5), never sent. Closed contract.",
+  "type": "object",
+  "properties": {
+    "service_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "description": "Id of the service (from `services`) whose upcoming appointments are counted."
+    }
+  },
+  "required": ["service_id"],
+  "additionalProperties": false
+}
