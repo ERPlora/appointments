@@ -3713,6 +3713,7 @@ define("ok-scheduler", OkScheduler);
 // modules/appointments/locales/es.json
 var es_default = {
   name: "Citas",
+  description: "Agenda las citas de tus clientes con sus servicios y profesionales, y s\xEDguelas desde que se reservan hasta que se completan.",
   navigation: {
     appointments: {
       label: "Citas"

@@ -54,6 +54,13 @@
       "component": "erp-appointments-list"
     }
   ],
+  "settings": {
+    "title": "Appointments",
+    "icon": "calendar-outline",
+    "schema": "schemas/settings_upsert.json",
+    "get": "appointments.settings.get",
+    "set": "appointments.settings.upsert"
+  },
   "ai_context": {
     "summary": "Schedule and manage client appointments and availability. Books appointments against services and customers, tracks status (pending → confirmed → in_progress → completed / cancelled / no_show), manages staff schedules with weekly time slots, blocked time (holidays/vacations) and recurring appointment templates.",
     "depends_on": [
@@ -308,6 +315,10 @@
             "staff_id": "payload.staff_id",
             "start_datetime": "payload.start_datetime"
           }
+        },
+        {
+          "query": "appointments.settings.get",
+          "required": true
         }
       ]
     },
