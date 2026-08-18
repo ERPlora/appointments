@@ -402,24 +402,43 @@
     },
     "appointments.appointments.cancel": {
       "permission": "appointments.change_appointment",
-      "transaction": true,
-      "sql": [
-        "commands/appointment_cancel.sql",
-        "commands/_history_cancel.sql"
-      ],
-      "expect_rows": {
-        "op": "min",
-        "n": 1,
-        "error": "appointments.cannot_cancel",
-        "message": "This appointment can no longer be cancelled in its current state."
-      },
       "schema": "schemas/appointment_cancel.json",
+      "handler": {
+        "type": "wasm",
+        "file": "dist/handler.wasm",
+        "function": "cancel_appointment"
+      },
+      "reads": [
+        {
+          "query": "appointments.appointments.get",
+          "params": {
+            "appointment_id": "payload.appointment_id"
+          },
+          "required": true
+        },
+        {
+          "query": "appointments.settings.get",
+          "required": true
+        }
+      ],
       "emit": [
         "appointments.appointment.cancelled"
       ],
       "ai": {
-        "description": "Cancels an appointment with a specified cancellation reason."
+        "description": "Cancels an appointment with a specified cancellation reason. Staff can always cancel; a cancellation on behalf of the customer (channel=customer) is subject to the cancellation policy (allow_customer_cancellation, cancellation_notice_hours)."
       }
+    },
+    "appointments._cancel_row": {
+      "permission": "appointments.change_appointment",
+      "sql": [
+        "commands/appointment_cancel.sql"
+      ]
+    },
+    "appointments._history_cancel": {
+      "permission": "appointments.change_appointment",
+      "sql": [
+        "commands/_history_cancel.sql"
+      ]
     },
     "appointments.appointments.no_show": {
       "permission": "appointments.change_appointment",

@@ -57,5 +57,10 @@
   "setup": {
     "title": "Tu horario de trabajo",
     "description": "Dile al hub qué días y a qué horas trabajas, para que la agenda solo ofrezca huecos cuando estás abierto."
+  },
+  "errors": {
+    "appointments.cannot_cancel": "Esta cita ya no se puede cancelar en su estado actual.",
+    "appointments.cancellation_notice_required": "Esta cita solo se puede cancelar online con la antelación requerida. Contacta con el negocio.",
+    "appointments.customer_cancellation_disabled": "La cancelación online no está disponible. Contacta con el negocio."
   }
 }

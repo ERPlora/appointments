@@ -29,7 +29,7 @@
 //! (`:new_id` fresco por operación).
 
 use erplora_guest_sdk::money;
-use erplora_guest_sdk::{Operation, Output};
+use erplora_guest_sdk::{DomainError, Operation, Output};
 use serde_json::{json, Map, Value};
 
 #[cfg(feature = "guest")]
@@ -61,6 +61,12 @@ pub fn bulk_create(input: Json<erplora_guest_sdk::Input>) -> FnResult<Json<Outpu
 #[plugin_fn]
 pub fn bulk_delete(input: Json<erplora_guest_sdk::Input>) -> FnResult<Json<Output>> {
     guest_result(bulk_delete_pure(input.into_inner().into_value()))
+}
+
+#[cfg(feature = "guest")]
+#[plugin_fn]
+pub fn cancel_appointment(input: Json<erplora_guest_sdk::Input>) -> FnResult<Json<Output>> {
+    guest_result(cancel_appointment_pure(input.into_inner().into_value()))
 }
 
 #[cfg(feature = "guest")]
@@ -517,6 +523,123 @@ fn prepare_appointment(
 
 // ───────────────────────────── funciones puras por command ─────────────────────────────
 
+/// Who is asking to cancel (appointments#6). `staff` = someone operating the hub (the default:
+/// the agenda screen never sends a channel); `customer` = the client herself through an
+/// external channel (online booking, a flow acting on her behalf).
+#[derive(Clone, Copy, PartialEq, Debug)]
+enum CancelChannel {
+    Staff,
+    Customer,
+}
+
+fn cancel_channel(payload: &Value) -> Result<CancelChannel, String> {
+    match payload.get("channel").map(as_str).as_deref() {
+        None | Some("") | Some("staff") => Ok(CancelChannel::Staff),
+        Some("customer") => Ok(CancelChannel::Customer),
+        Some(other) => Err(format!(
+            "invalid_payload: channel `{other}` is not one of staff|customer"
+        )),
+    }
+}
+
+/// The appointment row the runtime pre-loaded via `reads` (`appointments.appointments.get`,
+/// filtered by `payload.appointment_id`). `None` when the read is missing or empty.
+fn appointment_row(input: &Value) -> Option<Value> {
+    input
+        .get("context")
+        .and_then(|c| c.get("reads"))
+        .and_then(|r| r.get("appointments.appointments.get"))
+        .and_then(|v| v.as_array())
+        .and_then(|rows| rows.first().cloned())
+}
+
+fn refuse(code: &str, message: &str) -> Output {
+    Output::new().with_error(DomainError::new(code, message))
+}
+
+/// `appointments.appointments.cancel` (appointments#6) — the cancellation policy, decided by
+/// the market (Fresha / Vagaro / Square Appointments): **staff can always cancel**, whatever the
+/// notice; the **customer channel** is bound by `allow_customer_cancellation` and
+/// `cancellation_notice_hours` of the settings row. No-show is a separate explicit staff action
+/// (`appointments.appointments.no_show`), never an outcome of this command.
+///
+/// Both reads are authoritative (`required` in the manifest): the appointment row (state guard
+/// + start) and the settings singleton (policy). Rejections are domain errors (hub#139) — the
+/// runtime persists nothing and the UI translates the code.
+pub fn cancel_appointment_pure(input: Value) -> Result<Output, String> {
+    let payload = input.get("payload").cloned().unwrap_or(Value::Null);
+    let ctx = host_ctx(&input)?;
+    let channel = cancel_channel(&payload)?;
+    let appointment_id = str_or(&payload, "appointment_id", "");
+    if appointment_id.is_empty() {
+        return Err("invalid_payload: appointment_id is required".to_string());
+    }
+
+    // State guard (was `expect_rows` on the declarative command): terminal states stay put.
+    let Some(row) = appointment_row(&input) else {
+        return Ok(refuse(
+            "appointments.cannot_cancel",
+            "This appointment can no longer be cancelled in its current state.",
+        ));
+    };
+    let status = as_str(row.get("status").unwrap_or(&Value::Null));
+    if status == "cancelled" || status == "completed" {
+        return Ok(refuse(
+            "appointments.cannot_cancel",
+            "This appointment can no longer be cancelled in its current state.",
+        ));
+    }
+
+    if channel == CancelChannel::Customer {
+        let settings = settings_from(&input);
+        let allowed = settings
+            .get("allow_customer_cancellation")
+            .map(as_bool)
+            .unwrap_or(true);
+        if !allowed {
+            return Ok(refuse(
+                "appointments.customer_cancellation_disabled",
+                "Online cancellation is not available; please contact the business.",
+            ));
+        }
+        let notice_hours = settings
+            .get("cancellation_notice_hours")
+            .map(|v| as_i64(v, 24))
+            .filter(|h| *h >= 0)
+            .unwrap_or(24);
+        let raw_start = as_str(row.get("start_datetime").unwrap_or(&Value::Null));
+        let start = parse_dt(&raw_start)
+            .ok_or_else(|| format!("invalid_state: appointment start `{raw_start}` is not ISO 8601"))?;
+        if cmp_secs(&start, &ctx.now) < notice_hours * 3_600 {
+            return Ok(refuse(
+                "appointments.cancellation_notice_required",
+                &format!(
+                    "This appointment can only be cancelled online at least {notice_hours} hours in advance."
+                ),
+            ));
+        }
+    }
+
+    let channel_label = match channel {
+        CancelChannel::Staff => "staff",
+        CancelChannel::Customer => "customer",
+    };
+    let mut cancel = Map::new();
+    cancel.insert("appointment_id".into(), json!(appointment_id));
+    cancel.insert("reason".into(), json!(str_or(&payload, "reason", "")));
+    let mut history = Map::new();
+    history.insert("appointment_id".into(), json!(appointment_id));
+    history.insert("channel".into(), json!(channel_label));
+    Ok(Output {
+        operations: vec![
+            Operation::sql("appointments._cancel_row", cancel),
+            Operation::sql("appointments._history_cancel", history),
+        ],
+        events: vec![],
+        ..Default::default()
+    })
+}
+
 /// `appointments.appointments.create` — WASM-TODO pieza 1.
 pub fn create_appointment_pure(input: Value) -> Result<Output, String> {
     let payload = input.get("payload").cloned().unwrap_or(Value::Null);
@@ -959,5 +1082,185 @@ mod tests {
         assert_eq!(insert.params.get("duration_minutes"), Some(&json!(45)));
         let end = insert.params.get("end_datetime").and_then(|v| v.as_str()).unwrap_or("");
         assert!(end.starts_with("2026-07-31T11:45:00"), "end_datetime = {end}");
+    }
+
+    // ── appointments#6: cancellation policy (`now` in the fixture is 2026-07-31T10:00Z) ──────
+
+    fn cancel_input(channel: Option<&str>, start: &str, status: &str, settings: Value) -> Value {
+        let mut payload = json!({ "appointment_id": "apt-1", "reason": "sick" });
+        if let Some(c) = channel {
+            payload["channel"] = json!(c);
+        }
+        let reads = json!({
+            "appointments.appointments.get": [
+                { "id": "apt-1", "appointment_number": "APT-1", "status": status,
+                  "start_datetime": start, "end_datetime": start }
+            ],
+            "appointments.settings.get": settings,
+        });
+        input(payload, Some(reads))
+    }
+
+    fn policy(allow_customer: i64, notice_hours: i64) -> Value {
+        json!([{ "id": "st-1", "allow_customer_cancellation": allow_customer,
+                 "cancellation_notice_hours": notice_hours }])
+    }
+
+    fn op_commands(out: &Output) -> Vec<String> {
+        out.operations.iter().map(|op| op.command.clone()).collect()
+    }
+
+    /// Staff cancel INSIDE the notice window (3 h before, policy 24 h): always allowed — the
+    /// receptionist owns the agenda. Two intentions: the row update + its history line.
+    #[test]
+    fn cancel_by_staff_inside_notice_window_is_allowed() {
+        let out = cancel_appointment_pure(cancel_input(
+            None,
+            "2026-07-31T13:00:00Z",
+            "confirmed",
+            policy(1, 24),
+        ))
+        .unwrap();
+        assert!(out.error.is_none(), "staff must always be able to cancel: {:?}", out.error);
+        assert_eq!(
+            op_commands(&out),
+            vec!["appointments._cancel_row", "appointments._history_cancel"]
+        );
+        let row = &out.operations[0].params;
+        assert_eq!(row.get("appointment_id"), Some(&json!("apt-1")));
+        assert_eq!(row.get("reason"), Some(&json!("sick")));
+        assert_eq!(out.operations[1].params.get("channel"), Some(&json!("staff")));
+    }
+
+    /// Customer channel INSIDE the window: rejected with the domain code the UI translates,
+    /// and NO intention (nothing may be written).
+    #[test]
+    fn cancel_by_customer_inside_notice_window_is_rejected() {
+        let out = cancel_appointment_pure(cancel_input(
+            Some("customer"),
+            "2026-07-31T13:00:00Z",
+            "confirmed",
+            policy(1, 24),
+        ))
+        .unwrap();
+        let err = out.error.expect("domain error expected");
+        assert_eq!(err.code, "appointments.cancellation_notice_required");
+        assert!(out.operations.is_empty());
+    }
+
+    /// Customer channel OUTSIDE the window (48 h before, policy 24 h): allowed, and the history
+    /// line records the channel.
+    #[test]
+    fn cancel_by_customer_outside_notice_window_is_allowed() {
+        let out = cancel_appointment_pure(cancel_input(
+            Some("customer"),
+            "2026-08-02T10:00:00Z",
+            "pending",
+            policy(1, 24),
+        ))
+        .unwrap();
+        assert!(out.error.is_none(), "{:?}", out.error);
+        assert_eq!(out.operations[1].params.get("channel"), Some(&json!("customer")));
+    }
+
+    /// Exactly at the boundary (24 h before, policy 24 h) the customer is still in time.
+    #[test]
+    fn cancel_by_customer_exactly_at_notice_boundary_is_allowed() {
+        let out = cancel_appointment_pure(cancel_input(
+            Some("customer"),
+            "2026-08-01T10:00:00Z",
+            "pending",
+            policy(1, 24),
+        ))
+        .unwrap();
+        assert!(out.error.is_none(), "{:?}", out.error);
+    }
+
+    /// `allow_customer_cancellation = 0`: the customer channel cannot cancel at all, however far
+    /// ahead — a distinct code, because the fix is not "call earlier" but "call the salon".
+    #[test]
+    fn cancel_by_customer_when_disabled_is_rejected() {
+        let out = cancel_appointment_pure(cancel_input(
+            Some("customer"),
+            "2026-08-10T10:00:00Z",
+            "pending",
+            policy(0, 24),
+        ))
+        .unwrap();
+        assert_eq!(
+            out.error.map(|e| e.code),
+            Some("appointments.customer_cancellation_disabled".to_string())
+        );
+    }
+
+    /// The state guard the SQL used to carry via `expect_rows` lives in the handler now: a
+    /// completed or already-cancelled appointment cannot be cancelled (same code as before).
+    #[test]
+    fn cancel_in_terminal_state_is_rejected_with_cannot_cancel() {
+        for status in ["completed", "cancelled"] {
+            let out = cancel_appointment_pure(cancel_input(
+                None,
+                "2026-08-10T10:00:00Z",
+                status,
+                policy(1, 24),
+            ))
+            .unwrap();
+            assert_eq!(
+                out.error.as_ref().map(|e| e.code.as_str()),
+                Some("appointments.cannot_cancel"),
+                "status {status}"
+            );
+            assert!(out.operations.is_empty());
+        }
+    }
+
+    /// Unknown appointment (the read returns no row) → `cannot_cancel`, nothing written.
+    #[test]
+    fn cancel_unknown_appointment_is_rejected() {
+        let payload = json!({ "appointment_id": "ghost" });
+        let reads = json!({ "appointments.appointments.get": [], "appointments.settings.get": [] });
+        let out = cancel_appointment_pure(input(payload, Some(reads))).unwrap();
+        assert_eq!(
+            out.error.map(|e| e.code),
+            Some("appointments.cannot_cancel".to_string())
+        );
+    }
+
+    /// A hub that never saved its settings (empty read) runs on the schema defaults:
+    /// customer cancellation allowed with 24 h notice.
+    #[test]
+    fn cancel_by_customer_uses_default_policy_when_settings_row_is_missing() {
+        let inside = cancel_appointment_pure(cancel_input(
+            Some("customer"),
+            "2026-07-31T20:00:00Z",
+            "pending",
+            json!([]),
+        ))
+        .unwrap();
+        assert_eq!(
+            inside.error.map(|e| e.code),
+            Some("appointments.cancellation_notice_required".to_string())
+        );
+        let outside = cancel_appointment_pure(cancel_input(
+            Some("customer"),
+            "2026-08-05T10:00:00Z",
+            "pending",
+            json!([]),
+        ))
+        .unwrap();
+        assert!(outside.error.is_none());
+    }
+
+    /// An unknown channel value is a caller bug, not a business refusal.
+    #[test]
+    fn cancel_with_unknown_channel_is_a_payload_error() {
+        let err = cancel_appointment_pure(cancel_input(
+            Some("robot"),
+            "2026-08-05T10:00:00Z",
+            "pending",
+            policy(1, 24),
+        ))
+        .unwrap_err();
+        assert!(err.starts_with("invalid_payload:"), "{err}");
     }
 }
