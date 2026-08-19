@@ -634,7 +634,8 @@
         "appointments.appointment.deleted"
       ],
       "ai": {
-        "description": "Permanently deletes an appointment from the system (destructive)."
+        "description": "Permanently deletes an appointment from the system (destructive).",
+        "risk": "destructive"
       }
     },
     "appointments.appointments.bulk_create": {
@@ -703,7 +704,8 @@
         "function": "bulk_delete"
       },
       "ai": {
-        "description": "Permanently deletes multiple appointments in bulk (destructive)."
+        "description": "Permanently deletes multiple appointments in bulk (destructive).",
+        "risk": "bulk_destructive"
       }
     },
     "appointments.recurring.materialize": {
@@ -820,7 +822,8 @@
         "appointments.schedule.deleted"
       ],
       "ai": {
-        "description": "Deletes an existing staff availability schedule (destructive)."
+        "description": "Deletes an existing staff availability schedule (destructive).",
+        "risk": "destructive"
       }
     },
     "appointments.timeslots.create": {
@@ -848,7 +851,8 @@
       ],
       "schema": "schemas/timeslot_id.json",
       "ai": {
-        "description": "Removes a time slot block from a staff availability schedule (destructive)."
+        "description": "Removes a time slot block from a staff availability schedule (destructive).",
+        "risk": "destructive"
       }
     },
     "appointments.blocked_times.create": {
@@ -873,7 +877,8 @@
       ],
       "schema": "schemas/blocked_time_id.json",
       "ai": {
-        "description": "Removes a blocked time period from an employee's schedule (destructive)."
+        "description": "Removes a blocked time period from an employee's schedule (destructive).",
+        "risk": "destructive"
       }
     },
     "appointments.recurring.create": {
@@ -898,7 +903,8 @@
       ],
       "schema": "schemas/recurring_id.json",
       "ai": {
-        "description": "Deletes a recurring appointment template (destructive)."
+        "description": "Deletes a recurring appointment template (destructive).",
+        "risk": "destructive"
       }
     },
     "appointments.settings.upsert": {
