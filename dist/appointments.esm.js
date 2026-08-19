@@ -1633,6 +1633,548 @@ __decorateClass2([
 ], OkInlineFeedback.prototype, "hasActions");
 define("ok-inline-feedback", OkInlineFeedback);
 
+// ../outfitkit/dist/ok-timeline.js
+var __defProp3 = Object.defineProperty;
+var __decorateClass3 = (decorators, target, key, kind) => {
+  var result = void 0;
+  for (var i7 = decorators.length - 1, decorator; i7 >= 0; i7--)
+    if (decorator = decorators[i7])
+      result = decorator(target, key, result) || result;
+  if (result) __defProp3(target, key, result);
+  return result;
+};
+var OkTimeline = class extends i3 {
+  constructor() {
+    super(...arguments);
+    this.items = [];
+    this.align = "left";
+  }
+  static {
+    this.styles = i`
+    :host {
+      /* Vars overridable (estilo Ionic), default = cadena --ok-* -> --ion-* -> hex */
+      --color: var(--ok-text, var(--ion-text-color, #1c1b17));
+      --color-muted: var(--ok-text-muted, rgba(var(--ion-text-color-rgb, 28, 27, 23), 0.55));
+      --primary-color: var(--ok-primary, var(--ion-color-primary, #3880ff));
+      --primary-contrast: var(--ok-primary-contrast, var(--ion-color-primary-contrast, #ffffff));
+      --done-color: var(--ok-success, var(--ion-color-success, #2dd36f));
+      --pending-color: var(--ok-medium, var(--ion-color-medium, #92949c));
+      --line-color: var(--ok-border-soft, rgba(var(--ion-text-color-rgb, 28, 27, 23), 0.14));
+      --hover-bg: var(--ok-hover, rgba(var(--ion-text-color-rgb, 28, 27, 23), 0.06));
+      --current-bg: var(
+        --ok-current-bg,
+        rgba(var(--ion-color-primary-rgb, 56, 128, 255), 0.1)
+      );
+      --border-radius: var(--ok-radius, 8px);
+      --dot-size: var(--ok-timeline-dot, 28px);
+      --gutter: var(--ok-timeline-gutter, 14px);
+      --font: var(--ok-font, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif);
+
+      /* Por defecto ocupa el ancho del contenedor y es responsive. */
+      display: block;
+      width: 100%;
+      color: var(--color);
+      font-family: var(--font);
+      font-size: 0.95rem;
+    }
+
+    .timeline {
+      position: relative;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    /* Item: rejilla [punto | contenido]. La línea vertical se dibuja en la columna del punto. */
+    .item {
+      position: relative;
+      display: grid;
+      grid-template-columns: var(--dot-size) 1fr;
+      column-gap: var(--gutter);
+      padding: 0.15rem 0 0.9rem;
+    }
+    .item:last-child {
+      padding-bottom: 0;
+    }
+
+    /* Columna del punto: contiene el dot y el segmento de línea que baja al siguiente. */
+    .marker {
+      position: relative;
+      display: flex;
+      justify-content: center;
+    }
+    /* Segmento de línea: arranca bajo el dot y llega al final del item. */
+    .marker::before {
+      content: '';
+      position: absolute;
+      top: var(--dot-size);
+      bottom: calc(-0.9rem);
+      left: 50%;
+      width: 2px;
+      transform: translateX(-50%);
+      background: var(--line-color);
+    }
+    .item:last-child .marker::before {
+      display: none;
+    }
+
+    .dot {
+      position: relative;
+      z-index: 1;
+      flex: 0 0 auto;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: var(--dot-size);
+      height: var(--dot-size);
+      border-radius: 50%;
+      background: var(--dot-color, var(--pending-color));
+      color: var(--dot-contrast, #ffffff);
+      box-shadow: 0 0 0 3px var(--ok-surface, var(--ion-background-color, #ffffff));
+    }
+    .dot ion-icon {
+      font-size: calc(var(--dot-size) * 0.5);
+    }
+
+    /* Contenido del hito; es un botón accesible para emitir el click. */
+    .content {
+      min-width: 0;
+      text-align: left;
+      width: 100%;
+      margin: 0;
+      padding: 0.35rem 0.55rem;
+      border: 0;
+      background: none;
+      color: inherit;
+      font: inherit;
+      cursor: pointer;
+      border-radius: var(--border-radius);
+      transition: background-color var(--ok-transition, 150ms ease),
+        color var(--ok-transition, 150ms ease), border-color var(--ok-transition, 150ms ease),
+        box-shadow var(--ok-transition, 150ms ease), transform 120ms ease;
+    }
+    @media (hover: hover) {
+      .content:hover {
+        background: var(--hover-bg);
+      }
+    }
+    .content:active {
+      transform: scale(var(--ok-press-scale, 0.97));
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .content:active {
+        transform: none;
+      }
+    }
+    .item.current .content {
+      background: var(--current-bg);
+    }
+
+    .head {
+      display: flex;
+      align-items: baseline;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+    .title {
+      font-weight: 600;
+      min-width: 0;
+    }
+    .item.current .title {
+      color: var(--primary-color);
+    }
+    .time {
+      font-size: 0.8rem;
+      color: var(--color-muted);
+      white-space: nowrap;
+    }
+    .desc {
+      margin-top: 0.2rem;
+      color: var(--color-muted);
+      font-size: 0.88rem;
+      line-height: 1.35;
+    }
+
+    /* Modo alternado (solo en pantallas anchas): los items pares van a la derecha. */
+    @media (min-width: 640px) {
+      .timeline.alternate .item {
+        grid-template-columns: 1fr var(--dot-size) 1fr;
+      }
+      .timeline.alternate .marker {
+        grid-column: 2;
+        order: 0;
+      }
+      .timeline.alternate .item .content {
+        grid-column: 3;
+      }
+      .timeline.alternate .item.alt .content {
+        grid-column: 1;
+        text-align: right;
+      }
+      .timeline.alternate .item.alt .head {
+        justify-content: flex-end;
+      }
+    }
+  `;
+  }
+  // Resuelve el color del punto: explícito en el item, o derivado del status.
+  dotColor(item) {
+    if (item.color) {
+      return /^[a-z-]+$/.test(item.color) ? `var(--ion-color-${item.color}, ${item.color})` : item.color;
+    }
+    switch (item.status) {
+      case "done":
+        return "var(--done-color)";
+      case "current":
+        return "var(--primary-color)";
+      default:
+        return "var(--pending-color)";
+    }
+  }
+  // Emite `ok-item-click` con el item pulsado.
+  emitClick(item) {
+    this.dispatchEvent(
+      new CustomEvent("ok-item-click", {
+        detail: { id: item.id, item },
+        bubbles: true,
+        composed: true
+      })
+    );
+  }
+  renderItem(item, index) {
+    const isCurrent = item.status === "current";
+    const isAlt = this.align === "alternate" && index % 2 === 1;
+    const classes = ["item", isCurrent ? "current" : "", isAlt ? "alt" : ""].filter(Boolean).join(" ");
+    const dotStyle = `--dot-color: ${this.dotColor(item)}`;
+    return b2`<li class=${classes}>
+      <span class="marker">
+        <span class="dot" style=${dotStyle}>
+          ${item.icon ? b2`<ion-icon .icon=${okIcon(item.icon)}></ion-icon>` : ""}
+        </span>
+      </span>
+      <button
+        type="button"
+        class="content"
+        @click=${() => this.emitClick(item)}
+      >
+        <span class="head">
+          <span class="title">${item.title}</span>
+          ${item.time ? b2`<span class="time">${item.time}</span>` : ""}
+        </span>
+        ${item.description ? b2`<div class="desc">${item.description}</div>` : ""}
+      </button>
+    </li>`;
+  }
+  render() {
+    const listClass = `timeline ${this.align === "alternate" ? "alternate" : ""}`.trim();
+    return b2`<ul class=${listClass}>
+      ${this.items.map((item, i7) => this.renderItem(item, i7))}
+    </ul>`;
+  }
+};
+__decorateClass3([
+  n4({ attribute: false })
+], OkTimeline.prototype, "items");
+__decorateClass3([
+  n4()
+], OkTimeline.prototype, "align");
+define("ok-timeline", OkTimeline);
+
+// modules/appointments/locales/es.json
+var es_default = {
+  name: "Citas",
+  description: "Agenda las citas de tus clientes con sus servicios y profesionales, y s\xEDguelas desde que se reservan hasta que se completan.",
+  navigation: {
+    appointments: {
+      label: "Citas"
+    }
+  },
+  ui: {
+    title: "Citas",
+    allStatuses: "Todos los estados",
+    statusAll: "Todos",
+    statusPending: "Pendiente",
+    statusConfirmed: "Confirmada",
+    statusInProgress: "En curso",
+    statusCompleted: "Completada",
+    statusCancelled: "Cancelada",
+    statusNoShow: "No-show",
+    colTime: "Hora",
+    colNumber: "N\xBA",
+    colCustomer: "Cliente",
+    colService: "Servicio",
+    colStaff: "Personal",
+    colStatus: "Estado",
+    actionCharge: "Cobrar",
+    actionConfirm: "Confirmar",
+    actionStart: "Iniciar",
+    actionComplete: "Completar",
+    actionCancel: "Cancelar",
+    actionDelete: "Borrar",
+    fieldDate: "D\xEDa",
+    fieldCustomer: "Cliente",
+    fieldService: "Servicio",
+    fieldStart: "Inicio",
+    fieldMinutes: "Min.",
+    saving: "Guardando\u2026",
+    addAppointment: "A\xF1adir cita",
+    searchPlaceholder: "Buscar n\xBA, cliente o servicio\u2026",
+    loading: "Cargando\u2026",
+    empty: "Sin citas para este d\xEDa.",
+    errLoad: "Error cargando citas",
+    errCreate: "No se pudo crear la cita",
+    errAction: "No se pudo ejecutar la acci\xF3n",
+    actionNoShow: "No-show",
+    fieldStaff: "Profesional",
+    pickCustomer: "Elige un cliente",
+    pickService: "Elige un servicio",
+    pickStaff: "Elige un profesional",
+    viewList: "Lista",
+    viewStaff: "Por profesional",
+    unassigned: "Sin asignar",
+    prevDay: "D\xEDa anterior",
+    nextDay: "D\xEDa siguiente",
+    noStaff: "A\xFAn no hay profesionales reservables.",
+    errLoadCatalogs: "Error cargando clientes, servicios o personal",
+    historyTitle: "Historial de visitas",
+    historyEmpty: "Este cliente a\xFAn no tiene citas.",
+    historyError: "No se pudo cargar el historial de visitas."
+  },
+  setup: {
+    title: "Tu horario de trabajo",
+    description: "Dile al hub qu\xE9 d\xEDas y a qu\xE9 horas trabajas, para que la agenda solo ofrezca huecos cuando est\xE1s abierto."
+  },
+  errors: {
+    "appointments.cannot_cancel": "Esta cita ya no se puede cancelar en su estado actual.",
+    "appointments.cancellation_notice_required": "Esta cita solo se puede cancelar online con la antelaci\xF3n requerida. Contacta con el negocio.",
+    "appointments.customer_cancellation_disabled": "La cancelaci\xF3n online no est\xE1 disponible. Contacta con el negocio.",
+    "appointments.catalog_unavailable": "No se pudo leer el cat\xE1logo de clientes, servicios o profesionales; la cita no se ha reservado.",
+    "appointments.customer_not_found": "Ese cliente no existe en este negocio.",
+    "appointments.service_not_found": "Ese servicio no existe en este negocio.",
+    "appointments.service_not_bookable": "Ese servicio no se puede reservar: est\xE1 inactivo o no es reservable.",
+    "appointments.staff_not_found": "Ese profesional no existe en este negocio.",
+    "appointments.staff_not_bookable": "Ese profesional no puede recibir citas: est\xE1 inactivo o no es reservable.",
+    "appointments.staff_not_eligible": "Ese profesional no realiza este servicio."
+  }
+};
+
+// modules/appointments/locales/en.json
+var en_default = {
+  name: "Appointments",
+  navigation: {
+    appointments: {
+      label: "Appointments"
+    }
+  },
+  ui: {
+    title: "Appointments",
+    allStatuses: "All statuses",
+    statusAll: "All",
+    statusPending: "Pending",
+    statusConfirmed: "Confirmed",
+    statusInProgress: "In progress",
+    statusCompleted: "Completed",
+    statusCancelled: "Cancelled",
+    statusNoShow: "No-show",
+    colTime: "Time",
+    colNumber: "No.",
+    colCustomer: "Customer",
+    colService: "Service",
+    colStaff: "Staff",
+    colStatus: "Status",
+    actionCharge: "Charge",
+    actionConfirm: "Confirm",
+    actionStart: "Start",
+    actionComplete: "Complete",
+    actionCancel: "Cancel",
+    actionDelete: "Delete",
+    fieldDate: "Day",
+    fieldCustomer: "Customer",
+    fieldService: "Service",
+    fieldStart: "Start",
+    fieldMinutes: "Min.",
+    saving: "Saving\u2026",
+    addAppointment: "Add appointment",
+    searchPlaceholder: "Search no., customer or service\u2026",
+    loading: "Loading\u2026",
+    empty: "No appointments for this day.",
+    errLoad: "Error loading appointments",
+    errCreate: "Could not create the appointment",
+    errAction: "Could not perform the action",
+    actionNoShow: "No-show",
+    fieldStaff: "Professional",
+    pickCustomer: "Pick a customer",
+    pickService: "Pick a service",
+    pickStaff: "Pick a professional",
+    viewList: "List",
+    viewStaff: "By professional",
+    unassigned: "Unassigned",
+    prevDay: "Previous day",
+    nextDay: "Next day",
+    noStaff: "No bookable professionals yet.",
+    errLoadCatalogs: "Error loading customers, services or staff",
+    historyTitle: "Visit history",
+    historyEmpty: "No appointments yet for this customer.",
+    historyError: "The visit history could not be loaded."
+  },
+  setup: {
+    title: "Your working hours",
+    description: "Tell the hub the days and times you work, so the agenda only offers slots while you are open."
+  },
+  errors: {
+    "appointments.cannot_cancel": "This appointment can no longer be cancelled in its current state.",
+    "appointments.cancellation_notice_required": "This appointment can only be cancelled online with the required advance notice. Please contact the business.",
+    "appointments.customer_cancellation_disabled": "Online cancellation is not available. Please contact the business.",
+    "appointments.catalog_unavailable": "The customer, service or staff catalogue could not be read; the appointment was not booked.",
+    "appointments.customer_not_found": "That customer does not exist in this business.",
+    "appointments.service_not_found": "That service does not exist in this business.",
+    "appointments.service_not_bookable": "That service cannot be booked: it is inactive or not bookable.",
+    "appointments.staff_not_found": "That professional does not exist in this business.",
+    "appointments.staff_not_bookable": "That professional cannot take appointments: inactive or not bookable.",
+    "appointments.staff_not_eligible": "That professional does not perform this service."
+  }
+};
+
+// modules/appointments/ui/components/erp-appointments-customer-history/erp-appointments-customer-history.ts
+var CATALOG = { es: es_default, en: en_default };
+function erplora() {
+  const c5 = globalThis.erplora;
+  if (!c5) throw new Error("erplora SDK not initialised by the shell");
+  return c5;
+}
+function rows(r6) {
+  if (Array.isArray(r6)) return r6;
+  if (r6 && typeof r6 === "object" && Array.isArray(r6.rows)) return r6.rows;
+  return [];
+}
+var LAST_N = 10;
+var STATUS_KEYS = {
+  pending: "ui.statusPending",
+  confirmed: "ui.statusConfirmed",
+  in_progress: "ui.statusInProgress",
+  completed: "ui.statusCompleted",
+  cancelled: "ui.statusCancelled",
+  no_show: "ui.statusNoShow"
+};
+function timelineStatus(status) {
+  switch (status) {
+    case "completed":
+      return { status: "done", icon: "checkmark-outline" };
+    case "in_progress":
+      return { status: "current", icon: "play-outline" };
+    case "cancelled":
+    case "no_show":
+      return { status: "pending", color: "danger", icon: "close-outline" };
+    default:
+      return { status: "pending", icon: "time-outline" };
+  }
+}
+function formatWhen(iso, locale) {
+  const d3 = new Date(iso);
+  if (Number.isNaN(d3.getTime())) return iso;
+  try {
+    return new Intl.DateTimeFormat(locale || void 0, { dateStyle: "medium", timeStyle: "short" }).format(d3);
+  } catch {
+    return iso;
+  }
+}
+var ErpAppointmentsCustomerHistory = class extends i3 {
+  constructor() {
+    super(...arguments);
+    this.customerId = "";
+    this.visits = [];
+    this.loading = false;
+    this.error = "";
+    /** Sequence guard: a slow answer for the previous customer must never paint over the new one. */
+    this.seq = 0;
+    this.onCustomerDetail = (ev) => {
+      const detail = ev.detail;
+      const id = String(detail?.customer_id ?? "");
+      if (!id) return;
+      void this.load(id);
+    };
+  }
+  static {
+    this.styles = i`
+    :host { display: block; font-family: system-ui, sans-serif; color: var(--ion-text-color, #1c1b18); }
+    h3 { font-size: 0.95rem; font-weight: 600; margin: 0 0 .5rem; display: flex; align-items: center; gap: .4rem; }
+    .empty { color: var(--ion-color-medium, #8b897f); margin: .25rem 0 0; font-size: .9rem; }
+    .loading { color: var(--ion-color-medium, #8b897f); font-size: .9rem; }
+  `;
+  }
+  connectedCallback() {
+    super.connectedCallback();
+    this.addEventListener("erp:customer-detail", this.onCustomerDetail);
+  }
+  disconnectedCallback() {
+    this.removeEventListener("erp:customer-detail", this.onCustomerDetail);
+    super.disconnectedCallback();
+  }
+  async load(customerId) {
+    const mySeq = ++this.seq;
+    this.customerId = customerId;
+    this.loading = true;
+    this.error = "";
+    try {
+      const result = await erplora().query("appointments.appointments.list_for_customer", {
+        customer_id: customerId,
+        limit: LAST_N
+      });
+      if (mySeq !== this.seq) return;
+      this.visits = rows(result);
+    } catch {
+      if (mySeq !== this.seq) return;
+      this.visits = [];
+      this.error = erplora().t(CATALOG, "ui.historyError");
+    } finally {
+      if (mySeq === this.seq) this.loading = false;
+    }
+  }
+  items() {
+    const t5 = (k2) => erplora().t(CATALOG, k2);
+    const locale = erplora().locale;
+    return this.visits.map((v3) => {
+      const dot = timelineStatus(v3.status);
+      const who = [v3.service_name, v3.staff_name].filter(Boolean).join(" \xB7 ");
+      const statusLabel = t5(STATUS_KEYS[v3.status] ?? v3.status);
+      const description = [v3.internal_notes, v3.notes].map((s5) => (s5 ?? "").trim()).filter(Boolean).join(" \u2014 ");
+      return {
+        id: v3.id,
+        title: `${who} \xB7 ${statusLabel}`,
+        time: `${formatWhen(v3.start_datetime, locale)} \xB7 ${v3.appointment_number}`,
+        description: description || void 0,
+        status: dot.status,
+        color: dot.color,
+        icon: dot.icon
+      };
+    });
+  }
+  render() {
+    if (!this.customerId) return A;
+    const t5 = (k2) => erplora().t(CATALOG, k2);
+    return b2`
+      <h3>${t5("ui.historyTitle")}</h3>
+      ${this.error ? b2`<ok-inline-feedback tone="danger" icon="alert-circle-outline">${this.error}</ok-inline-feedback>` : A}
+      ${this.loading && !this.visits.length ? b2`<p class="loading">${t5("ui.loading")}</p>` : A}
+      ${!this.loading && !this.error && !this.visits.length ? b2`<p class="empty">${t5("ui.historyEmpty")}</p>` : A}
+      ${this.visits.length ? b2`<ok-timeline .items=${this.items()}></ok-timeline>` : A}
+    `;
+  }
+};
+__decorateClass([
+  r5()
+], ErpAppointmentsCustomerHistory.prototype, "customerId", 2);
+__decorateClass([
+  r5()
+], ErpAppointmentsCustomerHistory.prototype, "visits", 2);
+__decorateClass([
+  r5()
+], ErpAppointmentsCustomerHistory.prototype, "loading", 2);
+__decorateClass([
+  r5()
+], ErpAppointmentsCustomerHistory.prototype, "error", 2);
+define("erp-appointments-customer-history", ErpAppointmentsCustomerHistory);
+
 // node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directive.js
 var t3 = { ATTRIBUTE: 1, CHILD: 2, PROPERTY: 3, BOOLEAN_ATTRIBUTE: 4, EVENT: 5, ELEMENT: 6 };
 var e4 = (t5) => (...e5) => ({ _$litDirective$: t5, values: e5 });
@@ -1779,13 +2321,13 @@ function decodeCsvBuffer(buf) {
   }
   return text.charCodeAt(0) === 65279 ? text.slice(1) : text;
 }
-var __defProp3 = Object.defineProperty;
-var __decorateClass3 = (decorators, target, key, kind) => {
+var __defProp4 = Object.defineProperty;
+var __decorateClass4 = (decorators, target, key, kind) => {
   var result = void 0;
   for (var i7 = decorators.length - 1, decorator; i7 >= 0; i7--)
     if (decorator = decorators[i7])
       result = decorator(target, key, result) || result;
-  if (result) __defProp3(target, key, result);
+  if (result) __defProp4(target, key, result);
   return result;
 };
 var DEFAULT_LABELS2 = {
@@ -2304,17 +2846,17 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
       out.push(row);
     }
     const headers = out.shift() ?? [];
-    const rows2 = out.map((r6) => Object.fromEntries(headers.map((h4, i7) => [h4, r6[i7] ?? ""])));
-    return { headers, rows: rows2 };
+    const rows3 = out.map((r6) => Object.fromEntries(headers.map((h4, i7) => [h4, r6[i7] ?? ""])));
+    return { headers, rows: rows3 };
   }
   async onImportFile(ev) {
     const input = ev.target;
     const file = input.files?.[0];
     if (!file) return;
     const text = decodeCsvBuffer(await file.arrayBuffer());
-    const { headers, rows: rows2 } = this.parseCsv(text);
-    this.emit("csvImport", { headers, rows: rows2 });
-    this.emit("import", { headers, rows: rows2 });
+    const { headers, rows: rows3 } = this.parseCsv(text);
+    this.emit("csvImport", { headers, rows: rows3 });
+    this.emit("import", { headers, rows: rows3 });
     input.value = "";
   }
   toggle(p4) {
@@ -3043,167 +3585,167 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
     `;
   }
 };
-__decorateClass3([
+__decorateClass4([
   n4({ attribute: false })
 ], _OkDataTable.prototype, "columns");
-__decorateClass3([
+__decorateClass4([
   n4({ attribute: false })
 ], _OkDataTable.prototype, "rows");
-__decorateClass3([
+__decorateClass4([
   n4({ attribute: false })
 ], _OkDataTable.prototype, "searchKeys");
-__decorateClass3([
+__decorateClass4([
   n4({ attribute: "row-key-field" })
 ], _OkDataTable.prototype, "rowKeyField");
-__decorateClass3([
+__decorateClass4([
   n4({ attribute: false })
 ], _OkDataTable.prototype, "rowKey");
-__decorateClass3([
+__decorateClass4([
   n4({ type: Number, attribute: "page-size" })
 ], _OkDataTable.prototype, "pageSize");
-__decorateClass3([
+__decorateClass4([
   n4({ attribute: "empty-message" })
 ], _OkDataTable.prototype, "emptyMessage");
-__decorateClass3([
+__decorateClass4([
   n4({ attribute: "search-placeholder" })
 ], _OkDataTable.prototype, "searchPlaceholder");
-__decorateClass3([
+__decorateClass4([
   n4({ attribute: false })
 ], _OkDataTable.prototype, "labels");
-__decorateClass3([
+__decorateClass4([
   n4({ attribute: false })
 ], _OkDataTable.prototype, "actions");
-__decorateClass3([
+__decorateClass4([
   n4({ type: Boolean })
 ], _OkDataTable.prototype, "addable");
-__decorateClass3([
+__decorateClass4([
   n4({ attribute: false })
 ], _OkDataTable.prototype, "pageSizeOptions");
-__decorateClass3([
+__decorateClass4([
   n4({ type: Boolean, reflect: true })
 ], _OkDataTable.prototype, "fill");
-__decorateClass3([
+__decorateClass4([
   n4({ type: Boolean, attribute: "column-picker" })
 ], _OkDataTable.prototype, "columnPicker");
-__decorateClass3([
+__decorateClass4([
   n4({ type: Boolean })
 ], _OkDataTable.prototype, "csv");
-__decorateClass3([
+__decorateClass4([
   n4({ attribute: "csv-name" })
 ], _OkDataTable.prototype, "csvName");
-__decorateClass3([
+__decorateClass4([
   n4({ type: Boolean, attribute: "server-side" })
 ], _OkDataTable.prototype, "serverSide");
-__decorateClass3([
+__decorateClass4([
   n4({ type: Number })
 ], _OkDataTable.prototype, "total");
-__decorateClass3([
+__decorateClass4([
   n4({ type: Number })
 ], _OkDataTable.prototype, "page");
-__decorateClass3([
+__decorateClass4([
   n4({ type: Boolean })
 ], _OkDataTable.prototype, "searchable");
-__decorateClass3([
+__decorateClass4([
   n4({ type: String })
 ], _OkDataTable.prototype, "sort");
-__decorateClass3([
+__decorateClass4([
   n4({ attribute: "sort-dir" })
 ], _OkDataTable.prototype, "sortDir");
-__decorateClass3([
+__decorateClass4([
   n4()
 ], _OkDataTable.prototype, "title");
-__decorateClass3([
+__decorateClass4([
   n4({ attribute: false })
 ], _OkDataTable.prototype, "views");
-__decorateClass3([
+__decorateClass4([
   n4({ attribute: "default-view" })
 ], _OkDataTable.prototype, "defaultView");
-__decorateClass3([
+__decorateClass4([
   n4({ type: Boolean })
 ], _OkDataTable.prototype, "exportable");
-__decorateClass3([
+__decorateClass4([
   n4({ type: Boolean })
 ], _OkDataTable.prototype, "importable");
-__decorateClass3([
+__decorateClass4([
   n4({ type: Boolean, attribute: "column-selector" })
 ], _OkDataTable.prototype, "columnSelector");
-__decorateClass3([
+__decorateClass4([
   n4({ attribute: false })
 ], _OkDataTable.prototype, "pageSizes");
-__decorateClass3([
+__decorateClass4([
   n4({ type: Boolean })
 ], _OkDataTable.prototype, "selectable");
-__decorateClass3([
+__decorateClass4([
   n4({ attribute: false })
 ], _OkDataTable.prototype, "selectedKeys");
-__decorateClass3([
+__decorateClass4([
   n4({ attribute: false })
 ], _OkDataTable.prototype, "primaryAction");
-__decorateClass3([
+__decorateClass4([
   n4({ type: Boolean })
 ], _OkDataTable.prototype, "inlineFilters");
-__decorateClass3([
+__decorateClass4([
   n4({ attribute: false })
 ], _OkDataTable.prototype, "menuActions");
-__decorateClass3([
+__decorateClass4([
   n4({ attribute: false })
 ], _OkDataTable.prototype, "cardTitle");
-__decorateClass3([
+__decorateClass4([
   n4({ attribute: false })
 ], _OkDataTable.prototype, "cardIcon");
-__decorateClass3([
+__decorateClass4([
   n4({ attribute: false })
 ], _OkDataTable.prototype, "renderCard");
-__decorateClass3([
+__decorateClass4([
   r5()
 ], _OkDataTable.prototype, "q");
-__decorateClass3([
+__decorateClass4([
   r5()
 ], _OkDataTable.prototype, "clientPage");
-__decorateClass3([
+__decorateClass4([
   r5()
 ], _OkDataTable.prototype, "clientPageSize");
-__decorateClass3([
+__decorateClass4([
   r5()
 ], _OkDataTable.prototype, "clientSort");
-__decorateClass3([
+__decorateClass4([
   r5()
 ], _OkDataTable.prototype, "clientSortDir");
-__decorateClass3([
+__decorateClass4([
   r5()
 ], _OkDataTable.prototype, "clientFilters");
-__decorateClass3([
+__decorateClass4([
   r5()
 ], _OkDataTable.prototype, "filterDraft");
-__decorateClass3([
+__decorateClass4([
   r5()
 ], _OkDataTable.prototype, "panel");
-__decorateClass3([
+__decorateClass4([
   r5()
 ], _OkDataTable.prototype, "viewMode");
-__decorateClass3([
+__decorateClass4([
   r5()
 ], _OkDataTable.prototype, "isMobile");
-__decorateClass3([
+__decorateClass4([
   r5()
 ], _OkDataTable.prototype, "hiddenKeys");
-__decorateClass3([
+__decorateClass4([
   r5()
 ], _OkDataTable.prototype, "internalSelection");
-__decorateClass3([
+__decorateClass4([
   r5()
 ], _OkDataTable.prototype, "menuOpen");
 var OkDataTable = _OkDataTable;
 define("ok-data-table", OkDataTable);
 
 // ../outfitkit/dist/ok-scheduler.js
-var __defProp4 = Object.defineProperty;
-var __decorateClass4 = (decorators, target, key, kind) => {
+var __defProp5 = Object.defineProperty;
+var __decorateClass5 = (decorators, target, key, kind) => {
   var result = void 0;
   for (var i7 = decorators.length - 1, decorator; i7 >= 0; i7--)
     if (decorator = decorators[i7])
       result = decorator(target, key, result) || result;
-  if (result) __defProp4(target, key, result);
+  if (result) __defProp5(target, key, result);
   return result;
 };
 var DEFAULT_LABELS3 = {
@@ -3681,187 +4223,38 @@ var OkScheduler = class extends i3 {
       </div>`;
   }
 };
-__decorateClass4([
+__decorateClass5([
   n4({ attribute: false })
 ], OkScheduler.prototype, "resources");
-__decorateClass4([
+__decorateClass5([
   n4({ attribute: false })
 ], OkScheduler.prototype, "events");
-__decorateClass4([
+__decorateClass5([
   n4()
 ], OkScheduler.prototype, "date");
-__decorateClass4([
+__decorateClass5([
   n4({ type: Number, attribute: "start-hour" })
 ], OkScheduler.prototype, "startHour");
-__decorateClass4([
+__decorateClass5([
   n4({ type: Number, attribute: "end-hour" })
 ], OkScheduler.prototype, "endHour");
-__decorateClass4([
+__decorateClass5([
   n4({ type: Number, attribute: "slot-minutes" })
 ], OkScheduler.prototype, "slotMin");
-__decorateClass4([
+__decorateClass5([
   n4()
 ], OkScheduler.prototype, "locale");
-__decorateClass4([
+__decorateClass5([
   n4({ attribute: false })
 ], OkScheduler.prototype, "labels");
-__decorateClass4([
+__decorateClass5([
   r5()
 ], OkScheduler.prototype, "cursor");
 define("ok-scheduler", OkScheduler);
 
-// modules/appointments/locales/es.json
-var es_default = {
-  name: "Citas",
-  description: "Agenda las citas de tus clientes con sus servicios y profesionales, y s\xEDguelas desde que se reservan hasta que se completan.",
-  navigation: {
-    appointments: {
-      label: "Citas"
-    }
-  },
-  ui: {
-    title: "Citas",
-    allStatuses: "Todos los estados",
-    statusAll: "Todos",
-    statusPending: "Pendiente",
-    statusConfirmed: "Confirmada",
-    statusInProgress: "En curso",
-    statusCompleted: "Completada",
-    statusCancelled: "Cancelada",
-    statusNoShow: "No-show",
-    colTime: "Hora",
-    colNumber: "N\xBA",
-    colCustomer: "Cliente",
-    colService: "Servicio",
-    colStaff: "Personal",
-    colStatus: "Estado",
-    actionCharge: "Cobrar",
-    actionConfirm: "Confirmar",
-    actionStart: "Iniciar",
-    actionComplete: "Completar",
-    actionCancel: "Cancelar",
-    actionDelete: "Borrar",
-    fieldDate: "D\xEDa",
-    fieldCustomer: "Cliente",
-    fieldService: "Servicio",
-    fieldStart: "Inicio",
-    fieldMinutes: "Min.",
-    saving: "Guardando\u2026",
-    addAppointment: "A\xF1adir cita",
-    searchPlaceholder: "Buscar n\xBA, cliente o servicio\u2026",
-    loading: "Cargando\u2026",
-    empty: "Sin citas para este d\xEDa.",
-    errLoad: "Error cargando citas",
-    errCreate: "No se pudo crear la cita",
-    errAction: "No se pudo ejecutar la acci\xF3n",
-    actionNoShow: "No-show",
-    fieldStaff: "Profesional",
-    pickCustomer: "Elige un cliente",
-    pickService: "Elige un servicio",
-    pickStaff: "Elige un profesional",
-    viewList: "Lista",
-    viewStaff: "Por profesional",
-    unassigned: "Sin asignar",
-    prevDay: "D\xEDa anterior",
-    nextDay: "D\xEDa siguiente",
-    noStaff: "A\xFAn no hay profesionales reservables.",
-    errLoadCatalogs: "Error cargando clientes, servicios o personal"
-  },
-  setup: {
-    title: "Tu horario de trabajo",
-    description: "Dile al hub qu\xE9 d\xEDas y a qu\xE9 horas trabajas, para que la agenda solo ofrezca huecos cuando est\xE1s abierto."
-  },
-  errors: {
-    "appointments.cannot_cancel": "Esta cita ya no se puede cancelar en su estado actual.",
-    "appointments.cancellation_notice_required": "Esta cita solo se puede cancelar online con la antelaci\xF3n requerida. Contacta con el negocio.",
-    "appointments.customer_cancellation_disabled": "La cancelaci\xF3n online no est\xE1 disponible. Contacta con el negocio.",
-    "appointments.catalog_unavailable": "No se pudo leer el cat\xE1logo de clientes, servicios o profesionales; la cita no se ha reservado.",
-    "appointments.customer_not_found": "Ese cliente no existe en este negocio.",
-    "appointments.service_not_found": "Ese servicio no existe en este negocio.",
-    "appointments.service_not_bookable": "Ese servicio no se puede reservar: est\xE1 inactivo o no es reservable.",
-    "appointments.staff_not_found": "Ese profesional no existe en este negocio.",
-    "appointments.staff_not_bookable": "Ese profesional no puede recibir citas: est\xE1 inactivo o no es reservable.",
-    "appointments.staff_not_eligible": "Ese profesional no realiza este servicio."
-  }
-};
-
-// modules/appointments/locales/en.json
-var en_default = {
-  name: "Appointments",
-  navigation: {
-    appointments: {
-      label: "Appointments"
-    }
-  },
-  ui: {
-    title: "Appointments",
-    allStatuses: "All statuses",
-    statusAll: "All",
-    statusPending: "Pending",
-    statusConfirmed: "Confirmed",
-    statusInProgress: "In progress",
-    statusCompleted: "Completed",
-    statusCancelled: "Cancelled",
-    statusNoShow: "No-show",
-    colTime: "Time",
-    colNumber: "No.",
-    colCustomer: "Customer",
-    colService: "Service",
-    colStaff: "Staff",
-    colStatus: "Status",
-    actionCharge: "Charge",
-    actionConfirm: "Confirm",
-    actionStart: "Start",
-    actionComplete: "Complete",
-    actionCancel: "Cancel",
-    actionDelete: "Delete",
-    fieldDate: "Day",
-    fieldCustomer: "Customer",
-    fieldService: "Service",
-    fieldStart: "Start",
-    fieldMinutes: "Min.",
-    saving: "Saving\u2026",
-    addAppointment: "Add appointment",
-    searchPlaceholder: "Search no., customer or service\u2026",
-    loading: "Loading\u2026",
-    empty: "No appointments for this day.",
-    errLoad: "Error loading appointments",
-    errCreate: "Could not create the appointment",
-    errAction: "Could not perform the action",
-    actionNoShow: "No-show",
-    fieldStaff: "Professional",
-    pickCustomer: "Pick a customer",
-    pickService: "Pick a service",
-    pickStaff: "Pick a professional",
-    viewList: "List",
-    viewStaff: "By professional",
-    unassigned: "Unassigned",
-    prevDay: "Previous day",
-    nextDay: "Next day",
-    noStaff: "No bookable professionals yet.",
-    errLoadCatalogs: "Error loading customers, services or staff"
-  },
-  setup: {
-    title: "Your working hours",
-    description: "Tell the hub the days and times you work, so the agenda only offers slots while you are open."
-  },
-  errors: {
-    "appointments.cannot_cancel": "This appointment can no longer be cancelled in its current state.",
-    "appointments.cancellation_notice_required": "This appointment can only be cancelled online with the required advance notice. Please contact the business.",
-    "appointments.customer_cancellation_disabled": "Online cancellation is not available. Please contact the business.",
-    "appointments.catalog_unavailable": "The customer, service or staff catalogue could not be read; the appointment was not booked.",
-    "appointments.customer_not_found": "That customer does not exist in this business.",
-    "appointments.service_not_found": "That service does not exist in this business.",
-    "appointments.service_not_bookable": "That service cannot be booked: it is inactive or not bookable.",
-    "appointments.staff_not_found": "That professional does not exist in this business.",
-    "appointments.staff_not_bookable": "That professional cannot take appointments: inactive or not bookable.",
-    "appointments.staff_not_eligible": "That professional does not perform this service."
-  }
-};
-
 // modules/appointments/ui/components/erp-appointments-list/erp-appointments-list.ts
-var CATALOG = { es: es_default, en: en_default };
-var STATUS_KEYS = {
+var CATALOG2 = { es: es_default, en: en_default };
+var STATUS_KEYS2 = {
   pending: "ui.statusPending",
   confirmed: "ui.statusConfirmed",
   in_progress: "ui.statusInProgress",
@@ -3878,7 +4271,7 @@ var STATUS_COLORS = {
   no_show: "var(--ion-color-danger, #eb445a)"
 };
 var UNASSIGNED = "unassigned";
-function erplora() {
+function erplora2() {
   const c5 = globalThis.erplora;
   if (!c5) throw new Error("erplora SDK no inicializado por el shell");
   return c5;
@@ -3891,7 +4284,7 @@ function dayBounds(day) {
   const end = new Date(start.getTime() + 24 * 60 * 60 * 1e3);
   return { day_start: start.toISOString(), day_end: end.toISOString() };
 }
-function rows(r6) {
+function rows2(r6) {
   if (Array.isArray(r6)) return r6;
   if (r6 && typeof r6 === "object" && Array.isArray(r6.rows)) {
     return r6.rows;
@@ -3902,7 +4295,7 @@ function fmtTime(iso) {
   if (!iso) return "";
   const d3 = new Date(iso);
   if (Number.isNaN(d3.getTime())) return iso;
-  return d3.toLocaleTimeString(erplora().locale || "es", { hour: "2-digit", minute: "2-digit" });
+  return d3.toLocaleTimeString(erplora2().locale || "es", { hour: "2-digit", minute: "2-digit" });
 }
 function wallClock(iso) {
   const d3 = new Date(iso);
@@ -3948,8 +4341,8 @@ var ErpAppointmentsList = class extends i3 {
   `;
   }
   statusLabel(status) {
-    const key = STATUS_KEYS[status];
-    return key ? erplora().t(CATALOG, key) : status;
+    const key = STATUS_KEYS2[status];
+    return key ? erplora2().t(CATALOG2, key) : status;
   }
   /** Profesionales que pueden recibir citas: los que el módulo `staff` marca reservables. */
   get bookableStaff() {
@@ -3969,7 +4362,7 @@ var ErpAppointmentsList = class extends i3 {
   }
   // Getters (no campos): se re-evalúan en cada render para seguir el idioma activo.
   get columns() {
-    const t5 = (k2) => erplora().t(CATALOG, k2);
+    const t5 = (k2) => erplora2().t(CATALOG2, k2);
     return [
       { key: "start_datetime", header: t5("ui.colTime"), format: (r6) => fmtTime(r6.start_datetime) },
       { key: "appointment_number", header: t5("ui.colNumber") },
@@ -3984,7 +4377,7 @@ var ErpAppointmentsList = class extends i3 {
     ];
   }
   get rowActions() {
-    const t5 = (k2) => erplora().t(CATALOG, k2);
+    const t5 = (k2) => erplora2().t(CATALOG2, k2);
     return [
       // COBRAR (sales#89): el eslabón que faltaba. La agenda sabía completar una cita y ahí se
       // acababa el camino; en un salón el servicio ES la venta.
@@ -4014,7 +4407,7 @@ var ErpAppointmentsList = class extends i3 {
   get schedulerResources() {
     return [
       ...this.bookableStaff.map((m4) => ({ id: m4.id, label: m4.full_name })),
-      { id: UNASSIGNED, label: erplora().t(CATALOG, "ui.unassigned") }
+      { id: UNASSIGNED, label: erplora2().t(CATALOG2, "ui.unassigned") }
     ];
   }
   get schedulerEvents() {
@@ -4037,15 +4430,15 @@ var ErpAppointmentsList = class extends i3 {
     await this.loadCatalogs();
     try {
       const offs = [
-        erplora().on("appointments.appointment.created", () => this.refresh()),
-        erplora().on("appointments.appointment.updated", () => this.refresh()),
-        erplora().on("appointments.appointment.confirmed", () => this.refresh()),
-        erplora().on("appointments.appointment.started", () => this.refresh()),
-        erplora().on("appointments.appointment.completed", () => this.refresh()),
-        erplora().on("appointments.appointment.cancelled", () => this.refresh()),
-        erplora().on("appointments.appointment.no_show", () => this.refresh()),
-        erplora().on("appointments.appointment.rescheduled", () => this.refresh()),
-        erplora().on("appointments.appointment.deleted", () => this.refresh())
+        erplora2().on("appointments.appointment.created", () => this.refresh()),
+        erplora2().on("appointments.appointment.updated", () => this.refresh()),
+        erplora2().on("appointments.appointment.confirmed", () => this.refresh()),
+        erplora2().on("appointments.appointment.started", () => this.refresh()),
+        erplora2().on("appointments.appointment.completed", () => this.refresh()),
+        erplora2().on("appointments.appointment.cancelled", () => this.refresh()),
+        erplora2().on("appointments.appointment.no_show", () => this.refresh()),
+        erplora2().on("appointments.appointment.rescheduled", () => this.refresh()),
+        erplora2().on("appointments.appointment.deleted", () => this.refresh())
       ];
       this.unsub = () => offs.forEach((off) => off());
     } catch {
@@ -4061,17 +4454,17 @@ var ErpAppointmentsList = class extends i3 {
   async loadCatalogs() {
     try {
       const [customers, services, staffMembers, settings] = await Promise.all([
-        erplora().query("customers.list", { limit: 500, sort: "name", dir: "asc" }).catch(() => []),
-        erplora().query("services.services.list", { limit: 500 }).catch(() => []),
-        erplora().query("staff.members.list", { limit: 500 }).catch(() => []),
-        erplora().query("appointments.settings.get").catch(() => [])
+        erplora2().query("customers.list", { limit: 500, sort: "name", dir: "asc" }).catch(() => []),
+        erplora2().query("services.services.list", { limit: 500 }).catch(() => []),
+        erplora2().query("staff.members.list", { limit: 500 }).catch(() => []),
+        erplora2().query("appointments.settings.get").catch(() => [])
       ]);
-      this.customers = rows(customers);
-      this.services = rows(services).filter((s5) => s5.is_bookable === void 0 || Number(s5.is_bookable) === 1);
-      this.staffMembers = rows(staffMembers);
-      this.settings = rows(settings)[0] ?? {};
+      this.customers = rows2(customers);
+      this.services = rows2(services).filter((s5) => s5.is_bookable === void 0 || Number(s5.is_bookable) === 1);
+      this.staffMembers = rows2(staffMembers);
+      this.settings = rows2(settings)[0] ?? {};
     } catch (e5) {
-      this.error = e5 instanceof Error ? e5.message : erplora().t(CATALOG, "ui.errLoadCatalogs");
+      this.error = e5 instanceof Error ? e5.message : erplora2().t(CATALOG2, "ui.errLoadCatalogs");
     }
   }
   async refresh() {
@@ -4079,16 +4472,16 @@ var ErpAppointmentsList = class extends i3 {
     this.error = "";
     try {
       const { day_start, day_end } = dayBounds(this.day);
-      const result = await erplora().query("appointments.appointments.list", {
+      const result = await erplora2().query("appointments.appointments.list", {
         day_start,
         day_end,
         status: this.statusFilter,
         staff_id: "",
         limit: 100
       });
-      this.items = rows(result);
+      this.items = rows2(result);
     } catch (e5) {
-      this.error = e5 instanceof Error ? e5.message : erplora().t(CATALOG, "ui.errLoad");
+      this.error = e5 instanceof Error ? e5.message : erplora2().t(CATALOG2, "ui.errLoad");
     } finally {
       this.loading = false;
     }
@@ -4107,7 +4500,7 @@ var ErpAppointmentsList = class extends i3 {
     this.error = "";
     try {
       const startIso = new Date(this.newStart).toISOString();
-      await erplora().command("appointments.appointments.create", {
+      await erplora2().command("appointments.appointments.create", {
         // Vínculos + su snapshot denormalizado (lo que se reservó, aunque la ficha cambie).
         customer_id: customer.id,
         customer_name: customer.name,
@@ -4129,7 +4522,7 @@ var ErpAppointmentsList = class extends i3 {
       this.dataTable()?.close();
       await this.refresh();
     } catch (e5) {
-      this.error = e5 instanceof Error ? e5.message : erplora().t(CATALOG, "ui.errCreate");
+      this.error = e5 instanceof Error ? e5.message : erplora2().t(CATALOG2, "ui.errCreate");
     } finally {
       this.saving = false;
     }
@@ -4157,27 +4550,27 @@ var ErpAppointmentsList = class extends i3 {
           return;
         // navegamos fuera: refrescar la agenda que abandonamos no tiene sentido
         case "confirm":
-          await erplora().command("appointments.appointments.confirm", { appointment_id: id });
+          await erplora2().command("appointments.appointments.confirm", { appointment_id: id });
           break;
         case "start":
-          await erplora().command("appointments.appointments.start", { appointment_id: id });
+          await erplora2().command("appointments.appointments.start", { appointment_id: id });
           break;
         case "complete":
-          await erplora().command("appointments.appointments.complete", { appointment_id: id });
+          await erplora2().command("appointments.appointments.complete", { appointment_id: id });
           break;
         case "no_show":
-          await erplora().command("appointments.appointments.no_show", { appointment_id: id });
+          await erplora2().command("appointments.appointments.no_show", { appointment_id: id });
           break;
         case "cancel":
-          await erplora().command("appointments.appointments.cancel", { appointment_id: id, reason: "" });
+          await erplora2().command("appointments.appointments.cancel", { appointment_id: id, reason: "" });
           break;
         case "delete":
-          await erplora().command("appointments.appointments.delete", { appointment_id: id });
+          await erplora2().command("appointments.appointments.delete", { appointment_id: id });
           break;
       }
       await this.refresh();
     } catch (e5) {
-      this.error = e5 instanceof Error ? e5.message : erplora().t(CATALOG, "ui.errAction");
+      this.error = e5 instanceof Error ? e5.message : erplora2().t(CATALOG2, "ui.errAction");
     }
   }
   /** Hueco libre del timeline → se pre-rellena el alta con ESE profesional y ESA hora y se
@@ -4193,7 +4586,7 @@ var ErpAppointmentsList = class extends i3 {
   }
   // El título de la vista lo pinta el topbar del shell: repetirlo aquí lo duplicaba en pantalla.
   render() {
-    const t5 = (k2) => erplora().t(CATALOG, k2);
+    const t5 = (k2) => erplora2().t(CATALOG2, k2);
     const startHour = Number(this.settings.calendar_start_hour ?? 8);
     const endHour = Number(this.settings.calendar_end_hour ?? 20);
     return b2`<div class="page">
@@ -4212,7 +4605,7 @@ var ErpAppointmentsList = class extends i3 {
       this.refresh();
     }}>
             <ion-select-option value="">${t5("ui.statusAll")}</ion-select-option>
-            ${Object.keys(STATUS_KEYS).map((k2) => b2`<ion-select-option .value=${k2}>${this.statusLabel(k2)}</ion-select-option>`)}
+            ${Object.keys(STATUS_KEYS2).map((k2) => b2`<ion-select-option .value=${k2}>${this.statusLabel(k2)}</ion-select-option>`)}
           </ion-select>
           <ion-segment .value=${this.view} @ionChange=${(e5) => this.view = e5.target.value}>
             <ion-segment-button value="list">
@@ -4228,7 +4621,7 @@ var ErpAppointmentsList = class extends i3 {
               .date=${this.day}
               .startHour=${startHour}
               .endHour=${endHour}
-              .locale=${erplora().locale || "es"}
+              .locale=${erplora2().locale || "es"}
               .resources=${this.schedulerResources}
               .events=${this.schedulerEvents}
               .labels=${{ prevDay: t5("ui.prevDay"), nextDay: t5("ui.nextDay"), empty: t5("ui.noStaff") }}
@@ -4312,6 +4705,3 @@ __decorateClass([
   r5()
 ], ErpAppointmentsList.prototype, "newDuration", 2);
 define("erp-appointments-list", ErpAppointmentsList);
-export {
-  ErpAppointmentsList
-};

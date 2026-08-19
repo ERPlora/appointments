@@ -54,6 +54,14 @@
       "component": "erp-appointments-list"
     }
   ],
+  "provides_slots": [
+    {
+      "slot": "customers.detail",
+      "component": "erp-appointments-customer-history",
+      "permission": "appointments.view_appointment",
+      "priority": 100
+    }
+  ],
   "settings": {
     "title": "Appointments",
     "icon": "calendar-outline",
@@ -105,6 +113,15 @@
       "schema": "schemas/count_active_for_service.json",
       "ai": {
         "description": "Counts the upcoming live appointments (pending/confirmed, starting from now) of one service, with the earliest start. Public read used by `services` to warn before archiving a service."
+      },
+      "expose_api": true
+    },
+    "appointments.appointments.list_for_customer": {
+      "permission": "appointments.view_appointment",
+      "sql": "queries/appointments_list_for_customer.sql",
+      "schema": "schemas/list_for_customer.json",
+      "ai": {
+        "description": "Lists the most recent appointments of one customer (newest first) with service, professional, status and the visit notes — the visit history the customer sheet shows. Public read used by the `customers.detail` slot."
       },
       "expose_api": true
     },

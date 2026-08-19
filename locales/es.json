@@ -52,7 +52,10 @@
     "prevDay": "Día anterior",
     "nextDay": "Día siguiente",
     "noStaff": "Aún no hay profesionales reservables.",
-    "errLoadCatalogs": "Error cargando clientes, servicios o personal"
+    "errLoadCatalogs": "Error cargando clientes, servicios o personal",
+    "historyTitle": "Historial de visitas",
+    "historyEmpty": "Este cliente aún no tiene citas.",
+    "historyError": "No se pudo cargar el historial de visitas."
   },
   "setup": {
     "title": "Tu horario de trabajo",
