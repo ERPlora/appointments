@@ -317,6 +317,13 @@
       "ai": {
         "description": "Loads live appointments for the same day as the requested start, used by the create handler to detect overlapping bookings authoritatively (runtime reads)."
       }
+    },
+    "appointments.blocked_times.overlapping": {
+      "permission": "appointments.view_schedule",
+      "sql": "queries/blocked_times_overlapping.sql",
+      "ai": {
+        "description": "Loads the agenda's blocked periods (holidays, closures, a professional's block) that may cover the requested day, used by the create handler to refuse a booking on blocked time authoritatively (runtime reads)."
+      }
     }
   },
   "commands": {
@@ -371,6 +378,14 @@
           "query": "staff.services.eligible_for_service",
           "params": {
             "service_id": "payload.service_id"
+          },
+          "required": true
+        },
+        {
+          "query": "appointments.blocked_times.overlapping",
+          "params": {
+            "staff_id": "payload.staff_id",
+            "start_datetime": "payload.start_datetime"
           },
           "required": true
         }

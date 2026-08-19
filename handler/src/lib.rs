@@ -412,6 +412,103 @@ fn default_duration(input: &Value) -> i64 {
         .unwrap_or(60)
 }
 
+// ───────────────── the booking policy is READ, never told (appointments#10/#13) ─────────────────
+
+/// The settings row exactly as the runtime pre-loaded it (`reads`, `required: true`). `None` =
+/// the read did not arrive.
+///
+/// For a WRITE that is a refusal, never a fallback to `payload.settings`: a guard that falls back
+/// to the caller when its input is missing is a guard that OPENS — the browser would be handing us
+/// `allow_overlapping`, and the overlap gate with it. [`settings_from`] keeps the old fallback for
+/// the read-only paths that were built on it.
+fn settings_read(input: &Value) -> Option<Value> {
+    read_rows(input, "appointments.settings.get")?.first().cloned()
+}
+
+fn allow_overlapping_of(settings: &Value) -> bool {
+    settings.get("allow_overlapping").map(as_bool).unwrap_or(false)
+}
+
+fn default_duration_of(settings: &Value) -> i64 {
+    settings
+        .get("default_duration")
+        .map(|v| as_i64(v, 60))
+        .filter(|d| *d >= 1)
+        .unwrap_or(60)
+}
+
+/// Lead time: how soon, and how far out, this hub accepts a booking.
+///
+/// `min_booking_notice` (minutes) and `max_advance_booking` (days) are both DURATIONS measured
+/// from `now`, so they compare two UTC instants and need **no timezone** — which is why they can
+/// land while hub#1022 keeps the wall-clock rules (opening hours, the professional's shift) out
+/// of reach. `0` disables a limit: a hub that wants no minimum notice says so with a zero, and a
+/// zero must never mean "nothing can be booked".
+///
+/// The boundary is inclusive: with a 60 minute notice, booking exactly 60 minutes ahead is valid.
+fn lead_time_refusal(settings: &Value, start: &Dt, now: &Dt) -> Option<DomainError> {
+    let ahead = cmp_secs(start, now);
+
+    let notice_min = settings.get("min_booking_notice").map(|v| as_i64(v, 0)).unwrap_or(0);
+    if notice_min > 0 && ahead < notice_min * 60 {
+        return Some(DomainError::new(
+            "appointments.too_soon",
+            &format!("This appointment must be booked at least {notice_min} minutes in advance."),
+        ));
+    }
+
+    let max_days = settings.get("max_advance_booking").map(|v| as_i64(v, 0)).unwrap_or(0);
+    if max_days > 0 && ahead > max_days * 86_400 {
+        return Some(DomainError::new(
+            "appointments.too_far",
+            &format!("This appointment cannot be booked more than {max_days} days in advance."),
+        ));
+    }
+
+    None
+}
+
+/// Blocked time: holidays, closures, a professional's training slot.
+///
+/// Reads `appointments.blocked_times.overlapping` (this module's OWN table, `required: true`), so
+/// a missing read is a runtime fault and refuses — it does not wave the booking through. The rows
+/// carry ISO-8601 instants, not wall clock, so this needs no timezone either.
+///
+/// A block with no `staff_id` closes the agenda for everybody; a block on someone else is none of
+/// this booking's business. Touching edges do not overlap: a block ending at 11:00 leaves 11:00
+/// free — the same `[start, end)` convention as the overlap gate.
+fn blocked_refusal(input: &Value, staff_id: &str, start: &Dt, end: &Dt) -> Option<DomainError> {
+    let Some(rows) = read_rows(input, "appointments.blocked_times.overlapping") else {
+        return Some(DomainError::new(
+            "appointments.availability_unavailable",
+            "The agenda's blocked periods could not be read; the appointment was not booked.",
+        ));
+    };
+
+    let hit = rows.iter().find(|row| {
+        if row.get("is_deleted").map(as_bool).unwrap_or(false) {
+            return false;
+        }
+        let owner = as_str(row.get("staff_id").unwrap_or(&Value::Null));
+        if !owner.is_empty() && owner != staff_id {
+            return false;
+        }
+        let (Some(b_start), Some(b_end)) = (
+            parse_dt(&as_str(row.get("start_datetime").unwrap_or(&Value::Null))),
+            parse_dt(&as_str(row.get("end_datetime").unwrap_or(&Value::Null))),
+        ) else {
+            return false;
+        };
+        cmp_secs(&b_start, end) < 0 && cmp_secs(&b_end, start) > 0
+    })?;
+
+    let title = str_or(hit, "title", "blocked");
+    Some(DomainError::new(
+        "appointments.blocked",
+        &format!("That slot is blocked in the agenda ({title})."),
+    ))
+}
+
 // ───────────────────────────── the resolved booking (appointments#11) ─────────────────────────────
 
 /// The three links of a booking, RESOLVED against the hub's own records — the snapshot that is
@@ -847,14 +944,42 @@ pub fn create_appointment_pure(input: Value) -> Result<Output, String> {
         Err(refusal) => return Ok(Output::new().with_error(refusal)),
     };
 
+    // The booking policy comes from the DB, or the booking does not happen (appointments#10).
+    let Some(settings) = settings_read(&input) else {
+        return Ok(Output::new().with_error(DomainError::new(
+            "appointments.settings_unavailable",
+            "The booking settings could not be read; the appointment was not booked.",
+        )));
+    };
+    let default_dur = default_duration_of(&settings);
+
+    // Availability, decided from the authoritative reads BEFORE anything is written
+    // (appointments#13). Overlap is checked further down, inside `prepare_appointment`.
+    let raw_start = as_str(payload.get("start_datetime").unwrap_or(&Value::Null));
+    if let Some(start) = parse_dt(&raw_start) {
+        if let Some(refusal) = lead_time_refusal(&settings, &start, &ctx.now) {
+            return Ok(Output::new().with_error(refusal));
+        }
+        let minutes = payload
+            .get("duration_minutes")
+            .map(|v| as_i64(v, default_dur))
+            .filter(|d| *d >= 1)
+            .unwrap_or_else(|| resolved.service_duration.unwrap_or(default_dur));
+        let end = start.add_minutes(minutes);
+        if let Some(refusal) = blocked_refusal(&input, &resolved.staff_id, &start, &end) {
+            return Ok(Output::new().with_error(refusal));
+        }
+    }
+    // An unparseable start is not an availability problem: `prepare_appointment` names it.
+
     let mut candidates = candidates_from(&input);
     let ops = prepare_appointment(
         &payload,
         Some(&resolved),
         None,
         &mut candidates,
-        allow_overlapping(&input),
-        default_duration(&input),
+        allow_overlapping_of(&settings),
+        default_dur,
         &ctx.now,
         &appointment_id,
         "Cita creada",
@@ -1205,7 +1330,15 @@ mod tests {
             "staff.services.eligible_for_service": [
                 { "staff_id": "s1", "full_name": "Bea Pro", "custom_duration": null,
                   "custom_price": null, "is_primary": 1 }
-            ]
+            ],
+            // appointments#10/#13: both are `required: true` in the manifest, so they are always
+            // there in production. Lead time is switched OFF (0 = no limit) and the agenda is
+            // clear, so the tests that are about something else keep testing that something else.
+            "appointments.settings.get": [
+                { "allow_overlapping": 0, "default_duration": 60,
+                  "min_booking_notice": 0, "max_advance_booking": 0 }
+            ],
+            "appointments.blocked_times.overlapping": []
         })
     }
 
@@ -1711,5 +1844,207 @@ mod tests {
         ))
         .unwrap_err();
         assert!(err.starts_with("invalid_payload:"), "{err}");
+    }
+
+    // ── appointments#13 / appointments#10 · the availability boundary ────────────────────────
+    //
+    // `create` guarded the OVERLAP and nothing else: an appointment could be booked on top of a
+    // company holiday, or two minutes before it started. Both refusals are decided from the
+    // authoritative reads (ADR-0069) — never from the payload — and both are pure instant
+    // arithmetic, so they need no timezone.
+    //
+    // WHAT IS NOT HERE, and why: the business opening hours (`schedules.business_hours.list`) and
+    // the professional's working hours (`staff.availability.for_member`) are WALL-CLOCK
+    // (`HH:MM:SS`), while an appointment is a UTC instant. Intersecting them needs the business
+    // timezone, and a module cannot read it yet — the core owns it (`settings::timezone_of`) but
+    // does not put it in the handler's `context` (hub#1022, OPEN). Enforcing them by guessing the
+    // offset would refuse correct bookings twice a year, at the DST change. They stay in
+    // `queries/availability_check.sql` (advisory) until hub#1022 lands.
+
+    /// Settings row that switches both lead-time limits OFF (`0` = no limit), which is what the
+    /// tests that are about something else need.
+    fn no_lead_time() -> Value {
+        json!([{ "allow_overlapping": 0, "default_duration": 60,
+                 "min_booking_notice": 0, "max_advance_booking": 0 }])
+    }
+
+    fn lead_time(min_notice: i64, max_days: i64) -> Value {
+        json!({ "appointments.settings.get": [
+            { "allow_overlapping": 0, "default_duration": 60,
+              "min_booking_notice": min_notice, "max_advance_booking": max_days }
+        ]})
+    }
+
+    // ── the booking policy is READ, never told (appointments#10 point 2) ────────────────────
+
+    /// The settings read is `required: true` in the manifest. If it is missing anyway, the answer
+    /// is a refusal — NOT the caller's `payload.settings`. A guard that falls back to the payload
+    /// when its input is missing is a guard that opens: the browser would be handing us
+    /// `allow_overlapping` and the whole overlap gate with it.
+    #[test]
+    fn create_refuses_when_the_settings_read_is_missing_instead_of_trusting_the_payload() {
+        let mut inp = input(item("2026-07-31T11:00:00Z", 30, "s1"), None);
+        inp["context"]["reads"]
+            .as_object_mut()
+            .unwrap()
+            .remove("appointments.settings.get");
+        inp["payload"]["settings"] = json!({ "allow_overlapping": 1, "default_duration": 30 });
+
+        let out = create_appointment_pure(inp).unwrap();
+        assert_eq!(
+            domain_code(&out).as_deref(),
+            Some("appointments.settings_unavailable"),
+            "no settings row → refuse; never fall back to what the caller sent"
+        );
+        assert!(out.operations.is_empty(), "a refusal writes nothing");
+    }
+
+    /// Same hole from the other side: with the read present, a `payload.settings` that opens the
+    /// overlap gate must be ignored.
+    #[test]
+    fn create_ignores_a_payload_settings_that_tries_to_allow_overlapping() {
+        let mut payload = item("2026-07-31T10:15:00Z", 30, "s1");
+        payload["settings"] = json!({ "allow_overlapping": 1 });
+        payload["existing_appointments"] = json!([
+            { "appointment_number": "APT-1", "staff_id": "s1",
+              "start_datetime": "2026-07-31T10:00:00Z", "end_datetime": "2026-07-31T10:30:00Z",
+              "status": "confirmed" }
+        ]);
+        let mut inp = input(payload, None);
+        inp["context"]["reads"]["appointments.settings.get"] = no_lead_time();
+
+        let err = create_appointment_pure(inp).unwrap_err();
+        assert!(
+            err.starts_with("overlap:"),
+            "the caller opened the gate from the payload: {err}"
+        );
+    }
+
+    // ── lead time: too soon / too far (appointments#10 point 1) ─────────────────────────────
+
+    /// `min_booking_notice` (minutes). Booking 15 minutes ahead when the hub asks for 60 is the
+    /// classic online-booking abuse: the customer books while walking in.
+    #[test]
+    fn create_refuses_a_booking_inside_the_minimum_notice() {
+        let inp = input(item("2026-07-31T10:15:00Z", 30, "s1"), Some(lead_time(60, 0)));
+        let out = create_appointment_pure(inp).unwrap();
+        assert_eq!(domain_code(&out).as_deref(), Some("appointments.too_soon"));
+        assert!(out.operations.is_empty());
+    }
+
+    /// Exactly on the boundary is IN: 60 minutes' notice means 60 is enough, not "more than 60".
+    #[test]
+    fn create_accepts_a_booking_exactly_at_the_minimum_notice() {
+        let inp = input(item("2026-07-31T11:00:00Z", 30, "s1"), Some(lead_time(60, 0)));
+        let out = create_appointment_pure(inp).unwrap();
+        assert_eq!(domain_code(&out), None, "60 minutes ahead with a 60 minute notice is valid");
+    }
+
+    /// `max_advance_booking` (days): a booking a year out blocks a slot nobody will honour.
+    #[test]
+    fn create_refuses_a_booking_beyond_the_maximum_advance() {
+        let inp = input(item("2026-12-31T11:00:00Z", 30, "s1"), Some(lead_time(0, 90)));
+        let out = create_appointment_pure(inp).unwrap();
+        assert_eq!(domain_code(&out).as_deref(), Some("appointments.too_far"));
+    }
+
+    #[test]
+    fn create_accepts_a_booking_inside_the_maximum_advance() {
+        let inp = input(item("2026-08-15T11:00:00Z", 30, "s1"), Some(lead_time(0, 90)));
+        assert_eq!(domain_code(&create_appointment_pure(inp).unwrap()), None);
+    }
+
+    /// `0` disables the limit — a hub that never wants a lead time says so with a zero, and a
+    /// zero must not mean "nothing can ever be booked".
+    #[test]
+    fn a_zero_lead_time_disables_the_limit() {
+        let inp = input(item("2026-07-31T10:01:00Z", 30, "s1"), Some(lead_time(0, 0)));
+        assert_eq!(domain_code(&create_appointment_pure(inp).unwrap()), None);
+    }
+
+    // ── blocked time: holidays, closures, a professional's block (appointments#10) ──────────
+
+    fn blocks(rows: Value) -> Value {
+        let mut r = lead_time(0, 0);
+        r["appointments.blocked_times.overlapping"] = rows;
+        r
+    }
+
+    /// A hub-wide block (`staff_id` null) closes the agenda for everybody.
+    #[test]
+    fn create_refuses_inside_a_hub_wide_block() {
+        let reads = blocks(json!([
+            { "id": "b1", "title": "Festivo local", "staff_id": null, "all_day": 1,
+              "start_datetime": "2026-07-31T00:00:00Z", "end_datetime": "2026-08-01T00:00:00Z" }
+        ]));
+        let out = create_appointment_pure(input(item("2026-07-31T11:00:00Z", 30, "s1"), Some(reads))).unwrap();
+        assert_eq!(domain_code(&out).as_deref(), Some("appointments.blocked"));
+        assert!(out.operations.is_empty());
+    }
+
+    /// A block on THIS professional refuses; the rest of the salon keeps working.
+    #[test]
+    fn create_refuses_inside_a_block_of_that_professional() {
+        let reads = blocks(json!([
+            { "id": "b2", "title": "Formación", "staff_id": "s1", "all_day": 0,
+              "start_datetime": "2026-07-31T10:30:00Z", "end_datetime": "2026-07-31T12:00:00Z" }
+        ]));
+        let out = create_appointment_pure(input(item("2026-07-31T11:00:00Z", 30, "s1"), Some(reads))).unwrap();
+        assert_eq!(domain_code(&out).as_deref(), Some("appointments.blocked"));
+    }
+
+    /// Another professional's block is none of this booking's business.
+    #[test]
+    fn a_block_of_another_professional_does_not_refuse() {
+        let reads = blocks(json!([
+            { "id": "b3", "title": "Formación", "staff_id": "s2", "all_day": 0,
+              "start_datetime": "2026-07-31T10:30:00Z", "end_datetime": "2026-07-31T12:00:00Z" }
+        ]));
+        assert_eq!(
+            domain_code(&create_appointment_pure(input(item("2026-07-31T11:00:00Z", 30, "s1"), Some(reads))).unwrap()),
+            None
+        );
+    }
+
+    /// Touching edges do not overlap: a block that ENDS at 11:00 leaves the 11:00 slot free.
+    #[test]
+    fn a_block_that_ends_when_the_appointment_starts_does_not_refuse() {
+        let reads = blocks(json!([
+            { "id": "b4", "title": "Comida", "staff_id": "s1", "all_day": 0,
+              "start_datetime": "2026-07-31T10:00:00Z", "end_datetime": "2026-07-31T11:00:00Z" }
+        ]));
+        assert_eq!(
+            domain_code(&create_appointment_pure(input(item("2026-07-31T11:00:00Z", 30, "s1"), Some(reads))).unwrap()),
+            None
+        );
+    }
+
+    /// The read is `required: true`; if it is missing anyway the booking is refused, not waved
+    /// through. A guard whose input vanished must close, not open.
+    #[test]
+    fn create_refuses_when_the_blocked_times_read_is_missing() {
+        let mut inp = input(item("2026-07-31T11:00:00Z", 30, "s1"), None);
+        inp["context"]["reads"]
+            .as_object_mut()
+            .unwrap()
+            .remove("appointments.blocked_times.overlapping");
+        let out = create_appointment_pure(inp).unwrap();
+        assert_eq!(
+            domain_code(&out).as_deref(),
+            Some("appointments.availability_unavailable")
+        );
+    }
+
+    /// A deleted block is not a block.
+    #[test]
+    fn a_deleted_block_does_not_refuse() {
+        let reads = blocks(json!([
+            { "id": "b5", "title": "Cancelado", "staff_id": "s1", "all_day": 0, "is_deleted": 1,
+              "start_datetime": "2026-07-31T10:30:00Z", "end_datetime": "2026-07-31T12:00:00Z" }
+        ]));
+        assert_eq!(
+            domain_code(&create_appointment_pure(input(item("2026-07-31T11:00:00Z", 30, "s1"), Some(reads))).unwrap()),
+            None
+        );
     }
 }
