@@ -595,7 +595,7 @@
       ]
     },
     "appointments._insert_history": {
-      "permission": "appointments.change_appointment",
+      "permission": "appointments.add_appointment",
       "sql": [
         "commands/_insert_history.sql"
       ]
