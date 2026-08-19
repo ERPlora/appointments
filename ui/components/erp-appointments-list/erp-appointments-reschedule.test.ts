@@ -180,7 +180,7 @@ describe('the row bar can move an appointment', () => {
     expect(form.querySelector('ion-input[type="datetime-local"]'), 'the new slot is picked here').toBeTruthy();
   });
 
-  it('sends appointment_id, the new slot in UTC, the end derived from the duration', async () => {
+  it('sends appointment_id, the new slot in UTC and the duration — never the end', async () => {
     const el = await mount();
     await fireRowAction(el, 'reschedule', DAY_APPOINTMENTS[0]);
     el.rescheduleStart = '2026-08-07T16:45';
@@ -193,14 +193,15 @@ describe('the row bar can move an appointment', () => {
     expect(p.appointment_id).toBe('a1');
     expect(p.start_datetime).toBe(new Date('2026-08-07T16:45').toISOString());
     expect(p.duration_minutes, 'the schema wants an integer, not the input string').toBe(45);
-    expect(
-      p.end_datetime,
-      'end = start + duration; the command trusts the caller for it (appointments#10)',
-    ).toBe(new Date(new Date('2026-08-07T16:45').getTime() + 45 * 60_000).toISOString());
-    expect(Object.keys(p), 'the payload schema is additionalProperties:false').toEqual(
-      expect.arrayContaining(['appointment_id', 'start_datetime', 'end_datetime', 'duration_minutes']),
-    );
-    expect(Object.keys(p).length, 'no extra keys: the schema rejects the whole payload').toBe(4);
+    // appointments#10: `end = start + duration` is arithmetic, and the handler does it. An
+    // `end_datetime` sent from here is a second opinion that could disagree with the duration —
+    // the schema no longer accepts it, and `additionalProperties:false` rejects the whole payload.
+    expect(p.end_datetime, 'the end is computed server-side, not sent').toBeUndefined();
+    expect(Object.keys(p).sort(), 'the payload schema is additionalProperties:false').toEqual([
+      'appointment_id',
+      'duration_minutes',
+      'start_datetime',
+    ]);
   });
 
   it('closes the panel and forgets the appointment once the move lands', async () => {

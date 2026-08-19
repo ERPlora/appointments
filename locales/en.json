@@ -85,6 +85,7 @@
     "appointments.recurring_unavailable": "The recurring appointment could not be read; nothing was booked.",
     "appointments.recurring_not_found": "That recurring appointment does not exist in this business.",
     "appointments.recurring_inactive": "That recurring appointment is switched off; reactivate it to book its occurrences.",
-    "appointments.recurring_mismatch": "The recurring appointment does not match the customer, service or professional sent; nothing was booked."
+    "appointments.recurring_mismatch": "The recurring appointment does not match the customer, service or professional sent; nothing was booked.",
+    "appointments.cannot_reschedule": "This appointment can no longer be moved in its current state."
   }
 }

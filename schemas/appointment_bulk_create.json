@@ -4,11 +4,25 @@
   "type": "object",
   "additionalProperties": false,
   "description": "A batch is THE SAME customer booking N slots (a five-session pass, a course): one customer, one service, one professional, N times. Since appointments#54 the three links live at the TOP level, which is the only shape `reads.params` can filter by (`payload.<field>`), so this command declares the same authoritative reads as `create` and inherits its whole fail-closed behaviour: the snapshot (customer name/phone/email, service name/price/duration, professional name) is frozen by the handler from those rows and an id that does not resolve refuses the WHOLE batch. A batch with a different customer per row is not a command any more: those are N `create`.",
-  "required": ["customer_id", "service_id", "staff_id", "appointments"],
+  "required": [
+    "customer_id",
+    "service_id",
+    "staff_id",
+    "appointments"
+  ],
   "properties": {
-    "customer_id": { "type": "string", "minLength": 1 },
-    "service_id": { "type": "string", "minLength": 1 },
-    "staff_id": { "type": "string", "minLength": 1 },
+    "customer_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "service_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "staff_id": {
+      "type": "string",
+      "minLength": 1
+    },
     "appointments": {
       "description": "The slots of the batch. Each entry carries ONLY its own time; who, what and how much are the top-level links.",
       "type": "array",
@@ -17,25 +31,33 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["start_datetime"],
+        "required": [
+          "start_datetime"
+        ],
         "properties": {
-          "start_datetime": { "type": "string", "format": "date-time" },
+          "start_datetime": {
+            "type": "string",
+            "format": "date-time"
+          },
           "duration_minutes": {
             "type": "integer",
             "minimum": 1,
             "description": "Optional. When omitted, the professional's override, else the service's catalogue duration, else the module default applies."
           },
-          "notes": { "type": "string", "default": "" },
-          "internal_notes": { "type": "string", "default": "" },
-          "booked_online": { "type": "boolean", "default": false }
+          "notes": {
+            "type": "string",
+            "default": ""
+          },
+          "internal_notes": {
+            "type": "string",
+            "default": ""
+          },
+          "booked_online": {
+            "type": "boolean",
+            "default": false
+          }
         }
       }
-    },
-    "existing_appointments": {
-      "description": "Overlap fallback: candidate appointments of the affected range. A batch spans several days and `reads.params` cannot express «the appointments of each of these days», so the authoritative overlap read of `create` (appointments.appointments.conflicting, filtered by one start) does not fit here yet.",
-      "type": "array",
-      "default": [],
-      "items": { "type": "object" }
     }
   }
 }

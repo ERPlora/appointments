@@ -1,8 +1,15 @@
--- Appointment reschedule (Tier 0). Ported from Appointment.reschedule(new_start, new_duration).
--- Guard: only pending|confirmed (WHERE). The new end_datetime (= start + duration) is
--- resolved by the SDK/UI and passed in. The overlap check (allow_overlapping) is enforced
--- SERVER-SIDE by the next statement of this command, _appointment_overlap_assert.sql
--- (gate table with CHECK — appointments#20); it rolls back this UPDATE on double booking.
+-- Appointment reschedule — the row move of `appointments.appointments.reschedule`.
+--
+-- Since appointments#10 it is NOT called directly: the command runs the WASM handler
+-- (`reschedule_appointment`), which reads the appointment, the settings and the blocked periods,
+-- refuses what does not fit and emits this UPDATE as `appointments._reschedule_row`. So
+-- `:end_datetime` no longer comes from the browser — the handler computes it as start + duration.
+--
+-- The `WHERE status IN (...)` stays as a belt: the handler decided with a read and the state could
+-- have changed since. The one that turns that into an ERROR instead of a silent no-op is
+-- _reschedule_state_assert.sql, which the handler emits BEFORE this statement; the overlap check
+-- (allow_overlapping) is enforced right after by _appointment_overlap_assert.sql (gate table with
+-- CHECK — appointments#20). Both run inside this command's transaction.
 UPDATE appointments_appointment
 SET start_datetime   = :start_datetime,
     end_datetime     = :end_datetime,

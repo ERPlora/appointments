@@ -84,6 +84,12 @@ pub fn materialize_recurring(input: Json<erplora_guest_sdk::Input>) -> FnResult<
     guest_result(materialize_recurring_pure(input.into_inner().into_value()))
 }
 
+#[cfg(feature = "guest")]
+#[plugin_fn]
+pub fn reschedule_appointment(input: Json<erplora_guest_sdk::Input>) -> FnResult<Json<Output>> {
+    guest_result(reschedule_appointment_pure(input.into_inner().into_value()))
+}
+
 // ───────────────────────────── helpers JSON ─────────────────────────────
 
 fn as_str(v: &Value) -> String {
@@ -333,30 +339,26 @@ struct Candidate {
 
 /// Extrae las citas vivas candidatas a solape (ignora cancelled/no_show/borradas).
 ///
-/// **Prioriza `context.reads["appointments.appointments.conflicting"]`** (autoritativa, la
-/// precarga el runtime vía `reads` del manifest — ADR-0069, appointments#110). Si la read no
-/// está (manifest viejo, query caída o el comando no la declaró), degrada a
-/// `payload.existing_appointments` (lectura aportada por el caller). Antes el handler SOLO miraba
-/// el payload, así que si el caller omitía esa lectura no detectaba solape.
-fn candidates_from(input: &Value) -> Vec<Candidate> {
-    // Read autoritativa: `context.reads["appointments.appointments.conflicting"]` (la precarga el
-    // runtime vía `reads` del manifest — ADR-0069). Si está presente (aunque sea []) se usa y NO se
-    // mira el payload. Si falta (manifest viejo/query caída), fallback a `existing_appointments`.
-    let read_rows = input
-        .get("context")
-        .and_then(|c| c.get("reads"))
-        .and_then(|r| r.get("appointments.appointments.conflicting"))
-        .and_then(|v| v.as_array());
-    let rows: &[Value] = match read_rows {
-        Some(r) => r,
-        None => input
-            .get("payload")
-            .and_then(|p| p.get("existing_appointments"))
-            .and_then(|v| v.as_array())
-            .map(|v| v.as_slice())
-            .unwrap_or(&[]),
-    };
-    rows.iter()
+/// **Prioriza las reads autoritativas** que precarga el runtime (ADR-0069, appointments#110):
+/// `appointments.appointments.conflicting` para los comandos que mueven UNA cita en un día
+/// concreto (`create`, `reschedule`) y `appointments.appointments.upcoming_for_staff` para los que
+/// abarcan varios (`bulk_create`, `recurring.materialize`), porque `reads.params` no sabe decir
+/// «las citas de CADA uno de estos días». Si no llega ninguna (manifest viejo, query caída),
+/// degrada a `payload.existing_appointments`. Antes el handler SOLO miraba el payload, así que si
+/// el caller omitía esa lectura no detectaba solape.
+///
+/// `staff_id` y `exclude_id` acotan lo que de verdad choca: una cita de OTRA profesional no es
+/// asunto de esta reserva (misma regla que `_appointment_overlap_assert.sql`), y una cita no se
+/// solapa consigo misma — sin eso `reschedule`, cuya read del día se la devuelve, sería imposible.
+///
+/// `None` = no llegó NINGUNA de las dos reads, y eso es un rechazo, no un lote vacío: hasta
+/// appointments#10 aquí se degradaba a `payload.existing_appointments` —la lista que armaba el
+/// navegador—, así que una read caída dejaba el solape en manos del caller. Las dos son
+/// `required` en el manifest; si aun así faltan, se cierra.
+fn candidates_from(input: &Value, staff_id: &str, exclude_id: &str) -> Option<Vec<Candidate>> {
+    let rows = read_rows(input, "appointments.appointments.conflicting")
+        .or_else(|| read_rows(input, "appointments.appointments.upcoming_for_staff"))?;
+    Some(rows.iter()
         .filter_map(|row| {
             let status = as_str(row.get("status").unwrap_or(&Value::Null));
             if status == "cancelled" || status == "no_show" {
@@ -365,12 +367,27 @@ fn candidates_from(input: &Value) -> Vec<Candidate> {
             if row.get("is_deleted").map(as_bool).unwrap_or(false) {
                 return None;
             }
+            if !exclude_id.is_empty() && as_str(row.get("id").unwrap_or(&Value::Null)) == exclude_id {
+                return None;
+            }
+            let owner = as_str(row.get("staff_id").unwrap_or(&Value::Null));
+            if !owner.is_empty() && !staff_id.is_empty() && owner != staff_id {
+                return None;
+            }
             let start = parse_dt(&as_str(row.get("start_datetime")?))?;
             let end = parse_dt(&as_str(row.get("end_datetime")?))?;
             let number = str_or(row, "appointment_number", "(sin número)");
             Some(Candidate { start, end, label: number })
         })
-        .collect()
+        .collect())
+}
+
+/// The refusal for a read that had to be there and was not.
+fn availability_unavailable() -> DomainError {
+    DomainError::new(
+        "appointments.availability_unavailable",
+        "The agenda could not be read; the appointment was not booked.",
+    )
 }
 
 /// The module settings row the handler decides with.
@@ -400,14 +417,21 @@ fn settings_from(input: &Value) -> Value {
 // ───────────────── the booking policy is READ, never told (appointments#10/#13) ─────────────────
 
 /// The settings row exactly as the runtime pre-loaded it (`reads`, `required: true`). `None` =
-/// the read did not arrive.
+/// the read did not ARRIVE.
 ///
 /// For a WRITE that is a refusal, never a fallback to `payload.settings`: a guard that falls back
 /// to the caller when its input is missing is a guard that OPENS — the browser would be handing us
 /// `allow_overlapping`, and the overlap gate with it. [`settings_from`] keeps the old fallback for
 /// the read-only paths that were built on it.
+///
+/// A read that arrived EMPTY is a different thing and must not be confused with a failure: the
+/// query ran, and this hub simply has no settings row yet because nobody opened the Settings tab
+/// (the migration creates no row). Refusing there would mean a brand new hub cannot book its first
+/// appointment. It falls to the DB defaults — `allow_overlapping = 0`, no lead-time limits — which
+/// are the safe ones; what never comes back is the payload.
 fn settings_read(input: &Value) -> Option<Value> {
-    read_rows(input, "appointments.settings.get")?.first().cloned()
+    let rows = read_rows(input, "appointments.settings.get")?;
+    Some(rows.first().cloned().unwrap_or_else(|| json!({})))
 }
 
 fn allow_overlapping_of(settings: &Value) -> bool {
@@ -455,15 +479,22 @@ fn lead_time_refusal(settings: &Value, start: &Dt, now: &Dt) -> Option<DomainErr
 
 /// Blocked time: holidays, closures, a professional's training slot.
 ///
-/// Reads `appointments.blocked_times.overlapping` (this module's OWN table, `required: true`), so
-/// a missing read is a runtime fault and refuses — it does not wave the booking through. The rows
-/// carry ISO-8601 instants, not wall clock, so this needs no timezone either.
+/// Reads this module's OWN table (`required: true`), so a missing read is a runtime fault and
+/// refuses — it does not wave the booking through. The rows carry ISO-8601 instants, not wall
+/// clock, so this needs no timezone either.
+///
+/// Two queries feed it, and either will do: `appointments.blocked_times.overlapping` (the blocks
+/// touching ONE day) for `create` and `reschedule`, and `appointments.blocked_times.upcoming` (all
+/// the blocks still ahead) for `bulk_create` and `recurring.materialize`, which span several days
+/// and cannot express «the blocks of each of THESE days» with `reads.params`.
 ///
 /// A block with no `staff_id` closes the agenda for everybody; a block on someone else is none of
 /// this booking's business. Touching edges do not overlap: a block ending at 11:00 leaves 11:00
 /// free — the same `[start, end)` convention as the overlap gate.
 fn blocked_refusal(input: &Value, staff_id: &str, start: &Dt, end: &Dt) -> Option<DomainError> {
-    let Some(rows) = read_rows(input, "appointments.blocked_times.overlapping") else {
+    let Some(rows) = read_rows(input, "appointments.blocked_times.overlapping")
+        .or_else(|| read_rows(input, "appointments.blocked_times.upcoming"))
+    else {
         return Some(DomainError::new(
             "appointments.availability_unavailable",
             "The agenda's blocked periods could not be read; the appointment was not booked.",
@@ -645,6 +676,27 @@ fn resolve_booking(input: &Value, item: &Value) -> Result<Result<ResolvedBooking
 
 // ───────────────────────────── núcleo: una cita → intenciones ─────────────────────────────
 
+/// Why one appointment could not be prepared.
+///
+/// The two are not the same answer and never were: a **domain refusal** is the hub saying no (that
+/// slot is blocked, it is too soon) and travels to the UI as a stable code it translates, while an
+/// **invalid** item is a caller/data problem the batch reports by index. Splitting them is what
+/// lets `create` refuse, `bulk_create` refuse the whole batch and `recurring.materialize` skip the
+/// occurrence — from ONE implementation of the rules instead of three.
+enum PrepareError {
+    Domain(DomainError),
+    Invalid(String),
+}
+
+impl From<PrepareError> for String {
+    fn from(e: PrepareError) -> String {
+        match e {
+            PrepareError::Domain(d) => format!("{}: {}", d.code, d.message),
+            PrepareError::Invalid(s) => s,
+        }
+    }
+}
+
 /// Valida un ítem de cita y devuelve sus 3 intenciones (`_bump_counter` +
 /// `_insert_appointment` + `_insert_history`). Añade la cita aceptada a
 /// `candidates` para que el solape también se valide dentro del lote.
@@ -654,33 +706,44 @@ fn resolve_booking(input: &Value, item: &Value) -> Result<Result<ResolvedBooking
 /// names or prices the item carries are ignored. Since appointments#54 there is no unresolved
 /// path: `create`, `bulk_create` and `recurring.materialize` all arrive here with the same
 /// authoritative snapshot, so the caller cannot name a customer, a service or a price anywhere.
+///
+/// Since appointments#10 the AVAILABILITY rules live here too — minimum notice, maximum advance
+/// and blocked agenda, all decided from `settings` and the blocked-times read BEFORE anything is
+/// written. They used to sit in `create` alone, so a batch or a series could book on a holiday
+/// that `create` refused one call earlier.
 #[allow(clippy::too_many_arguments)]
 fn prepare_appointment(
+    input: &Value,
     item: &Value,
     resolved: &ResolvedBooking,
+    settings: &Value,
     candidates: &mut Vec<Candidate>,
-    allow_overlap: bool,
-    default_dur: i64,
     now: &Dt,
     appointment_id: &str,
     history_description: &str,
-) -> Result<Vec<Operation>, String> {
+) -> Result<Vec<Operation>, PrepareError> {
     let customer_name = resolved.customer_name.clone();
     if customer_name.is_empty() {
-        return Err("invalid_payload: customer_name es obligatorio".to_string());
+        return Err(PrepareError::Invalid(
+            "invalid_payload: customer_name es obligatorio".to_string(),
+        ));
     }
 
     let raw_start = as_str(item.get("start_datetime").unwrap_or(&Value::Null));
-    let start = parse_dt(&raw_start).ok_or_else(|| {
-        format!("invalid_start: fecha/hora inválida `{raw_start}` (esperado ISO 8601)")
-    })?;
+    let Some(start) = parse_dt(&raw_start) else {
+        return Err(PrepareError::Invalid(format!(
+            "invalid_start: fecha/hora inválida `{raw_start}` (esperado ISO 8601)"
+        )));
+    };
     if cmp_secs(&start, now) < 0 {
-        return Err("invalid_start: la cita no puede empezar en el pasado".to_string());
+        return Err(PrepareError::Invalid(
+            "invalid_start: la cita no puede empezar en el pasado".to_string(),
+        ));
     }
 
     // Duration: the caller's explicit choice (the receptionist may shorten/lengthen a booking),
     // else the professional's override / the service's catalogue duration, else the module default.
-    let catalogue_dur = resolved.service_duration.unwrap_or(default_dur);
+    let catalogue_dur = resolved.service_duration.unwrap_or_else(|| default_duration_of(settings));
     let duration = item
         .get("duration_minutes")
         .map(|v| as_i64(v, catalogue_dur))
@@ -688,17 +751,24 @@ fn prepare_appointment(
         .unwrap_or(catalogue_dur);
     let end = start.add_minutes(duration);
 
-    if !allow_overlap {
+    if let Some(refusal) = lead_time_refusal(settings, &start, now) {
+        return Err(PrepareError::Domain(refusal));
+    }
+    if let Some(refusal) = blocked_refusal(input, &resolved.staff_id, &start, &end) {
+        return Err(PrepareError::Domain(refusal));
+    }
+
+    if !allow_overlapping_of(settings) {
         if let Some(c) = candidates
             .iter()
             .find(|c| cmp_secs(&c.start, &end) < 0 && cmp_secs(&c.end, &start) > 0)
         {
-            return Err(format!(
+            return Err(PrepareError::Invalid(format!(
                 "overlap: se solapa con la cita {} ({} – {})",
                 c.label,
                 c.start.iso(),
                 c.end.iso()
-            ));
+            )));
         }
     }
 
@@ -877,6 +947,133 @@ pub fn cancel_appointment_pure(input: Value) -> Result<Output, String> {
     })
 }
 
+/// `appointments.appointments.reschedule` — moving an appointment to another slot.
+///
+/// appointments#10 point 3. It was the last Tier 0 command of the booking family, and the only
+/// thing the server checked was the status in the UPDATE's `WHERE` plus the overlap gate: the
+/// browser sent `start_datetime`, `end_datetime` AND `duration_minutes`, so a receptionist — or
+/// anything posting to `/api/command` — could move an appointment onto a holiday, inside the
+/// minimum notice, or leave an `end_datetime` that did not match its own duration.
+///
+/// Now the same rules as `create` apply, decided from the reads BEFORE the row moves:
+/// - the appointment itself is READ (`appointments.appointments.get`) — its state, its
+///   professional and its current duration come from the row, not from the caller. That is also
+///   why it declares `blocked_times.upcoming` and not the by-day, by-professional read `create`
+///   uses: there is no `staff_id` in this payload to filter by, and asking the browser for one
+///   would hand back the identity appointments#11 took away. The handler does the fine cut;
+/// - the end of the slot is arithmetic (`start + duration`), never an opinion;
+/// - minimum notice / maximum advance and the blocked agenda refuse with the same domain codes;
+/// - overlap keeps its SERVER-SIDE gate in the same transaction (appointments#20): the handler
+///   decides with a read and the row moves afterwards, so only the gate closes the race.
+///
+/// What is NOT here: changing the professional (it needs the staff catalogue reads, and is its own
+/// piece of work) and `outside_schedule`, which needs the business timezone — hub#1022.
+pub fn reschedule_appointment_pure(input: Value) -> Result<Output, String> {
+    let payload = input.get("payload").cloned().unwrap_or(Value::Null);
+    let ctx = host_ctx(&input)?;
+    let appointment_id = str_or(&payload, "appointment_id", "");
+    if appointment_id.is_empty() {
+        return Err("invalid_payload: appointment_id is required".to_string());
+    }
+
+    // State guard — was the UPDATE's `WHERE status IN (...)`, which answered a silent OK when it
+    // matched nothing, plus `_reschedule_state_assert.sql`. It is a refusal the UI can show.
+    let Some(row) = appointment_row(&input) else {
+        return Ok(refuse(
+            "appointments.cannot_reschedule",
+            "This appointment can no longer be moved in its current state.",
+        ));
+    };
+    let status = as_str(row.get("status").unwrap_or(&Value::Null));
+    if !matches!(status.as_str(), "pending" | "confirmed") {
+        return Ok(refuse(
+            "appointments.cannot_reschedule",
+            "This appointment can no longer be moved in its current state.",
+        ));
+    }
+
+    let Some(settings) = settings_read(&input) else {
+        return Ok(refuse(
+            "appointments.settings_unavailable",
+            "The booking settings could not be read; the appointment was not moved.",
+        ));
+    };
+
+    let raw_start = as_str(payload.get("start_datetime").unwrap_or(&Value::Null));
+    let start = parse_dt(&raw_start).ok_or_else(|| {
+        format!("invalid_start: fecha/hora inválida `{raw_start}` (esperado ISO 8601)")
+    })?;
+    if cmp_secs(&start, &ctx.now) < 0 {
+        return Err("invalid_start: la cita no puede empezar en el pasado".to_string());
+    }
+
+    // The length of the appointment is its own unless the caller deliberately changes it.
+    let current = row
+        .get("duration_minutes")
+        .map(|v| as_i64(v, 0))
+        .filter(|d| *d >= 1)
+        .unwrap_or_else(|| default_duration_of(&settings));
+    let duration = payload
+        .get("duration_minutes")
+        .map(|v| as_i64(v, current))
+        .filter(|d| *d >= 1)
+        .unwrap_or(current);
+    let end = start.add_minutes(duration);
+
+    if let Some(refusal) = lead_time_refusal(&settings, &start, &ctx.now) {
+        return Ok(Output::new().with_error(refusal));
+    }
+    // The professional is the appointment's own, read from the row: this command moves the hour,
+    // it does not hand the caller back the identity appointments#11 took away from `create`.
+    let staff_id = str_or(&row, "staff_id", "");
+    if let Some(refusal) = blocked_refusal(&input, &staff_id, &start, &end) {
+        return Ok(Output::new().with_error(refusal));
+    }
+
+    if !allow_overlapping_of(&settings) {
+        let Some(candidates) = candidates_from(&input, &staff_id, &appointment_id) else {
+            return Ok(Output::new().with_error(availability_unavailable()));
+        };
+        if let Some(c) = candidates
+            .iter()
+            .find(|c| cmp_secs(&c.start, &end) < 0 && cmp_secs(&c.end, &start) > 0)
+        {
+            return Err(format!(
+                "overlap: se solapa con la cita {} ({} – {})",
+                c.label,
+                c.start.iso(),
+                c.end.iso()
+            ));
+        }
+    }
+
+    let mut p = Map::new();
+    p.insert("appointment_id".into(), json!(appointment_id));
+    p.insert("start_datetime".into(), json!(start.iso()));
+    p.insert("end_datetime".into(), json!(end.iso()));
+    p.insert("duration_minutes".into(), json!(duration));
+
+    let only_id = |_: ()| {
+        let mut m = Map::new();
+        m.insert("appointment_id".into(), json!(appointment_id));
+        m
+    };
+
+    // The handler decided with a read; between that read and this UPDATE the state could have
+    // changed. Both gates stay SERVER-SIDE, inside the command's own transaction, because that is
+    // the only place the race actually closes (appointments#20).
+    Ok(Output {
+        operations: vec![
+            Operation::sql("appointments._reschedule_state_assert", only_id(())),
+            Operation::sql("appointments._reschedule_row", p),
+            Operation::sql("appointments._appointment_overlap_assert", only_id(())),
+            Operation::sql("appointments._history_reschedule", only_id(())),
+        ],
+        events: vec![],
+        ..Default::default()
+    })
+}
+
 /// `appointments.appointments.create` — WASM-TODO pieza 1.
 ///
 /// appointments#11: the customer, the service and the professional are resolved against the
@@ -903,38 +1100,25 @@ pub fn create_appointment_pure(input: Value) -> Result<Output, String> {
             "The booking settings could not be read; the appointment was not booked.",
         )));
     };
-    let default_dur = default_duration_of(&settings);
-
-    // Availability, decided from the authoritative reads BEFORE anything is written
-    // (appointments#13). Overlap is checked further down, inside `prepare_appointment`.
-    let raw_start = as_str(payload.get("start_datetime").unwrap_or(&Value::Null));
-    if let Some(start) = parse_dt(&raw_start) {
-        if let Some(refusal) = lead_time_refusal(&settings, &start, &ctx.now) {
-            return Ok(Output::new().with_error(refusal));
-        }
-        let minutes = payload
-            .get("duration_minutes")
-            .map(|v| as_i64(v, default_dur))
-            .filter(|d| *d >= 1)
-            .unwrap_or_else(|| resolved.service_duration.unwrap_or(default_dur));
-        let end = start.add_minutes(minutes);
-        if let Some(refusal) = blocked_refusal(&input, &resolved.staff_id, &start, &end) {
-            return Ok(Output::new().with_error(refusal));
-        }
-    }
-    // An unparseable start is not an availability problem: `prepare_appointment` names it.
-
-    let mut candidates = candidates_from(&input);
-    let ops = prepare_appointment(
+    // Availability (lead time, blocked agenda) and overlap are decided from the authoritative
+    // reads inside `prepare_appointment`, BEFORE anything is written (appointments#13/#10).
+    let Some(mut candidates) = candidates_from(&input, &resolved.staff_id, "") else {
+        return Ok(Output::new().with_error(availability_unavailable()));
+    };
+    let ops = match prepare_appointment(
+        &input,
         &payload,
         &resolved,
+        &settings,
         &mut candidates,
-        allow_overlapping_of(&settings),
-        default_dur,
         &ctx.now,
         &appointment_id,
         "Cita creada",
-    )?;
+    ) {
+        Ok(ops) => ops,
+        Err(PrepareError::Domain(refusal)) => return Ok(Output::new().with_error(refusal)),
+        Err(PrepareError::Invalid(detail)) => return Err(detail),
+    };
     // `..Default::default()` para que el literal compile contra LAS DOS formas de `Output`: la de
     // antes de hub#139 y la que ganó `error` (rechazo de dominio). Sin esto el handler deja de
     // compilar en cuanto el checkout del hub avanza, y nadie puede regenerar el wasm (pm#81).
@@ -977,9 +1161,9 @@ pub fn bulk_create_pure(input: Value) -> Result<Output, String> {
             "The booking settings could not be read; the appointments were not booked.",
         )));
     };
-    let allow_overlap = allow_overlapping_of(&settings);
-    let default_dur = default_duration_of(&settings);
-    let mut candidates = candidates_from(&input);
+    let Some(mut candidates) = candidates_from(&input, &resolved.staff_id, "") else {
+        return Ok(Output::new().with_error(availability_unavailable()));
+    };
     let mut ops: Vec<Operation> = Vec::new();
     let mut errors: Vec<String> = Vec::new();
     let mut created = 0usize;
@@ -990,11 +1174,11 @@ pub fn bulk_create_pure(input: Value) -> Result<Output, String> {
             continue;
         };
         match prepare_appointment(
+            &input,
             item,
             &resolved,
+            &settings,
             &mut candidates,
-            allow_overlap,
-            default_dur,
             &ctx.now,
             id,
             "Cita creada (lote)",
@@ -1003,7 +1187,14 @@ pub fn bulk_create_pure(input: Value) -> Result<Output, String> {
                 ops.extend(item_ops);
                 created += 1;
             }
-            Err(e) => errors.push(format!("[{i}] {e}")),
+            // A DOMAIN refusal is the hub saying no to a slot — the whole batch stops with the
+            // code the UI translates, because a five-session pass that silently books four is a
+            // worse answer than «that day is a holiday, pick another». Anything else keeps the
+            // per-index reporting the batch already had.
+            Err(PrepareError::Domain(refusal)) => {
+                return Ok(Output::new().with_error(refusal));
+            }
+            Err(PrepareError::Invalid(detail)) => errors.push(format!("[{i}] {detail}")),
         }
     }
 
@@ -1250,8 +1441,9 @@ pub fn materialize_recurring_pure(input: Value) -> Result<Output, String> {
         return Err("no_occurrences: la plantilla no genera ocurrencias en la ventana".to_string());
     }
 
-    let allow_overlap = allow_overlapping_of(&settings);
-    let mut candidates = candidates_from(&input);
+    let Some(mut candidates) = candidates_from(&input, &resolved.staff_id, "") else {
+        return Ok(Output::new().with_error(availability_unavailable()));
+    };
     let mut ops: Vec<Operation> = Vec::new();
     let mut created = 0usize;
 
@@ -1272,11 +1464,11 @@ pub fn materialize_recurring_pure(input: Value) -> Result<Output, String> {
         let Some(id) = ctx.new_ids.get(created) else { break };
         let desc = format!("Cita materializada de la plantilla recurrente {recurring_id}");
         match prepare_appointment(
+            &input,
             &item,
             &resolved,
+            &settings,
             &mut candidates,
-            allow_overlap,
-            duration,
             &ctx.now,
             id,
             &desc,
@@ -1285,7 +1477,8 @@ pub fn materialize_recurring_pure(input: Value) -> Result<Output, String> {
                 ops.extend(item_ops);
                 created += 1;
             }
-            // Ocurrencias pasadas (hoy ya empezadas) o solapadas: se saltan, no abortan.
+            // Ocurrencias pasadas (hoy ya empezadas), solapadas o en un día bloqueado: se saltan,
+            // no abortan — una serie de un año no se cae porque una de sus fechas sea festivo.
             Err(_) => continue,
         }
     }
@@ -1353,7 +1546,10 @@ mod tests {
                 { "allow_overlapping": 0, "default_duration": 60,
                   "min_booking_notice": 0, "max_advance_booking": 0 }
             ],
-            "appointments.blocked_times.overlapping": []
+            "appointments.blocked_times.overlapping": [],
+            // appointments#10: `conflicting` is `required` too now — the payload fallback that
+            // used to cover its absence was the browser deciding what this booking collides with.
+            "appointments.appointments.conflicting": []
         })
     }
 
@@ -1608,20 +1804,29 @@ mod tests {
         assert!(create_appointment_pure(inp).is_ok());
     }
 
-    /// appointments#110: without the `conflicting` read (query down, graceful read omitted) the
-    /// overlap check falls back to the caller's `payload.existing_appointments`. The catalogue
-    /// reads are NOT part of that fallback (appointments#11): they stay in place here.
+    /// appointments#10: without the `conflicting` read the booking is REFUSED. Until then it fell
+    /// back to `payload.existing_appointments` — a list the browser assembled — so a read that
+    /// failed handed the double-booking guard back to the caller, which is the same hole
+    /// appointments#110 had opened this whole line of work to close. The read is `required` in the
+    /// manifest; this is what happens if it goes missing anyway.
     #[test]
-    fn create_falls_back_to_payload_existing_appointments_without_the_conflicting_read() {
+    fn create_refuses_when_the_conflicting_read_is_missing() {
         let mut payload = item("2026-07-31T10:15:00Z", 30, "s1");
         payload["existing_appointments"] = json!([
             { "appointment_number": "APT-1", "staff_id": "s1",
               "start_datetime": "2026-07-31T10:00:00Z", "end_datetime": "2026-07-31T10:30:00Z",
               "status": "confirmed" }
         ]);
-        let inp = input(payload, None); // catalogues only, no `conflicting` read → payload
-        let err = create_appointment_pure(inp).unwrap_err();
-        assert!(err.starts_with("overlap:"), "fallback no detectó solape: {err}");
+        let mut inp = input(payload, None);
+        inp["context"]["reads"]
+            .as_object_mut()
+            .unwrap()
+            .remove("appointments.appointments.conflicting");
+        let out = create_appointment_pure(inp).unwrap();
+        assert_eq!(
+            domain_code(&out).as_deref(),
+            Some("appointments.availability_unavailable")
+        );
     }
 
     fn overlapping_reads(allow_overlapping: Value) -> Value {
@@ -1920,13 +2125,13 @@ mod tests {
     fn create_ignores_a_payload_settings_that_tries_to_allow_overlapping() {
         let mut payload = item("2026-07-31T10:15:00Z", 30, "s1");
         payload["settings"] = json!({ "allow_overlapping": 1 });
-        payload["existing_appointments"] = json!([
-            { "appointment_number": "APT-1", "staff_id": "s1",
+        let mut inp = input(payload, None);
+        inp["context"]["reads"]["appointments.settings.get"] = no_lead_time();
+        inp["context"]["reads"]["appointments.appointments.conflicting"] = json!([
+            { "id": "apt-x", "appointment_number": "APT-1", "staff_id": "s1",
               "start_datetime": "2026-07-31T10:00:00Z", "end_datetime": "2026-07-31T10:30:00Z",
               "status": "confirmed" }
         ]);
-        let mut inp = input(payload, None);
-        inp["context"]["reads"]["appointments.settings.get"] = no_lead_time();
 
         let err = create_appointment_pure(inp).unwrap_err();
         assert!(
@@ -2077,10 +2282,26 @@ mod tests {
 
     /// A batch input: the ids at the top level and one entry per slot. `new_ids` is long enough
     /// for the whole batch (the host sends 256).
+    ///
+    /// A batch and a series span several days, so they declare the DAY-INDEPENDENT reads —
+    /// `blocked_times.upcoming` and `appointments.upcoming_for_staff` — instead of the two the
+    /// manifest filters by one `payload.start_datetime`. The helper swaps them the same way, so a
+    /// test that plants a block or a conflicting appointment plants it where the command looks.
     fn batch_input(payload: Value, reads: Option<Value>) -> Value {
         let mut inp = input(payload, reads);
         inp["context"]["new_ids"] =
             json!((1..=60).map(|n| format!("apt-{n}")).collect::<Vec<_>>());
+        let slot_reads = inp["context"]["reads"].as_object_mut().unwrap();
+        let blocks = slot_reads
+            .remove("appointments.blocked_times.overlapping")
+            .unwrap_or_else(|| json!([]));
+        slot_reads.entry("appointments.blocked_times.upcoming").or_insert(blocks);
+        let booked = slot_reads
+            .remove("appointments.appointments.conflicting")
+            .unwrap_or_else(|| json!([]));
+        slot_reads
+            .entry("appointments.appointments.upcoming_for_staff")
+            .or_insert(booked);
         inp
     }
 
@@ -2306,5 +2527,338 @@ mod tests {
         ))
         .unwrap();
         assert_eq!(domain_code(&out).as_deref(), Some("appointments.service_not_found"));
+    }
+
+    // ── appointments#10 · the batch and the series apply the SAME availability rules as `create` ──
+
+    fn upcoming_blocks(rows: Value) -> Value {
+        json!({ "appointments.blocked_times.upcoming": rows })
+    }
+
+    #[test]
+    fn bulk_create_refuses_a_slot_blocked_in_the_agenda() {
+        let reads = upcoming_blocks(json!([
+            { "id": "b1", "title": "Festivo", "staff_id": null, "all_day": 1,
+              "start_datetime": "2026-08-03T00:00:00Z", "end_datetime": "2026-08-04T00:00:00Z" }
+        ]));
+        let out =
+            bulk_create_pure(batch_input(batch(json!([slot("2026-08-03T11:00:00Z")])), Some(reads)))
+                .unwrap();
+        assert_eq!(domain_code(&out).as_deref(), Some("appointments.blocked"));
+        assert!(out.operations.is_empty());
+    }
+
+    /// A batch spans several days, so it reads the hub's UPCOMING blocks instead of the blocks of
+    /// one day. The read is `required`; if it is missing anyway the batch closes, it does not open.
+    #[test]
+    fn bulk_create_refuses_when_the_blocked_times_read_is_missing() {
+        let mut inp = batch_input(batch(json!([slot("2026-08-03T11:00:00Z")])), None);
+        let reads = inp["context"]["reads"].as_object_mut().unwrap();
+        reads.remove("appointments.blocked_times.upcoming");
+        reads.remove("appointments.blocked_times.overlapping");
+        let out = bulk_create_pure(inp).unwrap();
+        assert_eq!(
+            domain_code(&out).as_deref(),
+            Some("appointments.availability_unavailable")
+        );
+    }
+
+    #[test]
+    fn bulk_create_refuses_a_slot_inside_the_minimum_notice() {
+        let out = bulk_create_pure(batch_input(
+            batch(json!([slot("2026-07-31T10:30:00Z")])),
+            Some(lead_time(60, 0)),
+        ))
+        .unwrap();
+        assert_eq!(domain_code(&out).as_deref(), Some("appointments.too_soon"));
+    }
+
+    /// The overlap candidates come from the professional's own upcoming appointments, read by the
+    /// runtime — not from an `existing_appointments` array the caller assembled.
+    #[test]
+    fn bulk_create_detects_overlap_from_the_authoritative_read() {
+        let reads = json!({ "appointments.appointments.upcoming_for_staff": [
+            { "id": "a9", "appointment_number": "APT-1", "staff_id": "s1", "status": "confirmed",
+              "start_datetime": "2026-08-03T11:15:00Z", "end_datetime": "2026-08-03T11:45:00Z" }
+        ]});
+        let out =
+            bulk_create_pure(batch_input(batch(json!([slot("2026-08-03T11:00:00Z")])), Some(reads)));
+        let err = out.unwrap_err();
+        assert!(err.contains("overlap"), "{err}");
+    }
+
+    /// A series skips the occurrences it cannot book and materializes the rest — the behaviour it
+    /// already had for overlaps, now also for a blocked day.
+    #[test]
+    fn materialize_skips_a_blocked_occurrence_and_books_the_rest() {
+        let reads = upcoming_blocks(json!([
+            { "id": "b1", "title": "Festivo", "staff_id": null, "all_day": 1,
+              "start_datetime": "2026-08-03T00:00:00Z", "end_datetime": "2026-08-04T00:00:00Z" }
+        ]));
+        let out = materialize_recurring_pure(series_input(
+            series_payload(),
+            json!([template(json!({}))]),
+            Some(reads),
+        ))
+        .unwrap();
+        assert!(out.error.is_none(), "{:?}", out.error);
+        let starts: Vec<_> = insert_ops(&out)
+            .iter()
+            .filter_map(|op| op.params.get("start_datetime").and_then(|v| v.as_str().map(String::from)))
+            .collect();
+        assert_eq!(starts, vec!["2026-08-10T11:00:00"], "the blocked 03/08 is skipped");
+    }
+
+    // ── appointments#10 · `reschedule` stops trusting the caller ──
+    //
+    // It was the last Tier 0 command of the booking family: the browser sent `start_datetime`,
+    // `end_datetime` AND `duration_minutes`, and the only server-side guards were the status WHERE
+    // and the overlap gate. Nothing stopped a move onto a holiday, inside the minimum notice, or
+    // with an `end_datetime` that did not match its own duration.
+
+    fn booked_row(start: &str, minutes: i64, status: &str) -> Value {
+        json!({
+            "id": "apt-old",
+            "appointment_number": "APT-20260731-0001",
+            "staff_id": "s1",
+            "customer_id": "c1",
+            "service_id": "s-corte",
+            "start_datetime": start,
+            "end_datetime": "2026-07-31T12:00:00Z",
+            "duration_minutes": minutes,
+            "status": status
+        })
+    }
+
+    /// `reschedule` has no `staff_id` in its payload — the professional is the appointment's own —
+    /// so it cannot filter the blocked periods by person. It declares the day-independent
+    /// `blocked_times.upcoming` and lets the handler do the fine cut, exactly like the batch does;
+    /// the helper swaps the read the same way.
+    fn reschedule_input(payload: Value, row: Value, reads: Option<Value>) -> Value {
+        let mut inp = input(payload, reads);
+        let planted = inp["context"]["reads"].as_object_mut().unwrap();
+        planted.insert("appointments.appointments.get".into(), json!([row]));
+        let blocks = planted
+            .remove("appointments.blocked_times.overlapping")
+            .unwrap_or_else(|| json!([]));
+        planted.entry("appointments.blocked_times.upcoming").or_insert(blocks);
+        inp
+    }
+
+    fn move_to(start: &str, minutes: Option<i64>) -> Value {
+        let mut p = json!({ "appointment_id": "apt-old", "start_datetime": start });
+        if let Some(m) = minutes {
+            p["duration_minutes"] = json!(m);
+        }
+        p
+    }
+
+    fn op_params<'a>(out: &'a Output, suffix: &str) -> &'a Map<String, Value> {
+        &out.operations
+            .iter()
+            .find(|op| op.command.ends_with(suffix))
+            .unwrap_or_else(|| panic!("operation {suffix} not found in {:?}", op_commands(out)))
+            .params
+    }
+
+    /// The end of the slot is ARITHMETIC, not an opinion: the caller no longer sends it.
+    #[test]
+    fn reschedule_computes_the_end_from_the_start_and_the_duration() {
+        let out = reschedule_appointment_pure(reschedule_input(
+            move_to("2026-07-31T15:00:00Z", Some(45)),
+            booked_row("2026-07-31T11:00:00Z", 60, "confirmed"),
+            None,
+        ))
+        .unwrap();
+        assert!(out.error.is_none(), "{:?}", out.error);
+        let p = op_params(&out, "_reschedule_row");
+        assert_eq!(p.get("start_datetime"), Some(&json!("2026-07-31T15:00:00+00:00")));
+        assert_eq!(p.get("end_datetime"), Some(&json!("2026-07-31T15:45:00+00:00")));
+        assert_eq!(p.get("duration_minutes"), Some(&json!(45)));
+    }
+
+    /// Moving an appointment without touching its length is the common gesture: the duration comes
+    /// from the appointment's own row when the caller omits it.
+    #[test]
+    fn reschedule_keeps_the_duration_of_the_appointment_when_the_caller_omits_it() {
+        let out = reschedule_appointment_pure(reschedule_input(
+            move_to("2026-07-31T15:00:00Z", None),
+            booked_row("2026-07-31T11:00:00Z", 90, "confirmed"),
+            None,
+        ))
+        .unwrap();
+        assert!(out.error.is_none(), "{:?}", out.error);
+        let p = op_params(&out, "_reschedule_row");
+        assert_eq!(p.get("duration_minutes"), Some(&json!(90)));
+        assert_eq!(p.get("end_datetime"), Some(&json!("2026-07-31T16:30:00+00:00")));
+    }
+
+    #[test]
+    fn reschedule_refuses_a_slot_blocked_in_the_agenda() {
+        let reads = blocks(json!([
+            { "id": "b1", "title": "Formación", "staff_id": "s1", "all_day": 0,
+              "start_datetime": "2026-07-31T14:00:00Z", "end_datetime": "2026-07-31T18:00:00Z" }
+        ]));
+        let out = reschedule_appointment_pure(reschedule_input(
+            move_to("2026-07-31T15:00:00Z", Some(45)),
+            booked_row("2026-07-31T11:00:00Z", 60, "confirmed"),
+            Some(reads),
+        ))
+        .unwrap();
+        assert_eq!(domain_code(&out).as_deref(), Some("appointments.blocked"));
+        assert!(out.operations.is_empty());
+    }
+
+    #[test]
+    fn reschedule_refuses_a_slot_inside_the_minimum_notice() {
+        let out = reschedule_appointment_pure(reschedule_input(
+            move_to("2026-07-31T10:30:00Z", Some(30)),
+            booked_row("2026-07-31T11:00:00Z", 60, "confirmed"),
+            Some(lead_time(60, 0)),
+        ))
+        .unwrap();
+        assert_eq!(domain_code(&out).as_deref(), Some("appointments.too_soon"));
+    }
+
+    #[test]
+    fn reschedule_refuses_an_appointment_in_a_terminal_state() {
+        for status in ["cancelled", "completed", "no_show"] {
+            let out = reschedule_appointment_pure(reschedule_input(
+                move_to("2026-07-31T15:00:00Z", Some(30)),
+                booked_row("2026-07-31T11:00:00Z", 60, status),
+                None,
+            ))
+            .unwrap();
+            assert_eq!(
+                domain_code(&out).as_deref(),
+                Some("appointments.cannot_reschedule"),
+                "status {status}"
+            );
+        }
+    }
+
+    #[test]
+    fn reschedule_refuses_an_appointment_the_hub_does_not_have() {
+        let mut inp = input(move_to("2026-07-31T15:00:00Z", Some(30)), None);
+        inp["context"]["reads"]["appointments.appointments.get"] = json!([]);
+        let out = reschedule_appointment_pure(inp).unwrap();
+        assert_eq!(domain_code(&out).as_deref(), Some("appointments.cannot_reschedule"));
+    }
+
+    #[test]
+    fn reschedule_refuses_when_the_settings_read_is_missing() {
+        let mut inp = reschedule_input(
+            move_to("2026-07-31T15:00:00Z", Some(30)),
+            booked_row("2026-07-31T11:00:00Z", 60, "confirmed"),
+            None,
+        );
+        inp["context"]["reads"]
+            .as_object_mut()
+            .unwrap()
+            .remove("appointments.settings.get");
+        let out = reschedule_appointment_pure(inp).unwrap();
+        assert_eq!(domain_code(&out).as_deref(), Some("appointments.settings_unavailable"));
+    }
+
+    /// The day read is not filtered by professional (there is no `staff_id` in this payload to
+    /// filter by), so the appointment BEING MOVED comes back in it. Colliding with itself would
+    /// make every reschedule impossible.
+    #[test]
+    fn reschedule_does_not_collide_with_itself() {
+        let reads = json!({ "appointments.appointments.conflicting": [
+            { "id": "apt-old", "appointment_number": "APT-20260731-0001", "staff_id": "s1",
+              "status": "confirmed", "start_datetime": "2026-07-31T15:00:00Z",
+              "end_datetime": "2026-07-31T16:00:00Z" }
+        ]});
+        let out = reschedule_appointment_pure(reschedule_input(
+            move_to("2026-07-31T15:00:00Z", Some(45)),
+            booked_row("2026-07-31T11:00:00Z", 60, "confirmed"),
+            Some(reads),
+        ))
+        .unwrap();
+        assert!(out.error.is_none(), "{:?}", out.error);
+    }
+
+    /// Same read, another professional's appointment: not this booking's business.
+    #[test]
+    fn reschedule_ignores_an_appointment_of_another_professional() {
+        let reads = json!({ "appointments.appointments.conflicting": [
+            { "id": "a9", "appointment_number": "APT-9", "staff_id": "s2", "status": "confirmed",
+              "start_datetime": "2026-07-31T15:00:00Z", "end_datetime": "2026-07-31T16:00:00Z" }
+        ]});
+        let out = reschedule_appointment_pure(reschedule_input(
+            move_to("2026-07-31T15:00:00Z", Some(45)),
+            booked_row("2026-07-31T11:00:00Z", 60, "confirmed"),
+            Some(reads),
+        ))
+        .unwrap();
+        assert!(out.error.is_none(), "{:?}", out.error);
+    }
+
+    #[test]
+    fn reschedule_refuses_an_overlap_with_the_same_professional() {
+        let reads = json!({ "appointments.appointments.conflicting": [
+            { "id": "a9", "appointment_number": "APT-9", "staff_id": "s1", "status": "confirmed",
+              "start_datetime": "2026-07-31T15:15:00Z", "end_datetime": "2026-07-31T16:00:00Z" }
+        ]});
+        let err = reschedule_appointment_pure(reschedule_input(
+            move_to("2026-07-31T15:00:00Z", Some(45)),
+            booked_row("2026-07-31T11:00:00Z", 60, "confirmed"),
+            Some(reads),
+        ))
+        .unwrap_err();
+        assert!(err.contains("overlap"), "{err}");
+    }
+
+    /// The handler decides with a read and the row is written afterwards, so the check-then-insert
+    /// race is still there for everything but overlap — which keeps its SERVER-SIDE gate inside the
+    /// same transaction (appointments#20). Moving the command to WASM must not drop it.
+    #[test]
+    fn reschedule_still_runs_the_server_side_overlap_gate_and_the_history() {
+        let out = reschedule_appointment_pure(reschedule_input(
+            move_to("2026-07-31T15:00:00Z", Some(45)),
+            booked_row("2026-07-31T11:00:00Z", 60, "confirmed"),
+            None,
+        ))
+        .unwrap();
+        let commands = op_commands(&out);
+        assert_eq!(
+            commands,
+            vec![
+                "appointments._reschedule_state_assert",
+                "appointments._reschedule_row",
+                "appointments._appointment_overlap_assert",
+                "appointments._history_reschedule",
+            ]
+        );
+    }
+
+    // ── appointments#10 · a hub that never opened the Settings tab can still book ──
+
+    /// `required: true` makes the runtime ABORT when the query fails, but a query that runs and
+    /// returns NO ROWS is not a failure: it is a hub that has not configured its booking policy.
+    /// Refusing there would mean a brand new hub cannot book its first appointment — and the DB
+    /// defaults are the safe ones (`allow_overlapping = 0`, no lead-time limits). What must never
+    /// happen is falling back to `payload.settings`, and that is gone for good.
+    #[test]
+    fn a_hub_without_a_settings_row_books_with_the_database_defaults() {
+        let mut inp = input(item("2026-07-31T11:00:00Z", 30, "s1"), None);
+        inp["payload"]["settings"] = json!({ "allow_overlapping": 1, "default_duration": 5 });
+        inp["context"]["reads"]["appointments.settings.get"] = json!([]);
+        let out = create_appointment_pure(inp).unwrap();
+        assert!(out.error.is_none(), "{:?}", out.error);
+    }
+
+    #[test]
+    fn a_hub_without_a_settings_row_still_refuses_an_overlap() {
+        let mut inp = input(item("2026-07-31T11:00:00Z", 30, "s1"), None);
+        inp["payload"]["settings"] = json!({ "allow_overlapping": 1 });
+        inp["context"]["reads"]["appointments.settings.get"] = json!([]);
+        inp["context"]["reads"]["appointments.appointments.conflicting"] = json!([
+            { "id": "a9", "appointment_number": "APT-9", "staff_id": "s1", "status": "confirmed",
+              "start_datetime": "2026-07-31T11:15:00Z", "end_datetime": "2026-07-31T12:00:00Z" }
+        ]);
+        let err = create_appointment_pure(inp).unwrap_err();
+        assert!(err.contains("overlap"), "{err}");
     }
 }
