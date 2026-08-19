@@ -60,6 +60,12 @@
       "component": "erp-appointments-customer-history",
       "permission": "appointments.view_appointment",
       "priority": 100
+    },
+    {
+      "slot": "whatsapp_inbox.request.booking",
+      "component": "erp-appointments-request-booking",
+      "permission": "appointments.add_appointment",
+      "priority": 100
     }
   ],
   "settings": {
@@ -921,15 +927,73 @@
       "sql": [
         "commands/_mark_converted.sql"
       ]
+    },
+    "appointments._book_from_request": {
+      "permission": "appointments.add_appointment",
+      "internal": true,
+      "schema": "schemas/book_from_request.json",
+      "handler": {
+        "type": "wasm",
+        "file": "dist/handler.wasm",
+        "function": "book_from_request"
+      },
+      "reads": [
+        {
+          "query": "appointments.settings.get"
+        },
+        {
+          "query": "customers.get",
+          "params": {
+            "customer_id": "payload.customer_id"
+          }
+        },
+        {
+          "query": "services.services.get",
+          "params": {
+            "service_id": "payload.service_id"
+          }
+        },
+        {
+          "query": "staff.members.get",
+          "params": {
+            "staff_id": "payload.staff_id"
+          }
+        },
+        {
+          "query": "staff.services.eligible_for_service",
+          "params": {
+            "service_id": "payload.service_id"
+          }
+        },
+        {
+          "query": "appointments.appointments.conflicting",
+          "params": {
+            "staff_id": "payload.staff_id",
+            "start_datetime": "payload.start_datetime"
+          }
+        },
+        {
+          "query": "appointments.blocked_times.overlapping",
+          "params": {
+            "staff_id": "payload.staff_id",
+            "start_datetime": "payload.start_datetime"
+          }
+        }
+      ]
     }
   },
   "events": {
     "listen": {
       "sales.sale.created_from_appointment": {
         "command": "appointments._mark_converted"
+      },
+      "whatsapp_inbox.request.approved": {
+        "command": "appointments._book_from_request"
       }
     },
     "emits": [
+      "appointments.booking_request.failed",
+      "appointments.booking_request.fulfilled",
       "appointments.appointment.cancelled",
       "appointments.appointment.completed",
       "appointments.appointment.confirmed",

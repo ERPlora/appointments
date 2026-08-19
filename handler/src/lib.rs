@@ -62,6 +62,12 @@ pub fn create_appointment(input: Json<erplora_guest_sdk::Input>) -> FnResult<Jso
 
 #[cfg(feature = "guest")]
 #[plugin_fn]
+pub fn book_from_request(input: Json<erplora_guest_sdk::Input>) -> FnResult<Json<Output>> {
+    guest_result(book_from_request_pure(input.into_inner().into_value()))
+}
+
+#[cfg(feature = "guest")]
+#[plugin_fn]
 pub fn bulk_create(input: Json<erplora_guest_sdk::Input>) -> FnResult<Json<Output>> {
     guest_result(bulk_create_pure(input.into_inner().into_value()))
 }
@@ -1146,6 +1152,165 @@ pub fn create_appointment_pure(input: Value) -> Result<Output, String> {
     // antes de hub#139 y la que ganó `error` (rechazo de dominio). Sin esto el handler deja de
     // compilar en cuanto el checkout del hub avanza, y nadie puede regenerar el wasm (pm#81).
     Ok(Output { operations: ops, events: vec![], ..Default::default() })
+}
+
+// ───────────────── una petición aprobada en otro módulo → una cita (appointments#38) ─────────────
+
+/// The answer this module sends back when it DID book what it was asked to book.
+const BOOKING_FULFILLED: &str = "appointments.booking_request.fulfilled";
+
+/// The answer it sends back when it did not, and why.
+const BOOKING_FAILED: &str = "appointments.booking_request.failed";
+
+/// The refusal for a request nobody bound to real records — the heart of appointments#38.
+const REQUEST_NOT_BOUND: &str = "appointments.request_not_bound";
+
+/// The answer event for a booking that did not happen.
+///
+/// It is an EVENT and not an [`Output::with_error`] on purpose, and this is the whole design of
+/// the listener: the host discards the operations **and the events** of an output that carries an
+/// error (hub#139). Expressed as an error, a refusal would fail the listener command, the relay
+/// would retry it eight times over an hour and drop the row into the dead-letter — and the inbox
+/// that is waiting for an answer would never get one. A slot lost to the counter is a business
+/// outcome, not a fault: it must travel, not retry.
+fn booking_refused(request_id: &str, code: &str, message: &str) -> Output {
+    Output::new().with_event(erplora_guest_sdk::Event::new(
+        BOOKING_FAILED,
+        json!({ "request_id": request_id, "reason_code": code, "reason": message }),
+    ))
+}
+
+/// `appointments._book_from_request` — the listener of `whatsapp_inbox.request.approved`
+/// (appointments#38).
+///
+/// Until this existed, the chain stopped one step short of being a booking channel: a customer
+/// wrote on WhatsApp, an LLM parsed the message into a request, somebody at the salon approved it
+/// — and nothing was created. The salon still typed the appointment by hand, which is what the
+/// approval was supposed to replace.
+///
+/// **What this is not.** It is not a second, looser door into the agenda. It books through exactly
+/// the same [`create_appointment_pure`] as the screen and the assistant: same authoritative reads,
+/// same snapshot frozen from the catalogue (appointments#11), same lead-time, blocked-agenda and
+/// overlap rules (appointments#10). What a language model read in a sentence gets no privileges
+/// here; if anything, less.
+///
+/// **Why it needs the ids up front.** `create` resolves customer/service/professional against this
+/// hub's records and fails closed, so a request carrying a service NAME and «tomorrow at ten» can
+/// never become an appointment. The binding is done by a PERSON when they approve, in the inbox,
+/// and travels in the event payload — which is why this command reads the same flat fields as
+/// `create` (`reads.params` can only address `payload.<field>`, so the shape is not a choice).
+/// That order — parse, propose, a human commits against real records — is what the market does
+/// without exception: Square Messages composes the appointment in the normal sheet, Zenoti refuses
+/// to confirm a request until a therapist is chosen, Booksy answers WhatsApp with a booking link
+/// rather than parsing the chat. The two products that do book from free text unattended (Podium,
+/// Booksy via Google) both replaced the human with a live-availability contract, which an inbox
+/// request parsed hours earlier is not.
+///
+/// **Reads are declared NON-required here, deliberately**, unlike in `create`. A `required` read
+/// that cannot resolve aborts the command (`ReadUnavailable`) — and inside a listener that means a
+/// dead-letter row nobody reads. There is no degradation to caller data either way: every read
+/// this handler is missing ends in a refusal (`catalog_unavailable`, `settings_unavailable`,
+/// `availability_unavailable`), so making them non-required does not open a door — it turns a
+/// silent death into a visible answer, which is the entire point of the issue.
+pub fn book_from_request_pure(input: Value) -> Result<Output, String> {
+    let payload = input.get("payload").cloned().unwrap_or(Value::Null);
+
+    // No request = nobody to answer. That is a wiring bug (a listener on the wrong event, an
+    // emitter that dropped the correlation), and it SHOULD retry and end up in the dead-letter:
+    // unlike a refusal, there is no inbox row this could be reported on.
+    let request_id = str_or(&payload, "request_id", "");
+    if request_id.is_empty() {
+        return Err("invalid_payload: request_id requerido".to_string());
+    }
+
+    // The four things a person had to bind for there to be anything to book. Checked BEFORE the
+    // booking so the answer names the real problem — «this request was never bound to a customer,
+    // a service and a slot» — instead of whichever catalogue lookup happened to miss first.
+    let missing: Vec<&str> = ["customer_id", "service_id", "staff_id", "start_datetime"]
+        .into_iter()
+        .filter(|k| str_or(&payload, k, "").is_empty())
+        .collect();
+    if !missing.is_empty() {
+        return Ok(booking_refused(
+            &request_id,
+            REQUEST_NOT_BOUND,
+            &format!(
+                "The request was approved without choosing {}, so there was nothing to book. \
+                 Open it again, pick them, and approve.",
+                missing.join(", ")
+            ),
+        ));
+    }
+
+    let appointment_id = host_ctx(&input)?
+        .new_ids
+        .first()
+        .cloned()
+        .ok_or_else(|| "context.new_ids vacío (lo inyecta el host)".to_string())?;
+
+    let booked = match create_appointment_pure(input) {
+        Ok(out) => out,
+        // `create` still answers ONE of its refusals as a plain `Err`, and it is the one this
+        // listener meets most: the overlap. It is classified `PrepareError::Invalid` rather than
+        // `Domain` because appointments#20 left the authoritative gate in the SQL
+        // (`_appointment_overlap_assert`) and this is the pre-check in front of it. Inside a
+        // listener that distinction is fatal — an `Err` aborts the command and dead-letters the
+        // row — so here every refusal `create` can produce is answered, not retried. The prefix
+        // is the one its own test pins (`create_rejects_overlap_from_context_reads`), and naming
+        // it matters: «that slot is taken» is what the inbox has to say, and «hours passed
+        // between the message and the approval» is the normal case, not the edge case.
+        Err(detail) if detail.starts_with("overlap:") => {
+            return Ok(booking_refused(
+                &request_id,
+                "appointments.overlapping_appointment",
+                "That professional already has an appointment in that slot. \
+                 Open the request again and pick another time or another professional.",
+            ));
+        }
+        Err(detail) => {
+            return Ok(booking_refused(
+                &request_id,
+                "appointments.booking_refused",
+                &detail,
+            ));
+        }
+    };
+    if let Some(refusal) = booked.error {
+        // The refusal `create` produced, forwarded WHOLE: the code so a screen can act on it, and
+        // the sentence so the inbox can paint the real reason instead of «something went wrong».
+        return Ok(booking_refused(&request_id, &refusal.code, &refusal.message));
+    }
+
+    Ok(Output {
+        operations: booked.operations,
+        events: vec![
+            // A booking made through this door is a booking: whatever subscribes to new
+            // appointments (reminders, KPIs) must not go blind to half the diary because it
+            // arrived by WhatsApp.
+            erplora_guest_sdk::Event::new(
+                "appointments.appointment.created",
+                json!({
+                    "appointment_id": appointment_id,
+                    "customer_id": str_or(&payload, "customer_id", ""),
+                    "service_id": str_or(&payload, "service_id", ""),
+                    "staff_id": str_or(&payload, "staff_id", ""),
+                    "start_datetime": str_or(&payload, "start_datetime", ""),
+                    "request_id": request_id,
+                }),
+            ),
+            erplora_guest_sdk::Event::new(
+                BOOKING_FULFILLED,
+                json!({
+                    "request_id": request_id,
+                    "appointment_id": appointment_id,
+                    // Who booked it. The asking module stores this as the link, so the answer is
+                    // not hard-wired to one module: a table reservation would answer the same way.
+                    "module": "appointments",
+                }),
+            ),
+        ],
+        ..Default::default()
+    })
 }
 
 /// `appointments.appointments.bulk_create` — WASM-TODO pieza 2 (máx. 50 ítems).
@@ -3030,5 +3195,145 @@ mod tests {
             .remove("appointments.recurring.occurrences");
         let out = materialize_recurring_pure(inp).unwrap();
         assert_eq!(domain_code(&out).as_deref(), Some("appointments.recurring_unavailable"));
+    }
+
+    // ── appointments#38 · a request approved on WhatsApp becomes a REAL appointment ──
+    //
+    // `whatsapp_inbox` emits `whatsapp_inbox.request.approved` and, until now, nobody listened:
+    // the salon clicked «Approve», the row went to `confirmed`, and no appointment was created.
+    // The listener is `_book_from_request`, and its whole job is to be the SAME booking as any
+    // other — same reads, same refusals, same rows — with one difference that is the point of the
+    // issue: it has nobody in front of it, so a refusal has to travel BACK as an event instead of
+    // as an error message on a screen.
+    //
+    // Which is why a business refusal here is `Ok(Output)` carrying the failure event and NOT
+    // `Output::error`: the host DISCARDS the operations and the events of an output that carries
+    // an error (hub#139). A refusal expressed that way would fail the listener command, the relay
+    // would retry it eight times and drop the row in the dead-letter — and the inbox would never
+    // hear a thing. That is exactly the silent failure appointments#38 was opened for.
+
+    fn request_payload(start: &str) -> Value {
+        json!({
+            "request_id": "req-1",
+            "customer_id": "c1",
+            "service_id": "s-corte",
+            "staff_id": "s1",
+            "start_datetime": start,
+            "duration_minutes": 30,
+            "notes": "the same colour as last time"
+        })
+    }
+
+    fn event<'a>(out: &'a Output, name: &str) -> Option<&'a erplora_guest_sdk::Event> {
+        out.events.iter().find(|e| e.name == name)
+    }
+
+    #[test]
+    fn an_approved_request_books_the_appointment_and_answers_fulfilled() {
+        let out = book_from_request_pure(input(request_payload("2026-07-31T11:00:00Z"), None)).unwrap();
+        assert!(out.error.is_none(), "{:?}", out.error);
+        let insert = insert_op(&out);
+        assert_eq!(insert.params.get("customer_id"), Some(&json!("c1")));
+        assert_eq!(insert.params.get("service_id"), Some(&json!("s-corte")));
+        // The snapshot still comes from the CATALOGUE (appointments#11): a listener is not a way
+        // in for names the browser — or a language model — chose.
+        assert_eq!(insert.params.get("service_name"), Some(&json!("Corte")));
+
+        let answer = event(&out, "appointments.booking_request.fulfilled")
+            .expect("the request that produced the booking has to be told so");
+        assert_eq!(answer.payload.get("request_id"), Some(&json!("req-1")));
+        assert_eq!(answer.payload.get("appointment_id"), Some(&json!("apt-1")));
+        assert_eq!(answer.payload.get("module"), Some(&json!("appointments")));
+        assert!(event(&out, "appointments.booking_request.failed").is_none());
+    }
+
+    /// The listener is not a second door into the agenda: what a booking normally emits, it emits.
+    #[test]
+    fn a_booking_made_from_a_request_still_announces_the_appointment() {
+        let out = book_from_request_pure(input(request_payload("2026-07-31T11:00:00Z"), None)).unwrap();
+        assert!(
+            event(&out, "appointments.appointment.created").is_some(),
+            "a listener that books in silence leaves reminders, KPIs and every other subscriber \
+             blind to half the appointments in the diary"
+        );
+    }
+
+    /// The heart of the issue: the LLM read a sentence, not this hub's records. An approval that
+    /// nobody bound to a customer, a service and a professional has NOTHING to book — and it must
+    /// say so where the person who can fix it is looking.
+    #[test]
+    fn an_unbound_request_books_nothing_and_answers_failed() {
+        let mut payload = request_payload("2026-07-31T11:00:00Z");
+        payload["service_id"] = json!("");
+        let out = book_from_request_pure(input(payload, None)).unwrap();
+        assert!(out.operations.is_empty(), "nothing may be written");
+        assert!(
+            out.error.is_none(),
+            "a refusal carried as `error` makes the host drop the answer event with it"
+        );
+        let answer = event(&out, "appointments.booking_request.failed").expect("failure answer");
+        assert_eq!(answer.payload.get("request_id"), Some(&json!("req-1")));
+        assert_eq!(
+            answer.payload.get("reason_code"),
+            Some(&json!("appointments.request_not_bound"))
+        );
+    }
+
+    /// The normal case, not the edge case: hours pass between the message and the approval, and
+    /// the salon sold the slot over the counter meanwhile. The booking is refused — never forced —
+    /// and the refusal travels back with the code `create` produced, so the inbox shows the real
+    /// reason and not «something went wrong».
+    #[test]
+    fn a_slot_taken_since_the_message_answers_failed_with_the_reason() {
+        let out = book_from_request_pure(input(
+            request_payload("2026-07-31T11:00:00Z"),
+            Some(json!({
+                "appointments.appointments.conflicting": [
+                    { "id": "apt-0", "staff_id": "s1", "start_datetime": "2026-07-31T11:00:00Z",
+                      "end_datetime": "2026-07-31T11:30:00Z", "status": "confirmed" }
+                ]
+            })),
+        ))
+        .unwrap();
+        assert!(out.operations.is_empty(), "an overbooking is never written");
+        assert!(out.error.is_none());
+        let answer = event(&out, "appointments.booking_request.failed").expect("failure answer");
+        assert_eq!(
+            answer.payload.get("reason_code"),
+            Some(&json!("appointments.overlapping_appointment"))
+        );
+        assert!(
+            answer
+                .payload
+                .get("reason")
+                .and_then(|v| v.as_str())
+                .is_some_and(|s| !s.is_empty()),
+            "the inbox paints the sentence, so there has to be one"
+        );
+    }
+
+    /// A catalogue that could not be read is a refusal like any other — and it has to come back
+    /// as one. Before this, an unreadable catalogue inside a listener was an aborted command and a
+    /// dead-letter row: the request sat on `confirmed` for ever with no appointment behind it.
+    #[test]
+    fn an_unreadable_catalogue_answers_failed_instead_of_dead_lettering() {
+        let mut inp = input(request_payload("2026-07-31T11:00:00Z"), None);
+        inp["context"]["reads"].as_object_mut().unwrap().remove("customers.get");
+        let out = book_from_request_pure(inp).unwrap();
+        assert!(out.operations.is_empty());
+        let answer = event(&out, "appointments.booking_request.failed").expect("failure answer");
+        assert_eq!(
+            answer.payload.get("reason_code"),
+            Some(&json!("appointments.catalog_unavailable"))
+        );
+    }
+
+    /// Without a request there is nobody to answer, so this one IS a wiring bug and fails loudly:
+    /// retrying it is the right behaviour, unlike a business refusal.
+    #[test]
+    fn a_payload_without_a_request_is_a_wiring_bug_not_a_business_answer() {
+        let mut payload = request_payload("2026-07-31T11:00:00Z");
+        payload["request_id"] = json!("");
+        assert!(book_from_request_pure(input(payload, None)).is_err());
     }
 }

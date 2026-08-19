@@ -61,7 +61,21 @@
     "rescheduleHint": "Elige el nuevo hueco. La clienta, el servicio y el profesional se quedan como están.",
     "confirmReschedule": "Mover la cita",
     "cancelReschedule": "Cancelar",
-    "errReschedule": "No se ha podido mover la cita."
+    "errReschedule": "No se ha podido mover la cita.",
+    "bookingCustomer": "Cliente",
+    "bookingCustomerSearch": "Busca por teléfono o nombre…",
+    "bookingCreateCustomer": "Crear este cliente",
+    "bookingChange": "Cambiar",
+    "bookingService": "Servicio",
+    "bookingStaff": "Profesional",
+    "bookingDay": "Día",
+    "bookingSlot": "Hora",
+    "bookingPick": "Elige…",
+    "bookingNoSlots": "No hay hueco libre ese día. Prueba otro día u otro profesional.",
+    "bookingConfirm": "Aprobar y reservar",
+    "bookingCancel": "Cancelar",
+    "errLoadSlots": "No se han podido leer los huecos libres",
+    "errCreateCustomer": "No se ha podido crear el cliente"
   },
   "setup": {
     "title": "Tu horario de trabajo",
@@ -87,6 +101,9 @@
     "appointments.recurring_not_found": "Esa cita recurrente no existe en este negocio.",
     "appointments.recurring_inactive": "Esa cita recurrente está desactivada; actívala para reservar sus ocurrencias.",
     "appointments.recurring_mismatch": "La cita recurrente no coincide con el cliente, el servicio o el profesional enviados; no se ha reservado nada.",
-    "appointments.cannot_reschedule": "Esta cita ya no se puede mover en su estado actual."
+    "appointments.cannot_reschedule": "Esta cita ya no se puede mover en su estado actual.",
+    "appointments.request_not_bound": "La petición se aprobó sin elegir cliente, servicio, profesional y hora, así que no había nada que reservar. Ábrela otra vez, elígelos y apruébala.",
+    "appointments.overlapping_appointment": "Ese profesional ya tiene una cita en esa franja. Abre otra vez la petición y elige otra hora u otro profesional.",
+    "appointments.booking_refused": "No se ha podido reservar la cita a partir de esa petición."
   }
 }

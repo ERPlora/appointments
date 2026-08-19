@@ -60,7 +60,21 @@
     "rescheduleHint": "Pick the new slot. The customer, the service and the professional stay as they are.",
     "confirmReschedule": "Move appointment",
     "cancelReschedule": "Cancel",
-    "errReschedule": "The appointment could not be moved."
+    "errReschedule": "The appointment could not be moved.",
+    "bookingCustomer": "Customer",
+    "bookingCustomerSearch": "Search by phone or name…",
+    "bookingCreateCustomer": "Create this customer",
+    "bookingChange": "Change",
+    "bookingService": "Service",
+    "bookingStaff": "Professional",
+    "bookingDay": "Day",
+    "bookingSlot": "Time",
+    "bookingPick": "Choose…",
+    "bookingNoSlots": "No free time that day. Try another day or another professional.",
+    "bookingConfirm": "Approve and book",
+    "bookingCancel": "Cancel",
+    "errLoadSlots": "Could not read the free slots",
+    "errCreateCustomer": "Could not create the customer"
   },
   "setup": {
     "title": "Your working hours",
@@ -86,6 +100,9 @@
     "appointments.recurring_not_found": "That recurring appointment does not exist in this business.",
     "appointments.recurring_inactive": "That recurring appointment is switched off; reactivate it to book its occurrences.",
     "appointments.recurring_mismatch": "The recurring appointment does not match the customer, service or professional sent; nothing was booked.",
-    "appointments.cannot_reschedule": "This appointment can no longer be moved in its current state."
+    "appointments.cannot_reschedule": "This appointment can no longer be moved in its current state.",
+    "appointments.request_not_bound": "The request was approved without choosing a customer, a service, a professional and a time, so there was nothing to book. Open it again, pick them, and approve.",
+    "appointments.overlapping_appointment": "That professional already has an appointment in that slot. Open the request again and pick another time or another professional.",
+    "appointments.booking_refused": "The appointment could not be booked from that request."
   }
 }
