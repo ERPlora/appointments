@@ -25,7 +25,7 @@ The contract this file pins:
      cancelled or deleted row does not, an appointment with no professional DOES (it takes
      everybody's slot), and ANOTHER HUB's rows never leak.
 
-Usage: tests/upcoming_reads.pg.test.py   (exit 0 = green)
+Usage: tests/upcoming_reads.postgres.test.py   (exit 0 = green)
   Uses the `erplora-test-pg-5433` container (override: ERPLORA_TEST_PG_CONTAINER). Creates a
   scratch database and DROPS it at the end, pass or fail. Without the container the Postgres layer
   is SKIPPED, never passed.

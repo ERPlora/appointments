@@ -24,7 +24,7 @@ and rewrites the ERPlora SQL bridge functions exactly like the runtime does, and
 PREPARE each query **with every bind left untyped** — the shape of the call with the optional
 binds absent. Zero mocks.
 
-Usage: tests/availability.pg.test.py   (exit 0 = green)
+Usage: tests/availability.postgres.test.py   (exit 0 = green)
   Uses the `erplora-test-pg-5433` container by default (override: ERPLORA_TEST_PG_CONTAINER).
   Creates a scratch database and DROPS it at the end, pass or fail. If Docker or the container is
   missing the check is SKIPPED, never passed.

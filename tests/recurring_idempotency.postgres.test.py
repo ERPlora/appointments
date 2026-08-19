@@ -23,7 +23,7 @@ book» succeeding). This file covers the two halves `cargo test` CANNOT see:
 Point 2 is the one that matters: a guard nobody proved rejects anything is a guard that opens, and
 the Rust tests would stay green all the way down (appointments#16).
 
-Usage: tests/recurring_idempotency.pg.test.py   (exit 0 = green)
+Usage: tests/recurring_idempotency.postgres.test.py   (exit 0 = green)
   Uses the `erplora-test-pg-5433` container (override: ERPLORA_TEST_PG_CONTAINER). Creates a
   scratch database and DROPS it at the end, pass or fail. Without the container the Postgres layer
   is SKIPPED, never passed.
