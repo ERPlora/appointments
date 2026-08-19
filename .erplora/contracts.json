@@ -18,6 +18,7 @@
       "appointments.appointments.create",
       "appointments.appointments.delete",
       "appointments.appointments.no_show",
+      "appointments.appointments.reschedule",
       "appointments.appointments.start"
     ],
     "events": [

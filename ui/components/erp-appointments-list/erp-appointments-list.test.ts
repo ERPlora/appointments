@@ -71,13 +71,33 @@ async function montar() {
   return el as HTMLElement & { shadowRoot: ShadowRoot };
 }
 
-type Tabla = HTMLElement & { addable: boolean; fill: boolean; panel: string; open: (p?: 'filters' | 'create') => void };
+type Tabla = HTMLElement & {
+  addable: boolean;
+  primaryAction?: { label: string; icon?: string };
+  fill: boolean;
+  panel: string;
+  open: (p?: 'filters' | 'create') => void;
+};
 const tabla = (el: HTMLElement & { shadowRoot: ShadowRoot }) => el.shadowRoot.querySelector('ok-data-table') as Tabla | null;
 
 describe('el alta vive DENTRO de la tabla (paridad con /employees e inventory)', () => {
-  it('la tabla declara `addable` → pinta el «+» en su barra', async () => {
+  // El «+» lo despacha el MÓDULO (`primaryAction`), no `addable` (appointments#42). Con `addable`
+  // la tabla abría el panel por su cuenta y el módulo no se enteraba; desde que el panel también
+  // sirve para REPROGRAMAR, eso dejaba el formulario de mover la cita anterior al pulsar «+».
+  // Lo que se exige aquí sigue siendo lo mismo: hay un «+» y abre el panel de alta.
+  it('la barra de la tabla pinta el «+» y abre el panel de ALTA', async () => {
     const el = await montar();
-    expect(tabla(el)?.addable, 'sin `addable` no hay «+» en la barra de la tabla').toBe(true);
+    const t = tabla(el)!;
+    expect(t.primaryAction, 'sin acción primaria no hay «+» en la barra de la tabla').toBeTruthy();
+    expect(t.primaryAction!.icon).toBe('add');
+
+    t.dispatchEvent(new CustomEvent('primaryAction', { detail: {}, bubbles: true, composed: true }));
+    await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
+    await new Promise((r) => setTimeout(r, 0));
+    expect(
+      el.shadowRoot.querySelector('form[slot="create"]')?.getAttribute('data-mode'),
+      'el «+» siempre abre el alta, nunca una reprogramación a medias',
+    ).toBe('create');
   });
 
   it('la tabla llena el alto de la vista (`fill`)', async () => {

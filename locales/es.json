@@ -55,7 +55,13 @@
     "errLoadCatalogs": "Error cargando clientes, servicios o personal",
     "historyTitle": "Historial de visitas",
     "historyEmpty": "Este cliente aún no tiene citas.",
-    "historyError": "No se pudo cargar el historial de visitas."
+    "historyError": "No se pudo cargar el historial de visitas.",
+    "actionReschedule": "Reprogramar",
+    "rescheduleTitle": "Mover la cita",
+    "rescheduleHint": "Elige el nuevo hueco. La clienta, el servicio y el profesional se quedan como están.",
+    "confirmReschedule": "Mover la cita",
+    "cancelReschedule": "Cancelar",
+    "errReschedule": "No se ha podido mover la cita."
   },
   "setup": {
     "title": "Tu horario de trabajo",
