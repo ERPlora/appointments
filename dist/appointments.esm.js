@@ -1944,7 +1944,21 @@ var es_default = {
     rescheduleHint: "Elige el nuevo hueco. La clienta, el servicio y el profesional se quedan como est\xE1n.",
     confirmReschedule: "Mover la cita",
     cancelReschedule: "Cancelar",
-    errReschedule: "No se ha podido mover la cita."
+    errReschedule: "No se ha podido mover la cita.",
+    bookingCustomer: "Cliente",
+    bookingCustomerSearch: "Busca por tel\xE9fono o nombre\u2026",
+    bookingCreateCustomer: "Crear este cliente",
+    bookingChange: "Cambiar",
+    bookingService: "Servicio",
+    bookingStaff: "Profesional",
+    bookingDay: "D\xEDa",
+    bookingSlot: "Hora",
+    bookingPick: "Elige\u2026",
+    bookingNoSlots: "No hay hueco libre ese d\xEDa. Prueba otro d\xEDa u otro profesional.",
+    bookingConfirm: "Aprobar y reservar",
+    bookingCancel: "Cancelar",
+    errLoadSlots: "No se han podido leer los huecos libres",
+    errCreateCustomer: "No se ha podido crear el cliente"
   },
   setup: {
     title: "Tu horario de trabajo",
@@ -1970,7 +1984,10 @@ var es_default = {
     "appointments.recurring_not_found": "Esa cita recurrente no existe en este negocio.",
     "appointments.recurring_inactive": "Esa cita recurrente est\xE1 desactivada; act\xEDvala para reservar sus ocurrencias.",
     "appointments.recurring_mismatch": "La cita recurrente no coincide con el cliente, el servicio o el profesional enviados; no se ha reservado nada.",
-    "appointments.cannot_reschedule": "Esta cita ya no se puede mover en su estado actual."
+    "appointments.cannot_reschedule": "Esta cita ya no se puede mover en su estado actual.",
+    "appointments.request_not_bound": "La petici\xF3n se aprob\xF3 sin elegir cliente, servicio, profesional y hora, as\xED que no hab\xEDa nada que reservar. \xC1brela otra vez, el\xEDgelos y apru\xE9bala.",
+    "appointments.overlapping_appointment": "Ese profesional ya tiene una cita en esa franja. Abre otra vez la petici\xF3n y elige otra hora u otro profesional.",
+    "appointments.booking_refused": "No se ha podido reservar la cita a partir de esa petici\xF3n."
   }
 };
 
@@ -2037,7 +2054,21 @@ var en_default = {
     rescheduleHint: "Pick the new slot. The customer, the service and the professional stay as they are.",
     confirmReschedule: "Move appointment",
     cancelReschedule: "Cancel",
-    errReschedule: "The appointment could not be moved."
+    errReschedule: "The appointment could not be moved.",
+    bookingCustomer: "Customer",
+    bookingCustomerSearch: "Search by phone or name\u2026",
+    bookingCreateCustomer: "Create this customer",
+    bookingChange: "Change",
+    bookingService: "Service",
+    bookingStaff: "Professional",
+    bookingDay: "Day",
+    bookingSlot: "Time",
+    bookingPick: "Choose\u2026",
+    bookingNoSlots: "No free time that day. Try another day or another professional.",
+    bookingConfirm: "Approve and book",
+    bookingCancel: "Cancel",
+    errLoadSlots: "Could not read the free slots",
+    errCreateCustomer: "Could not create the customer"
   },
   setup: {
     title: "Your working hours",
@@ -2063,7 +2094,10 @@ var en_default = {
     "appointments.recurring_not_found": "That recurring appointment does not exist in this business.",
     "appointments.recurring_inactive": "That recurring appointment is switched off; reactivate it to book its occurrences.",
     "appointments.recurring_mismatch": "The recurring appointment does not match the customer, service or professional sent; nothing was booked.",
-    "appointments.cannot_reschedule": "This appointment can no longer be moved in its current state."
+    "appointments.cannot_reschedule": "This appointment can no longer be moved in its current state.",
+    "appointments.request_not_bound": "The request was approved without choosing a customer, a service, a professional and a time, so there was nothing to book. Open it again, pick them, and approve.",
+    "appointments.overlapping_appointment": "That professional already has an appointment in that slot. Open the request again and pick another time or another professional.",
+    "appointments.booking_refused": "The appointment could not be booked from that request."
   }
 };
 
@@ -2878,17 +2912,17 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
       out.push(row);
     }
     const headers = out.shift() ?? [];
-    const rows3 = out.map((r6) => Object.fromEntries(headers.map((h4, i7) => [h4, r6[i7] ?? ""])));
-    return { headers, rows: rows3 };
+    const rows4 = out.map((r6) => Object.fromEntries(headers.map((h4, i7) => [h4, r6[i7] ?? ""])));
+    return { headers, rows: rows4 };
   }
   async onImportFile(ev) {
     const input = ev.target;
     const file = input.files?.[0];
     if (!file) return;
     const text = decodeCsvBuffer(await file.arrayBuffer());
-    const { headers, rows: rows3 } = this.parseCsv(text);
-    this.emit("csvImport", { headers, rows: rows3 });
-    this.emit("import", { headers, rows: rows3 });
+    const { headers, rows: rows4 } = this.parseCsv(text);
+    this.emit("csvImport", { headers, rows: rows4 });
+    this.emit("import", { headers, rows: rows4 });
     input.value = "";
   }
   toggle(p4) {
@@ -4878,3 +4912,341 @@ __decorateClass([
   r5()
 ], ErpAppointmentsList.prototype, "rescheduleStaffName", 2);
 define("erp-appointments-list", ErpAppointmentsList);
+
+// modules/appointments/ui/components/erp-appointments-request-booking/erp-appointments-request-booking.ts
+var CATALOG3 = { es: es_default, en: en_default };
+function erplora3() {
+  const c5 = globalThis.erplora;
+  if (!c5) throw new Error("erplora SDK not initialised by the shell");
+  return c5;
+}
+function can(permission) {
+  const client = erplora3();
+  return typeof client.hasPermission === "function" ? client.hasPermission(permission) : true;
+}
+function rows3(r6) {
+  if (Array.isArray(r6)) return r6;
+  if (r6 && typeof r6 === "object" && Array.isArray(r6.rows)) return r6.rows;
+  return [];
+}
+function today() {
+  return (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+}
+var ErpAppointmentsRequestBooking = class extends i3 {
+  constructor() {
+    super(...arguments);
+    this.open = null;
+    this.services = [];
+    this.staffMembers = [];
+    this.matches = [];
+    this.search = "";
+    this.customerId = "";
+    this.customerLabel = "";
+    this.serviceId = "";
+    this.staffId = "";
+    this.date = today();
+    this.slots = [];
+    this.startDatetime = "";
+    this.busy = false;
+    this.error = "";
+    this.catalogsLoaded = false;
+    this.onLocaleChange = () => this.requestUpdate();
+    /** The host tells us which request is open. Same contract as `customers.detail`: an event on
+     *  the element, never a prop and never a call — and it is re-announced on every host re-render,
+     *  so opening the SAME request again must not wipe what the operator has already picked. */
+    this.onOpen = (ev) => {
+      const detail = ev.detail ?? {};
+      const request = {
+        request_id: String(detail.request_id ?? ""),
+        request_type: String(detail.request_type ?? ""),
+        customer_id: String(detail.customer_id ?? ""),
+        contact_name: String(detail.contact_name ?? ""),
+        contact_phone: String(detail.contact_phone ?? ""),
+        raw_summary: String(detail.raw_summary ?? "")
+      };
+      if (this.open?.request_id === request.request_id) return;
+      this.open = request;
+      this.error = "";
+      this.startDatetime = "";
+      this.slots = [];
+      this.customerId = request.customer_id;
+      this.customerLabel = request.customer_id ? request.contact_name : "";
+      this.search = request.contact_phone || request.contact_name;
+      void this.loadCatalogs();
+      if (!this.customerId) void this.searchCustomers();
+    };
+  }
+  static {
+    this.styles = i`
+    :host { display:block; font-family: system-ui, sans-serif; color: var(--ion-text-color, #1c1b18); }
+    .panel { display:flex; flex-direction:column; gap:.6rem; padding:.6rem 0; }
+    label { display:block; font-size:.8rem; font-weight:600; margin-bottom:.2rem; }
+    select, input { width:100%; min-height:44px; box-sizing:border-box; padding:.4rem .5rem;
+      border:1px solid var(--ion-color-step-200, #d8d5d0); border-radius:.4rem;
+      background: var(--ion-background-color, #fff); color: inherit; font: inherit; }
+    .actions { display:flex; gap:.4rem; align-items:center; flex-wrap:wrap; }
+    .slots { display:flex; flex-wrap:wrap; gap:.35rem; }
+    .slot { min-height:44px; min-width:72px; padding:0 .7rem; border-radius:.4rem; cursor:pointer;
+      border:1px solid var(--ion-color-step-200, #d8d5d0); background: var(--ion-background-color, #fff);
+      color: inherit; font: inherit; }
+    .slot[aria-pressed='true'] { border-color: var(--ion-color-primary, #3880ff); font-weight:700; }
+    .matches { display:flex; flex-direction:column; gap:.25rem; margin-top:.3rem; }
+    .match { text-align:left; min-height:44px; padding:.3rem .5rem; border-radius:.4rem; cursor:pointer;
+      border:1px solid var(--ion-color-step-150, #e5e3df); background:none; color:inherit; font:inherit; }
+    .match[aria-pressed='true'] { border-color: var(--ion-color-primary, #3880ff); font-weight:700; }
+    .said { margin:0; color: var(--ion-color-step-600, #5b5852); font-style: italic; }
+    .go { margin-top:.2rem; }
+    ion-button { --min-height: 44px; }
+  `;
+  }
+  connectedCallback() {
+    super.connectedCallback();
+    window.addEventListener("erplora:locale-changed", this.onLocaleChange);
+    this.addEventListener("erp:whatsapp-request", this.onOpen);
+  }
+  disconnectedCallback() {
+    window.removeEventListener("erplora:locale-changed", this.onLocaleChange);
+    this.removeEventListener("erp:whatsapp-request", this.onOpen);
+    super.disconnectedCallback();
+  }
+  /** The catalogues, through their PUBLIC queries — never another module's tables. */
+  async loadCatalogs() {
+    if (this.catalogsLoaded) return;
+    this.catalogsLoaded = true;
+    try {
+      const [services, staffMembers] = await Promise.all([
+        erplora3().query("services.services.list", { limit: 500 }).catch(() => []),
+        erplora3().query("staff.members.list", { limit: 500 }).catch(() => [])
+      ]);
+      this.services = rows3(services).filter(
+        (s5) => s5.is_bookable === void 0 || Number(s5.is_bookable) === 1
+      );
+      this.staffMembers = rows3(staffMembers).filter(
+        (s5) => (s5.status ?? "active") === "active" && (s5.is_bookable === void 0 || Number(s5.is_bookable) === 1)
+      );
+    } catch (e5) {
+      this.error = e5 instanceof Error ? e5.message : erplora3().t(CATALOG3, "ui.errLoadCatalogs");
+    }
+  }
+  async searchCustomers() {
+    const term = this.search.trim();
+    if (!term) {
+      this.matches = [];
+      return;
+    }
+    try {
+      const result = await erplora3().query("customers.list", { search: term, limit: 8 });
+      this.matches = rows3(result);
+    } catch {
+      this.matches = [];
+    }
+  }
+  /** Creating the customer is an EXPLICIT act, prefilled — never a side effect of approving. */
+  async createCustomer() {
+    if (!this.open || !can("customers.add_customer")) return;
+    this.busy = true;
+    this.error = "";
+    try {
+      const name = this.open.contact_name || this.open.contact_phone;
+      await erplora3().command("customers.create", { name, phone: this.open.contact_phone });
+      this.search = this.open.contact_phone || name;
+      await this.searchCustomers();
+      const created = this.matches.find((c5) => c5.name === name);
+      if (created) this.pickCustomer(created);
+    } catch (e5) {
+      this.error = e5 instanceof Error ? e5.message : erplora3().t(CATALOG3, "ui.errCreateCustomer");
+    } finally {
+      this.busy = false;
+    }
+  }
+  pickCustomer(c5) {
+    this.customerId = c5.id;
+    this.customerLabel = c5.name;
+  }
+  /** Free slots RIGHT NOW, from the hub's own availability engine. The market's hard rule: what a
+   *  person can pick has to be free at the moment they pick it, not when the message arrived. */
+  async loadSlots() {
+    this.startDatetime = "";
+    if (!this.date) {
+      this.slots = [];
+      return;
+    }
+    const service = this.services.find((s5) => s5.id === this.serviceId);
+    try {
+      const result = await erplora3().query("appointments.availability.slots", {
+        date: this.date,
+        staff_id: this.staffId,
+        duration_minutes: service?.duration_minutes
+      });
+      this.slots = rows3(result);
+    } catch (e5) {
+      this.slots = [];
+      this.error = e5 instanceof Error ? e5.message : erplora3().t(CATALOG3, "ui.errLoadSlots");
+    }
+  }
+  get ready() {
+    return Boolean(this.customerId && this.serviceId && this.staffId && this.startDatetime);
+  }
+  /** Hands the BOUND request back to the host. Approving is the inbox's command, not ours: this
+   *  module does not know how a request is approved, only what a booking needs. And it does NOT
+   *  book here either — the appointment is created by the listener on the approval event, so the
+   *  booking happens exactly once no matter which door the approval came through. */
+  confirm() {
+    if (!this.open || !this.ready) return;
+    const service = this.services.find((s5) => s5.id === this.serviceId);
+    this.dispatchEvent(new CustomEvent("erp:booking-resolved", {
+      detail: {
+        request_id: this.open.request_id,
+        customer_id: this.customerId,
+        service_id: this.serviceId,
+        staff_id: this.staffId,
+        start_datetime: this.startDatetime,
+        duration_minutes: service?.duration_minutes,
+        notes: this.open.raw_summary
+      },
+      bubbles: true,
+      composed: true
+    }));
+  }
+  cancel() {
+    this.dispatchEvent(new CustomEvent("erp:booking-cancelled", { bubbles: true, composed: true }));
+  }
+  renderCustomer() {
+    const t5 = (k2) => erplora3().t(CATALOG3, k2);
+    if (this.customerId) {
+      return b2`<div>
+        <label>${t5("ui.bookingCustomer")}</label>
+        <div class="actions">
+          <strong>${this.customerLabel || this.customerId}</strong>
+          <ion-button size="small" fill="clear"
+            @click=${() => {
+        this.customerId = "";
+        this.customerLabel = "";
+        void this.searchCustomers();
+      }}>
+            ${t5("ui.bookingChange")}
+          </ion-button>
+        </div>
+      </div>`;
+    }
+    return b2`<div>
+      <label for="cust">${t5("ui.bookingCustomer")}</label>
+      <input id="cust" .value=${this.search} placeholder=${t5("ui.bookingCustomerSearch")}
+        @input=${(e5) => {
+      this.search = e5.target.value;
+      void this.searchCustomers();
+    }} />
+      <div class="matches">
+        ${this.matches.map((c5) => b2`<button type="button" class="match"
+          aria-pressed=${this.customerId === c5.id ? "true" : "false"}
+          @click=${() => this.pickCustomer(c5)}>${c5.name}${c5.phone ? b2` · ${c5.phone}` : A}</button>`)}
+      </div>
+      ${can("customers.add_customer") ? b2`<ion-button size="small" fill="outline" ?disabled=${this.busy}
+        @click=${() => this.createCustomer()}>${t5("ui.bookingCreateCustomer")}</ion-button>` : A}
+    </div>`;
+  }
+  render() {
+    const t5 = (k2) => erplora3().t(CATALOG3, k2);
+    if (!this.open) return A;
+    return b2`<div class="panel">
+      ${this.open.raw_summary ? b2`<p class="said">“${this.open.raw_summary}”</p>` : A}
+      ${this.error ? b2`<ok-inline-feedback tone="danger">${this.error}</ok-inline-feedback>` : A}
+
+      ${this.renderCustomer()}
+
+      <div>
+        <label for="svc">${t5("ui.bookingService")}</label>
+        <select id="svc"
+          @change=${(e5) => {
+      this.serviceId = e5.target.value;
+      void this.loadSlots();
+    }}>
+          <option value="">${t5("ui.bookingPick")}</option>
+          ${this.services.map((s5) => b2`<option value=${s5.id} ?selected=${s5.id === this.serviceId}>${s5.name}</option>`)}
+        </select>
+      </div>
+
+      <div>
+        <label for="stf">${t5("ui.bookingStaff")}</label>
+        <select id="stf"
+          @change=${(e5) => {
+      this.staffId = e5.target.value;
+      void this.loadSlots();
+    }}>
+          <option value="">${t5("ui.bookingPick")}</option>
+          ${this.staffMembers.map((s5) => b2`<option value=${s5.id} ?selected=${s5.id === this.staffId}>${s5.full_name}</option>`)}
+        </select>
+      </div>
+
+      <div>
+        <label for="day">${t5("ui.bookingDay")}</label>
+        <input id="day" type="date" .value=${this.date}
+          @change=${(e5) => {
+      this.date = e5.target.value;
+      void this.loadSlots();
+    }} />
+      </div>
+
+      <div>
+        <label>${t5("ui.bookingSlot")}</label>
+        ${this.slots.length === 0 ? b2`<p class="said">${t5("ui.bookingNoSlots")}</p>` : b2`<div class="slots">
+              ${this.slots.map((s5) => b2`<button type="button" class="slot"
+                aria-pressed=${this.startDatetime === s5.slot_start ? "true" : "false"}
+                @click=${() => {
+      this.startDatetime = s5.slot_start;
+    }}>${s5.start_time}</button>`)}
+            </div>`}
+      </div>
+
+      <div class="actions go">
+        <ion-button ?disabled=${!this.ready || this.busy} @click=${() => this.confirm()}>
+          ${t5("ui.bookingConfirm")}
+        </ion-button>
+        <ion-button fill="clear" color="medium" @click=${() => this.cancel()}>${t5("ui.bookingCancel")}</ion-button>
+      </div>
+    </div>`;
+  }
+};
+__decorateClass([
+  r5()
+], ErpAppointmentsRequestBooking.prototype, "open", 2);
+__decorateClass([
+  r5()
+], ErpAppointmentsRequestBooking.prototype, "services", 2);
+__decorateClass([
+  r5()
+], ErpAppointmentsRequestBooking.prototype, "staffMembers", 2);
+__decorateClass([
+  r5()
+], ErpAppointmentsRequestBooking.prototype, "matches", 2);
+__decorateClass([
+  r5()
+], ErpAppointmentsRequestBooking.prototype, "search", 2);
+__decorateClass([
+  r5()
+], ErpAppointmentsRequestBooking.prototype, "customerId", 2);
+__decorateClass([
+  r5()
+], ErpAppointmentsRequestBooking.prototype, "customerLabel", 2);
+__decorateClass([
+  r5()
+], ErpAppointmentsRequestBooking.prototype, "serviceId", 2);
+__decorateClass([
+  r5()
+], ErpAppointmentsRequestBooking.prototype, "staffId", 2);
+__decorateClass([
+  r5()
+], ErpAppointmentsRequestBooking.prototype, "date", 2);
+__decorateClass([
+  r5()
+], ErpAppointmentsRequestBooking.prototype, "slots", 2);
+__decorateClass([
+  r5()
+], ErpAppointmentsRequestBooking.prototype, "startDatetime", 2);
+__decorateClass([
+  r5()
+], ErpAppointmentsRequestBooking.prototype, "busy", 2);
+__decorateClass([
+  r5()
+], ErpAppointmentsRequestBooking.prototype, "error", 2);
+define("erp-appointments-request-booking", ErpAppointmentsRequestBooking);

@@ -5,6 +5,7 @@
     "queries": [
       "appointments.appointments.list",
       "appointments.appointments.list_for_customer",
+      "appointments.availability.slots",
       "appointments.settings.get",
       "customers.list",
       "services.services.list",
@@ -19,7 +20,8 @@
       "appointments.appointments.delete",
       "appointments.appointments.no_show",
       "appointments.appointments.reschedule",
-      "appointments.appointments.start"
+      "appointments.appointments.start",
+      "customers.create"
     ],
     "events": [
       "appointments.appointment.cancelled",
