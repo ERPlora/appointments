@@ -89,7 +89,8 @@
       "migrations/postgres/002_counter.sql",
       "migrations/postgres/003_gate.sql",
       "migrations/postgres/004_converted_sale.sql",
-      "migrations/postgres/005_recurring_occurrence.sql"
+      "migrations/postgres/005_recurring_occurrence.sql",
+      "migrations/postgres/006_slot_hold.sql"
     ]
   },
   "queries": {
@@ -180,14 +181,14 @@
       "permission": "appointments.view_schedule",
       "sql": "queries/availability_slots.sql",
       "ai": {
-        "description": "Returns the free booking slots for a given date (optionally for a specific staff member and duration), crossing schedules, blocked time and existing appointments with the booking-notice settings."
+        "description": "Returns the free booking slots for a given date (optionally for a specific staff member and duration), crossing schedules, blocked time, existing appointments and the slots currently set aside for pending booking requests with the booking-notice settings."
       }
     },
     "appointments.availability.check": {
       "permission": "appointments.view_schedule",
       "sql": "queries/availability_check.sql",
       "ai": {
-        "description": "Checks whether a specific date/time slot is available for booking and returns the reason when it is not (too_soon, too_far, outside_schedule, blocked or overlap)."
+        "description": "Checks whether a specific date/time slot is available for booking and returns the reason when it is not (too_soon, too_far, outside_schedule, blocked, overlap or held — `held` means another pending booking request has that slot set aside for a few minutes)."
       }
     },
     "appointments.blocked_times.list": {
@@ -359,6 +360,20 @@
       "ai": {
         "description": "Loads a professional's live appointments that have not ended yet, used by the batch and recurring handlers to detect overlapping bookings across several days authoritatively (runtime reads)."
       }
+    },
+    "appointments.slot_holds.live": {
+      "permission": "appointments.view_schedule",
+      "sql": "queries/slot_holds_live.sql",
+      "ai": {
+        "description": "Loads the LIVE slot holds of the requested day — slots set aside while somebody decides on a pending booking request — used by the create, reschedule and booking-request handlers to refuse selling a slot that is already spoken for (runtime reads)."
+      }
+    },
+    "appointments.slot_holds.upcoming": {
+      "permission": "appointments.view_schedule",
+      "sql": "queries/slot_holds_upcoming.sql",
+      "ai": {
+        "description": "Loads every live slot hold still ahead, used by the batch and recurring handlers, which span several days and cannot express one day per read (runtime reads)."
+      }
     }
   },
   "commands": {
@@ -419,6 +434,14 @@
         },
         {
           "query": "appointments.blocked_times.overlapping",
+          "params": {
+            "staff_id": "payload.staff_id",
+            "start_datetime": "payload.start_datetime"
+          },
+          "required": true
+        },
+        {
+          "query": "appointments.slot_holds.live",
           "params": {
             "staff_id": "payload.staff_id",
             "start_datetime": "payload.start_datetime"
@@ -602,6 +625,13 @@
         {
           "query": "appointments.blocked_times.upcoming",
           "required": true
+        },
+        {
+          "query": "appointments.slot_holds.live",
+          "params": {
+            "start_datetime": "payload.start_datetime"
+          },
+          "required": true
         }
       ]
     },
@@ -697,6 +727,13 @@
             "staff_id": "payload.staff_id"
           },
           "required": true
+        },
+        {
+          "query": "appointments.slot_holds.upcoming",
+          "params": {
+            "staff_id": "payload.staff_id"
+          },
+          "required": true
         }
       ]
     },
@@ -776,6 +813,13 @@
         },
         {
           "query": "appointments.appointments.upcoming_for_staff",
+          "params": {
+            "staff_id": "payload.staff_id"
+          },
+          "required": true
+        },
+        {
+          "query": "appointments.slot_holds.upcoming",
           "params": {
             "staff_id": "payload.staff_id"
           },
@@ -978,7 +1022,59 @@
             "staff_id": "payload.staff_id",
             "start_datetime": "payload.start_datetime"
           }
+        },
+        {
+          "query": "appointments.slot_holds.live",
+          "params": {
+            "staff_id": "payload.staff_id",
+            "start_datetime": "payload.start_datetime"
+          }
         }
+      ]
+    },
+    "appointments.slots.hold": {
+      "permission": "appointments.add_appointment",
+      "transaction": true,
+      "schema": "schemas/slot_hold.json",
+      "sql": [
+        "commands/slot_hold_upsert.sql"
+      ],
+      "emit": [
+        "appointments.slot.held"
+      ],
+      "ai": {
+        "description": "Sets a time slot aside for a few minutes while somebody decides on a pending booking request, so the counter cannot sell it meanwhile. It frees itself; it is not a booking."
+      }
+    },
+    "appointments.slots.release_hold": {
+      "permission": "appointments.add_appointment",
+      "transaction": true,
+      "schema": "schemas/slot_release_hold.json",
+      "sql": [
+        "commands/slot_hold_release.sql"
+      ],
+      "emit": [
+        "appointments.slot.hold_released"
+      ],
+      "ai": {
+        "description": "Gives back a slot that was set aside for a pending request, because another time was chosen or the request was turned down."
+      }
+    },
+    "appointments.slots.expire_holds": {
+      "permission": "appointments.change_appointment",
+      "transaction": true,
+      "sql": [
+        "commands/slot_hold_expire.sql"
+      ],
+      "emit": [
+        "appointments.slot.hold_released"
+      ]
+    },
+    "appointments._hold_consume": {
+      "permission": "appointments.add_appointment",
+      "internal": true,
+      "sql": [
+        "commands/_hold_consume.sql"
       ]
     }
   },
@@ -992,8 +1088,6 @@
       }
     },
     "emits": [
-      "appointments.booking_request.failed",
-      "appointments.booking_request.fulfilled",
       "appointments.appointment.cancelled",
       "appointments.appointment.completed",
       "appointments.appointment.confirmed",
@@ -1004,10 +1098,14 @@
       "appointments.appointment.started",
       "appointments.appointment.updated",
       "appointments.blocked_time.created",
+      "appointments.booking_request.failed",
+      "appointments.booking_request.fulfilled",
       "appointments.recurring.created",
       "appointments.schedule.created",
       "appointments.schedule.deleted",
-      "appointments.settings.updated"
+      "appointments.settings.updated",
+      "appointments.slot.held",
+      "appointments.slot.hold_released"
     ]
   },
   "ui": {
@@ -1029,5 +1127,13 @@
     "countries": [],
     "order": 101,
     "required": false
-  }
+  },
+  "scheduled_tasks": [
+    {
+      "name": "expire_slot_holds",
+      "command": "appointments.slots.expire_holds",
+      "cron": "*/5 * * * *",
+      "catch_up": "collapse"
+    }
+  ]
 }

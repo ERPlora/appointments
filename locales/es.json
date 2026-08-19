@@ -75,7 +75,10 @@
     "bookingConfirm": "Aprobar y reservar",
     "bookingCancel": "Cancelar",
     "errLoadSlots": "No se han podido leer los huecos libres",
-    "errCreateCustomer": "No se ha podido crear el cliente"
+    "errCreateCustomer": "No se ha podido crear el cliente",
+    "holdCountdown": "Hueco apartado para ti · {mins}:{secs}",
+    "holdExpired": "Se acabó el tiempo que teníamos apartado ese hueco y ha vuelto a la venta. Elige la hora otra vez.",
+    "holdFailed": "No se ha podido apartar ese hueco; alguien puede reservarlo mientras decides."
   },
   "setup": {
     "title": "Tu horario de trabajo",
@@ -104,6 +107,7 @@
     "appointments.cannot_reschedule": "Esta cita ya no se puede mover en su estado actual.",
     "appointments.request_not_bound": "La petición se aprobó sin elegir cliente, servicio, profesional y hora, así que no había nada que reservar. Ábrela otra vez, elígelos y apruébala.",
     "appointments.overlapping_appointment": "Ese profesional ya tiene una cita en esa franja. Elige otra hora u otro profesional.",
-    "appointments.booking_refused": "No se ha podido reservar la cita a partir de esa petición."
+    "appointments.booking_refused": "No se ha podido reservar la cita a partir de esa petición.",
+    "appointments.slot_on_hold": "Esa franja está apartada para una petición pendiente. Se libera sola en unos minutos, o elige otra hora."
   }
 }

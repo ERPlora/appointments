@@ -388,6 +388,11 @@ fn candidates_from(input: &Value, staff_id: &str, exclude_id: &str) -> Option<Ve
         .collect())
 }
 
+/// The command payload, or `Null` when there is none.
+fn payload_of(input: &Value) -> Value {
+    input.get("payload").cloned().unwrap_or(Value::Null)
+}
+
 /// The refusal for a read that had to be there and was not.
 fn availability_unavailable() -> DomainError {
     DomainError::new(
@@ -529,6 +534,70 @@ fn blocked_refusal(input: &Value, staff_id: &str, start: &Dt, end: &Dt) -> Optio
         "appointments.blocked",
         &format!("That slot is blocked in the agenda ({title})."),
     ))
+}
+
+/// The live slot holds this booking has to respect (appointments#69).
+///
+/// A **hold** is a slot this module has apartado for a decision that is still pending — today, a
+/// booking request somebody is deciding on in the WhatsApp inbox. It is a row of THIS module with
+/// an opaque reference to whoever asked for it (`source`/`source_ref`), exactly like the table
+/// hold of `tables` (tables#12): `appointments` never learns what a WhatsApp request is, only that
+/// someone identifiable set a slot aside and can give it back.
+///
+/// Two reads feed it, mirroring the pair the blocked times already use: `.live` (the holds of ONE
+/// day) for `create`/`reschedule`, and `.upcoming` (every hold still ahead) for `bulk_create` and
+/// `recurring.materialize`, which span days that `reads.params` cannot express.
+///
+/// `exclude_ref` is the request that OWNS the hold, and it is the one thing that must not be
+/// blocked by it: the whole point of holding a slot for a pending request is that the request can
+/// still book it. It comes from `payload.request_id`, which only the listener
+/// (`_book_from_request`) carries — `create`'s schema is `additionalProperties: false`, so no
+/// outside caller can smuggle a `request_id` in to walk past somebody else's hold.
+fn holds_from(input: &Value, staff_id: &str, exclude_ref: &str) -> Vec<Candidate> {
+    let Some(rows) = read_rows(input, "appointments.slot_holds.live")
+        .or_else(|| read_rows(input, "appointments.slot_holds.upcoming"))
+    else {
+        return Vec::new();
+    };
+    rows.iter()
+        .filter_map(|row| {
+            if row.get("is_deleted").map(as_bool).unwrap_or(false) {
+                return None;
+            }
+            if !exclude_ref.is_empty()
+                && as_str(row.get("source_ref").unwrap_or(&Value::Null)) == exclude_ref
+            {
+                return None;
+            }
+            let owner = as_str(row.get("staff_id").unwrap_or(&Value::Null));
+            if !owner.is_empty() && !staff_id.is_empty() && owner != staff_id {
+                return None;
+            }
+            let start = parse_dt(&as_str(row.get("start_datetime")?))?;
+            let end = parse_dt(&as_str(row.get("end_datetime")?))?;
+            Some(Candidate { start, end, label: str_or(row, "label", "(en espera)") })
+        })
+        .collect()
+}
+
+/// A slot somebody else has set aside while they decide (appointments#69).
+///
+/// It gets its OWN code and is not folded into `overlapping_appointment` on purpose. «That
+/// professional already has an appointment» would send the receptionist to look for an appointment
+/// that does not exist, and the forums say exactly that is how a hold gets read: Square's own
+/// troubleshooting article lists its 15-minute hold among the causes of slots that «appear
+/// unavailable for no reason». A hold that cannot say its name is indistinguishable from a bug.
+fn hold_refusal(c: &Candidate) -> DomainError {
+    DomainError::new(
+        "appointments.slot_on_hold",
+        &format!(
+            "That slot is being held for a pending request — {} ({} – {}). It frees itself if \
+             nobody books it.",
+            c.label,
+            c.start.iso(),
+            c.end.iso()
+        ),
+    )
 }
 
 /// Double booking: the professional already has an appointment across this slot.
@@ -804,6 +873,16 @@ fn prepare_appointment(
             .find(|c| cmp_secs(&c.start, &end) < 0 && cmp_secs(&c.end, &start) > 0)
         {
             return Err(PrepareError::Domain(overlap_refusal(c)));
+        }
+        // appointments#69: y las franjas RETENIDAS por una decisión pendiente. Van detrás del
+        // solape a propósito — una cita real es una razón más firme que una retención que caduca
+        // sola, y cuando las dos aplican es la cita la que hay que nombrar.
+        let held = holds_from(input, &resolved.staff_id, &str_or(&payload_of(input), "request_id", ""));
+        if let Some(c) = held
+            .iter()
+            .find(|c| cmp_secs(&c.start, &end) < 0 && cmp_secs(&c.end, &start) > 0)
+        {
+            return Err(PrepareError::Domain(hold_refusal(c)));
         }
     }
 
@@ -1086,6 +1165,14 @@ pub fn reschedule_appointment_pure(input: Value) -> Result<Output, String> {
         {
             return Ok(Output::new().with_error(overlap_refusal(c)));
         }
+        // appointments#69: mover una cita encima de una franja retenida es venderla igual que
+        // crearla ahí. Sin exclusión: reprogramar no viene de ninguna petición.
+        if let Some(c) = holds_from(&input, &staff_id, "")
+            .iter()
+            .find(|c| cmp_secs(&c.start, &end) < 0 && cmp_secs(&c.end, &start) > 0)
+        {
+            return Ok(Output::new().with_error(hold_refusal(c)));
+        }
     }
 
     let mut p = Map::new();
@@ -1288,8 +1375,19 @@ pub fn book_from_request_pure(input: Value) -> Result<Output, String> {
         return Ok(booking_refused(&request_id, &refusal.code, &refusal.message));
     }
 
+    // appointments#69: the slot this request had set aside is now an appointment, so the hold is
+    // CONSUMED — in the same transaction, right behind the row it protected. Leaving it for
+    // afterwards is how orphan holds are made: a failure in between would leave the slot set aside
+    // for a request that is no longer waiting for anything, blocking its OWN appointment until the
+    // sweep got to it. Idempotent and blind: it matches 0 rows when there was no hold, which is the
+    // normal case for a hub whose inbox never held anything.
+    let mut operations = booked.operations;
+    let mut consume = Map::new();
+    consume.insert("source_ref".into(), json!(request_id));
+    operations.push(Operation::sql("appointments._hold_consume", consume));
+
     Ok(Output {
-        operations: booked.operations,
+        operations,
         events: vec![
             // A booking made through this door is a booking: whatever subscribes to new
             // appointments (reminders, KPIs) must not go blind to half the diary because it
@@ -1800,6 +1898,155 @@ mod tests {
 
     fn domain_code(out: &Output) -> Option<String> {
         out.error.as_ref().map(|e| e.code.clone())
+    }
+
+    // ── appointments#69 · una franja RETENIDA no se vende ──────────────────────────────────────
+    //
+    // Entre que el cliente escribe por WhatsApp y alguien del salón aprueba la petición pasan
+    // horas, y el mostrador vende esa hora por la puerta. Hasta aquí el choque se gestionaba
+    // DESPUÉS: la reserva se rechazaba y la petición volvía a la bandeja (appointments#38).
+    // Retener la franja mientras se decide es lo que cierra la ventana en vez de gestionarla, y
+    // es lo que hace el mercado (Square 15 min, Phorest 7, Odoo bloquea la pre-reserva).
+    //
+    // La retención es un dato de ESTE módulo con referencia OPACA a quien la pidió
+    // (`source`/`source_ref`), exactamente como la de `tables` (tables#12): `appointments` no
+    // aprende qué es una petición de WhatsApp, solo que alguien identificable apartó un hueco y
+    // puede soltarlo.
+
+    /// Una retención viva tal como la precarga el runtime (`appointments.slot_holds.live`).
+    fn hold(start: &str, end: &str, staff: &str, source_ref: &str) -> Value {
+        json!({
+            "id": format!("hold-{source_ref}"),
+            "staff_id": staff,
+            "source": "whatsapp_inbox",
+            "source_ref": source_ref,
+            "start_datetime": start,
+            "end_datetime": end,
+            "label": "Ana (WhatsApp)"
+        })
+    }
+
+    /// El mostrador intenta vender una hora que una petición pendiente tiene apartada. Se rechaza
+    /// —y con su PROPIO código: «ya hay una cita» sería mentira y mandaría a la recepcionista a
+    /// buscar en la agenda una cita que no existe. El fallo típico que cuentan los foros de Square
+    /// es justo ese: el hueco desaparece «sin motivo» porque la retención es invisible.
+    #[test]
+    fn create_refuses_a_slot_another_request_is_holding() {
+        let mut inp = input(item("2026-07-31T10:15:00Z", 30, "s1"), None);
+        inp["context"]["reads"]["appointments.slot_holds.live"] = json!([
+            hold("2026-07-31T10:00:00Z", "2026-07-31T10:30:00Z", "s1", "req-9")
+        ]);
+        let out = create_appointment_pure(inp).unwrap();
+        assert_eq!(domain_code(&out).as_deref(), Some("appointments.slot_on_hold"));
+        assert!(out.operations.is_empty(), "a refusal writes nothing");
+    }
+
+    /// La retención es POR PROFESIONAL, como el solape: apartar el hueco de Bea no puede cerrar
+    /// la agenda de Carla, o retener una franja vaciaría el salón entero.
+    #[test]
+    fn a_hold_on_another_professional_does_not_block_this_booking() {
+        let mut inp = input(item("2026-07-31T10:15:00Z", 30, "s1"), None);
+        inp["context"]["reads"]["appointments.slot_holds.live"] = json!([
+            hold("2026-07-31T10:00:00Z", "2026-07-31T10:30:00Z", "s2", "req-9")
+        ]);
+        assert!(create_appointment_pure(inp).unwrap().error.is_none());
+    }
+
+    /// Bordes que se tocan NO solapan, igual que en el resto del módulo: una retención que
+    /// termina a las 10:15 deja libres las 10:15.
+    #[test]
+    fn a_hold_that_ends_where_the_booking_starts_does_not_block_it() {
+        let mut inp = input(item("2026-07-31T10:15:00Z", 30, "s1"), None);
+        inp["context"]["reads"]["appointments.slot_holds.live"] = json!([
+            hold("2026-07-31T09:45:00Z", "2026-07-31T10:15:00Z", "s1", "req-9")
+        ]);
+        assert!(create_appointment_pure(inp).unwrap().error.is_none());
+    }
+
+    /// Y la que cierra el círculo de appointments#38: la petición que APARTÓ el hueco tiene que
+    /// poder reservarlo. Su propia retención no puede rechazarla — sería el único caso en que
+    /// retener una franja impide usarla, que es lo contrario de retenerla.
+    #[test]
+    fn the_request_that_holds_the_slot_can_book_it() {
+        let mut inp = input(request_payload("2026-07-31T11:00:00Z"), None);
+        inp["context"]["reads"]["appointments.slot_holds.live"] = json!([
+            hold("2026-07-31T11:00:00Z", "2026-07-31T11:30:00Z", "s1", "req-1")
+        ]);
+        let out = book_from_request_pure(inp).unwrap();
+        assert!(
+            event(&out, "appointments.booking_request.fulfilled").is_some(),
+            "the request was refused by the very hold it had asked for: {:?}",
+            event(&out, "appointments.booking_request.failed").map(|e| e.payload.clone())
+        );
+    }
+
+    /// Reservar la petición CONSUME su retención, en la misma transacción que la cita.
+    ///
+    /// Si el consumo se dejase para después, un fallo entre medias dejaría la franja apartada por
+    /// una petición que ya no espera nada — la retención huérfana que Lightspeed documenta en sus
+    /// notas de versión. Caducaría sola, sí, pero mientras tanto estaría cerrando el hueco de su
+    /// propia cita.
+    #[test]
+    fn booking_a_request_consumes_the_hold_it_was_holding() {
+        let out = book_from_request_pure(input(request_payload("2026-07-31T11:00:00Z"), None)).unwrap();
+        let consume = out
+            .operations
+            .iter()
+            .find(|op| op.command.ends_with("_hold_consume"))
+            .expect("the hold is consumed with the booking, not after it");
+        assert_eq!(consume.params.get("source_ref"), Some(&json!("req-1")));
+        let insert = out.operations.iter().position(|op| op.command.ends_with("_insert_appointment"));
+        let pos = out.operations.iter().position(|op| op.command.ends_with("_hold_consume"));
+        assert!(insert < pos, "the appointment is written first; the hold is closed behind it");
+    }
+
+    /// Una reserva RECHAZADA no consume nada: la retención sigue viva hasta que caduque o alguien
+    /// la suelte, porque la petición vuelve a la bandeja y la persona va a elegir otra hora.
+    #[test]
+    fn a_refused_request_does_not_consume_its_hold() {
+        let out = book_from_request_pure(input(
+            request_payload("2026-07-31T11:00:00Z"),
+            Some(json!({
+                "appointments.appointments.conflicting": [
+                    { "id": "apt-0", "staff_id": "s1", "start_datetime": "2026-07-31T11:00:00Z",
+                      "end_datetime": "2026-07-31T11:30:00Z", "status": "confirmed" }
+                ]
+            })),
+        ))
+        .unwrap();
+        assert!(out.operations.is_empty(), "a refusal writes nothing at all");
+    }
+
+    /// Mover una cita encima de una franja retenida es venderla igual que crearla ahí, así que
+    /// `reschedule` mira las retenciones con la misma regla.
+    #[test]
+    fn reschedule_refuses_a_slot_another_request_is_holding() {
+        let mut inp = reschedule_input(
+            move_to("2026-07-31T15:00:00Z", Some(45)),
+            booked_row("2026-07-31T11:00:00Z", 60, "confirmed"),
+            None,
+        );
+        inp["context"]["reads"]["appointments.slot_holds.live"] = json!([
+            hold("2026-07-31T15:15:00Z", "2026-07-31T16:00:00Z", "s1", "req-9")
+        ]);
+        let out = reschedule_appointment_pure(inp).unwrap();
+        assert_eq!(domain_code(&out).as_deref(), Some("appointments.slot_on_hold"));
+        assert!(out.operations.is_empty(), "a refusal moves nothing");
+    }
+
+    /// `allow_overlapping` apaga la comprobación ENTERA (docs/concepts.md), y una retención es una
+    /// cita que todavía no es: un hub que acepta solaparse acepta esto también. Si no, el toggle
+    /// dejaría de significar lo que dice en su propia pantalla.
+    #[test]
+    fn a_hub_that_allows_overlapping_ignores_holds_too() {
+        let mut inp = input(item("2026-07-31T10:15:00Z", 30, "s1"), None);
+        inp["context"]["reads"]["appointments.settings.get"] =
+            json!([{ "allow_overlapping": 1, "default_duration": 60,
+                     "min_booking_notice": 0, "max_advance_booking": 0 }]);
+        inp["context"]["reads"]["appointments.slot_holds.live"] = json!([
+            hold("2026-07-31T10:00:00Z", "2026-07-31T10:30:00Z", "s1", "req-9")
+        ]);
+        assert!(create_appointment_pure(inp).unwrap().error.is_none());
     }
 
     // ── appointments#11 · the customer, the service and the professional are RESOLVED, not told ──

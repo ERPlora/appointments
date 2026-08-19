@@ -58,7 +58,7 @@ interface OpenRequest {
 interface Customer { id: string; name: string; phone?: string }
 interface Service { id: string; name: string; duration_minutes?: number; is_bookable?: number }
 interface StaffMember { id: string; full_name: string; status?: string; is_bookable?: number }
-interface Slot { slot_start: string; start_time: string; end_time: string }
+interface Slot { slot_start: string; slot_end: string; start_time: string; end_time: string }
 
 function erplora(): ErploraLike {
   const c = (globalThis as { erplora?: ErploraLike }).erplora;
@@ -102,6 +102,8 @@ export class ErpAppointmentsRequestBooking extends LitElement {
     .match[aria-pressed='true'] { border-color: var(--ion-color-primary, #3880ff); font-weight:700; }
     .said { margin:0; color: var(--ion-color-step-600, #5b5852); font-style: italic; }
     .go { margin-top:.2rem; }
+    .hold { margin:.1rem 0 .3rem; font-size:.8rem; font-weight:600;
+      color: var(--ion-color-primary, #3880ff); }
     ion-button { --min-height: 44px; }
   `;
 
@@ -133,6 +135,24 @@ export class ErpAppointmentsRequestBooking extends LitElement {
 
   @state() private error = '';
 
+  /** appointments#69 — when the slot this panel set aside stops being ours (epoch ms), or 0 when
+   *  nothing is held. Display only: the authority is `appointments_slot_hold.expires_at`, written
+   *  server-side. It is shown because a hold nobody can see is indistinguishable from a bug — the
+   *  complaint Square's own support article has to answer about its 15-minute hold. Timify shows
+   *  the countdown to the customer AND to the desk for the same reason. */
+  @state() private holdUntil = 0;
+
+  @state() private holdLeft = 0;
+
+  /** True once a hold lapsed with the panel still open, so the screen can say so instead of
+   *  quietly dropping the chosen time. */
+  @state() private holdExpired = false;
+
+  /** How long a hold lasts here, from the hub's settings (`hold_minutes`, 15 by default, 0 = off). */
+  private holdMinutes = 15;
+
+  private holdTicker: ReturnType<typeof setInterval> | null = null;
+
   private catalogsLoaded = false;
 
   private readonly onLocaleChange = (): void => this.requestUpdate();
@@ -155,6 +175,9 @@ export class ErpAppointmentsRequestBooking extends LitElement {
     this.error = '';
     this.startDatetime = '';
     this.slots = [];
+    this.holdUntil = 0;
+    this.holdExpired = false;
+    this.stopHoldClock();
     this.customerId = request.customer_id;
     this.customerLabel = request.customer_id ? request.contact_name : '';
     // The phone is the strongest hint the chat gives: the same person wrote from the same number.
@@ -173,6 +196,7 @@ export class ErpAppointmentsRequestBooking extends LitElement {
   disconnectedCallback(): void {
     window.removeEventListener('erplora:locale-changed', this.onLocaleChange);
     this.removeEventListener('erp:whatsapp-request', this.onOpen);
+    this.stopHoldClock();
     super.disconnectedCallback();
   }
 
@@ -181,10 +205,18 @@ export class ErpAppointmentsRequestBooking extends LitElement {
     if (this.catalogsLoaded) return;
     this.catalogsLoaded = true;
     try {
-      const [services, staffMembers] = await Promise.all([
+      const [services, staffMembers, settings] = await Promise.all([
         erplora().query('services.services.list', { limit: 500 }).catch(() => []),
         erplora().query('staff.members.list', { limit: 500 }).catch(() => []),
+        erplora().query('appointments.settings.get').catch(() => []),
       ]);
+      // A hub that never opened the Settings tab has no row: the DB default (15) stands, which is
+      // the same number the SQL falls back to. Reading it here is only so the countdown on screen
+      // matches the clock the server is actually running.
+      const cfg = rows<{ hold_minutes?: number }>(settings)[0];
+      if (cfg && cfg.hold_minutes !== undefined && cfg.hold_minutes !== null) {
+        this.holdMinutes = Number(cfg.hold_minutes) || 0;
+      }
       // A service that is not bookable (an internal one) cannot receive an appointment, and a
       // professional who is off the rota cannot take one: neither may be offered here.
       this.services = rows<Service>(services).filter(
@@ -244,12 +276,102 @@ export class ErpAppointmentsRequestBooking extends LitElement {
         date: this.date,
         staff_id: this.staffId,
         duration_minutes: service?.duration_minutes,
+        // appointments#69: every hold hides its slot from this list — ours would hide the very
+        // time we just took, which is the one moment a hold must NOT block anyone. Same role as
+        // `exclude_appointment_id` when moving an appointment off its own slot.
+        exclude_hold_ref: this.open?.request_id,
       });
       this.slots = rows<Slot>(result);
     } catch (e) {
       this.slots = [];
       this.error = e instanceof Error ? e.message : erplora().t(CATALOG, 'ui.errLoadSlots');
     }
+  }
+
+  /** Picking a time SETS IT ASIDE (appointments#69).
+   *
+   *  The window that this closes is the one appointments#38 could only report after the fact:
+   *  hours pass between the message and the approval, the counter sells the hour, and the booking
+   *  is refused when somebody finally approves. Holding while the decision is being made is what
+   *  the market does — Square holds 15 minutes while a customer completes a booking, Appointedd 7,
+   *  Timify caps at 5, Phorest opens a 7-minute holding slot on the calendar while the salon rings
+   *  back. Every documented number sits in the 5–15 band, because the clock only makes sense while
+   *  a PERSON is waiting on screen.
+   *
+   *  The clock starts HERE and not when the message arrives, and that is forced, not chosen: what
+   *  the model parsed is free text with no professional and no hour, so until somebody picks there
+   *  is no slot to hold. The long variant of this mechanism (Odoo and Acuity park the request ON
+   *  the calendar with no expiry at all) needs a request that already names a slot — and it is
+   *  also the variant whose failure mode fills the forums: holds nobody reclaims, freed by hand.
+   *
+   *  Failing to hold does NOT block the booking. A hold is a courtesy that expires; refusing to
+   *  continue because we could not take one would turn the best-effort half of the feature into a
+   *  new way of not being able to book at all. */
+  private async pickSlot(s: Slot): Promise<void> {
+    this.startDatetime = s.slot_start;
+    this.holdExpired = false;
+    if (!this.open || this.holdMinutes <= 0) return;
+    try {
+      await erplora().command('appointments.slots.hold', {
+        // Opaque both ways: we say who is asking and over which of THEIR rows. `appointments`
+        // stores it without knowing what a WhatsApp request is, and a hub with no inbox never
+        // learns this table exists.
+        source: 'whatsapp_inbox',
+        source_ref: this.open.request_id,
+        staff_id: this.staffId,
+        start_datetime: s.slot_start,
+        end_datetime: s.slot_end,
+        label: this.customerLabel || this.open.contact_name || this.open.contact_phone,
+      });
+      this.startHoldClock();
+    } catch {
+      // Best effort, and said out loud: the operator has to know the slot is still on sale.
+      this.holdUntil = 0;
+      this.error = erplora().t(CATALOG, 'ui.holdFailed');
+    }
+  }
+
+  /** Gives the slot back. Only on an EXPLICIT walk-away: an unmount is not one (a host re-render
+   *  would hand the slot back mid-decision), and the TTL already covers the operator who simply
+   *  leaves — «if the user is gone, let it expire silently» is where the market lands. */
+  private async releaseHold(): Promise<void> {
+    this.stopHoldClock();
+    if (!this.open || !this.holdUntil) return;
+    this.holdUntil = 0;
+    try {
+      await erplora().command('appointments.slots.release_hold', {
+        source: 'whatsapp_inbox',
+        source_ref: this.open.request_id,
+      });
+    } catch {
+      // It expires on its own anyway; a failed release is minutes of a slot, not a lost booking.
+    }
+  }
+
+  private startHoldClock(): void {
+    this.holdUntil = Date.now() + this.holdMinutes * 60_000;
+    this.stopHoldClock();
+    this.tickHold();
+    this.holdTicker = setInterval(() => this.tickHold(), 1000);
+  }
+
+  private stopHoldClock(): void {
+    if (this.holdTicker) clearInterval(this.holdTicker);
+    this.holdTicker = null;
+  }
+
+  private tickHold(): void {
+    const left = Math.max(0, this.holdUntil - Date.now());
+    this.holdLeft = left;
+    if (left > 0) return;
+    // The lease lapsed with the operator still on screen — the one case the market says to speak
+    // up about (Appointedd tells the customer, Cargoclix paints it red). The slot has to be picked
+    // again, because between now and the approval it may already be sold.
+    this.stopHoldClock();
+    this.holdUntil = 0;
+    this.startDatetime = '';
+    this.holdExpired = true;
+    void this.loadSlots();
   }
 
   private get ready(): boolean {
@@ -262,6 +384,11 @@ export class ErpAppointmentsRequestBooking extends LitElement {
    *  booking happens exactly once no matter which door the approval came through. */
   private confirm(): void {
     if (!this.open || !this.ready) return;
+    // appointments#69: no release here. The hold is CONSUMED by `_hold_consume`, in the same
+    // transaction that writes the appointment. Giving it back from the browser would free the slot
+    // a heartbeat before its own booking lands — and that heartbeat is the whole window this
+    // feature exists to close.
+    this.stopHoldClock();
     const service = this.services.find((s) => s.id === this.serviceId);
     this.dispatchEvent(new CustomEvent('erp:booking-resolved', {
       detail: {
@@ -278,7 +405,8 @@ export class ErpAppointmentsRequestBooking extends LitElement {
     }));
   }
 
-  private cancel(): void {
+  private async cancel(): Promise<void> {
+    await this.releaseHold();
     this.dispatchEvent(new CustomEvent('erp:booking-cancelled', { bubbles: true, composed: true }));
   }
 
@@ -345,12 +473,20 @@ export class ErpAppointmentsRequestBooking extends LitElement {
 
       <div>
         <label>${t('ui.bookingSlot')}</label>
+        ${this.holdUntil
+          ? html`<p class="hold">${t('ui.holdCountdown')
+              .replace('{mins}', String(Math.floor(this.holdLeft / 60000)))
+              .replace('{secs}', String(Math.floor((this.holdLeft % 60000) / 1000)).padStart(2, '0'))}</p>`
+          : nothing}
+        ${this.holdExpired
+          ? html`<ok-inline-feedback tone="warning" icon="time-outline">${t('ui.holdExpired')}</ok-inline-feedback>`
+          : nothing}
         ${this.slots.length === 0
           ? html`<p class="said">${t('ui.bookingNoSlots')}</p>`
           : html`<div class="slots">
               ${this.slots.map((s) => html`<button type="button" class="slot"
                 aria-pressed=${this.startDatetime === s.slot_start ? 'true' : 'false'}
-                @click=${() => { this.startDatetime = s.slot_start; }}>${s.start_time}</button>`)}
+                @click=${() => { void this.pickSlot(s); }}>${s.start_time}</button>`)}
             </div>`}
       </div>
 
@@ -358,7 +494,8 @@ export class ErpAppointmentsRequestBooking extends LitElement {
         <ion-button ?disabled=${!this.ready || this.busy} @click=${() => this.confirm()}>
           ${t('ui.bookingConfirm')}
         </ion-button>
-        <ion-button fill="clear" color="medium" @click=${() => this.cancel()}>${t('ui.bookingCancel')}</ion-button>
+        <span class="cancel"><ion-button fill="clear" color="medium"
+          @click=${() => void this.cancel()}>${t('ui.bookingCancel')}</ion-button></span>
       </div>
     </div>`;
   }

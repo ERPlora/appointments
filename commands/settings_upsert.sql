@@ -9,7 +9,7 @@
 INSERT INTO appointments_settings
   (id, hub_id, default_duration, min_booking_notice, max_advance_booking, allow_overlapping,
    send_reminders, reminder_hours_before, allow_customer_cancellation, cancellation_notice_hours,
-   calendar_start_hour, calendar_end_hour, slot_interval,
+   calendar_start_hour, calendar_end_hour, slot_interval, hold_minutes,
    is_deleted, created_by, updated_by, created_at, updated_at)
 VALUES
   (:new_id, :hub_id, :default_duration, :min_booking_notice, :max_advance_booking,
@@ -19,6 +19,7 @@ VALUES
    :allow_customer_cancellation,
    :cancellation_notice_hours,
    :calendar_start_hour, :calendar_end_hour, :slot_interval,
+   COALESCE(:hold_minutes, 15),
    0, :current_user_id, :current_user_id, :now, :now)
 ON CONFLICT(hub_id) DO UPDATE SET
   default_duration            = excluded.default_duration,
@@ -32,6 +33,7 @@ ON CONFLICT(hub_id) DO UPDATE SET
   calendar_start_hour         = excluded.calendar_start_hour,
   calendar_end_hour           = excluded.calendar_end_hour,
   slot_interval               = excluded.slot_interval,
+  hold_minutes                = excluded.hold_minutes,
   is_deleted                  = 0,
   deleted_at                  = NULL,
   updated_by                  = :current_user_id,

@@ -74,7 +74,10 @@
     "bookingConfirm": "Approve and book",
     "bookingCancel": "Cancel",
     "errLoadSlots": "Could not read the free slots",
-    "errCreateCustomer": "Could not create the customer"
+    "errCreateCustomer": "Could not create the customer",
+    "holdCountdown": "Slot held for you · {mins}:{secs}",
+    "holdExpired": "The hold on that slot lapsed, so it is back on sale. Pick a time again.",
+    "holdFailed": "That slot could not be set aside; someone else may book it while you decide."
   },
   "setup": {
     "title": "Your working hours",
@@ -103,6 +106,7 @@
     "appointments.cannot_reschedule": "This appointment can no longer be moved in its current state.",
     "appointments.request_not_bound": "The request was approved without choosing a customer, a service, a professional and a time, so there was nothing to book. Open it again, pick them, and approve.",
     "appointments.overlapping_appointment": "That professional already has an appointment in that slot. Pick another time or another professional.",
-    "appointments.booking_refused": "The appointment could not be booked from that request."
+    "appointments.booking_refused": "The appointment could not be booked from that request.",
+    "appointments.slot_on_hold": "That slot is being held for a pending request. It frees itself in a few minutes, or pick another time."
   }
 }

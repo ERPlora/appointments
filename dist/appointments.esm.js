@@ -1958,7 +1958,10 @@ var es_default = {
     bookingConfirm: "Aprobar y reservar",
     bookingCancel: "Cancelar",
     errLoadSlots: "No se han podido leer los huecos libres",
-    errCreateCustomer: "No se ha podido crear el cliente"
+    errCreateCustomer: "No se ha podido crear el cliente",
+    holdCountdown: "Hueco apartado para ti \xB7 {mins}:{secs}",
+    holdExpired: "Se acab\xF3 el tiempo que ten\xEDamos apartado ese hueco y ha vuelto a la venta. Elige la hora otra vez.",
+    holdFailed: "No se ha podido apartar ese hueco; alguien puede reservarlo mientras decides."
   },
   setup: {
     title: "Tu horario de trabajo",
@@ -1987,7 +1990,8 @@ var es_default = {
     "appointments.cannot_reschedule": "Esta cita ya no se puede mover en su estado actual.",
     "appointments.request_not_bound": "La petici\xF3n se aprob\xF3 sin elegir cliente, servicio, profesional y hora, as\xED que no hab\xEDa nada que reservar. \xC1brela otra vez, el\xEDgelos y apru\xE9bala.",
     "appointments.overlapping_appointment": "Ese profesional ya tiene una cita en esa franja. Elige otra hora u otro profesional.",
-    "appointments.booking_refused": "No se ha podido reservar la cita a partir de esa petici\xF3n."
+    "appointments.booking_refused": "No se ha podido reservar la cita a partir de esa petici\xF3n.",
+    "appointments.slot_on_hold": "Esa franja est\xE1 apartada para una petici\xF3n pendiente. Se libera sola en unos minutos, o elige otra hora."
   }
 };
 
@@ -2068,7 +2072,10 @@ var en_default = {
     bookingConfirm: "Approve and book",
     bookingCancel: "Cancel",
     errLoadSlots: "Could not read the free slots",
-    errCreateCustomer: "Could not create the customer"
+    errCreateCustomer: "Could not create the customer",
+    holdCountdown: "Slot held for you \xB7 {mins}:{secs}",
+    holdExpired: "The hold on that slot lapsed, so it is back on sale. Pick a time again.",
+    holdFailed: "That slot could not be set aside; someone else may book it while you decide."
   },
   setup: {
     title: "Your working hours",
@@ -2097,7 +2104,8 @@ var en_default = {
     "appointments.cannot_reschedule": "This appointment can no longer be moved in its current state.",
     "appointments.request_not_bound": "The request was approved without choosing a customer, a service, a professional and a time, so there was nothing to book. Open it again, pick them, and approve.",
     "appointments.overlapping_appointment": "That professional already has an appointment in that slot. Pick another time or another professional.",
-    "appointments.booking_refused": "The appointment could not be booked from that request."
+    "appointments.booking_refused": "The appointment could not be booked from that request.",
+    "appointments.slot_on_hold": "That slot is being held for a pending request. It frees itself in a few minutes, or pick another time."
   }
 };
 
@@ -4966,6 +4974,12 @@ var ErpAppointmentsRequestBooking = class extends i3 {
     this.startDatetime = "";
     this.busy = false;
     this.error = "";
+    this.holdUntil = 0;
+    this.holdLeft = 0;
+    this.holdExpired = false;
+    /** How long a hold lasts here, from the hub's settings (`hold_minutes`, 15 by default, 0 = off). */
+    this.holdMinutes = 15;
+    this.holdTicker = null;
     this.catalogsLoaded = false;
     this.onLocaleChange = () => this.requestUpdate();
     /** The host tells us which request is open. Same contract as `customers.detail`: an event on
@@ -4986,6 +5000,9 @@ var ErpAppointmentsRequestBooking = class extends i3 {
       this.error = "";
       this.startDatetime = "";
       this.slots = [];
+      this.holdUntil = 0;
+      this.holdExpired = false;
+      this.stopHoldClock();
       this.customerId = request.customer_id;
       this.customerLabel = request.customer_id ? request.contact_name : "";
       this.search = request.contact_phone || request.contact_name;
@@ -5013,6 +5030,8 @@ var ErpAppointmentsRequestBooking = class extends i3 {
     .match[aria-pressed='true'] { border-color: var(--ion-color-primary, #3880ff); font-weight:700; }
     .said { margin:0; color: var(--ion-color-step-600, #5b5852); font-style: italic; }
     .go { margin-top:.2rem; }
+    .hold { margin:.1rem 0 .3rem; font-size:.8rem; font-weight:600;
+      color: var(--ion-color-primary, #3880ff); }
     ion-button { --min-height: 44px; }
   `;
   }
@@ -5024,6 +5043,7 @@ var ErpAppointmentsRequestBooking = class extends i3 {
   disconnectedCallback() {
     window.removeEventListener("erplora:locale-changed", this.onLocaleChange);
     this.removeEventListener("erp:whatsapp-request", this.onOpen);
+    this.stopHoldClock();
     super.disconnectedCallback();
   }
   /** The catalogues, through their PUBLIC queries — never another module's tables. */
@@ -5031,10 +5051,15 @@ var ErpAppointmentsRequestBooking = class extends i3 {
     if (this.catalogsLoaded) return;
     this.catalogsLoaded = true;
     try {
-      const [services, staffMembers] = await Promise.all([
+      const [services, staffMembers, settings] = await Promise.all([
         erplora3().query("services.services.list", { limit: 500 }).catch(() => []),
-        erplora3().query("staff.members.list", { limit: 500 }).catch(() => [])
+        erplora3().query("staff.members.list", { limit: 500 }).catch(() => []),
+        erplora3().query("appointments.settings.get").catch(() => [])
       ]);
+      const cfg = rows3(settings)[0];
+      if (cfg && cfg.hold_minutes !== void 0 && cfg.hold_minutes !== null) {
+        this.holdMinutes = Number(cfg.hold_minutes) || 0;
+      }
       this.services = rows3(services).filter(
         (s5) => s5.is_bookable === void 0 || Number(s5.is_bookable) === 1
       );
@@ -5093,13 +5118,93 @@ var ErpAppointmentsRequestBooking = class extends i3 {
       const result = await erplora3().query("appointments.availability.slots", {
         date: this.date,
         staff_id: this.staffId,
-        duration_minutes: service?.duration_minutes
+        duration_minutes: service?.duration_minutes,
+        // appointments#69: every hold hides its slot from this list — ours would hide the very
+        // time we just took, which is the one moment a hold must NOT block anyone. Same role as
+        // `exclude_appointment_id` when moving an appointment off its own slot.
+        exclude_hold_ref: this.open?.request_id
       });
       this.slots = rows3(result);
     } catch (e5) {
       this.slots = [];
       this.error = e5 instanceof Error ? e5.message : erplora3().t(CATALOG3, "ui.errLoadSlots");
     }
+  }
+  /** Picking a time SETS IT ASIDE (appointments#69).
+   *
+   *  The window that this closes is the one appointments#38 could only report after the fact:
+   *  hours pass between the message and the approval, the counter sells the hour, and the booking
+   *  is refused when somebody finally approves. Holding while the decision is being made is what
+   *  the market does — Square holds 15 minutes while a customer completes a booking, Appointedd 7,
+   *  Timify caps at 5, Phorest opens a 7-minute holding slot on the calendar while the salon rings
+   *  back. Every documented number sits in the 5–15 band, because the clock only makes sense while
+   *  a PERSON is waiting on screen.
+   *
+   *  The clock starts HERE and not when the message arrives, and that is forced, not chosen: what
+   *  the model parsed is free text with no professional and no hour, so until somebody picks there
+   *  is no slot to hold. The long variant of this mechanism (Odoo and Acuity park the request ON
+   *  the calendar with no expiry at all) needs a request that already names a slot — and it is
+   *  also the variant whose failure mode fills the forums: holds nobody reclaims, freed by hand.
+   *
+   *  Failing to hold does NOT block the booking. A hold is a courtesy that expires; refusing to
+   *  continue because we could not take one would turn the best-effort half of the feature into a
+   *  new way of not being able to book at all. */
+  async pickSlot(s5) {
+    this.startDatetime = s5.slot_start;
+    this.holdExpired = false;
+    if (!this.open || this.holdMinutes <= 0) return;
+    try {
+      await erplora3().command("appointments.slots.hold", {
+        // Opaque both ways: we say who is asking and over which of THEIR rows. `appointments`
+        // stores it without knowing what a WhatsApp request is, and a hub with no inbox never
+        // learns this table exists.
+        source: "whatsapp_inbox",
+        source_ref: this.open.request_id,
+        staff_id: this.staffId,
+        start_datetime: s5.slot_start,
+        end_datetime: s5.slot_end,
+        label: this.customerLabel || this.open.contact_name || this.open.contact_phone
+      });
+      this.startHoldClock();
+    } catch {
+      this.holdUntil = 0;
+      this.error = erplora3().t(CATALOG3, "ui.holdFailed");
+    }
+  }
+  /** Gives the slot back. Only on an EXPLICIT walk-away: an unmount is not one (a host re-render
+   *  would hand the slot back mid-decision), and the TTL already covers the operator who simply
+   *  leaves — «if the user is gone, let it expire silently» is where the market lands. */
+  async releaseHold() {
+    this.stopHoldClock();
+    if (!this.open || !this.holdUntil) return;
+    this.holdUntil = 0;
+    try {
+      await erplora3().command("appointments.slots.release_hold", {
+        source: "whatsapp_inbox",
+        source_ref: this.open.request_id
+      });
+    } catch {
+    }
+  }
+  startHoldClock() {
+    this.holdUntil = Date.now() + this.holdMinutes * 6e4;
+    this.stopHoldClock();
+    this.tickHold();
+    this.holdTicker = setInterval(() => this.tickHold(), 1e3);
+  }
+  stopHoldClock() {
+    if (this.holdTicker) clearInterval(this.holdTicker);
+    this.holdTicker = null;
+  }
+  tickHold() {
+    const left = Math.max(0, this.holdUntil - Date.now());
+    this.holdLeft = left;
+    if (left > 0) return;
+    this.stopHoldClock();
+    this.holdUntil = 0;
+    this.startDatetime = "";
+    this.holdExpired = true;
+    void this.loadSlots();
   }
   get ready() {
     return Boolean(this.customerId && this.serviceId && this.staffId && this.startDatetime);
@@ -5110,6 +5215,7 @@ var ErpAppointmentsRequestBooking = class extends i3 {
    *  booking happens exactly once no matter which door the approval came through. */
   confirm() {
     if (!this.open || !this.ready) return;
+    this.stopHoldClock();
     const service = this.services.find((s5) => s5.id === this.serviceId);
     this.dispatchEvent(new CustomEvent("erp:booking-resolved", {
       detail: {
@@ -5125,7 +5231,8 @@ var ErpAppointmentsRequestBooking = class extends i3 {
       composed: true
     }));
   }
-  cancel() {
+  async cancel() {
+    await this.releaseHold();
     this.dispatchEvent(new CustomEvent("erp:booking-cancelled", { bubbles: true, composed: true }));
   }
   renderCustomer() {
@@ -5206,11 +5313,13 @@ var ErpAppointmentsRequestBooking = class extends i3 {
 
       <div>
         <label>${t5("ui.bookingSlot")}</label>
+        ${this.holdUntil ? b2`<p class="hold">${t5("ui.holdCountdown").replace("{mins}", String(Math.floor(this.holdLeft / 6e4))).replace("{secs}", String(Math.floor(this.holdLeft % 6e4 / 1e3)).padStart(2, "0"))}</p>` : A}
+        ${this.holdExpired ? b2`<ok-inline-feedback tone="warning" icon="time-outline">${t5("ui.holdExpired")}</ok-inline-feedback>` : A}
         ${this.slots.length === 0 ? b2`<p class="said">${t5("ui.bookingNoSlots")}</p>` : b2`<div class="slots">
               ${this.slots.map((s5) => b2`<button type="button" class="slot"
                 aria-pressed=${this.startDatetime === s5.slot_start ? "true" : "false"}
                 @click=${() => {
-      this.startDatetime = s5.slot_start;
+      void this.pickSlot(s5);
     }}>${s5.start_time}</button>`)}
             </div>`}
       </div>
@@ -5219,7 +5328,8 @@ var ErpAppointmentsRequestBooking = class extends i3 {
         <ion-button ?disabled=${!this.ready || this.busy} @click=${() => this.confirm()}>
           ${t5("ui.bookingConfirm")}
         </ion-button>
-        <ion-button fill="clear" color="medium" @click=${() => this.cancel()}>${t5("ui.bookingCancel")}</ion-button>
+        <span class="cancel"><ion-button fill="clear" color="medium"
+          @click=${() => void this.cancel()}>${t5("ui.bookingCancel")}</ion-button></span>
       </div>
     </div>`;
   }
@@ -5266,4 +5376,13 @@ __decorateClass([
 __decorateClass([
   r5()
 ], ErpAppointmentsRequestBooking.prototype, "error", 2);
+__decorateClass([
+  r5()
+], ErpAppointmentsRequestBooking.prototype, "holdUntil", 2);
+__decorateClass([
+  r5()
+], ErpAppointmentsRequestBooking.prototype, "holdLeft", 2);
+__decorateClass([
+  r5()
+], ErpAppointmentsRequestBooking.prototype, "holdExpired", 2);
 define("erp-appointments-request-booking", ErpAppointmentsRequestBooking);
