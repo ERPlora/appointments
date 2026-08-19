@@ -3,38 +3,106 @@
   "title": "appointments.appointments.create",
   "type": "object",
   "additionalProperties": false,
-  "description": "An appointment is booked against REAL records (appointments#21): the customer, the service and the professional are LINKS to the customers/services/staff modules, not free text. Booking with a typed-in service name produced appointments the per-professional agenda could not group, the availability engine could not honour and the appointment→sale handoff could not price. The denormalized name/price/phone travel WITH the ids as the historical snapshot of the booking (§1: never read another module's private tables).",
-  "required": ["customer_id", "customer_name", "service_id", "staff_id", "start_datetime"],
+  "description": "An appointment is booked against REAL records (appointments#21): the customer, the service and the professional are LINKS to the customers/services/staff modules, not free text. Since appointments#11 the SNAPSHOT (customer name/phone/email, service name/price/duration, professional name) is FROZEN by the handler from the rows the runtime pre-loads through `reads` (customers.get, services.services.get, staff.members.get, staff.services.eligible_for_service); the denormalized fields below are accepted for compatibility with older callers and IGNORED — the browser does not decide who the customer is, what the service costs or who performs it.",
+  "required": [
+    "customer_id",
+    "service_id",
+    "staff_id",
+    "start_datetime"
+  ],
   "properties": {
-    "customer_name": { "type": "string", "minLength": 1, "maxLength": 200 },
-    "customer_phone": { "type": "string", "default": "", "maxLength": 50 },
-    "customer_email": { "type": "string", "default": "", "maxLength": 254 },
-    "customer_id": { "type": "string", "minLength": 1 },
-    "service_id": { "type": "string", "minLength": 1 },
-    "service_name": { "type": "string", "default": "", "maxLength": 200 },
-    "service_price": { "type": "integer", "minimum": 0, "default": 0 },
-    "staff_id": { "type": "string", "minLength": 1 },
-    "staff_name": { "type": "string", "default": "", "maxLength": 200 },
-    "start_datetime": { "type": "string", "format": "date-time" },
-    "duration_minutes": { "type": "integer", "minimum": 1, "default": 60 },
-    "notes": { "type": "string", "default": "" },
-    "internal_notes": { "type": "string", "default": "" },
-    "booked_online": { "type": "boolean", "default": false },
-
+    "customer_name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "description": "Ignored since appointments#11 (kept for older callers): the snapshot comes from the authoritative read."
+    },
+    "customer_phone": {
+      "type": "string",
+      "default": "",
+      "maxLength": 50,
+      "description": "Ignored since appointments#11 (kept for older callers): the snapshot comes from the authoritative read."
+    },
+    "customer_email": {
+      "type": "string",
+      "default": "",
+      "maxLength": 254,
+      "description": "Ignored since appointments#11 (kept for older callers): the snapshot comes from the authoritative read."
+    },
+    "customer_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "service_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "service_name": {
+      "type": "string",
+      "default": "",
+      "maxLength": 200,
+      "description": "Ignored since appointments#11 (kept for older callers): the snapshot comes from the authoritative read."
+    },
+    "service_price": {
+      "type": "integer",
+      "minimum": 0,
+      "default": 0,
+      "description": "Ignored since appointments#11 (kept for older callers): the snapshot comes from the authoritative read."
+    },
+    "staff_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "staff_name": {
+      "type": "string",
+      "default": "",
+      "maxLength": 200,
+      "description": "Ignored since appointments#11 (kept for older callers): the snapshot comes from the authoritative read."
+    },
+    "start_datetime": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "duration_minutes": {
+      "type": "integer",
+      "minimum": 1,
+      "default": 60,
+      "description": "Optional. When omitted, the professional's override, else the service's catalogue duration, else the module default applies."
+    },
+    "notes": {
+      "type": "string",
+      "default": ""
+    },
+    "internal_notes": {
+      "type": "string",
+      "default": ""
+    },
+    "booked_online": {
+      "type": "boolean",
+      "default": false
+    },
     "settings": {
       "description": "Lectura aportada por el caller (fila de appointments.settings.get): el runtime no precarga lecturas para el handler WASM; el guest usa allow_overlapping/default_duration de aquí.",
-      "type": ["object", "null"],
+      "type": [
+        "object",
+        "null"
+      ],
       "default": null
     },
     "existing_appointments": {
       "description": "Fallback de citas candidatas a solape (de appointments.appointments.list del día) si el runtime NO precargó la read autoritativa. Desde appointments#110 el comando `create` declara `reads` sobre `appointments.appointments.conflicting`, que el runtime inyecta en `context.reads` y el handler prioriza por encima de este campo.",
       "type": "array",
       "default": [],
-      "items": { "type": "object" }
+      "items": {
+        "type": "object"
+      }
     },
     "service": {
-      "description": "Lectura aportada por el caller ({name, price} resuelto vía el contrato público del módulo services) para denormalizar cuando service_name viene vacío.",
-      "type": ["object", "null"],
+      "description": "Ignored since appointments#11 (kept for older callers): the service row comes from the `services.services.get` read.",
+      "type": [
+        "object",
+        "null"
+      ],
       "default": null
     }
   }

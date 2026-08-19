@@ -61,6 +61,13 @@
   "errors": {
     "appointments.cannot_cancel": "Esta cita ya no se puede cancelar en su estado actual.",
     "appointments.cancellation_notice_required": "Esta cita solo se puede cancelar online con la antelación requerida. Contacta con el negocio.",
-    "appointments.customer_cancellation_disabled": "La cancelación online no está disponible. Contacta con el negocio."
+    "appointments.customer_cancellation_disabled": "La cancelación online no está disponible. Contacta con el negocio.",
+    "appointments.catalog_unavailable": "No se pudo leer el catálogo de clientes, servicios o profesionales; la cita no se ha reservado.",
+    "appointments.customer_not_found": "Ese cliente no existe en este negocio.",
+    "appointments.service_not_found": "Ese servicio no existe en este negocio.",
+    "appointments.service_not_bookable": "Ese servicio no se puede reservar: está inactivo o no es reservable.",
+    "appointments.staff_not_found": "Ese profesional no existe en este negocio.",
+    "appointments.staff_not_bookable": "Ese profesional no puede recibir citas: está inactivo o no es reservable.",
+    "appointments.staff_not_eligible": "Ese profesional no realiza este servicio."
   }
 }
