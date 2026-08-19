@@ -21,7 +21,7 @@ The contract this file pins:
      internal_notes, service and professional; not deleted; capped by `limit` (default 20 when
      omitted). Other customers and OTHER HUBS (a live neighbour) are out.
 
-Usage: tests/list_for_customer.pg.test.py   (exit 0 = green)
+Usage: tests/list_for_customer.postgres.test.py   (exit 0 = green)
   Uses the `erplora-test-pg-5433` container (override: ERPLORA_TEST_PG_CONTAINER). Creates a
   scratch database and DROPS it at the end. Without the container the Postgres layer is SKIPPED,
   never passed.

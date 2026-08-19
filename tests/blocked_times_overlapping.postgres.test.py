@@ -27,7 +27,7 @@ The contract this file pins:
      caught (the naive `date(start) = date(:start)` would miss it — that is the bug this shape
      exists to avoid), a block on another day is out, and ANOTHER HUB's block never leaks.
 
-Usage: tests/blocked_times_overlapping.pg.test.py   (exit 0 = green)
+Usage: tests/blocked_times_overlapping.postgres.test.py   (exit 0 = green)
   Uses the `erplora-test-pg-5433` container (override: ERPLORA_TEST_PG_CONTAINER). Creates a
   scratch database and DROPS it at the end, pass or fail. Without the container the Postgres layer
   is SKIPPED, never passed.

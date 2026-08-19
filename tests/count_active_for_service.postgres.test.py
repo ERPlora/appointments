@@ -19,7 +19,7 @@ The contract this file pins:
      out. And it answers with a row (`active_count = 0`) when there is nothing, not with no row —
      the caller must never confuse "no appointments" with "query unavailable".
 
-Usage: tests/count_active_for_service.pg.test.py   (exit 0 = green)
+Usage: tests/count_active_for_service.postgres.test.py   (exit 0 = green)
   Uses the `erplora-test-pg-5433` container (override: ERPLORA_TEST_PG_CONTAINER). Creates a
   scratch database and DROPS it at the end. Without the container the Postgres layer is SKIPPED,
   never passed.
