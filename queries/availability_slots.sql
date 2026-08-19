@@ -106,4 +106,24 @@ WHERE
               AND erp_dt(a.end_datetime) > erp_dt(c.slot_start)
         )
     )
+    -- ni franjas RETENIDAS por una decisión pendiente (appointments#69). Ofrecer un hueco que
+    -- `create` va a rechazar un segundo después es peor que no ofrecerlo: Google Actions Center
+    -- cuenta un `SLOT_UNAVAILABLE` frecuente como DEFECTO del integrador, no como resultado normal.
+    -- `expires_at > :now` decide AL INSTANTE: la tarea programada limpia filas, no libera huecos.
+    -- :exclude_hold_ref = la petición que está eligiendo. Su propia retención no puede borrarle de
+    -- la lista el hueco que acaba de apartar (mismo papel que :exclude_appointment_id al mover).
+    AND (
+        cfg.allow_overlapping = 1
+        OR NOT EXISTS (
+            SELECT 1
+            FROM appointments_slot_hold h
+            WHERE h.hub_id = :hub_id AND h.is_deleted = 0
+              AND h.status = 'held'
+              AND erp_dt(h.expires_at) > erp_dt(:now)
+              AND COALESCE(CAST(:exclude_hold_ref AS TEXT), '') <> h.source_ref
+              AND (CAST(:staff_id AS TEXT) IS NULL OR h.staff_id = '' OR h.staff_id = :staff_id)
+              AND erp_dt(h.start_datetime) < erp_dt(c.slot_end)
+              AND erp_dt(h.end_datetime) > erp_dt(c.slot_start)
+        )
+    )
 ORDER BY c.start_min;

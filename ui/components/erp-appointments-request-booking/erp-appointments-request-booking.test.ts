@@ -164,4 +164,91 @@ describe('erp-appointments-request-booking', () => {
     const go = shadow(el).querySelector('.go ion-button') as HTMLElement & { disabled?: boolean };
     expect(go.hasAttribute('disabled'), 'an unbound request has nothing to book').toBe(true);
   });
+
+  // ── appointments#69 · elegir el hueco lo APARTA ──────────────────────────────────────────────
+  //
+  // Entre elegir la hora y aprobar pasan segundos o minutos, y en un salón hay más de una persona
+  // mirando la misma bandeja. Retener mientras se decide es lo que hace el mercado con un reloj
+  // corto (Square 15 min, Appointedd 7, Timify 5), y el reloj empieza AQUÍ: un mensaje parseado por
+  // el modelo no trae ni profesional ni hora, así que hasta que alguien elige no hay nada que
+  // apartar.
+  async function bindUpTo(el: Element, opts: { slot?: boolean } = {}) {
+    (shadow(el).querySelector('.match') as HTMLButtonElement).click();
+    const svc = shadow(el).querySelector('#svc') as HTMLSelectElement;
+    svc.value = 'sv1';
+    svc.dispatchEvent(new Event('change'));
+    await settle(el);
+    const stf = shadow(el).querySelector('#stf') as HTMLSelectElement;
+    stf.value = 's1';
+    stf.dispatchEvent(new Event('change'));
+    await settle(el);
+    if (opts.slot !== false) {
+      (shadow(el).querySelector('.slot') as HTMLButtonElement).click();
+      await settle(el);
+    }
+  }
+
+  it('sets the chosen slot aside so the counter cannot sell it while the operator decides', async () => {
+    const el = await mount();
+    await bindUpTo(el);
+
+    const held = commands.filter((c) => c.name === 'appointments.slots.hold');
+    expect(held.length, 'picking a time has to set it aside').toBe(1);
+    expect(held[0].payload).toMatchObject({
+      source: 'whatsapp_inbox',
+      source_ref: 'req-1',
+      staff_id: 's1',
+      start_datetime: '2026-08-20T10:00:00',
+    });
+    expect(
+      held[0].payload.expires_at,
+      'the TTL is the server’s: a caller that picks its own expiry can set a whole agenda aside',
+    ).toBeUndefined();
+  });
+
+  it('moves the hold instead of stacking one per click', async () => {
+    const el = await mount();
+    await bindUpTo(el);
+    const slots = shadow(el).querySelectorAll('.slot');
+    (slots[slots.length - 1] as HTMLButtonElement).click();
+    await settle(el);
+
+    const held = commands.filter((c) => c.name === 'appointments.slots.hold');
+    expect(held.length, 'each pick re-holds; the (source, source_ref) key moves the same row').toBe(2);
+    expect(held[1].payload.source_ref, 'same request = same hold, moved').toBe('req-1');
+    expect(
+      commands.filter((c) => c.name === 'appointments.slots.release_hold').length,
+      'changing your mind mid-panel is not a release; the upsert moves it',
+    ).toBe(0);
+  });
+
+  it('gives the slot back when the operator walks away', async () => {
+    const el = await mount();
+    await bindUpTo(el);
+    (shadow(el).querySelector('.cancel ion-button') as HTMLElement).click();
+    await settle(el);
+
+    const released = commands.filter((c) => c.name === 'appointments.slots.release_hold');
+    expect(released.length, 'a hold nobody is going to use has to go back on sale').toBe(1);
+    expect(released[0].payload).toMatchObject({ source: 'whatsapp_inbox', source_ref: 'req-1' });
+  });
+
+  it('does not release on confirm — the booking CONSUMES the hold, server-side', async () => {
+    const el = await mount();
+    await bindUpTo(el);
+    (shadow(el).querySelector('.go ion-button') as HTMLElement).click();
+    await settle(el);
+
+    expect(
+      commands.some((c) => c.name === 'appointments.slots.release_hold'),
+      'releasing here would free the slot a heartbeat before its own appointment is written',
+    ).toBe(false);
+  });
+
+  it('asks for the slots excluding its OWN hold, or it would hide the time it just took', async () => {
+    const el = await mount();
+    await bindUpTo(el);
+    const asked = queries.filter((q) => q.name === 'appointments.availability.slots');
+    expect(asked[asked.length - 1].params.exclude_hold_ref).toBe('req-1');
+  });
 });

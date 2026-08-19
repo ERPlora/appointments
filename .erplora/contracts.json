@@ -21,6 +21,8 @@
       "appointments.appointments.no_show",
       "appointments.appointments.reschedule",
       "appointments.appointments.start",
+      "appointments.slots.hold",
+      "appointments.slots.release_hold",
       "customers.create"
     ],
     "events": [

@@ -80,11 +80,29 @@ checks AS (
                    AND erp_dt(a.start_datetime) < w.s_end
                    AND erp_dt(a.end_datetime) > w.s_start
              )
-             THEN 1 ELSE 0 END AS overlap
+             THEN 1 ELSE 0 END AS overlap,
+        -- appointments#69: y las franjas RETENIDAS mientras alguien decide. `held` es un motivo
+        -- PROPIO, no `overlap`: «ya hay una cita» mandaría a buscar en la agenda una cita que no
+        -- existe, y un hueco que desaparece sin nombre se lee como un bug (es literalmente lo que
+        -- el soporte de Square tiene que explicar sobre su retención de 15 min).
+        -- Va DESPUÉS de `overlap` en la cascada: una cita real es una razón más firme que una
+        -- retención que caduca sola.
+        CASE WHEN c.allow_overlapping = 0 AND EXISTS (
+                 SELECT 1
+                 FROM appointments_slot_hold h
+                 WHERE h.hub_id = :hub_id AND h.is_deleted = 0
+                   AND h.status = 'held'
+                   AND erp_dt(h.expires_at) > erp_dt(:now)
+                   AND COALESCE(CAST(:exclude_hold_ref AS TEXT), '') <> h.source_ref
+                   AND (CAST(:staff_id AS TEXT) IS NULL OR h.staff_id = '' OR h.staff_id = :staff_id)
+                   AND erp_dt(h.start_datetime) < w.s_end
+                   AND erp_dt(h.end_datetime) > w.s_start
+             )
+             THEN 1 ELSE 0 END AS held
     FROM win w, cfg c
 )
 SELECT
-    CASE WHEN invalid_start + too_soon + too_far + outside_schedule + blocked + overlap = 0
+    CASE WHEN invalid_start + too_soon + too_far + outside_schedule + blocked + overlap + held = 0
          THEN 1 ELSE 0 END AS available,
     CASE
         WHEN invalid_start = 1 THEN 'invalid_start'
@@ -93,6 +111,7 @@ SELECT
         WHEN outside_schedule = 1 THEN 'outside_schedule'
         WHEN blocked = 1 THEN 'blocked'
         WHEN overlap = 1 THEN 'overlap'
+        WHEN held = 1 THEN 'held'
         ELSE ''
     END AS reason
 FROM checks;
