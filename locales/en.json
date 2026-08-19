@@ -51,7 +51,10 @@
     "prevDay": "Previous day",
     "nextDay": "Next day",
     "noStaff": "No bookable professionals yet.",
-    "errLoadCatalogs": "Error loading customers, services or staff"
+    "errLoadCatalogs": "Error loading customers, services or staff",
+    "historyTitle": "Visit history",
+    "historyEmpty": "No appointments yet for this customer.",
+    "historyError": "The visit history could not be loaded."
   },
   "setup": {
     "title": "Your working hours",

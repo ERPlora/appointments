@@ -4,6 +4,7 @@
   "consumes": {
     "queries": [
       "appointments.appointments.list",
+      "appointments.appointments.list_for_customer",
       "appointments.settings.get",
       "customers.list",
       "services.services.list",
