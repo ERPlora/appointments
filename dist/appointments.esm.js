@@ -1960,7 +1960,16 @@ var es_default = {
     "appointments.service_not_bookable": "Ese servicio no se puede reservar: est\xE1 inactivo o no es reservable.",
     "appointments.staff_not_found": "Ese profesional no existe en este negocio.",
     "appointments.staff_not_bookable": "Ese profesional no puede recibir citas: est\xE1 inactivo o no es reservable.",
-    "appointments.staff_not_eligible": "Ese profesional no realiza este servicio."
+    "appointments.staff_not_eligible": "Ese profesional no realiza este servicio.",
+    "appointments.settings_unavailable": "No se pudieron leer los ajustes de reserva; no se ha reservado nada.",
+    "appointments.availability_unavailable": "No se pudieron leer los bloqueos de la agenda; no se ha reservado nada.",
+    "appointments.blocked": "Esa franja est\xE1 bloqueada en la agenda.",
+    "appointments.too_soon": "Esta cita hay que reservarla con m\xE1s antelaci\xF3n.",
+    "appointments.too_far": "Esta cita no se puede reservar con tanta antelaci\xF3n.",
+    "appointments.recurring_unavailable": "No se pudo leer la cita recurrente; no se ha reservado nada.",
+    "appointments.recurring_not_found": "Esa cita recurrente no existe en este negocio.",
+    "appointments.recurring_inactive": "Esa cita recurrente est\xE1 desactivada; act\xEDvala para reservar sus ocurrencias.",
+    "appointments.recurring_mismatch": "La cita recurrente no coincide con el cliente, el servicio o el profesional enviados; no se ha reservado nada."
   }
 };
 
@@ -2043,7 +2052,16 @@ var en_default = {
     "appointments.service_not_bookable": "That service cannot be booked: it is inactive or not bookable.",
     "appointments.staff_not_found": "That professional does not exist in this business.",
     "appointments.staff_not_bookable": "That professional cannot take appointments: inactive or not bookable.",
-    "appointments.staff_not_eligible": "That professional does not perform this service."
+    "appointments.staff_not_eligible": "That professional does not perform this service.",
+    "appointments.settings_unavailable": "The booking settings could not be read; nothing was booked.",
+    "appointments.availability_unavailable": "The agenda's blocked periods could not be read; nothing was booked.",
+    "appointments.blocked": "That slot is blocked in the agenda.",
+    "appointments.too_soon": "This appointment must be booked further in advance.",
+    "appointments.too_far": "This appointment cannot be booked that far in advance.",
+    "appointments.recurring_unavailable": "The recurring appointment could not be read; nothing was booked.",
+    "appointments.recurring_not_found": "That recurring appointment does not exist in this business.",
+    "appointments.recurring_inactive": "That recurring appointment is switched off; reactivate it to book its occurrences.",
+    "appointments.recurring_mismatch": "The recurring appointment does not match the customer, service or professional sent; nothing was booked."
   }
 };
 

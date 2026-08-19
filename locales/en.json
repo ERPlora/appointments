@@ -76,6 +76,15 @@
     "appointments.service_not_bookable": "That service cannot be booked: it is inactive or not bookable.",
     "appointments.staff_not_found": "That professional does not exist in this business.",
     "appointments.staff_not_bookable": "That professional cannot take appointments: inactive or not bookable.",
-    "appointments.staff_not_eligible": "That professional does not perform this service."
+    "appointments.staff_not_eligible": "That professional does not perform this service.",
+    "appointments.settings_unavailable": "The booking settings could not be read; nothing was booked.",
+    "appointments.availability_unavailable": "The agenda's blocked periods could not be read; nothing was booked.",
+    "appointments.blocked": "That slot is blocked in the agenda.",
+    "appointments.too_soon": "This appointment must be booked further in advance.",
+    "appointments.too_far": "This appointment cannot be booked that far in advance.",
+    "appointments.recurring_unavailable": "The recurring appointment could not be read; nothing was booked.",
+    "appointments.recurring_not_found": "That recurring appointment does not exist in this business.",
+    "appointments.recurring_inactive": "That recurring appointment is switched off; reactivate it to book its occurrences.",
+    "appointments.recurring_mismatch": "The recurring appointment does not match the customer, service or professional sent; nothing was booked."
   }
 }

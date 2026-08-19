@@ -77,6 +77,15 @@
     "appointments.service_not_bookable": "Ese servicio no se puede reservar: está inactivo o no es reservable.",
     "appointments.staff_not_found": "Ese profesional no existe en este negocio.",
     "appointments.staff_not_bookable": "Ese profesional no puede recibir citas: está inactivo o no es reservable.",
-    "appointments.staff_not_eligible": "Ese profesional no realiza este servicio."
+    "appointments.staff_not_eligible": "Ese profesional no realiza este servicio.",
+    "appointments.settings_unavailable": "No se pudieron leer los ajustes de reserva; no se ha reservado nada.",
+    "appointments.availability_unavailable": "No se pudieron leer los bloqueos de la agenda; no se ha reservado nada.",
+    "appointments.blocked": "Esa franja está bloqueada en la agenda.",
+    "appointments.too_soon": "Esta cita hay que reservarla con más antelación.",
+    "appointments.too_far": "Esta cita no se puede reservar con tanta antelación.",
+    "appointments.recurring_unavailable": "No se pudo leer la cita recurrente; no se ha reservado nada.",
+    "appointments.recurring_not_found": "Esa cita recurrente no existe en este negocio.",
+    "appointments.recurring_inactive": "Esa cita recurrente está desactivada; actívala para reservar sus ocurrencias.",
+    "appointments.recurring_mismatch": "La cita recurrente no coincide con el cliente, el servicio o el profesional enviados; no se ha reservado nada."
   }
 }
