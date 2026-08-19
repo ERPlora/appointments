@@ -20,11 +20,13 @@
 //!   THESE rows; the payload's own names/prices are ignored and an id that does not resolve is
 //!   a domain refusal. Without these reads `create` refuses (never degrades to the payload).
 //!
-//! Commands that do not declare a read (bulk_create, materialize_recurring) still degrade to
-//! the caller-provided `payload.settings` / `payload.existing_appointments` / `service`
-//! (`{name, price}`); the runtime cannot resolve per-item reads for a batch yet. Missing reads
-//! mean the handler cannot validate overlap and treats it as allowed (authoritative
-//! availability is `appointments.availability.*`).
+//! Since appointments#54 `bulk_create` and `recurring.materialize` declare THE SAME reads: a
+//! batch is one customer booking N slots and a series is ONE template, so their three ids sit at
+//! the top level of the payload — the only shape `reads.params` can filter by — and both inherit
+//! the whole fail-closed behaviour of `create`. `materialize` additionally loads the template by
+//! id (`appointments.recurring.get`) and refuses when the ids sent do not match it. No command
+//! writes a name or a price the caller supplied any more; `payload.existing_appointments` remains
+//! only as the overlap fallback for the callers whose window a per-day read cannot express.
 //!
 //! Nº de cita `APT-YYYYMMDD-NNNN`: contador atómico por hub+día (patrón de
 //! `sales`): el handler emite `_bump_counter` (UPSERT) y `_insert_appointment`
@@ -395,23 +397,6 @@ fn settings_from(input: &Value) -> Value {
     }
 }
 
-/// `allow_overlapping` from the settings row (DB default: false).
-fn allow_overlapping(input: &Value) -> bool {
-    settings_from(input)
-        .get("allow_overlapping")
-        .map(as_bool)
-        .unwrap_or(false)
-}
-
-/// `default_duration` (minutes) from the settings row (DB default: 60).
-fn default_duration(input: &Value) -> i64 {
-    settings_from(input)
-        .get("default_duration")
-        .map(|v| as_i64(v, 60))
-        .filter(|d| *d >= 1)
-        .unwrap_or(60)
-}
-
 // ───────────────── the booking policy is READ, never told (appointments#10/#13) ─────────────────
 
 /// The settings row exactly as the runtime pre-loaded it (`reads`, `required: true`). `None` =
@@ -664,15 +649,15 @@ fn resolve_booking(input: &Value, item: &Value) -> Result<Result<ResolvedBooking
 /// `_insert_appointment` + `_insert_history`). Añade la cita aceptada a
 /// `candidates` para que el solape también se valide dentro del lote.
 ///
-/// `resolved` (appointments#11) is the booking resolved against the hub's records: when given,
-/// customer/service/staff snapshot, price and default duration come from it and the item's own
-/// names/prices are ignored. `None` only for the callers without per-item reads
-/// (`bulk_create`, `materialize_recurring`), which still snapshot what the item says.
+/// `resolved` (appointments#11) is the booking resolved against the hub's records: the
+/// customer/service/staff snapshot, the price and the default duration come from it and whatever
+/// names or prices the item carries are ignored. Since appointments#54 there is no unresolved
+/// path: `create`, `bulk_create` and `recurring.materialize` all arrive here with the same
+/// authoritative snapshot, so the caller cannot name a customer, a service or a price anywhere.
 #[allow(clippy::too_many_arguments)]
 fn prepare_appointment(
     item: &Value,
-    resolved: Option<&ResolvedBooking>,
-    fallback_service: Option<&Value>,
+    resolved: &ResolvedBooking,
     candidates: &mut Vec<Candidate>,
     allow_overlap: bool,
     default_dur: i64,
@@ -680,10 +665,7 @@ fn prepare_appointment(
     appointment_id: &str,
     history_description: &str,
 ) -> Result<Vec<Operation>, String> {
-    let customer_name = match resolved {
-        Some(r) => r.customer_name.clone(),
-        None => str_or(item, "customer_name", ""),
-    };
+    let customer_name = resolved.customer_name.clone();
     if customer_name.is_empty() {
         return Err("invalid_payload: customer_name es obligatorio".to_string());
     }
@@ -698,7 +680,7 @@ fn prepare_appointment(
 
     // Duration: the caller's explicit choice (the receptionist may shorten/lengthen a booking),
     // else the professional's override / the service's catalogue duration, else the module default.
-    let catalogue_dur = resolved.and_then(|r| r.service_duration).unwrap_or(default_dur);
+    let catalogue_dur = resolved.service_duration.unwrap_or(default_dur);
     let duration = item
         .get("duration_minutes")
         .map(|v| as_i64(v, catalogue_dur))
@@ -720,26 +702,9 @@ fn prepare_appointment(
         }
     }
 
-    // Service snapshot. Resolved (appointments#11): the catalogue row decides name and price and
-    // the item's `service_name`/`service_price`/`service` are ignored. Unresolved callers
-    // (no per-item reads yet): the item's name/price, then the caller-provided `service` object.
-    let (service_name, service_price) = match resolved {
-        Some(r) => (r.service_name.clone(), r.service_price),
-        None => {
-            let mut name = str_or(item, "service_name", "");
-            // service_price en CÉNTIMOS (ADR-0007)
-            let mut price = money::from_json(item.get("service_price").unwrap_or(&Value::Null), 0);
-            if let Some(svc) = fallback_service {
-                if name.is_empty() {
-                    name = str_or(svc, "name", "");
-                }
-                if price == 0 {
-                    price = money::from_json(svc.get("price").unwrap_or(&Value::Null), 0);
-                }
-            }
-            (name, price)
-        }
-    };
+    // Service snapshot (appointments#11): the catalogue row decides name and price — in CENTS
+    // (ADR-0007) — and anything the item says about them is ignored.
+    let (service_name, service_price) = (resolved.service_name.clone(), resolved.service_price);
 
     let day = now.day_key();
     let mut ops: Vec<Operation> = Vec::with_capacity(3);
@@ -751,26 +716,13 @@ fn prepare_appointment(
     let mut p = Map::new();
     p.insert("appointment_id".into(), json!(appointment_id));
     p.insert("day".into(), json!(day));
-    match resolved {
-        Some(r) => {
-            p.insert("customer_id".into(), json!(r.customer_id));
-            p.insert("customer_name".into(), json!(customer_name.clone()));
-            p.insert("customer_phone".into(), json!(r.customer_phone));
-            p.insert("customer_email".into(), json!(r.customer_email));
-            p.insert("staff_id".into(), json!(r.staff_id));
-            p.insert("staff_name".into(), json!(r.staff_name));
-            p.insert("service_id".into(), json!(r.service_id));
-        }
-        None => {
-            p.insert("customer_id".into(), item.get("customer_id").cloned().unwrap_or(Value::Null));
-            p.insert("customer_name".into(), json!(customer_name.clone()));
-            p.insert("customer_phone".into(), json!(str_or(item, "customer_phone", "")));
-            p.insert("customer_email".into(), json!(str_or(item, "customer_email", "")));
-            p.insert("staff_id".into(), item.get("staff_id").cloned().unwrap_or(Value::Null));
-            p.insert("staff_name".into(), json!(str_or(item, "staff_name", "")));
-            p.insert("service_id".into(), item.get("service_id").cloned().unwrap_or(Value::Null));
-        }
-    }
+    p.insert("customer_id".into(), json!(resolved.customer_id));
+    p.insert("customer_name".into(), json!(customer_name.clone()));
+    p.insert("customer_phone".into(), json!(resolved.customer_phone));
+    p.insert("customer_email".into(), json!(resolved.customer_email));
+    p.insert("staff_id".into(), json!(resolved.staff_id));
+    p.insert("staff_name".into(), json!(resolved.staff_name));
+    p.insert("service_id".into(), json!(resolved.service_id));
     p.insert("service_name".into(), json!(service_name.clone()));
     p.insert("service_price".into(), json!(service_price));
     p.insert("start_datetime".into(), json!(start.iso()));
@@ -975,8 +927,7 @@ pub fn create_appointment_pure(input: Value) -> Result<Output, String> {
     let mut candidates = candidates_from(&input);
     let ops = prepare_appointment(
         &payload,
-        Some(&resolved),
-        None,
+        &resolved,
         &mut candidates,
         allow_overlapping_of(&settings),
         default_dur,
@@ -994,6 +945,14 @@ pub fn create_appointment_pure(input: Value) -> Result<Output, String> {
 /// Acumula errores por índice sin abortar el lote; el contador avanza dentro del
 /// lote (un `_bump_counter` por cita, ejecutados en orden en la misma tx). Si
 /// NINGÚN ítem es válido, falla con el detalle de todos los errores.
+///
+/// appointments#54: a batch is «the SAME customer books N slots» — a course, a five-session pass.
+/// The three ids live at the TOP level of the payload, which is the only place `reads.params` can
+/// look (`payload.<field>`), so the batch declares the same reads as `create` and inherits its
+/// whole fail-closed behaviour: one resolution against the hub's records serves every slot, and
+/// an id that does not resolve refuses the batch instead of writing rows with invented names.
+/// A batch with a different customer per row no longer exists as a command: those are N `create`,
+/// which have been authoritative since appointments#11.
 pub fn bulk_create_pure(input: Value) -> Result<Output, String> {
     let payload = input.get("payload").cloned().unwrap_or(Value::Null);
     let ctx = host_ctx(&input)?;
@@ -1006,8 +965,20 @@ pub fn bulk_create_pure(input: Value) -> Result<Output, String> {
         return Err(format!("invalid_payload: máximo 50 citas por lote (recibidas {})", items.len()));
     }
 
-    let allow_overlap = allow_overlapping(&input);
-    let default_dur = default_duration(&input);
+    let resolved = match resolve_booking(&input, &payload)? {
+        Ok(r) => r,
+        Err(refusal) => return Ok(Output::new().with_error(refusal)),
+    };
+
+    // The booking policy comes from the DB, or the batch does not happen (appointments#10).
+    let Some(settings) = settings_read(&input) else {
+        return Ok(Output::new().with_error(DomainError::new(
+            "appointments.settings_unavailable",
+            "The booking settings could not be read; the appointments were not booked.",
+        )));
+    };
+    let allow_overlap = allow_overlapping_of(&settings);
+    let default_dur = default_duration_of(&settings);
     let mut candidates = candidates_from(&input);
     let mut ops: Vec<Operation> = Vec::new();
     let mut errors: Vec<String> = Vec::new();
@@ -1020,8 +991,7 @@ pub fn bulk_create_pure(input: Value) -> Result<Output, String> {
         };
         match prepare_appointment(
             item,
-            None,
-            payload.get("service"),
+            &resolved,
             &mut candidates,
             allow_overlap,
             default_dur,
@@ -1077,21 +1047,73 @@ pub fn bulk_delete_pure(input: Value) -> Result<Output, String> {
 }
 
 /// `appointments.recurring.materialize` — WASM-TODO pieza 6.
-/// El caller aporta la plantilla (`recurring`, fila de `appointments.recurring.list`)
-/// y opcionalmente la ventana `from`/`to` (YYYY-MM-DD). Genera las ocurrencias
-/// (daily/weekly/biweekly/monthly) respetando `end_date`/`max_occurrences`, salta
-/// las pasadas y materializa máx. 50 citas por invocación.
+///
+/// The caller names the series (`recurring_id`) and its three links, and optionally the window
+/// `from`/`to` (YYYY-MM-DD). Generates the occurrences (daily/weekly/biweekly/monthly) honouring
+/// `end_date`/`max_occurrences`, skips the past ones and materializes at most 50 per invocation.
+///
+/// appointments#54: the TEMPLATE is loaded by id through `appointments.recurring.get` — it used to
+/// arrive whole in the payload, `customer_name`, `service_name` and `staff_name` included, so the
+/// browser wrote the names and the price of every occurrence of a series. The three ids still
+/// travel in the payload because that is the only thing `reads.params` can filter by
+/// (`payload.<field>`), but they are a SELECTOR: they must match the template the runtime loaded,
+/// or the reads resolved somebody else's records and nothing is written.
 pub fn materialize_recurring_pure(input: Value) -> Result<Output, String> {
     let payload = input.get("payload").cloned().unwrap_or(Value::Null);
     let ctx = host_ctx(&input)?;
-    let r = payload
-        .get("recurring")
-        .cloned()
-        .ok_or_else(|| "invalid_payload: falta `recurring` (la plantilla)".to_string())?;
+
+    let recurring_id = str_or(&payload, "recurring_id", "");
+    if recurring_id.is_empty() {
+        return Err("invalid_payload: recurring_id is required".to_string());
+    }
+    let Some(rows) = read_rows(&input, "appointments.recurring.get") else {
+        return Ok(refuse(
+            "appointments.recurring_unavailable",
+            "The recurring template could not be read; nothing was booked.",
+        ));
+    };
+    let Some(r) = rows.first().cloned() else {
+        return Ok(refuse(
+            "appointments.recurring_not_found",
+            "That recurring appointment does not exist in this business.",
+        ));
+    };
 
     if !r.get("is_active").map(as_bool).unwrap_or(true) {
-        return Err("inactive: la plantilla recurrente está desactivada".to_string());
+        return Ok(refuse(
+            "appointments.recurring_inactive",
+            "That recurring appointment is switched off; reactivate it to book its occurrences.",
+        ));
     }
+
+    // The ids are a selector, not a source of truth: if they point somewhere else, the catalogue
+    // reads resolved another customer/service/professional and the series must not be written.
+    for (field, key) in [
+        ("customer_id", "customer_id"),
+        ("service_id", "service_id"),
+        ("staff_id", "staff_id"),
+    ] {
+        if str_or(&payload, field, "") != str_or(&r, key, "") {
+            return Ok(refuse(
+                "appointments.recurring_mismatch",
+                "The recurring appointment does not match the customer, service or professional sent; nothing was booked.",
+            ));
+        }
+    }
+
+    let resolved = match resolve_booking(&input, &payload)? {
+        Ok(res) => res,
+        Err(refusal) => return Ok(Output::new().with_error(refusal)),
+    };
+
+    // The booking policy comes from the DB, or the series is not materialized (appointments#10).
+    let Some(settings) = settings_read(&input) else {
+        return Ok(refuse(
+            "appointments.settings_unavailable",
+            "The booking settings could not be read; nothing was booked.",
+        ));
+    };
+
     let frequency = str_or(&r, "frequency", "");
     if !matches!(frequency.as_str(), "daily" | "weekly" | "biweekly" | "monthly") {
         return Err(format!("invalid_payload: frequency inválida `{frequency}`"));
@@ -1112,7 +1134,8 @@ pub fn materialize_recurring_pure(input: Value) -> Result<Output, String> {
         .get("duration_minutes")
         .map(|v| as_i64(v, 0))
         .filter(|d| *d >= 1)
-        .unwrap_or_else(|| default_duration(&input));
+        .or(resolved.service_duration)
+        .unwrap_or_else(|| default_duration_of(&settings));
 
     // Ventana de materialización: [from, to] en días civiles.
     let today_days = days_from_civil(ctx.now.y, ctx.now.mo, ctx.now.d);
@@ -1125,9 +1148,10 @@ pub fn materialize_recurring_pure(input: Value) -> Result<Output, String> {
         .map(|d| days_from_civil(d.y, d.mo, d.d))
         .unwrap_or(today_days)
         .max(today_days);
-    let advance_days = payload
-        .get("settings")
-        .and_then(|s| s.get("max_advance_booking"))
+    // How far ahead the hub materializes when the caller does not close the window: its own
+    // `max_advance_booking`, read from the settings row (never from the payload).
+    let advance_days = settings
+        .get("max_advance_booking")
         .map(|v| as_i64(v, 90))
         .filter(|n| *n > 0)
         .unwrap_or(90);
@@ -1226,12 +1250,14 @@ pub fn materialize_recurring_pure(input: Value) -> Result<Output, String> {
         return Err("no_occurrences: la plantilla no genera ocurrencias en la ventana".to_string());
     }
 
-    let allow_overlap = allow_overlapping(&input);
+    let allow_overlap = allow_overlapping_of(&settings);
     let mut candidates = candidates_from(&input);
     let mut ops: Vec<Operation> = Vec::new();
     let mut created = 0usize;
 
-    // Ítem base materializado desde la plantilla (denormalizados de cliente/servicio/staff).
+    // Each occurrence is just a SLOT: who, what and for how much is the resolved booking, shared
+    // by the whole series (appointments#54) — the template's denormalized copy is only what the
+    // list screen shows, and it can be stale.
     for days in occurrence_days {
         if created >= 50 {
             break; // tope por invocación (mismo límite que bulk_create)
@@ -1239,26 +1265,15 @@ pub fn materialize_recurring_pure(input: Value) -> Result<Output, String> {
         let (y, mo, d) = civil_from_days(days);
         let start_iso = format!("{y:04}-{mo:02}-{d:02}T{th:02}:{tm:02}:00");
         let item = json!({
-            "customer_id": r.get("customer_id").cloned().unwrap_or(Value::Null),
-            "customer_name": str_or(&r, "customer_name", ""),
-            "service_id": r.get("service_id").cloned().unwrap_or(Value::Null),
-            "service_name": str_or(&r, "service_name", ""),
-            "staff_id": r.get("staff_id").cloned().unwrap_or(Value::Null),
-            "staff_name": str_or(&r, "staff_name", ""),
             "start_datetime": start_iso,
             "duration_minutes": duration,
-            "notes": str_or(&r, "notes", ""),
             "booked_online": false,
         });
         let Some(id) = ctx.new_ids.get(created) else { break };
-        let desc = format!(
-            "Cita materializada de la plantilla recurrente {}",
-            str_or(&r, "id", "(sin id)")
-        );
+        let desc = format!("Cita materializada de la plantilla recurrente {recurring_id}");
         match prepare_appointment(
             &item,
-            None,
-            payload.get("service"),
+            &resolved,
             &mut candidates,
             allow_overlap,
             duration,
@@ -2046,5 +2061,250 @@ mod tests {
             domain_code(&create_appointment_pure(input(item("2026-07-31T11:00:00Z", 30, "s1"), Some(reads))).unwrap()),
             None
         );
+    }
+
+    // ─────────── appointments#54 · a BATCH and a SERIES resolve their links like `create` ───────────
+    //
+    // `create` stopped believing the browser in appointments#11: who the customer is, what the
+    // service costs and who performs it come from the rows the runtime pre-loads. `bulk_create`
+    // and `recurring.materialize` went on writing `customer_name` / `service_name` /
+    // `service_price` / `staff_name` exactly as they arrived, because `reads.params` only accepts
+    // `payload.<field>` at the TOP level and a batch had its ids buried per item.
+    //
+    // The shape is what changed: a batch is «the same customer books N slots» and a series is ONE
+    // template, so the three ids move up to the top level of the payload and both commands declare
+    // the same reads as `create`. Nothing about the runtime contract had to change.
+
+    /// A batch input: the ids at the top level and one entry per slot. `new_ids` is long enough
+    /// for the whole batch (the host sends 256).
+    fn batch_input(payload: Value, reads: Option<Value>) -> Value {
+        let mut inp = input(payload, reads);
+        inp["context"]["new_ids"] =
+            json!((1..=60).map(|n| format!("apt-{n}")).collect::<Vec<_>>());
+        inp
+    }
+
+    fn slot(start: &str) -> Value {
+        json!({ "start_datetime": start, "duration_minutes": 30 })
+    }
+
+    fn batch(slots: Value) -> Value {
+        json!({
+            "customer_id": "c1",
+            "service_id": "s-corte",
+            "staff_id": "s1",
+            "appointments": slots,
+        })
+    }
+
+    fn insert_ops(out: &Output) -> Vec<&Operation> {
+        out.operations
+            .iter()
+            .filter(|op| op.command.ends_with("_insert_appointment"))
+            .collect()
+    }
+
+    #[test]
+    fn bulk_create_takes_the_snapshot_from_the_catalogue_reads_not_the_payload() {
+        let out =
+            bulk_create_pure(batch_input(batch(json!([slot("2026-08-03T11:00:00Z")])), None)).unwrap();
+        assert!(out.error.is_none(), "{:?}", out.error);
+        let insert = insert_op(&out);
+        assert_eq!(insert.params.get("customer_id"), Some(&json!("c1")));
+        assert_eq!(insert.params.get("customer_name"), Some(&json!("Ada Lovelace")));
+        assert_eq!(insert.params.get("service_name"), Some(&json!("Corte")));
+        assert_eq!(insert.params.get("service_price"), Some(&json!(2000)));
+        assert_eq!(insert.params.get("staff_name"), Some(&json!("Bea Pro")));
+    }
+
+    /// The whole point of the batch: N slots, one customer, one service, one professional — so one
+    /// resolution serves them all and every row carries the SAME authoritative snapshot.
+    #[test]
+    fn bulk_create_books_every_slot_of_the_batch_against_the_same_resolved_links() {
+        let out = bulk_create_pure(batch_input(
+            batch(json!([
+                slot("2026-08-03T11:00:00Z"),
+                slot("2026-08-10T11:00:00Z"),
+                slot("2026-08-17T11:00:00Z")
+            ])),
+            None,
+        ))
+        .unwrap();
+        assert!(out.error.is_none(), "{:?}", out.error);
+        let inserts = insert_ops(&out);
+        assert_eq!(inserts.len(), 3);
+        for insert in inserts {
+            assert_eq!(insert.params.get("service_id"), Some(&json!("s-corte")));
+            assert_eq!(insert.params.get("service_price"), Some(&json!(2000)));
+            assert_eq!(insert.params.get("staff_name"), Some(&json!("Bea Pro")));
+        }
+    }
+
+    /// An id the catalogue does not resolve is a domain refusal for the WHOLE batch — the same
+    /// answer `create` gives. Writing 4 of 5 rows and inventing the fifth is what this closes.
+    #[test]
+    fn bulk_create_refuses_a_service_the_hub_does_not_have() {
+        let out = bulk_create_pure(batch_input(
+            batch(json!([slot("2026-08-03T11:00:00Z")])),
+            Some(json!({ "services.services.get": [] })),
+        ))
+        .unwrap();
+        assert_eq!(domain_code(&out).as_deref(), Some("appointments.service_not_found"));
+        assert!(out.operations.is_empty(), "nothing is written on a refusal");
+    }
+
+    #[test]
+    fn bulk_create_refuses_a_professional_not_eligible_for_the_service() {
+        let reads = json!({ "staff.services.eligible_for_service": [
+            { "staff_id": "other", "full_name": "Otra", "is_primary": 1 }
+        ]});
+        let out =
+            bulk_create_pure(batch_input(batch(json!([slot("2026-08-03T11:00:00Z")])), Some(reads)))
+                .unwrap();
+        assert_eq!(domain_code(&out).as_deref(), Some("appointments.staff_not_eligible"));
+    }
+
+    /// The batch reads the booking policy like `create` does; the browser cannot hand it an
+    /// `allow_overlapping` any more, and a missing policy refuses instead of degrading.
+    #[test]
+    fn bulk_create_refuses_when_the_settings_read_is_missing() {
+        let mut inp = batch_input(batch(json!([slot("2026-08-03T11:00:00Z")])), None);
+        inp["context"]["reads"]
+            .as_object_mut()
+            .unwrap()
+            .remove("appointments.settings.get");
+        let out = bulk_create_pure(inp).unwrap();
+        assert_eq!(domain_code(&out).as_deref(), Some("appointments.settings_unavailable"));
+    }
+
+    // ── recurring.materialize ──
+
+    /// The recurring template as `appointments.recurring.get` returns it.
+    fn template(extra: Value) -> Value {
+        let mut row = json!({
+            "id": "r1",
+            "customer_id": "c1",
+            "service_id": "s-corte",
+            "staff_id": "s1",
+            "customer_name": "Ada Lovelace",
+            "service_name": "Corte",
+            "staff_name": "Bea Pro",
+            "frequency": "weekly",
+            "day_of_week": null,
+            "time": "11:00",
+            "duration_minutes": 30,
+            "start_date": "2026-08-03",
+            "end_date": null,
+            "max_occurrences": 2,
+            "is_active": 1
+        });
+        if let Value::Object(fields) = extra {
+            for (k, v) in fields {
+                row[k] = v;
+            }
+        }
+        row
+    }
+
+    fn series_input(payload: Value, rows: Value, reads: Option<Value>) -> Value {
+        let mut inp = batch_input(payload, reads);
+        inp["context"]["reads"]["appointments.recurring.get"] = rows;
+        inp
+    }
+
+    fn series_payload() -> Value {
+        json!({
+            "recurring_id": "r1",
+            "customer_id": "c1",
+            "service_id": "s-corte",
+            "staff_id": "s1"
+        })
+    }
+
+    #[test]
+    fn materialize_takes_the_template_from_the_read_not_the_payload() {
+        let out = materialize_recurring_pure(series_input(
+            series_payload(),
+            json!([template(json!({}))]),
+            None,
+        ))
+        .unwrap();
+        assert!(out.error.is_none(), "{:?}", out.error);
+        let inserts = insert_ops(&out);
+        assert_eq!(inserts.len(), 2, "max_occurrences = 2");
+        let starts: Vec<_> = inserts
+            .iter()
+            .filter_map(|op| op.params.get("start_datetime").and_then(|v| v.as_str()))
+            .collect();
+        assert_eq!(starts, vec!["2026-08-03T11:00:00", "2026-08-10T11:00:00"]);
+    }
+
+    /// Every materialized occurrence carries the snapshot resolved against the catalogue — not the
+    /// denormalized copy the template row keeps for the list screen, and not the payload.
+    #[test]
+    fn materialize_takes_the_snapshot_from_the_catalogue_reads() {
+        let stale = template(json!({
+            "customer_name": "Stale name",
+            "service_name": "Stale service",
+            "staff_name": "Stale pro"
+        }));
+        let out =
+            materialize_recurring_pure(series_input(series_payload(), json!([stale]), None)).unwrap();
+        assert!(out.error.is_none(), "{:?}", out.error);
+        let insert = insert_op(&out);
+        assert_eq!(insert.params.get("customer_name"), Some(&json!("Ada Lovelace")));
+        assert_eq!(insert.params.get("service_name"), Some(&json!("Corte")));
+        assert_eq!(insert.params.get("service_price"), Some(&json!(2000)));
+        assert_eq!(insert.params.get("staff_name"), Some(&json!("Bea Pro")));
+    }
+
+    #[test]
+    fn materialize_refuses_a_template_the_hub_does_not_have() {
+        let out =
+            materialize_recurring_pure(series_input(series_payload(), json!([]), None)).unwrap();
+        assert_eq!(domain_code(&out).as_deref(), Some("appointments.recurring_not_found"));
+        assert!(out.operations.is_empty());
+    }
+
+    #[test]
+    fn materialize_refuses_an_inactive_template() {
+        let out = materialize_recurring_pure(series_input(
+            series_payload(),
+            json!([template(json!({ "is_active": 0 }))]),
+            None,
+        ))
+        .unwrap();
+        assert_eq!(domain_code(&out).as_deref(), Some("appointments.recurring_inactive"));
+    }
+
+    /// The ids travel in the payload because that is the only place `reads.params` can look, so
+    /// they are a SELECTOR, never a source of truth: if they do not match the template the runtime
+    /// loaded, the reads resolved somebody else's customer and the series must not be written.
+    #[test]
+    fn materialize_refuses_when_the_payload_ids_do_not_match_the_template() {
+        let mut payload = series_payload();
+        payload["service_id"] = json!("s-other");
+        let out = materialize_recurring_pure(series_input(
+            payload,
+            json!([template(json!({}))]),
+            Some(json!({ "services.services.get": [
+                { "id": "s-other", "name": "Otro", "price": 9900, "duration_minutes": 30,
+                  "is_bookable": 1, "is_active": 1 }
+            ]})),
+        ))
+        .unwrap();
+        assert_eq!(domain_code(&out).as_deref(), Some("appointments.recurring_mismatch"));
+        assert!(out.operations.is_empty());
+    }
+
+    #[test]
+    fn materialize_refuses_a_service_the_hub_does_not_have() {
+        let out = materialize_recurring_pure(series_input(
+            series_payload(),
+            json!([template(json!({}))]),
+            Some(json!({ "services.services.get": [] })),
+        ))
+        .unwrap();
+        assert_eq!(domain_code(&out).as_deref(), Some("appointments.service_not_found"));
     }
 }

@@ -231,6 +231,13 @@
         "description": "Lists blocked time periods (holidays, vacations) for staff members."
       }
     },
+    "appointments.recurring.get": {
+      "permission": "appointments.view_appointment",
+      "sql": "queries/recurring_get.sql",
+      "ai": {
+        "description": "Retrieves one recurring appointment template by its identifier, with its three links and its full repetition rule, used by the materialize handler as its authoritative source (runtime reads)."
+      }
+    },
     "appointments.recurring.list": {
       "permission": "appointments.view_appointment",
       "sql": "queries/recurring_list.sql",
@@ -570,8 +577,42 @@
         "function": "bulk_create"
       },
       "ai": {
-        "description": "Creates multiple appointments in bulk from a list of appointment data."
-      }
+        "description": "Books several slots at once for the SAME customer, service and professional (a session pass, a course). The customer, service and professional are resolved against the hub's records: name, price and duration are frozen from the catalogue, never from the caller, and an id that does not resolve refuses the whole batch."
+      },
+      "reads": [
+        {
+          "query": "appointments.settings.get",
+          "required": true
+        },
+        {
+          "query": "customers.get",
+          "params": {
+            "customer_id": "payload.customer_id"
+          },
+          "required": true
+        },
+        {
+          "query": "services.services.get",
+          "params": {
+            "service_id": "payload.service_id"
+          },
+          "required": true
+        },
+        {
+          "query": "staff.members.get",
+          "params": {
+            "staff_id": "payload.staff_id"
+          },
+          "required": true
+        },
+        {
+          "query": "staff.services.eligible_for_service",
+          "params": {
+            "service_id": "payload.service_id"
+          },
+          "required": true
+        }
+      ]
     },
     "appointments.appointments.bulk_delete": {
       "permission": "appointments.delete_appointment",
@@ -594,8 +635,49 @@
         "function": "materialize_recurring"
       },
       "ai": {
-        "description": "Generates concrete appointment instances from a recurring appointment template."
-      }
+        "description": "Books the concrete appointments of a recurring template, named by its identifier. The repetition rule comes from the template row and the customer, service and professional are resolved against the hub's records; ids that do not match the template are refused."
+      },
+      "reads": [
+        {
+          "query": "appointments.recurring.get",
+          "params": {
+            "recurring_id": "payload.recurring_id"
+          },
+          "required": true
+        },
+        {
+          "query": "appointments.settings.get",
+          "required": true
+        },
+        {
+          "query": "customers.get",
+          "params": {
+            "customer_id": "payload.customer_id"
+          },
+          "required": true
+        },
+        {
+          "query": "services.services.get",
+          "params": {
+            "service_id": "payload.service_id"
+          },
+          "required": true
+        },
+        {
+          "query": "staff.members.get",
+          "params": {
+            "staff_id": "payload.staff_id"
+          },
+          "required": true
+        },
+        {
+          "query": "staff.services.eligible_for_service",
+          "params": {
+            "service_id": "payload.service_id"
+          },
+          "required": true
+        }
+      ]
     },
     "appointments._bump_counter": {
       "permission": "appointments.add_appointment",
