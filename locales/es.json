@@ -103,7 +103,7 @@
     "appointments.recurring_mismatch": "La cita recurrente no coincide con el cliente, el servicio o el profesional enviados; no se ha reservado nada.",
     "appointments.cannot_reschedule": "Esta cita ya no se puede mover en su estado actual.",
     "appointments.request_not_bound": "La petición se aprobó sin elegir cliente, servicio, profesional y hora, así que no había nada que reservar. Ábrela otra vez, elígelos y apruébala.",
-    "appointments.overlapping_appointment": "Ese profesional ya tiene una cita en esa franja. Abre otra vez la petición y elige otra hora u otro profesional.",
+    "appointments.overlapping_appointment": "Ese profesional ya tiene una cita en esa franja. Elige otra hora u otro profesional.",
     "appointments.booking_refused": "No se ha podido reservar la cita a partir de esa petición."
   }
 }

@@ -110,6 +110,43 @@ function erplora(): ErploraClientLike {
   return c;
 }
 
+/** The `errors` catalog of `locales/{en,es}.json`, resolved by the active language.
+ *
+ *  It is NOT reachable through `erplora().t()`: that helper splits the key on dots to walk the
+ *  catalog, and this module's `errors` block is FLAT — the whole namespaced code is ONE key
+ *  (`"appointments.too_soon"`), which is the shape its contract tests pin and four other modules
+ *  ship. So the lookup happens here, with the same fallback `locale → en → nothing`. */
+function catalogError(code: string): string {
+  for (const lang of [erplora().locale, 'en']) {
+    const dict = (CATALOG[lang] as { errors?: Record<string, string> } | undefined)?.errors;
+    const text = dict?.[code];
+    if (typeof text === 'string' && text) return text;
+  }
+  return '';
+}
+
+/** A business refusal (hub#139) travels as a stable `code` plus the handler's English fallback
+ *  sentence: paint the code's TRANSLATION, and keep the sentence for codes the catalog has not
+ *  learned yet — same idea as `customers` (`erp-customers-list.ts::domainErrorText`).
+ *
+ *  appointments#70: until the overlap got its own code, the refusal this screen shows most often
+ *  reached it as a Spanish sentence hard-coded in a Rust `format!` — untranslatable by
+ *  construction, and different from the sentence the WhatsApp inbox painted for the very same
+ *  refusal. Every refusal of the module is a code now, which is what turns the `errors` block from
+ *  decoration into the text the receptionist actually reads.
+ *
+ *  Only OUR codes: another module's (or the core's) is not in this catalog, and its own sentence
+ *  beats anything this one could invent for it. */
+function domainErrorText(e: unknown, fallbackKey: string): string {
+  const code = (e as { code?: unknown } | null)?.code;
+  const message = e instanceof Error ? e.message : '';
+  if (typeof code === 'string' && code.startsWith('appointments.')) {
+    const text = catalogError(code);
+    if (text) return text;
+  }
+  return message || erplora().t(CATALOG, fallbackKey);
+}
+
 function todayISO(): string {
   return new Date().toISOString().slice(0, 10);
 }
@@ -443,7 +480,7 @@ export class ErpAppointmentsList extends LitElement {
       this.dataTable()?.close(); // el panel del «+» taparía la tabla y la cita recién creada
       await this.refresh();
     } catch (e) {
-      this.error = e instanceof Error ? e.message : erplora().t(CATALOG, 'ui.errCreate');
+      this.error = domainErrorText(e, 'ui.errCreate');
     } finally {
       this.saving = false;
     }
@@ -495,7 +532,7 @@ export class ErpAppointmentsList extends LitElement {
       }
       await this.refresh();
     } catch (e) {
-      this.error = e instanceof Error ? e.message : erplora().t(CATALOG, 'ui.errAction');
+      this.error = domainErrorText(e, 'ui.errAction');
     }
   }
 
@@ -576,7 +613,7 @@ export class ErpAppointmentsList extends LitElement {
       // El solape lo rechaza el SERVIDOR (`_appointment_overlap_assert.sql`), y el festivo, la
       // antelación y el estado terminal los rechaza el handler con su código de dominio. El panel
       // se queda abierto con lo tecleado: la recepcionista elige otro hueco sin volver a empezar.
-      this.error = e instanceof Error ? e.message : erplora().t(CATALOG, 'ui.errReschedule');
+      this.error = domainErrorText(e, 'ui.errReschedule');
     } finally {
       this.saving = false;
     }

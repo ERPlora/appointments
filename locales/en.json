@@ -102,7 +102,7 @@
     "appointments.recurring_mismatch": "The recurring appointment does not match the customer, service or professional sent; nothing was booked.",
     "appointments.cannot_reschedule": "This appointment can no longer be moved in its current state.",
     "appointments.request_not_bound": "The request was approved without choosing a customer, a service, a professional and a time, so there was nothing to book. Open it again, pick them, and approve.",
-    "appointments.overlapping_appointment": "That professional already has an appointment in that slot. Open the request again and pick another time or another professional.",
+    "appointments.overlapping_appointment": "That professional already has an appointment in that slot. Pick another time or another professional.",
     "appointments.booking_refused": "The appointment could not be booked from that request."
   }
 }
