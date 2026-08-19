@@ -3774,7 +3774,14 @@ var es_default = {
   errors: {
     "appointments.cannot_cancel": "Esta cita ya no se puede cancelar en su estado actual.",
     "appointments.cancellation_notice_required": "Esta cita solo se puede cancelar online con la antelaci\xF3n requerida. Contacta con el negocio.",
-    "appointments.customer_cancellation_disabled": "La cancelaci\xF3n online no est\xE1 disponible. Contacta con el negocio."
+    "appointments.customer_cancellation_disabled": "La cancelaci\xF3n online no est\xE1 disponible. Contacta con el negocio.",
+    "appointments.catalog_unavailable": "No se pudo leer el cat\xE1logo de clientes, servicios o profesionales; la cita no se ha reservado.",
+    "appointments.customer_not_found": "Ese cliente no existe en este negocio.",
+    "appointments.service_not_found": "Ese servicio no existe en este negocio.",
+    "appointments.service_not_bookable": "Ese servicio no se puede reservar: est\xE1 inactivo o no es reservable.",
+    "appointments.staff_not_found": "Ese profesional no existe en este negocio.",
+    "appointments.staff_not_bookable": "Ese profesional no puede recibir citas: est\xE1 inactivo o no es reservable.",
+    "appointments.staff_not_eligible": "Ese profesional no realiza este servicio."
   }
 };
 
@@ -3841,7 +3848,14 @@ var en_default = {
   errors: {
     "appointments.cannot_cancel": "This appointment can no longer be cancelled in its current state.",
     "appointments.cancellation_notice_required": "This appointment can only be cancelled online with the required advance notice. Please contact the business.",
-    "appointments.customer_cancellation_disabled": "Online cancellation is not available. Please contact the business."
+    "appointments.customer_cancellation_disabled": "Online cancellation is not available. Please contact the business.",
+    "appointments.catalog_unavailable": "The customer, service or staff catalogue could not be read; the appointment was not booked.",
+    "appointments.customer_not_found": "That customer does not exist in this business.",
+    "appointments.service_not_found": "That service does not exist in this business.",
+    "appointments.service_not_bookable": "That service cannot be booked: it is inactive or not bookable.",
+    "appointments.staff_not_found": "That professional does not exist in this business.",
+    "appointments.staff_not_bookable": "That professional cannot take appointments: inactive or not bookable.",
+    "appointments.staff_not_eligible": "That professional does not perform this service."
   }
 };
 

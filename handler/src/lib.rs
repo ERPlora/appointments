@@ -9,15 +9,22 @@
 //! `context{hub_id, current_user_id, now, new_ids, reads}`. Since ADR-0069 the runtime
 //! PRE-LOADS the reads the manifest declares per command into `context.reads["<query>"]`,
 //! and those are authoritative:
-//!   - `appointments.settings.get`            — the settings singleton (`allow_overlapping`,
-//!                                              `default_duration`) — appointments#45.
-//!   - `appointments.appointments.conflicting` — live appointments that may overlap
-//!                                              (appointments#110).
+//!
+//! - `appointments.settings.get` — the settings singleton (`allow_overlapping`,
+//!   `default_duration`) — appointments#45.
+//! - `appointments.appointments.conflicting` — live appointments that may overlap
+//!   (appointments#110).
+//! - `customers.get` · `services.services.get` · `staff.members.get` ·
+//!   `staff.services.eligible_for_service` — the three links of a booking (appointments#11):
+//!   `create` freezes name/phone/email, service name/price/duration and the professional from
+//!   THESE rows; the payload's own names/prices are ignored and an id that does not resolve is
+//!   a domain refusal. Without these reads `create` refuses (never degrades to the payload).
+//!
 //! Commands that do not declare a read (bulk_create, materialize_recurring) still degrade to
-//! the caller-provided `payload.settings` / `payload.existing_appointments`; `service`
-//! (`{name, price}` from the public contract of the `services` module) always travels in the
-//! payload. Missing reads mean the handler cannot validate overlap and treats it as allowed
-//! (authoritative availability is `appointments.availability.*`).
+//! the caller-provided `payload.settings` / `payload.existing_appointments` / `service`
+//! (`{name, price}`); the runtime cannot resolve per-item reads for a batch yet. Missing reads
+//! mean the handler cannot validate overlap and treats it as allowed (authoritative
+//! availability is `appointments.availability.*`).
 //!
 //! Nº de cita `APT-YYYYMMDD-NNNN`: contador atómico por hub+día (patrón de
 //! `sales`): el handler emite `_bump_counter` (UPSERT) y `_insert_appointment`
@@ -405,14 +412,169 @@ fn default_duration(input: &Value) -> i64 {
         .unwrap_or(60)
 }
 
+// ───────────────────────────── the resolved booking (appointments#11) ─────────────────────────────
+
+/// The three links of a booking, RESOLVED against the hub's own records — the snapshot that is
+/// frozen into the appointment row. Built by [`resolve_booking`] from the reads the runtime
+/// pre-loads for `create` (ADR-0069): `customers.get`, `services.services.get`,
+/// `staff.members.get` and `staff.services.eligible_for_service`. Nothing in here comes from
+/// the payload except the ids that selected the rows.
+#[derive(Debug, Clone, PartialEq)]
+struct ResolvedBooking {
+    customer_id: String,
+    customer_name: String,
+    customer_phone: String,
+    customer_email: String,
+    service_id: String,
+    service_name: String,
+    /// Cents (ADR-0007). The per-professional `custom_price` wins over the catalogue price.
+    service_price: i64,
+    /// Minutes, when the catalogue (or the professional's override) declares one.
+    service_duration: Option<i64>,
+    staff_id: String,
+    staff_name: String,
+}
+
+/// One pre-loaded read as rows. `None` = the runtime did NOT deliver it (key absent), which for
+/// the catalogue reads is a refusal, never a fallback (sales#68 named that hole).
+fn read_rows<'a>(input: &'a Value, query: &str) -> Option<&'a Vec<Value>> {
+    input
+        .get("context")
+        .and_then(|c| c.get("reads"))
+        .and_then(|r| r.get(query))
+        .and_then(|v| v.as_array())
+}
+
+/// Resolves the customer, the service and the professional of `item` against the authoritative
+/// reads. `Ok(Err(refusal))` is a domain refusal (the runtime writes nothing and the UI
+/// translates the code); `Err(_)` is a caller/host bug.
+///
+/// Rules (market: Fresha / Square Appointments / Vagaro, staff#9):
+/// - the three ids must resolve **in this hub** (the reads are hub-scoped) → `*_not_found`;
+/// - the service must be active and bookable → `service_not_bookable`;
+/// - the professional must be `active` and `is_bookable` → `staff_not_bookable`;
+/// - when the service HAS declared competencies, the professional must be one of them
+///   (`staff_not_eligible`); when it has none, the hub has not narrowed it (every team member
+///   performs every service until told otherwise) and any bookable member is accepted;
+/// - price/duration: the professional's override, else the catalogue.
+fn resolve_booking(input: &Value, item: &Value) -> Result<Result<ResolvedBooking, DomainError>, String> {
+    let (Some(customers), Some(services), Some(members), Some(eligible)) = (
+        read_rows(input, "customers.get"),
+        read_rows(input, "services.services.get"),
+        read_rows(input, "staff.members.get"),
+        read_rows(input, "staff.services.eligible_for_service"),
+    ) else {
+        return Ok(Err(DomainError::new(
+            "appointments.catalog_unavailable",
+            "The customer, service or staff catalogue could not be read; the appointment was not booked.",
+        )));
+    };
+
+    let customer_id = str_or(item, "customer_id", "");
+    let service_id = str_or(item, "service_id", "");
+    let staff_id = str_or(item, "staff_id", "");
+    if customer_id.is_empty() || service_id.is_empty() || staff_id.is_empty() {
+        return Err("invalid_payload: customer_id, service_id and staff_id are required".to_string());
+    }
+
+    let same_id = |row: &&Value, key: &str, id: &str| as_str(row.get(key).unwrap_or(&Value::Null)) == id;
+
+    let Some(customer) = customers.iter().find(|r| same_id(r, "id", &customer_id)) else {
+        return Ok(Err(DomainError::new(
+            "appointments.customer_not_found",
+            "That customer does not exist in this business.",
+        )));
+    };
+    let Some(service) = services.iter().find(|r| same_id(r, "id", &service_id)) else {
+        return Ok(Err(DomainError::new(
+            "appointments.service_not_found",
+            "That service does not exist in this business.",
+        )));
+    };
+    let service_active = service.get("is_active").map(as_bool).unwrap_or(true);
+    let service_bookable = service.get("is_bookable").map(as_bool).unwrap_or(true);
+    if !service_active || !service_bookable {
+        return Ok(Err(DomainError::new(
+            "appointments.service_not_bookable",
+            "That service cannot be booked: it is inactive or not bookable.",
+        )));
+    }
+    let Some(member) = members.iter().find(|r| same_id(r, "id", &staff_id)) else {
+        return Ok(Err(DomainError::new(
+            "appointments.staff_not_found",
+            "That professional does not exist in this business.",
+        )));
+    };
+    let member_active = str_or(member, "status", "active") == "active";
+    let member_bookable = member.get("is_bookable").map(as_bool).unwrap_or(true);
+    if !member_active || !member_bookable {
+        return Ok(Err(DomainError::new(
+            "appointments.staff_not_bookable",
+            "That professional cannot take appointments: inactive or not bookable.",
+        )));
+    }
+    let competency = eligible.iter().find(|r| same_id(r, "staff_id", &staff_id));
+    if !eligible.is_empty() && competency.is_none() {
+        return Ok(Err(DomainError::new(
+            "appointments.staff_not_eligible",
+            "That professional does not perform this service.",
+        )));
+    }
+
+    let override_price = competency
+        .and_then(|c| c.get("custom_price"))
+        .filter(|v| !v.is_null())
+        .map(|v| money::from_json(v, 0));
+    let override_duration = competency
+        .and_then(|c| c.get("custom_duration"))
+        .filter(|v| !v.is_null())
+        .map(|v| as_i64(v, 0))
+        .filter(|d| *d >= 1);
+    let service_duration = service
+        .get("duration_minutes")
+        .filter(|v| !v.is_null())
+        .map(|v| as_i64(v, 0))
+        .filter(|d| *d >= 1);
+    let staff_name = {
+        let full = str_or(member, "full_name", "");
+        if full.is_empty() {
+            format!("{} {}", str_or(member, "first_name", ""), str_or(member, "last_name", ""))
+                .trim()
+                .to_string()
+        } else {
+            full
+        }
+    };
+
+    Ok(Ok(ResolvedBooking {
+        customer_id,
+        customer_name: str_or(customer, "name", ""),
+        customer_phone: str_or(customer, "phone", ""),
+        customer_email: str_or(customer, "email", ""),
+        service_id,
+        service_name: str_or(service, "name", ""),
+        service_price: override_price
+            .unwrap_or_else(|| money::from_json(service.get("price").unwrap_or(&Value::Null), 0)),
+        service_duration: override_duration.or(service_duration),
+        staff_id,
+        staff_name,
+    }))
+}
+
 // ───────────────────────────── núcleo: una cita → intenciones ─────────────────────────────
 
 /// Valida un ítem de cita y devuelve sus 3 intenciones (`_bump_counter` +
 /// `_insert_appointment` + `_insert_history`). Añade la cita aceptada a
 /// `candidates` para que el solape también se valide dentro del lote.
+///
+/// `resolved` (appointments#11) is the booking resolved against the hub's records: when given,
+/// customer/service/staff snapshot, price and default duration come from it and the item's own
+/// names/prices are ignored. `None` only for the callers without per-item reads
+/// (`bulk_create`, `materialize_recurring`), which still snapshot what the item says.
 #[allow(clippy::too_many_arguments)]
 fn prepare_appointment(
     item: &Value,
+    resolved: Option<&ResolvedBooking>,
     fallback_service: Option<&Value>,
     candidates: &mut Vec<Candidate>,
     allow_overlap: bool,
@@ -421,7 +583,10 @@ fn prepare_appointment(
     appointment_id: &str,
     history_description: &str,
 ) -> Result<Vec<Operation>, String> {
-    let customer_name = str_or(item, "customer_name", "");
+    let customer_name = match resolved {
+        Some(r) => r.customer_name.clone(),
+        None => str_or(item, "customer_name", ""),
+    };
     if customer_name.is_empty() {
         return Err("invalid_payload: customer_name es obligatorio".to_string());
     }
@@ -434,11 +599,14 @@ fn prepare_appointment(
         return Err("invalid_start: la cita no puede empezar en el pasado".to_string());
     }
 
+    // Duration: the caller's explicit choice (the receptionist may shorten/lengthen a booking),
+    // else the professional's override / the service's catalogue duration, else the module default.
+    let catalogue_dur = resolved.and_then(|r| r.service_duration).unwrap_or(default_dur);
     let duration = item
         .get("duration_minutes")
-        .map(|v| as_i64(v, default_dur))
+        .map(|v| as_i64(v, catalogue_dur))
         .filter(|d| *d >= 1)
-        .unwrap_or(default_dur);
+        .unwrap_or(catalogue_dur);
     let end = start.add_minutes(duration);
 
     if !allow_overlap {
@@ -455,19 +623,26 @@ fn prepare_appointment(
         }
     }
 
-    // Resolución de servicio: nombre/precio del ítem, con fallback a la lectura
-    // `service` {name, price} aportada por el caller (contrato público de `services`).
-    let mut service_name = str_or(item, "service_name", "");
-    // service_price en CÉNTIMOS (ADR-0007): del ítem o, si 0, del catálogo `services` (cents).
-    let mut service_price = money::from_json(item.get("service_price").unwrap_or(&Value::Null), 0);
-    if let Some(svc) = fallback_service {
-        if service_name.is_empty() {
-            service_name = str_or(svc, "name", "");
+    // Service snapshot. Resolved (appointments#11): the catalogue row decides name and price and
+    // the item's `service_name`/`service_price`/`service` are ignored. Unresolved callers
+    // (no per-item reads yet): the item's name/price, then the caller-provided `service` object.
+    let (service_name, service_price) = match resolved {
+        Some(r) => (r.service_name.clone(), r.service_price),
+        None => {
+            let mut name = str_or(item, "service_name", "");
+            // service_price en CÉNTIMOS (ADR-0007)
+            let mut price = money::from_json(item.get("service_price").unwrap_or(&Value::Null), 0);
+            if let Some(svc) = fallback_service {
+                if name.is_empty() {
+                    name = str_or(svc, "name", "");
+                }
+                if price == 0 {
+                    price = money::from_json(svc.get("price").unwrap_or(&Value::Null), 0);
+                }
+            }
+            (name, price)
         }
-        if service_price == 0 {
-            service_price = money::from_json(svc.get("price").unwrap_or(&Value::Null), 0);
-        }
-    }
+    };
 
     let day = now.day_key();
     let mut ops: Vec<Operation> = Vec::with_capacity(3);
@@ -479,13 +654,26 @@ fn prepare_appointment(
     let mut p = Map::new();
     p.insert("appointment_id".into(), json!(appointment_id));
     p.insert("day".into(), json!(day));
-    p.insert("customer_id".into(), item.get("customer_id").cloned().unwrap_or(Value::Null));
-    p.insert("customer_name".into(), json!(customer_name.clone()));
-    p.insert("customer_phone".into(), json!(str_or(item, "customer_phone", "")));
-    p.insert("customer_email".into(), json!(str_or(item, "customer_email", "")));
-    p.insert("staff_id".into(), item.get("staff_id").cloned().unwrap_or(Value::Null));
-    p.insert("staff_name".into(), json!(str_or(item, "staff_name", "")));
-    p.insert("service_id".into(), item.get("service_id").cloned().unwrap_or(Value::Null));
+    match resolved {
+        Some(r) => {
+            p.insert("customer_id".into(), json!(r.customer_id));
+            p.insert("customer_name".into(), json!(customer_name.clone()));
+            p.insert("customer_phone".into(), json!(r.customer_phone));
+            p.insert("customer_email".into(), json!(r.customer_email));
+            p.insert("staff_id".into(), json!(r.staff_id));
+            p.insert("staff_name".into(), json!(r.staff_name));
+            p.insert("service_id".into(), json!(r.service_id));
+        }
+        None => {
+            p.insert("customer_id".into(), item.get("customer_id").cloned().unwrap_or(Value::Null));
+            p.insert("customer_name".into(), json!(customer_name.clone()));
+            p.insert("customer_phone".into(), json!(str_or(item, "customer_phone", "")));
+            p.insert("customer_email".into(), json!(str_or(item, "customer_email", "")));
+            p.insert("staff_id".into(), item.get("staff_id").cloned().unwrap_or(Value::Null));
+            p.insert("staff_name".into(), json!(str_or(item, "staff_name", "")));
+            p.insert("service_id".into(), item.get("service_id").cloned().unwrap_or(Value::Null));
+        }
+    }
     p.insert("service_name".into(), json!(service_name.clone()));
     p.insert("service_price".into(), json!(service_price));
     p.insert("start_datetime".into(), json!(start.iso()));
@@ -641,6 +829,10 @@ pub fn cancel_appointment_pure(input: Value) -> Result<Output, String> {
 }
 
 /// `appointments.appointments.create` — WASM-TODO pieza 1.
+///
+/// appointments#11: the customer, the service and the professional are resolved against the
+/// hub's records (the reads the manifest declares) BEFORE anything else; an id that does not
+/// resolve is a domain refusal and nothing is written.
 pub fn create_appointment_pure(input: Value) -> Result<Output, String> {
     let payload = input.get("payload").cloned().unwrap_or(Value::Null);
     let ctx = host_ctx(&input)?;
@@ -650,10 +842,16 @@ pub fn create_appointment_pure(input: Value) -> Result<Output, String> {
         .cloned()
         .ok_or_else(|| "context.new_ids vacío (lo inyecta el host)".to_string())?;
 
+    let resolved = match resolve_booking(&input, &payload)? {
+        Ok(r) => r,
+        Err(refusal) => return Ok(Output::new().with_error(refusal)),
+    };
+
     let mut candidates = candidates_from(&input);
     let ops = prepare_appointment(
         &payload,
-        payload.get("service"),
+        Some(&resolved),
+        None,
         &mut candidates,
         allow_overlapping(&input),
         default_duration(&input),
@@ -697,6 +895,7 @@ pub fn bulk_create_pure(input: Value) -> Result<Output, String> {
         };
         match prepare_appointment(
             item,
+            None,
             payload.get("service"),
             &mut candidates,
             allow_overlap,
@@ -933,6 +1132,7 @@ pub fn materialize_recurring_pure(input: Value) -> Result<Output, String> {
         );
         match prepare_appointment(
             &item,
+            None,
             payload.get("service"),
             &mut candidates,
             allow_overlap,
@@ -971,23 +1171,264 @@ fn parse_hhmm(s: &str) -> Option<(i64, i64)> {
 mod tests {
     use super::*;
 
+    /// Builds the guest input. `reads` (when given) are MERGED over the trusted catalogues of
+    /// [`catalog_reads`], so every create test books against real records unless it removes
+    /// them on purpose (appointments#11: the catalogue is not optional any more).
     fn input(payload: Value, reads: Option<Value>) -> Value {
         let mut ctx = json!({ "now": "2026-07-31T10:00:00Z", "new_ids": ["apt-1"] });
-        if let Some(r) = reads {
-            ctx["reads"] = r;
+        let mut merged = catalog_reads();
+        if let Some(Value::Object(extra)) = reads {
+            for (k, v) in extra {
+                merged[k] = v;
+            }
         }
+        ctx["reads"] = merged;
         json!({ "payload": payload, "context": ctx })
+    }
+
+    /// The four AUTHORITATIVE reads the runtime pre-loads for `create` (appointments#11): the
+    /// customer row, the service row, the staff member row and the professionals eligible for
+    /// the service (staff#9). Ids match [`item`]: customer `c1`, service `s-corte`, staff `s1`.
+    fn catalog_reads() -> Value {
+        json!({
+            "customers.get": [
+                { "id": "c1", "name": "Ada Lovelace", "phone": "+34600000001",
+                  "email": "ada@example.com", "is_active": 1 }
+            ],
+            "services.services.get": [
+                { "id": "s-corte", "name": "Corte", "price": 2000, "duration_minutes": 30,
+                  "is_bookable": 1, "is_active": 1 }
+            ],
+            "staff.members.get": [
+                { "id": "s1", "full_name": "Bea Pro", "status": "active", "is_bookable": 1 }
+            ],
+            "staff.services.eligible_for_service": [
+                { "staff_id": "s1", "full_name": "Bea Pro", "custom_duration": null,
+                  "custom_price": null, "is_primary": 1 }
+            ]
+        })
     }
 
     fn item(start: &str, dur: i64, staff: &str) -> Value {
         json!({
+            "customer_id": "c1",
             "customer_name": "Ada",
+            "service_id": "s-corte",
             "start_datetime": start,
             "duration_minutes": dur,
             "staff_id": staff,
             "service_name": " Corte",
             "service_price": 2000
         })
+    }
+
+    fn insert_op(out: &Output) -> &Operation {
+        out.operations
+            .iter()
+            .find(|op| op.command.ends_with("_insert_appointment"))
+            .expect("insert operation")
+    }
+
+    fn domain_code(out: &Output) -> Option<String> {
+        out.error.as_ref().map(|e| e.code.clone())
+    }
+
+    // ── appointments#11 · the customer, the service and the professional are RESOLVED, not told ──
+    //
+    // The browser used to decide who the customer was, what service at what price, and which
+    // professional: `create` copied `customer_name` / `service_name` / `service_price` /
+    // `staff_name` from the payload (or from a `service` object the caller also provided). Since
+    // sales#68 fixed the same hole for the sale price, the rule is one: the runtime pre-loads the
+    // catalogue rows (`reads`, ADR-0069) and the SNAPSHOT is taken from the row. The payload's
+    // names and prices are, at most, a hint that is ignored.
+
+    #[test]
+    fn create_takes_the_service_snapshot_from_the_catalogue_read_not_the_payload() {
+        let mut payload = item("2026-07-31T11:00:00Z", 30, "s1");
+        payload["service_name"] = json!("Manipulated service");
+        payload["service_price"] = json!(1);
+        payload["service"] = json!({ "name": "Also manipulated", "price": 2 });
+        let out = create_appointment_pure(input(payload, None)).unwrap();
+        assert!(out.error.is_none(), "{:?}", out.error);
+        let insert = insert_op(&out);
+        assert_eq!(insert.params.get("service_id"), Some(&json!("s-corte")));
+        assert_eq!(insert.params.get("service_name"), Some(&json!("Corte")));
+        assert_eq!(insert.params.get("service_price"), Some(&json!(2000)));
+    }
+
+    #[test]
+    fn create_takes_the_customer_snapshot_from_the_read_not_the_payload() {
+        let mut payload = item("2026-07-31T11:00:00Z", 30, "s1");
+        payload["customer_name"] = json!("Somebody else");
+        payload["customer_phone"] = json!("+34999999999");
+        payload["customer_email"] = json!("x@y.z");
+        let out = create_appointment_pure(input(payload, None)).unwrap();
+        assert!(out.error.is_none(), "{:?}", out.error);
+        let insert = insert_op(&out);
+        assert_eq!(insert.params.get("customer_id"), Some(&json!("c1")));
+        assert_eq!(insert.params.get("customer_name"), Some(&json!("Ada Lovelace")));
+        assert_eq!(insert.params.get("customer_phone"), Some(&json!("+34600000001")));
+        assert_eq!(insert.params.get("customer_email"), Some(&json!("ada@example.com")));
+    }
+
+    #[test]
+    fn create_takes_the_staff_name_from_the_read_not_the_payload() {
+        let mut payload = item("2026-07-31T11:00:00Z", 30, "s1");
+        payload["staff_name"] = json!("Invented employee");
+        let out = create_appointment_pure(input(payload, None)).unwrap();
+        assert!(out.error.is_none(), "{:?}", out.error);
+        assert_eq!(insert_op(&out).params.get("staff_name"), Some(&json!("Bea Pro")));
+    }
+
+    /// The service duration comes from the catalogue when the caller does not choose one; the
+    /// caller may still shorten/lengthen a booking (Fresha/Square let the receptionist edit the
+    /// duration per booking), so an explicit `duration_minutes` is honoured.
+    #[test]
+    fn create_takes_the_duration_from_the_service_when_the_payload_omits_it() {
+        let mut payload = item("2026-07-31T11:00:00Z", 30, "s1");
+        payload.as_object_mut().unwrap().remove("duration_minutes");
+        let out = create_appointment_pure(input(payload, None)).unwrap();
+        assert!(out.error.is_none(), "{:?}", out.error);
+        assert_eq!(insert_op(&out).params.get("duration_minutes"), Some(&json!(30)));
+        let end = insert_op(&out).params.get("end_datetime").and_then(|v| v.as_str()).unwrap_or("");
+        assert!(end.starts_with("2026-07-31T11:30:00"), "end_datetime = {end}");
+    }
+
+    /// staff#9: the per-professional overrides (`custom_price` / `custom_duration`) are part of
+    /// the authoritative snapshot when the competency declares them.
+    #[test]
+    fn create_applies_the_per_professional_overrides_from_the_eligibility_read() {
+        let mut payload = item("2026-07-31T11:00:00Z", 30, "s1");
+        payload.as_object_mut().unwrap().remove("duration_minutes");
+        let reads = json!({ "staff.services.eligible_for_service": [
+            { "staff_id": "s1", "full_name": "Bea Pro", "custom_duration": 45,
+              "custom_price": 2500, "is_primary": 1 }
+        ]});
+        let out = create_appointment_pure(input(payload, Some(reads))).unwrap();
+        assert!(out.error.is_none(), "{:?}", out.error);
+        assert_eq!(insert_op(&out).params.get("service_price"), Some(&json!(2500)));
+        assert_eq!(insert_op(&out).params.get("duration_minutes"), Some(&json!(45)));
+    }
+
+    /// An id the read does not resolve (unknown, another hub, deleted) is a domain refusal, and
+    /// nothing is written — a `service_id=missing-service` row is exactly what the E2E found.
+    #[test]
+    fn create_refuses_a_service_the_hub_does_not_have() {
+        let out = create_appointment_pure(input(
+            item("2026-07-31T11:00:00Z", 30, "s1"),
+            Some(json!({ "services.services.get": [] })),
+        ))
+        .unwrap();
+        assert_eq!(domain_code(&out).as_deref(), Some("appointments.service_not_found"));
+        assert!(out.operations.is_empty());
+    }
+
+    #[test]
+    fn create_refuses_a_service_that_is_not_bookable_or_not_active() {
+        for (bookable, active) in [(0, 1), (1, 0)] {
+            let reads = json!({ "services.services.get": [
+                { "id": "s-corte", "name": "Corte", "price": 2000, "duration_minutes": 30,
+                  "is_bookable": bookable, "is_active": active }
+            ]});
+            let out =
+                create_appointment_pure(input(item("2026-07-31T11:00:00Z", 30, "s1"), Some(reads)))
+                    .unwrap();
+            assert_eq!(
+                domain_code(&out).as_deref(),
+                Some("appointments.service_not_bookable"),
+                "bookable={bookable} active={active}"
+            );
+            assert!(out.operations.is_empty());
+        }
+    }
+
+    #[test]
+    fn create_refuses_a_customer_the_hub_does_not_have() {
+        let out = create_appointment_pure(input(
+            item("2026-07-31T11:00:00Z", 30, "s1"),
+            Some(json!({ "customers.get": [] })),
+        ))
+        .unwrap();
+        assert_eq!(domain_code(&out).as_deref(), Some("appointments.customer_not_found"));
+        assert!(out.operations.is_empty());
+    }
+
+    #[test]
+    fn create_refuses_a_professional_the_hub_does_not_have() {
+        let out = create_appointment_pure(input(
+            item("2026-07-31T11:00:00Z", 30, "s1"),
+            Some(json!({ "staff.members.get": [] })),
+        ))
+        .unwrap();
+        assert_eq!(domain_code(&out).as_deref(), Some("appointments.staff_not_found"));
+        assert!(out.operations.is_empty());
+    }
+
+    #[test]
+    fn create_refuses_a_professional_who_is_inactive_or_not_bookable() {
+        for (status, bookable) in [("terminated", 1), ("active", 0)] {
+            let reads = json!({ "staff.members.get": [
+                { "id": "s1", "full_name": "Bea Pro", "status": status, "is_bookable": bookable }
+            ]});
+            let out =
+                create_appointment_pure(input(item("2026-07-31T11:00:00Z", 30, "s1"), Some(reads)))
+                    .unwrap();
+            assert_eq!(
+                domain_code(&out).as_deref(),
+                Some("appointments.staff_not_bookable"),
+                "status={status} bookable={bookable}"
+            );
+            assert!(out.operations.is_empty());
+        }
+    }
+
+    /// staff#9: when the service HAS declared competencies, only those professionals may take
+    /// it. When it has none, the hub has not narrowed it (Fresha/Square default: every team member
+    /// performs every service until told otherwise) and any bookable member is accepted.
+    #[test]
+    fn create_refuses_a_professional_not_eligible_for_a_service_with_competencies() {
+        let reads = json!({ "staff.services.eligible_for_service": [
+            { "staff_id": "s2", "full_name": "Other Pro", "custom_duration": null,
+              "custom_price": null, "is_primary": 1 }
+        ]});
+        let out = create_appointment_pure(input(item("2026-07-31T11:00:00Z", 30, "s1"), Some(reads)))
+            .unwrap();
+        assert_eq!(domain_code(&out).as_deref(), Some("appointments.staff_not_eligible"));
+        assert!(out.operations.is_empty());
+    }
+
+    #[test]
+    fn create_accepts_any_bookable_professional_when_the_service_has_no_competencies() {
+        let out = create_appointment_pure(input(
+            item("2026-07-31T11:00:00Z", 30, "s1"),
+            Some(json!({ "staff.services.eligible_for_service": [] })),
+        ))
+        .unwrap();
+        assert!(out.error.is_none(), "{:?}", out.error);
+        assert_eq!(insert_op(&out).params.get("staff_name"), Some(&json!("Bea Pro")));
+    }
+
+    /// The hole sales#68 named: when the runtime does not deliver the catalogue, `create` must
+    /// NOT degrade to the payload — that is the very path this fixes. The manifest marks the reads
+    /// `required` (the runtime aborts before the handler runs); this is the belt to those braces.
+    #[test]
+    fn create_without_the_catalogue_reads_is_refused_never_degraded_to_the_payload() {
+        for missing in [
+            "customers.get",
+            "services.services.get",
+            "staff.members.get",
+            "staff.services.eligible_for_service",
+        ] {
+            let mut inp = input(item("2026-07-31T11:00:00Z", 30, "s1"), None);
+            inp["context"]["reads"].as_object_mut().unwrap().remove(missing);
+            let out = create_appointment_pure(inp).unwrap();
+            assert_eq!(
+                domain_code(&out).as_deref(),
+                Some("appointments.catalog_unavailable"),
+                "missing read {missing}"
+            );
+            assert!(out.operations.is_empty(), "missing read {missing}");
+        }
     }
 
     /// appointments#110: la read autoritativa (context.reads) debe detectar el solape incluso
@@ -1019,17 +1460,18 @@ mod tests {
         assert!(create_appointment_pure(inp).is_ok());
     }
 
-    /// appointments#110: sin `context.reads` (manifest viejo / read caída) → fallback al
-    /// `payload.existing_appointments` del caller (comportamiento histórico no se rompe).
+    /// appointments#110: without the `conflicting` read (query down, graceful read omitted) the
+    /// overlap check falls back to the caller's `payload.existing_appointments`. The catalogue
+    /// reads are NOT part of that fallback (appointments#11): they stay in place here.
     #[test]
-    fn create_falls_back_to_payload_existing_appointments_without_reads() {
+    fn create_falls_back_to_payload_existing_appointments_without_the_conflicting_read() {
         let mut payload = item("2026-07-31T10:15:00Z", 30, "s1");
         payload["existing_appointments"] = json!([
             { "appointment_number": "APT-1", "staff_id": "s1",
               "start_datetime": "2026-07-31T10:00:00Z", "end_datetime": "2026-07-31T10:30:00Z",
               "status": "confirmed" }
         ]);
-        let inp = input(payload, None); // sin reads → usa el payload
+        let inp = input(payload, None); // catalogues only, no `conflicting` read → payload
         let err = create_appointment_pure(inp).unwrap_err();
         assert!(err.starts_with("overlap:"), "fallback no detectó solape: {err}");
     }
@@ -1068,12 +1510,19 @@ mod tests {
     }
 
     /// appointments#45: `default_duration` also comes from the settings read (45 here, not the
-    /// hardcoded 60) when the item declares no duration.
+    /// hardcoded 60) when neither the item nor the catalogue declares a duration. Since
+    /// appointments#11 the service's own `duration_minutes` sits between the two, so the service
+    /// here declares none.
     #[test]
     fn create_takes_default_duration_from_settings_read() {
         let mut it = item("2026-07-31T11:00:00Z", 30, "s1");
         it.as_object_mut().unwrap().remove("duration_minutes");
-        let out = create_appointment_pure(input(it, Some(overlapping_reads(json!(0))))).unwrap();
+        let mut reads = overlapping_reads(json!(0));
+        reads["services.services.get"] = json!([
+            { "id": "s-corte", "name": "Corte", "price": 2000, "duration_minutes": null,
+              "is_bookable": 1, "is_active": 1 }
+        ]);
+        let out = create_appointment_pure(input(it, Some(reads))).unwrap();
         let insert = out
             .operations
             .iter()
