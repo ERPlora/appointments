@@ -1986,7 +1986,7 @@ var es_default = {
     "appointments.recurring_mismatch": "La cita recurrente no coincide con el cliente, el servicio o el profesional enviados; no se ha reservado nada.",
     "appointments.cannot_reschedule": "Esta cita ya no se puede mover en su estado actual.",
     "appointments.request_not_bound": "La petici\xF3n se aprob\xF3 sin elegir cliente, servicio, profesional y hora, as\xED que no hab\xEDa nada que reservar. \xC1brela otra vez, el\xEDgelos y apru\xE9bala.",
-    "appointments.overlapping_appointment": "Ese profesional ya tiene una cita en esa franja. Abre otra vez la petici\xF3n y elige otra hora u otro profesional.",
+    "appointments.overlapping_appointment": "Ese profesional ya tiene una cita en esa franja. Elige otra hora u otro profesional.",
     "appointments.booking_refused": "No se ha podido reservar la cita a partir de esa petici\xF3n."
   }
 };
@@ -2096,7 +2096,7 @@ var en_default = {
     "appointments.recurring_mismatch": "The recurring appointment does not match the customer, service or professional sent; nothing was booked.",
     "appointments.cannot_reschedule": "This appointment can no longer be moved in its current state.",
     "appointments.request_not_bound": "The request was approved without choosing a customer, a service, a professional and a time, so there was nothing to book. Open it again, pick them, and approve.",
-    "appointments.overlapping_appointment": "That professional already has an appointment in that slot. Open the request again and pick another time or another professional.",
+    "appointments.overlapping_appointment": "That professional already has an appointment in that slot. Pick another time or another professional.",
     "appointments.booking_refused": "The appointment could not be booked from that request."
   }
 };
@@ -4343,6 +4343,23 @@ function erplora2() {
   if (!c5) throw new Error("erplora SDK no inicializado por el shell");
   return c5;
 }
+function catalogError(code) {
+  for (const lang of [erplora2().locale, "en"]) {
+    const dict = CATALOG2[lang]?.errors;
+    const text = dict?.[code];
+    if (typeof text === "string" && text) return text;
+  }
+  return "";
+}
+function domainErrorText(e5, fallbackKey) {
+  const code = e5?.code;
+  const message = e5 instanceof Error ? e5.message : "";
+  if (typeof code === "string" && code.startsWith("appointments.")) {
+    const text = catalogError(code);
+    if (text) return text;
+  }
+  return message || erplora2().t(CATALOG2, fallbackKey);
+}
 function todayISO() {
   return (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
 }
@@ -4615,7 +4632,7 @@ var ErpAppointmentsList = class extends i3 {
       this.dataTable()?.close();
       await this.refresh();
     } catch (e5) {
-      this.error = e5 instanceof Error ? e5.message : erplora2().t(CATALOG2, "ui.errCreate");
+      this.error = domainErrorText(e5, "ui.errCreate");
     } finally {
       this.saving = false;
     }
@@ -4667,7 +4684,7 @@ var ErpAppointmentsList = class extends i3 {
       }
       await this.refresh();
     } catch (e5) {
-      this.error = e5 instanceof Error ? e5.message : erplora2().t(CATALOG2, "ui.errAction");
+      this.error = domainErrorText(e5, "ui.errAction");
     }
   }
   /** Abre el panel en modo ALTA, limpiando cualquier reprogramación a medias.
@@ -4740,7 +4757,7 @@ var ErpAppointmentsList = class extends i3 {
       this.dataTable()?.close();
       await this.refresh();
     } catch (e5) {
-      this.error = e5 instanceof Error ? e5.message : erplora2().t(CATALOG2, "ui.errReschedule");
+      this.error = domainErrorText(e5, "ui.errReschedule");
     } finally {
       this.saving = false;
     }

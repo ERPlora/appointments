@@ -531,6 +531,29 @@ fn blocked_refusal(input: &Value, staff_id: &str, start: &Dt, end: &Dt) -> Optio
     ))
 }
 
+/// Double booking: the professional already has an appointment across this slot.
+///
+/// appointments#70 — this is the most frequent refusal of the whole module and, until that issue,
+/// the ONLY one without a stable code: it left `create` as `Err("overlap: …")`, which made every
+/// consumer sniff the prefix to name it (the WhatsApp listener of appointments#38 did exactly
+/// that) and made a rewrite of this `format!` silently change the error the inbox displays.
+///
+/// The authoritative gate does NOT move: it stays in the SQL of the command's own transaction
+/// (`_appointment_overlap_assert`, appointments#20), because a handler decides from a read and the
+/// race only closes server-side. This is the pre-check in front of it — and a pre-check that
+/// refuses is a refusal like any other, not a fault.
+fn overlap_refusal(c: &Candidate) -> DomainError {
+    DomainError::new(
+        "appointments.overlapping_appointment",
+        &format!(
+            "That professional already has an appointment in that slot: {} ({} – {}).",
+            c.label,
+            c.start.iso(),
+            c.end.iso()
+        ),
+    )
+}
+
 // ───────────────────────────── the resolved booking (appointments#11) ─────────────────────────────
 
 /// The three links of a booking, RESOLVED against the hub's own records — the snapshot that is
@@ -780,12 +803,7 @@ fn prepare_appointment(
             .iter()
             .find(|c| cmp_secs(&c.start, &end) < 0 && cmp_secs(&c.end, &start) > 0)
         {
-            return Err(PrepareError::Invalid(format!(
-                "overlap: se solapa con la cita {} ({} – {})",
-                c.label,
-                c.start.iso(),
-                c.end.iso()
-            )));
+            return Err(PrepareError::Domain(overlap_refusal(c)));
         }
     }
 
@@ -1066,12 +1084,7 @@ pub fn reschedule_appointment_pure(input: Value) -> Result<Output, String> {
             .iter()
             .find(|c| cmp_secs(&c.start, &end) < 0 && cmp_secs(&c.end, &start) > 0)
         {
-            return Err(format!(
-                "overlap: se solapa con la cita {} ({} – {})",
-                c.label,
-                c.start.iso(),
-                c.end.iso()
-            ));
+            return Ok(Output::new().with_error(overlap_refusal(c)));
         }
     }
 
@@ -1250,23 +1263,14 @@ pub fn book_from_request_pure(input: Value) -> Result<Output, String> {
 
     let booked = match create_appointment_pure(input) {
         Ok(out) => out,
-        // `create` still answers ONE of its refusals as a plain `Err`, and it is the one this
-        // listener meets most: the overlap. It is classified `PrepareError::Invalid` rather than
-        // `Domain` because appointments#20 left the authoritative gate in the SQL
-        // (`_appointment_overlap_assert`) and this is the pre-check in front of it. Inside a
-        // listener that distinction is fatal — an `Err` aborts the command and dead-letters the
-        // row — so here every refusal `create` can produce is answered, not retried. The prefix
-        // is the one its own test pins (`create_rejects_overlap_from_context_reads`), and naming
-        // it matters: «that slot is taken» is what the inbox has to say, and «hours passed
-        // between the message and the approval» is the normal case, not the edge case.
-        Err(detail) if detail.starts_with("overlap:") => {
-            return Ok(booking_refused(
-                &request_id,
-                "appointments.overlapping_appointment",
-                "That professional already has an appointment in that slot. \
-                 Open the request again and pick another time or another professional.",
-            ));
-        }
+        // What is left here is NOT a business refusal any more: appointments#70 gave the overlap —
+        // the refusal this listener meets most, because hours pass between the message and the
+        // approval — its own domain code, so it now arrives below as `booked.error` like every
+        // other «no» of the module. This arm is the malformed-item case (a start date that will
+        // not parse, an empty customer name), and it is still answered rather than retried: inside
+        // a listener an `Err` aborts the command, the relay retries it eight times over an hour
+        // and drops the row into the dead-letter, so the inbox waiting for an answer never gets
+        // one.
         Err(detail) => {
             return Ok(booking_refused(
                 &request_id,
@@ -1278,6 +1282,9 @@ pub fn book_from_request_pure(input: Value) -> Result<Output, String> {
     if let Some(refusal) = booked.error {
         // The refusal `create` produced, forwarded WHOLE: the code so a screen can act on it, and
         // the sentence so the inbox can paint the real reason instead of «something went wrong».
+        // Since appointments#70 the overlap comes through HERE, with the same
+        // `appointments.overlapping_appointment` the inbox already showed — no prefix to sniff, no
+        // `format!` in `prepare_appointment` that can rename the error behind this module's back.
         return Ok(booking_refused(&request_id, &refusal.code, &refusal.message));
     }
 
@@ -1995,6 +2002,9 @@ mod tests {
 
     /// appointments#110: la read autoritativa (context.reads) debe detectar el solape incluso
     /// cuando el caller NO aporta `existing_appointments`. Antes no había read y el solape pasaba.
+    ///
+    /// appointments#70: y el rechazo sale como los demás — un `DomainError` con código estable —
+    /// no como un `Err(String)` cuyo prefijo haya que olfatear.
     #[test]
     fn create_rejects_overlap_from_context_reads() {
         // Cita existente 10:00–10:30 (la trae la read autoritativa del runtime).
@@ -2005,8 +2015,42 @@ mod tests {
         ]});
         // Misma franja 10:15–10:45, mismo staff → debe solapar y rechazar.
         let inp = input(item("2026-07-31T10:15:00Z", 30, "s1"), Some(reads));
-        let err = create_appointment_pure(inp).unwrap_err();
-        assert!(err.starts_with("overlap:"), "esperaba rechazo overlap, llegó: {err}");
+        let out = create_appointment_pure(inp).expect("an overlap is a refusal, not a command fault");
+        assert_eq!(
+            domain_code(&out).as_deref(),
+            Some("appointments.overlapping_appointment")
+        );
+        assert!(out.operations.is_empty(), "a refusal writes nothing");
+    }
+
+    /// appointments#70 — the point of the issue, from the consumer's side.
+    ///
+    /// The overlap is the most frequent refusal of all, and it was the only one WITHOUT a stable
+    /// code: it left `create` as `Err("overlap: …")`, so `_book_from_request` had to sniff the
+    /// prefix to name it. This pins the two halves of the contract that made the sniffing
+    /// unnecessary: the refusal is carried, not thrown, and the message names the clashing
+    /// appointment so a screen can say WHICH one.
+    #[test]
+    fn the_overlap_refusal_names_the_appointment_it_clashes_with() {
+        let reads = json!({ "appointments.appointments.conflicting": [
+            { "id": "apt-x", "appointment_number": "APT-1", "staff_id": "s1",
+              "start_datetime": "2026-07-31T10:00:00Z", "end_datetime": "2026-07-31T10:30:00Z",
+              "status": "confirmed" }
+        ]});
+        let inp = input(item("2026-07-31T10:15:00Z", 30, "s1"), Some(reads));
+        let out = create_appointment_pure(inp).unwrap();
+        let refusal = out.error.expect("a domain refusal");
+        assert_eq!(refusal.code, "appointments.overlapping_appointment");
+        assert!(
+            refusal.message.contains("APT-1"),
+            "the sentence has to name the clash: {}",
+            refusal.message
+        );
+        assert!(
+            !refusal.message.starts_with("overlap:"),
+            "the code replaced the prefix, it does not travel inside the sentence: {}",
+            refusal.message
+        );
     }
 
     /// appointments#110: sin solape en la read autoritativa → se crea sin error.
@@ -2069,8 +2113,12 @@ mod tests {
         let mut payload = item("2026-07-31T10:15:00Z", 30, "s1");
         payload["settings"] = json!({ "allow_overlapping": true });
         let inp = input(payload, Some(overlapping_reads(json!(0))));
-        let err = create_appointment_pure(inp).unwrap_err();
-        assert!(err.starts_with("overlap:"), "payload.settings overrode the table: {err}");
+        let out = create_appointment_pure(inp).unwrap();
+        assert_eq!(
+            domain_code(&out).as_deref(),
+            Some("appointments.overlapping_appointment"),
+            "payload.settings overrode the table"
+        );
     }
 
     /// appointments#45: the table (INTEGER 1) allows overlapping → the same booking is accepted.
@@ -2351,10 +2399,11 @@ mod tests {
               "status": "confirmed" }
         ]);
 
-        let err = create_appointment_pure(inp).unwrap_err();
-        assert!(
-            err.starts_with("overlap:"),
-            "the caller opened the gate from the payload: {err}"
+        let out = create_appointment_pure(inp).unwrap();
+        assert_eq!(
+            domain_code(&out).as_deref(),
+            Some("appointments.overlapping_appointment"),
+            "the caller opened the gate from the payload"
         );
     }
 
@@ -2799,6 +2848,10 @@ mod tests {
 
     /// The overlap candidates come from the professional's own upcoming appointments, read by the
     /// runtime — not from an `existing_appointments` array the caller assembled.
+    ///
+    /// appointments#70: and now that the overlap is a DOMAIN refusal, the batch stops with the
+    /// code — the same rule the batch already applied to every other refusal of the hub (a
+    /// five-session pass that silently books four is a worse answer than a named «no»).
     #[test]
     fn bulk_create_detects_overlap_from_the_authoritative_read() {
         let reads = json!({ "appointments.appointments.upcoming_for_staff": [
@@ -2806,9 +2859,13 @@ mod tests {
               "start_datetime": "2026-08-03T11:15:00Z", "end_datetime": "2026-08-03T11:45:00Z" }
         ]});
         let out =
-            bulk_create_pure(batch_input(batch(json!([slot("2026-08-03T11:00:00Z")])), Some(reads)));
-        let err = out.unwrap_err();
-        assert!(err.contains("overlap"), "{err}");
+            bulk_create_pure(batch_input(batch(json!([slot("2026-08-03T11:00:00Z")])), Some(reads)))
+                .expect("an overlap is a refusal, not a command fault");
+        assert_eq!(
+            domain_code(&out).as_deref(),
+            Some("appointments.overlapping_appointment")
+        );
+        assert!(out.operations.is_empty(), "a refused batch writes nothing");
     }
 
     /// A series skips the occurrences it cannot book and materializes the rest — the behaviour it
@@ -3025,13 +3082,20 @@ mod tests {
             { "id": "a9", "appointment_number": "APT-9", "staff_id": "s1", "status": "confirmed",
               "start_datetime": "2026-07-31T15:15:00Z", "end_datetime": "2026-07-31T16:00:00Z" }
         ]});
-        let err = reschedule_appointment_pure(reschedule_input(
+        let out = reschedule_appointment_pure(reschedule_input(
             move_to("2026-07-31T15:00:00Z", Some(45)),
             booked_row("2026-07-31T11:00:00Z", 60, "confirmed"),
             Some(reads),
         ))
-        .unwrap_err();
-        assert!(err.contains("overlap"), "{err}");
+        // appointments#70: moving an appointment onto a taken slot is the same refusal `create`
+        // gives, and it answers the same way — leaving it as an `Err` here would have kept the
+        // second sniffable prefix alive right next to the one the issue removed.
+        .expect("an overlap is a refusal, not a command fault");
+        assert_eq!(
+            domain_code(&out).as_deref(),
+            Some("appointments.overlapping_appointment")
+        );
+        assert!(out.operations.is_empty(), "a refusal moves nothing");
     }
 
     /// The handler decides with a read and the row is written afterwards, so the check-then-insert
@@ -3082,8 +3146,11 @@ mod tests {
             { "id": "a9", "appointment_number": "APT-9", "staff_id": "s1", "status": "confirmed",
               "start_datetime": "2026-07-31T11:15:00Z", "end_datetime": "2026-07-31T12:00:00Z" }
         ]);
-        let err = create_appointment_pure(inp).unwrap_err();
-        assert!(err.contains("overlap"), "{err}");
+        let out = create_appointment_pure(inp).unwrap();
+        assert_eq!(
+            domain_code(&out).as_deref(),
+            Some("appointments.overlapping_appointment")
+        );
     }
 
     // ── appointments#15 · una serie es TRAZABLE e IDEMPOTENTE ──
