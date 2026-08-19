@@ -82,7 +82,8 @@
       "migrations/postgres/001_init.sql",
       "migrations/postgres/002_counter.sql",
       "migrations/postgres/003_gate.sql",
-      "migrations/postgres/004_converted_sale.sql"
+      "migrations/postgres/004_converted_sale.sql",
+      "migrations/postgres/005_recurring_occurrence.sql"
     ]
   },
   "queries": {
@@ -236,6 +237,13 @@
       "sql": "queries/recurring_get.sql",
       "ai": {
         "description": "Retrieves one recurring appointment template by its identifier, with its three links and its full repetition rule, used by the materialize handler as its authoritative source (runtime reads)."
+      }
+    },
+    "appointments.recurring.occurrences": {
+      "permission": "appointments.view_appointment",
+      "sql": "queries/recurring_occurrences.sql",
+      "ai": {
+        "description": "Lists the occurrences of one recurring appointment that are already on the books (cancelled ones included, since a cancelled occurrence is an exception of the series), used by the materialize handler to never book the same occurrence twice (runtime reads)."
       }
     },
     "appointments.recurring.list": {
@@ -712,6 +720,13 @@
       "reads": [
         {
           "query": "appointments.recurring.get",
+          "params": {
+            "recurring_id": "payload.recurring_id"
+          },
+          "required": true
+        },
+        {
+          "query": "appointments.recurring.occurrences",
           "params": {
             "recurring_id": "payload.recurring_id"
           },
