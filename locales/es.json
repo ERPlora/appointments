@@ -86,6 +86,7 @@
     "appointments.recurring_unavailable": "No se pudo leer la cita recurrente; no se ha reservado nada.",
     "appointments.recurring_not_found": "Esa cita recurrente no existe en este negocio.",
     "appointments.recurring_inactive": "Esa cita recurrente está desactivada; actívala para reservar sus ocurrencias.",
-    "appointments.recurring_mismatch": "La cita recurrente no coincide con el cliente, el servicio o el profesional enviados; no se ha reservado nada."
+    "appointments.recurring_mismatch": "La cita recurrente no coincide con el cliente, el servicio o el profesional enviados; no se ha reservado nada.",
+    "appointments.cannot_reschedule": "Esta cita ya no se puede mover en su estado actual."
   }
 }

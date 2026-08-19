@@ -98,7 +98,8 @@ const STATUS_COLORS: Record<string, string> = {
 /** Carril del timeline para las citas SIN profesional asignado (filas heredadas). */
 const UNASSIGNED = 'unassigned';
 
-/** Estados que `appointments.appointments.reschedule` acepta (`_reschedule_state_assert.sql`).
+/** Estados que `appointments.appointments.reschedule` acepta (el handler los comprueba contra
+ *  la fila leída, y `_reschedule_state_assert.sql` cierra la carrera dentro de la transacción).
  *  La barra pinta la acción DESHABILITADA fuera de estos: el command ya lo rechaza, pero un botón
  *  que se puede pulsar y siempre falla es peor que uno gris. */
 const RESCHEDULABLE = ['pending', 'confirmed'];
@@ -290,7 +291,7 @@ export class ErpAppointmentsList extends LitElement {
       // crearla de nuevo — la cita perdía su número, su identidad y su historial, y a la clienta
       // le quedaba en la ficha una cancelación que nunca pidió. El command ya existía.
       //
-      // Fuera de pending|confirmed se pinta gris: es lo que acepta `_reschedule_state_assert.sql`.
+      // Fuera de pending|confirmed se pinta gris: es lo que acepta el handler de `reschedule`.
       {
         id: 'reschedule', label: t('ui.actionReschedule'), icon: 'calendar-outline', color: 'primary',
         disabled: (row: Record<string, unknown>) => !RESCHEDULABLE.includes(String(row.status)),
@@ -543,14 +544,17 @@ export class ErpAppointmentsList extends LitElement {
     if (row) await this.openReschedule(row as unknown as Record<string, unknown>);
   }
 
-  /** Mueve la cita. Solo viajan las cuatro claves del esquema
+  /** Mueve la cita. Solo viajan las TRES claves del esquema
    *  (`schemas/appointment_reschedule.json` es `additionalProperties: false`: una clave de más
    *  y el payload entero se rechaza).
    *
-   *  El profesional NO se cambia aquí: `reschedule` es SQL Tier 0 y mandarle un `staff_id` +
-   *  `staff_name` desde el navegador devolvería la identidad del profesional al llamante, que es
-   *  justo lo que appointments#11 le quitó al alta. Cambiar de profesional entra cuando
-   *  `reschedule` pase a resolver por `reads` (appointments#10/#13). */
+   *  `end_datetime` ya NO se manda (appointments#10): el fin es aritmética —inicio + duración— y
+   *  la hace el handler. Mandarlo desde aquí era una segunda opinión que podía no cuadrar con la
+   *  duración, y nadie podía explicar la fila resultante.
+   *
+   *  El profesional NO se cambia aquí: mandarle un `staff_id` desde el navegador devolvería la
+   *  identidad del profesional al llamante, que es justo lo que appointments#11 le quitó al alta.
+   *  El handler lo lee de la fila de la cita. Cambiar de profesional es trabajo aparte. */
   private async submitReschedule(ev: Event) {
     ev.preventDefault();
     if (!this.rescheduleId || !this.rescheduleStart) return;
@@ -563,15 +567,15 @@ export class ErpAppointmentsList extends LitElement {
       await erplora().command('appointments.appointments.reschedule', {
         appointment_id: this.rescheduleId,
         start_datetime: start.toISOString(),
-        end_datetime: new Date(start.getTime() + minutes * 60_000).toISOString(),
         duration_minutes: minutes,
       });
       this.clearReschedule();
       this.dataTable()?.close();
       await this.refresh();
     } catch (e) {
-      // El solape lo rechaza el SERVIDOR (`_appointment_overlap_assert.sql`). El panel se queda
-      // abierto con lo tecleado: la recepcionista elige otro hueco sin volver a empezar.
+      // El solape lo rechaza el SERVIDOR (`_appointment_overlap_assert.sql`), y el festivo, la
+      // antelación y el estado terminal los rechaza el handler con su código de dominio. El panel
+      // se queda abierto con lo tecleado: la recepcionista elige otro hueco sin volver a empezar.
       this.error = e instanceof Error ? e.message : erplora().t(CATALOG, 'ui.errReschedule');
     } finally {
       this.saving = false;

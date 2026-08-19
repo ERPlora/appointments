@@ -329,7 +329,21 @@
       "permission": "appointments.view_schedule",
       "sql": "queries/blocked_times_overlapping.sql",
       "ai": {
-        "description": "Loads the agenda's blocked periods (holidays, closures, a professional's block) that may cover the requested day, used by the create handler to refuse a booking on blocked time authoritatively (runtime reads)."
+        "description": "Loads the agenda's blocked periods (holidays, closures, a professional's block) that may cover the requested day, used by the create and reschedule handlers to refuse a booking on blocked time authoritatively (runtime reads)."
+      }
+    },
+    "appointments.blocked_times.upcoming": {
+      "permission": "appointments.view_schedule",
+      "sql": "queries/blocked_times_upcoming.sql",
+      "ai": {
+        "description": "Loads every blocked period of the agenda that has not ended yet, used by the batch and recurring handlers, which book across several days and cannot ask for the blocks of one day (runtime reads)."
+      }
+    },
+    "appointments.appointments.upcoming_for_staff": {
+      "permission": "appointments.view_appointment",
+      "sql": "queries/appointments_upcoming_for_staff.sql",
+      "ai": {
+        "description": "Loads a professional's live appointments that have not ended yet, used by the batch and recurring handlers to detect overlapping bookings across several days authoritatively (runtime reads)."
       }
     }
   },
@@ -354,7 +368,8 @@
           "params": {
             "staff_id": "payload.staff_id",
             "start_datetime": "payload.start_datetime"
-          }
+          },
+          "required": true
         },
         {
           "query": "appointments.settings.get",
@@ -539,20 +554,66 @@
     },
     "appointments.appointments.reschedule": {
       "permission": "appointments.change_appointment",
-      "transaction": true,
-      "sql": [
-        "commands/_reschedule_state_assert.sql",
-        "commands/appointment_reschedule.sql",
-        "commands/_appointment_overlap_assert.sql",
-        "commands/_history_reschedule.sql"
-      ],
       "schema": "schemas/appointment_reschedule.json",
+      "handler": {
+        "type": "wasm",
+        "file": "dist/handler.wasm",
+        "function": "reschedule_appointment"
+      },
       "emit": [
         "appointments.appointment.rescheduled"
       ],
       "ai": {
-        "description": "Reschedules an appointment to a new date and time."
-      }
+        "description": "Moves an appointment to another date and time. The end of the slot is computed from the start and the duration, and the move is refused when it lands on a blocked period or breaks the hub's minimum notice or maximum advance. The professional is the appointment's own; this command does not change it."
+      },
+      "reads": [
+        {
+          "query": "appointments.appointments.get",
+          "params": {
+            "appointment_id": "payload.appointment_id"
+          },
+          "required": true
+        },
+        {
+          "query": "appointments.settings.get",
+          "required": true
+        },
+        {
+          "query": "appointments.appointments.conflicting",
+          "params": {
+            "start_datetime": "payload.start_datetime"
+          },
+          "required": true
+        },
+        {
+          "query": "appointments.blocked_times.upcoming",
+          "required": true
+        }
+      ]
+    },
+    "appointments._reschedule_state_assert": {
+      "permission": "appointments.change_appointment",
+      "sql": [
+        "commands/_reschedule_state_assert.sql"
+      ]
+    },
+    "appointments._reschedule_row": {
+      "permission": "appointments.change_appointment",
+      "sql": [
+        "commands/appointment_reschedule.sql"
+      ]
+    },
+    "appointments._appointment_overlap_assert": {
+      "permission": "appointments.change_appointment",
+      "sql": [
+        "commands/_appointment_overlap_assert.sql"
+      ]
+    },
+    "appointments._history_reschedule": {
+      "permission": "appointments.change_appointment",
+      "sql": [
+        "commands/_history_reschedule.sql"
+      ]
     },
     "appointments.appointments.delete": {
       "permission": "appointments.delete_appointment",
@@ -609,6 +670,17 @@
           "query": "staff.services.eligible_for_service",
           "params": {
             "service_id": "payload.service_id"
+          },
+          "required": true
+        },
+        {
+          "query": "appointments.blocked_times.upcoming",
+          "required": true
+        },
+        {
+          "query": "appointments.appointments.upcoming_for_staff",
+          "params": {
+            "staff_id": "payload.staff_id"
           },
           "required": true
         }
@@ -674,6 +746,17 @@
           "query": "staff.services.eligible_for_service",
           "params": {
             "service_id": "payload.service_id"
+          },
+          "required": true
+        },
+        {
+          "query": "appointments.blocked_times.upcoming",
+          "required": true
+        },
+        {
+          "query": "appointments.appointments.upcoming_for_staff",
+          "params": {
+            "staff_id": "payload.staff_id"
           },
           "required": true
         }

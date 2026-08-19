@@ -39,6 +39,15 @@ const TRANSITIONS: Record<string, string> = {
 // the same: the history statement runs after the row UPDATE, pinned to the run.
 const HANDLER_CHAINS: Record<string, string[]> = {
   'appointments.appointments.cancel': ['appointments._cancel_row', 'appointments._history_cancel'],
+  // appointments#10: `reschedule` is Tier 2 too — the availability rules (minimum notice, maximum
+  // advance, blocked agenda) are decided from the reads, and the end of the slot is computed
+  // instead of believed. Both gates stay server-side, inside the same transaction.
+  'appointments.appointments.reschedule': [
+    'appointments._reschedule_state_assert',
+    'appointments._reschedule_row',
+    'appointments._appointment_overlap_assert',
+    'appointments._history_reschedule',
+  ],
 };
 
 /** The SQL files a transition command runs, in order — declared `sql[]` or the handler's chain. */
@@ -85,7 +94,11 @@ describe('status transitions leave an audit trail (appointments_history)', () =>
 
 describe('reschedule on a terminal appointment fails instead of silently succeeding', () => {
   it('reschedule declares a state gate BEFORE the UPDATE', () => {
-    const sqlFiles: string[] = manifest.commands['appointments.appointments.reschedule'].sql;
+    // The command is Tier 2 since appointments#10, so its statements are the handler's ordered
+    // intentions, not a declared `sql[]`. The gate itself did not move: it still runs first, in
+    // the same transaction, because the handler decides with a READ and the state can change
+    // between that read and the UPDATE.
+    const sqlFiles = sqlChain('appointments.appointments.reschedule');
     const gateIdx = sqlFiles.findIndex((f) => f.includes('_reschedule_state_assert'));
     const updateIdx = sqlFiles.findIndex((f) => f.endsWith('appointment_reschedule.sql'));
     expect(gateIdx, 'reschedule has no state assert (terminal reschedule = silent OK)').toBeGreaterThanOrEqual(0);

@@ -3,11 +3,15 @@
   "title": "appointments.appointments.reschedule",
   "type": "object",
   "additionalProperties": false,
-  "required": ["appointment_id", "start_datetime", "end_datetime", "duration_minutes"],
+  "description": "Moves an appointment to another slot. Since appointments#10 the caller says WHEN and, if it wants, for how long — nothing else: the end of the slot is computed by the handler (start + duration), the current duration and the professional come from the appointment's own row, and the move is refused when it lands on a blocked period or breaks the hub's minimum notice / maximum advance. `end_datetime` is gone: an end that did not match its own duration was a row nobody could explain.",
+  "required": ["appointment_id", "start_datetime"],
   "properties": {
     "appointment_id": { "type": "string", "minLength": 1 },
     "start_datetime": { "type": "string", "format": "date-time" },
-    "end_datetime": { "type": "string", "format": "date-time" },
-    "duration_minutes": { "type": "integer", "minimum": 1 }
+    "duration_minutes": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Optional. When omitted the appointment keeps the length it already had."
+    }
   }
 }

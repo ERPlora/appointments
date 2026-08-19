@@ -4,31 +4,45 @@
   "type": "object",
   "additionalProperties": false,
   "description": "Books the occurrences of ONE recurring template. Since appointments#54 the template is loaded by id through the authoritative read `appointments.recurring.get` — it used to arrive whole in the payload, names and price included, so the browser wrote who every occurrence of a series was for and what it cost. The three ids still travel here because `reads.params` can only filter by a top-level `payload.<field>`, but they are a SELECTOR: the handler refuses (`appointments.recurring_mismatch`) when they do not match the template the runtime loaded, and the snapshot is frozen from customers/services/staff exactly as `create` does.",
-  "required": ["recurring_id", "customer_id", "service_id", "staff_id"],
+  "required": [
+    "recurring_id",
+    "customer_id",
+    "service_id",
+    "staff_id"
+  ],
   "properties": {
     "recurring_id": {
       "type": "string",
       "minLength": 1,
       "description": "The recurring template to materialize. Everything about the repetition (frequency, day, time, duration, start/end date, max occurrences) comes from its row, never from here."
     },
-    "customer_id": { "type": "string", "minLength": 1 },
-    "service_id": { "type": "string", "minLength": 1 },
-    "staff_id": { "type": "string", "minLength": 1 },
+    "customer_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "service_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "staff_id": {
+      "type": "string",
+      "minLength": 1
+    },
     "from": {
       "description": "Start of the window to materialize (YYYY-MM-DD, default: today). Never earlier than today.",
-      "type": ["string", "null"],
+      "type": [
+        "string",
+        "null"
+      ],
       "default": null
     },
     "to": {
       "description": "End of the window (YYYY-MM-DD, default: from + the hub's own max_advance_booking).",
-      "type": ["string", "null"],
+      "type": [
+        "string",
+        "null"
+      ],
       "default": null
-    },
-    "existing_appointments": {
-      "description": "Overlap fallback: candidate appointments of the window. A series spans several days and `reads.params` cannot express «the appointments of each of these days», so the authoritative overlap read of `create` (appointments.appointments.conflicting, filtered by one start) does not fit here yet.",
-      "type": "array",
-      "default": [],
-      "items": { "type": "object" }
     }
   }
 }

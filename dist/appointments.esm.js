@@ -1969,7 +1969,8 @@ var es_default = {
     "appointments.recurring_unavailable": "No se pudo leer la cita recurrente; no se ha reservado nada.",
     "appointments.recurring_not_found": "Esa cita recurrente no existe en este negocio.",
     "appointments.recurring_inactive": "Esa cita recurrente est\xE1 desactivada; act\xEDvala para reservar sus ocurrencias.",
-    "appointments.recurring_mismatch": "La cita recurrente no coincide con el cliente, el servicio o el profesional enviados; no se ha reservado nada."
+    "appointments.recurring_mismatch": "La cita recurrente no coincide con el cliente, el servicio o el profesional enviados; no se ha reservado nada.",
+    "appointments.cannot_reschedule": "Esta cita ya no se puede mover en su estado actual."
   }
 };
 
@@ -2061,7 +2062,8 @@ var en_default = {
     "appointments.recurring_unavailable": "The recurring appointment could not be read; nothing was booked.",
     "appointments.recurring_not_found": "That recurring appointment does not exist in this business.",
     "appointments.recurring_inactive": "That recurring appointment is switched off; reactivate it to book its occurrences.",
-    "appointments.recurring_mismatch": "The recurring appointment does not match the customer, service or professional sent; nothing was booked."
+    "appointments.recurring_mismatch": "The recurring appointment does not match the customer, service or professional sent; nothing was booked.",
+    "appointments.cannot_reschedule": "This appointment can no longer be moved in its current state."
   }
 };
 
@@ -4441,7 +4443,7 @@ var ErpAppointmentsList = class extends i3 {
       // crearla de nuevo — la cita perdía su número, su identidad y su historial, y a la clienta
       // le quedaba en la ficha una cancelación que nunca pidió. El command ya existía.
       //
-      // Fuera de pending|confirmed se pinta gris: es lo que acepta `_reschedule_state_assert.sql`.
+      // Fuera de pending|confirmed se pinta gris: es lo que acepta el handler de `reschedule`.
       {
         id: "reschedule",
         label: t5("ui.actionReschedule"),
@@ -4675,14 +4677,17 @@ var ErpAppointmentsList = class extends i3 {
     const row = this.items.find((a3) => a3.id === ev.detail.id);
     if (row) await this.openReschedule(row);
   }
-  /** Mueve la cita. Solo viajan las cuatro claves del esquema
+  /** Mueve la cita. Solo viajan las TRES claves del esquema
    *  (`schemas/appointment_reschedule.json` es `additionalProperties: false`: una clave de más
    *  y el payload entero se rechaza).
    *
-   *  El profesional NO se cambia aquí: `reschedule` es SQL Tier 0 y mandarle un `staff_id` +
-   *  `staff_name` desde el navegador devolvería la identidad del profesional al llamante, que es
-   *  justo lo que appointments#11 le quitó al alta. Cambiar de profesional entra cuando
-   *  `reschedule` pase a resolver por `reads` (appointments#10/#13). */
+   *  `end_datetime` ya NO se manda (appointments#10): el fin es aritmética —inicio + duración— y
+   *  la hace el handler. Mandarlo desde aquí era una segunda opinión que podía no cuadrar con la
+   *  duración, y nadie podía explicar la fila resultante.
+   *
+   *  El profesional NO se cambia aquí: mandarle un `staff_id` desde el navegador devolvería la
+   *  identidad del profesional al llamante, que es justo lo que appointments#11 le quitó al alta.
+   *  El handler lo lee de la fila de la cita. Cambiar de profesional es trabajo aparte. */
   async submitReschedule(ev) {
     ev.preventDefault();
     if (!this.rescheduleId || !this.rescheduleStart) return;
@@ -4695,7 +4700,6 @@ var ErpAppointmentsList = class extends i3 {
       await erplora2().command("appointments.appointments.reschedule", {
         appointment_id: this.rescheduleId,
         start_datetime: start.toISOString(),
-        end_datetime: new Date(start.getTime() + minutes * 6e4).toISOString(),
         duration_minutes: minutes
       });
       this.clearReschedule();
