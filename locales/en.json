@@ -54,7 +54,13 @@
     "errLoadCatalogs": "Error loading customers, services or staff",
     "historyTitle": "Visit history",
     "historyEmpty": "No appointments yet for this customer.",
-    "historyError": "The visit history could not be loaded."
+    "historyError": "The visit history could not be loaded.",
+    "actionReschedule": "Reschedule",
+    "rescheduleTitle": "Move appointment",
+    "rescheduleHint": "Pick the new slot. The customer, the service and the professional stay as they are.",
+    "confirmReschedule": "Move appointment",
+    "cancelReschedule": "Cancel",
+    "errReschedule": "The appointment could not be moved."
   },
   "setup": {
     "title": "Your working hours",

@@ -98,6 +98,11 @@ const STATUS_COLORS: Record<string, string> = {
 /** Carril del timeline para las citas SIN profesional asignado (filas heredadas). */
 const UNASSIGNED = 'unassigned';
 
+/** Estados que `appointments.appointments.reschedule` acepta (`_reschedule_state_assert.sql`).
+ *  La barra pinta la acción DESHABILITADA fuera de estos: el command ya lo rechaza, pero un botón
+ *  que se puede pulsar y siempre falla es peor que uno gris. */
+const RESCHEDULABLE = ['pending', 'confirmed'];
+
 function erplora(): ErploraClientLike {
   const c = (globalThis as { erplora?: ErploraClientLike }).erplora;
   if (!c) throw new Error('erplora SDK no inicializado por el shell');
@@ -142,6 +147,17 @@ function wallClock(iso: string): string {
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
+/** `YYYY-MM-DDTHH:MM` LOCAL: lo que un `<input type="datetime-local">` sabe leer y devolver.
+ *  La cita se guarda en UTC, así que recortar su ISO pre-rellenaría el panel con la hora
+ *  desplazada por el huso — mover una cita de las 10:00 en Madrid la habría enseñado a las 08:00
+ *  y la recepcionista habría "confirmado" un hueco que no era. */
+function localInputValue(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const p = (n: number): string => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
 export class ErpAppointmentsList extends LitElement {
   static styles = css`
     :host { display:flex; flex-direction:column; height:100%; min-height:0; font-family: system-ui, sans-serif; color: var(--ion-text-color, #1c1b18); }
@@ -155,6 +171,10 @@ export class ErpAppointmentsList extends LitElement {
     /* Formulario del panel de alta (drawer estrecho) → una columna, no en fila. */
     .form { display:flex; flex-direction:column; gap:.7rem; }
     .form ion-button { align-self:flex-end; }
+    /* Reprogramar: el profesional es contexto (no se edita aquí) y las dos salidas van juntas. */
+    .form .ctx { margin:0; font-size:.9rem; color: var(--ion-color-medium, #92949c); }
+    .form .actions { display:flex; gap:.5rem; justify-content:flex-end; align-items:center; }
+    .form .actions ion-button { align-self:auto; }
     .err { color:#d9480f; font-weight:600; }
   `;
 
@@ -191,6 +211,21 @@ export class ErpAppointmentsList extends LitElement {
   @state() newStart = '';
 
   @state() newDuration = '';
+
+  // ── Reprogramar (appointments#42) ──────────────────────────────────────────────────────────
+  // El panel es EL MISMO que el del alta: `ok-data-table.open('create')` está pensado para esto
+  // («editar abre el form pre-rellenado», ok-data-table.ts:848). Con `rescheduleId` puesto, el
+  // hueco `create` pinta el formulario de mover en vez del de alta.
+  /** Cita que se está moviendo; `''` = el panel está en modo alta. */
+  @state() rescheduleId = '';
+
+  /** Nuevo inicio, en hora LOCAL de pared (`datetime-local`). */
+  @state() rescheduleStart = '';
+
+  @state() rescheduleDuration = '';
+
+  /** Solo para enseñarlo: `reschedule` mueve la hora, no cambia de profesional (ver render). */
+  @state() rescheduleStaffName = '';
 
   private unsub?: () => void;
 
@@ -250,6 +285,15 @@ export class ErpAppointmentsList extends LitElement {
       {
         id: 'charge', label: t('ui.actionCharge'), icon: 'cash-outline', color: 'success',
         disabled: (row: Record<string, unknown>) => !!row.converted_sale_id,
+      },
+      // REPROGRAMAR (appointments#42): sin este gesto, mover una cita obligaba a cancelarla y
+      // crearla de nuevo — la cita perdía su número, su identidad y su historial, y a la clienta
+      // le quedaba en la ficha una cancelación que nunca pidió. El command ya existía.
+      //
+      // Fuera de pending|confirmed se pinta gris: es lo que acepta `_reschedule_state_assert.sql`.
+      {
+        id: 'reschedule', label: t('ui.actionReschedule'), icon: 'calendar-outline', color: 'primary',
+        disabled: (row: Record<string, unknown>) => !RESCHEDULABLE.includes(String(row.status)),
       },
       { id: 'confirm', label: t('ui.actionConfirm'), icon: 'checkmark-circle-outline', color: 'success' },
       { id: 'start', label: t('ui.actionStart'), icon: 'play-circle-outline', color: 'primary' },
@@ -426,6 +470,9 @@ export class ErpAppointmentsList extends LitElement {
         case 'charge':
           this.goToTill(id);
           return; // navegamos fuera: refrescar la agenda que abandonamos no tiene sentido
+        case 'reschedule':
+          await this.openReschedule(row);
+          return; // abre el panel; no hay nada que refrescar todavía
         case 'confirm':
           await erplora().command('appointments.appointments.confirm', { appointment_id: id });
           break;
@@ -451,11 +498,92 @@ export class ErpAppointmentsList extends LitElement {
     }
   }
 
+  /** Abre el panel en modo ALTA, limpiando cualquier reprogramación a medias.
+   *
+   *  El «+» de la barra lo despacha el módulo (`primaryAction`) en vez de dejárselo a `addable`,
+   *  precisamente por esto: el panel es uno solo y con `addable` la tabla lo abría por su cuenta,
+   *  así que cerrar un «reprogramar» con el scrim y pulsar «+» a continuación te devolvía el
+   *  formulario de mover la cita anterior. */
+  private async openCreate() {
+    this.clearReschedule();
+    await this.updateComplete;
+    this.dataTable()?.open('create');
+  }
+
+  private clearReschedule(): void {
+    this.rescheduleId = '';
+    this.rescheduleStart = '';
+    this.rescheduleDuration = '';
+    this.rescheduleStaffName = '';
+  }
+
+  /** Abre el panel pre-rellenado con la cita que se va a mover. La fila manda: no se re-teclea
+   *  nada que ya esté guardado. Fuera de pending|confirmed no se abre — el command lo rechazaría
+   *  y el panel habría prometido algo que no puede cumplir. */
+  private async openReschedule(row: Record<string, unknown>) {
+    if (!RESCHEDULABLE.includes(String(row.status))) return;
+    this.rescheduleId = String(row.id ?? '');
+    this.rescheduleStart = localInputValue(String(row.start_datetime ?? ''));
+    this.rescheduleDuration = String(row.duration_minutes ?? '');
+    this.rescheduleStaffName = String(row.staff_name ?? '');
+    this.error = '';
+    this.view = 'list'; // el panel vive en la tabla
+    await this.updateComplete;
+    this.dataTable()?.open('create');
+  }
+
+  /** Bloque del timeline → mismo panel pre-rellenado.
+   *
+   *  El gesto que usa TODO el mercado (Fresha, Vagaro, Square Appointments, Booksy, Phorest,
+   *  Zenoti, Treatwell, Mindbody) es ARRASTRAR la cita por la rejilla. `ok-scheduler` no tiene
+   *  arrastre —emite `ok-event-click`, `ok-slot-click` y `ok-nav`, y vive en OutfitKit, otro
+   *  repo—, así que aquí se cablea el clic: en una tablet cuesta el mismo toque. */
+  private async onEventClick(ev: CustomEvent<{ id: string }>) {
+    const row = this.items.find((a) => a.id === ev.detail.id);
+    if (row) await this.openReschedule(row as unknown as Record<string, unknown>);
+  }
+
+  /** Mueve la cita. Solo viajan las cuatro claves del esquema
+   *  (`schemas/appointment_reschedule.json` es `additionalProperties: false`: una clave de más
+   *  y el payload entero se rechaza).
+   *
+   *  El profesional NO se cambia aquí: `reschedule` es SQL Tier 0 y mandarle un `staff_id` +
+   *  `staff_name` desde el navegador devolvería la identidad del profesional al llamante, que es
+   *  justo lo que appointments#11 le quitó al alta. Cambiar de profesional entra cuando
+   *  `reschedule` pase a resolver por `reads` (appointments#10/#13). */
+  private async submitReschedule(ev: Event) {
+    ev.preventDefault();
+    if (!this.rescheduleId || !this.rescheduleStart) return;
+    const minutes = Math.trunc(Number(this.rescheduleDuration));
+    if (!Number.isFinite(minutes) || minutes < 1) return;
+    this.saving = true;
+    this.error = '';
+    try {
+      const start = new Date(this.rescheduleStart);
+      await erplora().command('appointments.appointments.reschedule', {
+        appointment_id: this.rescheduleId,
+        start_datetime: start.toISOString(),
+        end_datetime: new Date(start.getTime() + minutes * 60_000).toISOString(),
+        duration_minutes: minutes,
+      });
+      this.clearReschedule();
+      this.dataTable()?.close();
+      await this.refresh();
+    } catch (e) {
+      // El solape lo rechaza el SERVIDOR (`_appointment_overlap_assert.sql`). El panel se queda
+      // abierto con lo tecleado: la recepcionista elige otro hueco sin volver a empezar.
+      this.error = e instanceof Error ? e.message : erplora().t(CATALOG, 'ui.errReschedule');
+    } finally {
+      this.saving = false;
+    }
+  }
+
   /** Hueco libre del timeline → se pre-rellena el alta con ESE profesional y ESA hora y se
    *  vuelve a la lista, donde vive el panel del «+». Reservar tocando el hueco es el gesto
    *  estándar de una agenda de salón. */
   private async onSlotClick(ev: CustomEvent<{ resourceId: string; time: string }>) {
     const { resourceId, time } = ev.detail;
+    this.clearReschedule(); // el hueco vacío es un ALTA, no una mudanza
     if (resourceId !== UNASSIGNED) this.newStaffId = resourceId;
     this.newStart = `${this.day}T${time}`;
     this.view = 'list';
@@ -510,14 +638,37 @@ export class ErpAppointmentsList extends LitElement {
                 this.refresh();
               }}
               @ok-slot-click=${(e: CustomEvent<{ resourceId: string; time: string }>) => this.onSlotClick(e)}
+              @ok-event-click=${(e: CustomEvent<{ id: string }>) => this.onEventClick(e)}
             ></ok-scheduler>`
-          : html`<ok-data-table .fill=${true} .addable=${true} .views=${true} .cardTitle=${(row: Record<string, unknown>) => String(row.appointment_number ?? row.customer_name ?? '')} .columns=${this.columns} .rows=${this.items as unknown as Record<string, unknown>[]} .searchKeys=${['appointment_number', 'customer_name', 'service_name', 'staff_name']} .searchPlaceholder=${t('ui.searchPlaceholder')} .actions=${this.rowActions} @rowAction=${(e: CustomEvent) => this.onRowAction(e)} .emptyMessage=${this.loading ? t('ui.loading') : t('ui.empty')}>
-          <!-- Alta de cita: se proyecta SIEMPRE (aunque el panel esté cerrado); si solo se pintara
-               al abrirlo, el «+» desplegaría un panel vacío en el primer clic.
-               Cliente, servicio y profesional se ELIGEN de sus módulos (appointments#21): con
-               texto libre la cita no se podía agrupar por profesional, ni casar con la
-               disponibilidad, ni pasar a la venta sin re-teclear. -->
-          <form slot="create" class="form" @submit=${(e: Event) => this.createAppointment(e)}>
+          : html`<ok-data-table .fill=${true} .primaryAction=${{ label: t('ui.addAppointment'), icon: 'add' }} @primaryAction=${() => this.openCreate()} .labels=${this.rescheduleId ? { newRecord: t('ui.rescheduleTitle') } : {}} .views=${true} .cardTitle=${(row: Record<string, unknown>) => String(row.appointment_number ?? row.customer_name ?? '')} .columns=${this.columns} .rows=${this.items as unknown as Record<string, unknown>[]} .searchKeys=${['appointment_number', 'customer_name', 'service_name', 'staff_name']} .searchPlaceholder=${t('ui.searchPlaceholder')} .actions=${this.rowActions} @rowAction=${(e: CustomEvent) => this.onRowAction(e)} .emptyMessage=${this.loading ? t('ui.loading') : t('ui.empty')}>
+          <!-- El panel es UNO: alta si no hay cita en curso, mover si la hay (appointments#42). -->
+          ${this.rescheduleId ? this.renderRescheduleForm(t) : this.renderCreateForm(t)}
+        </ok-data-table>`}
+      </div>`;
+  }
+
+  /** Mover la cita: solo el hueco. Cliente y servicio no se pintan porque `reschedule` no los
+   *  toca — enseñarlos editables prometería un cambio que el command descarta. */
+  private renderRescheduleForm(t: (k: string) => string) {
+    return html`<form slot="create" data-mode="reschedule" class="form" @submit=${(e: Event) => this.submitReschedule(e)}>
+      <ok-inline-feedback tone="info" icon="information-circle-outline">${t('ui.rescheduleHint')}</ok-inline-feedback>
+      <p class="ctx">${t('ui.fieldStaff')}: <strong>${this.rescheduleStaffName || '—'}</strong></p>
+      <ion-input data-role="reschedule-start" fill="outline" label-placement="floating" label=${t('ui.fieldStart')} type="datetime-local" .value=${this.rescheduleStart} @ionInput=${(e: any) => (this.rescheduleStart = e.target.value)}></ion-input>
+      <ion-input data-role="reschedule-duration" fill="outline" label-placement="floating" label=${t('ui.fieldMinutes')} type="number" min="1" .value=${this.rescheduleDuration} @ionInput=${(e: any) => (this.rescheduleDuration = e.target.value)}></ion-input>
+      <div class="actions">
+        <ion-button type="button" size="small" fill="clear" @click=${() => { this.clearReschedule(); this.dataTable()?.close(); }}>${t('ui.cancelReschedule')}</ion-button>
+        <ion-button type="submit" size="small" ?disabled=${this.saving || !this.rescheduleStart || !this.rescheduleDuration}>${this.saving ? t('ui.saving') : t('ui.confirmReschedule')}</ion-button>
+      </div>
+    </form>`;
+  }
+
+  /** Alta de cita: se proyecta SIEMPRE (aunque el panel esté cerrado); si solo se pintara
+   *  al abrirlo, el «+» desplegaría un panel vacío en el primer clic.
+   *  Cliente, servicio y profesional se ELIGEN de sus módulos (appointments#21): con
+   *  texto libre la cita no se podía agrupar por profesional, ni casar con la
+   *  disponibilidad, ni pasar a la venta sin re-teclear. */
+  private renderCreateForm(t: (k: string) => string) {
+    return html`<form slot="create" data-mode="create" class="form" @submit=${(e: Event) => this.createAppointment(e)}>
             <ion-select data-role="customer" fill="outline" label-placement="floating" label=${t('ui.fieldCustomer')} placeholder=${t('ui.pickCustomer')} .value=${this.newCustomerId} @ionChange=${(e: any) => (this.newCustomerId = e.target.value)}>
               ${this.customers.map((c) => html`<ion-select-option .value=${c.id}>${c.name}</ion-select-option>`)}
             </ion-select>
@@ -532,9 +683,7 @@ export class ErpAppointmentsList extends LitElement {
                  excepciones (una clienta que necesita más tiempo). -->
             <ion-input fill="outline" label-placement="floating" label=${t('ui.fieldMinutes')} type="number" min="1" placeholder=${String(this.effectiveDuration)} .value=${this.newDuration} @ionInput=${(e: any) => (this.newDuration = e.target.value)}></ion-input>
             <ion-button type="submit" size="small" ?disabled=${this.saving || !this.newCustomerId || !this.newServiceId || !this.newStaffId || !this.newStart}>${this.saving ? t('ui.saving') : t('ui.addAppointment')}</ion-button>
-          </form>
-        </ok-data-table>`}
-      </div>`;
+          </form>`;
   }
 }
 
