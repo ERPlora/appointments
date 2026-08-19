@@ -688,6 +688,16 @@ enum PrepareError {
     Invalid(String),
 }
 
+/// Which series an appointment belongs to, and which of its occurrences it is (appointments#15).
+///
+/// `occurrence_date` is the WALL date the template generated (`YYYY-MM-DD`), not the instant: it is
+/// the natural key of the occurrence, and the one that makes a retry idempotent — the same day of
+/// the same series can only be on the books once (partial unique index, migration 005).
+struct SeriesStamp {
+    recurring_id: String,
+    occurrence_date: String,
+}
+
 impl From<PrepareError> for String {
     fn from(e: PrepareError) -> String {
         match e {
@@ -721,6 +731,7 @@ fn prepare_appointment(
     now: &Dt,
     appointment_id: &str,
     history_description: &str,
+    series: Option<&SeriesStamp>,
 ) -> Result<Vec<Operation>, PrepareError> {
     let customer_name = resolved.customer_name.clone();
     if customer_name.is_empty() {
@@ -793,6 +804,17 @@ fn prepare_appointment(
     p.insert("staff_id".into(), json!(resolved.staff_id));
     p.insert("staff_name".into(), json!(resolved.staff_name));
     p.insert("service_id".into(), json!(resolved.service_id));
+    // appointments#15: an occurrence knows which series it belongs to and WHICH occurrence it is.
+    // Both are NULL for a booking that is not part of a series; the unique index is partial, so
+    // the nulls cost nothing.
+    p.insert(
+        "recurring_id".into(),
+        series.map(|s| json!(s.recurring_id)).unwrap_or(Value::Null),
+    );
+    p.insert(
+        "occurrence_date".into(),
+        series.map(|s| json!(s.occurrence_date)).unwrap_or(Value::Null),
+    );
     p.insert("service_name".into(), json!(service_name.clone()));
     p.insert("service_price".into(), json!(service_price));
     p.insert("start_datetime".into(), json!(start.iso()));
@@ -1114,6 +1136,7 @@ pub fn create_appointment_pure(input: Value) -> Result<Output, String> {
         &ctx.now,
         &appointment_id,
         "Cita creada",
+        None,
     ) {
         Ok(ops) => ops,
         Err(PrepareError::Domain(refusal)) => return Ok(Output::new().with_error(refusal)),
@@ -1182,6 +1205,7 @@ pub fn bulk_create_pure(input: Value) -> Result<Output, String> {
             &ctx.now,
             id,
             "Cita creada (lote)",
+            None,
         ) {
             Ok(item_ops) => {
                 ops.extend(item_ops);
@@ -1447,15 +1471,37 @@ pub fn materialize_recurring_pure(input: Value) -> Result<Output, String> {
     let mut ops: Vec<Operation> = Vec::new();
     let mut created = 0usize;
 
+    // Ocurrencias de ESTA serie que ya están en la agenda (appointments#15). Sin esto, reejecutar
+    // `materialize` DUPLICABA las citas — y materializar es justo lo que se reintenta, porque la
+    // ventana avanza cada semana. Una cancelada cuenta como ya materializada a propósito: es la
+    // EXCEPCIÓN de la serie, y el reintento no puede resucitarla.
+    let Some(rows) = read_rows(&input, "appointments.recurring.occurrences") else {
+        return Ok(refuse(
+            "appointments.recurring_unavailable",
+            "The occurrences already booked for this recurring appointment could not be read; nothing was booked.",
+        ));
+    };
+    let booked: Vec<String> = rows
+        .iter()
+        .map(|row| as_str(row.get("occurrence_date").unwrap_or(&Value::Null)))
+        .filter(|d| !d.is_empty())
+        .collect();
+
     // Each occurrence is just a SLOT: who, what and for how much is the resolved booking, shared
     // by the whole series (appointments#54) — the template's denormalized copy is only what the
     // list screen shows, and it can be stale.
+    let mut skipped_as_booked = 0usize;
     for days in occurrence_days {
         if created >= 50 {
             break; // tope por invocación (mismo límite que bulk_create)
         }
         let (y, mo, d) = civil_from_days(days);
-        let start_iso = format!("{y:04}-{mo:02}-{d:02}T{th:02}:{tm:02}:00");
+        let occurrence_date = format!("{y:04}-{mo:02}-{d:02}");
+        if booked.iter().any(|b| *b == occurrence_date) {
+            skipped_as_booked += 1;
+            continue;
+        }
+        let start_iso = format!("{occurrence_date}T{th:02}:{tm:02}:00");
         let item = json!({
             "start_datetime": start_iso,
             "duration_minutes": duration,
@@ -1463,6 +1509,10 @@ pub fn materialize_recurring_pure(input: Value) -> Result<Output, String> {
         });
         let Some(id) = ctx.new_ids.get(created) else { break };
         let desc = format!("Cita materializada de la plantilla recurrente {recurring_id}");
+        let stamp = SeriesStamp {
+            recurring_id: recurring_id.clone(),
+            occurrence_date,
+        };
         match prepare_appointment(
             &input,
             &item,
@@ -1472,6 +1522,7 @@ pub fn materialize_recurring_pure(input: Value) -> Result<Output, String> {
             &ctx.now,
             id,
             &desc,
+            Some(&stamp),
         ) {
             Ok(item_ops) => {
                 ops.extend(item_ops);
@@ -1483,7 +1534,9 @@ pub fn materialize_recurring_pure(input: Value) -> Result<Output, String> {
         }
     }
 
-    if created == 0 {
+    // Nada que hacer NO es un error cuando todo lo de la ventana ya está reservado: una operación
+    // idempotente que grita en el segundo intento es una que nadie se atreve a reintentar.
+    if created == 0 && skipped_as_booked == 0 {
         return Err(
             "no_occurrences: todas las ocurrencias de la ventana están en el pasado o solapadas"
                 .to_string(),
@@ -2429,7 +2482,13 @@ mod tests {
 
     fn series_input(payload: Value, rows: Value, reads: Option<Value>) -> Value {
         let mut inp = batch_input(payload, reads);
-        inp["context"]["reads"]["appointments.recurring.get"] = rows;
+        let planted = inp["context"]["reads"].as_object_mut().unwrap();
+        planted.insert("appointments.recurring.get".into(), rows);
+        // appointments#15: `required` in the manifest, so it is always there in production. Empty
+        // by default = nothing of this series is on the books yet.
+        planted
+            .entry("appointments.recurring.occurrences")
+            .or_insert_with(|| json!([]));
         inp
     }
 
@@ -2860,5 +2919,116 @@ mod tests {
         ]);
         let err = create_appointment_pure(inp).unwrap_err();
         assert!(err.contains("overlap"), "{err}");
+    }
+
+    // ── appointments#15 · una serie es TRAZABLE e IDEMPOTENTE ──
+    //
+    // Una cita materializada no guardaba ningún vínculo con su plantilla: ni la serie ni la
+    // ocurrencia. Reejecutar `materialize` DUPLICABA las citas — y materializar es justo lo que se
+    // reintenta, porque la ventana avanza cada semana. Y sin ese vínculo una ocurrencia cancelada
+    // no podía ser una EXCEPCIÓN de la serie: el siguiente reintento la resucitaba.
+
+    /// The occurrences of the series that are already on the books, as the runtime pre-loads them.
+    fn already_booked(dates: Value) -> Value {
+        json!({
+            "appointments.recurring.occurrences": dates
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|d| json!({ "occurrence_date": d, "status": "confirmed" }))
+                .collect::<Vec<_>>()
+        })
+    }
+
+    #[test]
+    fn materialize_stamps_the_series_and_the_occurrence_date_on_every_appointment() {
+        let out = materialize_recurring_pure(series_input(
+            series_payload(),
+            json!([template(json!({}))]),
+            None,
+        ))
+        .unwrap();
+        assert!(out.error.is_none(), "{:?}", out.error);
+        let stamped: Vec<_> = insert_ops(&out)
+            .iter()
+            .map(|op| {
+                (
+                    op.params.get("recurring_id").cloned(),
+                    op.params.get("occurrence_date").cloned(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            stamped,
+            vec![
+                (Some(json!("r1")), Some(json!("2026-08-03"))),
+                (Some(json!("r1")), Some(json!("2026-08-10"))),
+            ]
+        );
+    }
+
+    /// The retry is the normal case, not the exception: the window moves forward every week and
+    /// somebody presses the button again. What is already on the books is skipped.
+    #[test]
+    fn materialize_twice_does_not_book_the_same_occurrence_again() {
+        let out = materialize_recurring_pure(series_input(
+            series_payload(),
+            json!([template(json!({}))]),
+            Some(already_booked(json!(["2026-08-03"]))),
+        ))
+        .unwrap();
+        assert!(out.error.is_none(), "{:?}", out.error);
+        let dates: Vec<_> = insert_ops(&out)
+            .iter()
+            .filter_map(|op| op.params.get("occurrence_date").and_then(|v| v.as_str()))
+            .collect();
+        assert_eq!(dates, vec!["2026-08-10"]);
+    }
+
+    /// Cancelling one appointment of a series is how a business says «not that week». Re-running
+    /// the materialization must not undo it — the same answer Google Calendar, Outlook, Fresha and
+    /// Square give.
+    #[test]
+    fn materialize_does_not_resurrect_a_cancelled_occurrence() {
+        let mut reads = already_booked(json!(["2026-08-03"]));
+        reads["appointments.recurring.occurrences"][0]["status"] = json!("cancelled");
+        let out = materialize_recurring_pure(series_input(
+            series_payload(),
+            json!([template(json!({}))]),
+            Some(reads),
+        ))
+        .unwrap();
+        let dates: Vec<_> = insert_ops(&out)
+            .iter()
+            .filter_map(|op| op.params.get("occurrence_date").and_then(|v| v.as_str()))
+            .collect();
+        assert_eq!(dates, vec!["2026-08-10"], "the cancelled week came back");
+    }
+
+    /// Everything already booked is SUCCESS with nothing to do, not an error: an idempotent
+    /// operation that shouts on the second run is one nobody dares to retry.
+    #[test]
+    fn materialize_with_nothing_left_to_book_succeeds_doing_nothing() {
+        let out = materialize_recurring_pure(series_input(
+            series_payload(),
+            json!([template(json!({}))]),
+            Some(already_booked(json!(["2026-08-03", "2026-08-10"]))),
+        ))
+        .unwrap();
+        assert!(out.error.is_none(), "{:?}", out.error);
+        assert!(out.operations.is_empty());
+    }
+
+    /// A guard whose input goes missing closes: without knowing what is already booked, booking
+    /// again is exactly the duplication this issue is about.
+    #[test]
+    fn materialize_refuses_when_the_booked_occurrences_read_is_missing() {
+        let mut inp = series_input(series_payload(), json!([template(json!({}))]), None);
+        inp["context"]["reads"]
+            .as_object_mut()
+            .unwrap()
+            .remove("appointments.recurring.occurrences");
+        let out = materialize_recurring_pure(inp).unwrap();
+        assert_eq!(domain_code(&out).as_deref(), Some("appointments.recurring_unavailable"));
     }
 }
