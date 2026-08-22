@@ -22,6 +22,21 @@
 -- Fechas/horas vía funciones-puente erp_* (ADR-0007 §4a): erp_dt (datetime comparable),
 -- erp_date (parte fecha), erp_dateadd (suma intervalo), erp_dow_mon0 (día de semana 0=lunes),
 -- erp_timefmt (HH:MM). Las fechas se guardan como TEXT ISO-8601.
+--
+-- ⚠️ EL MISMO RELOJ PARA LOS DOS LADOS (appointments#76). Los huecos candidatos son texto NAIVE
+-- (hora de pared del salón, sin offset) y las citas viven CON offset (`2026-08-28T12:00:00+02:00`).
+-- Bajar ambos por `erp_dt` (`::timestamptz`) interpreta el hueco naive en la zona horaria de la
+-- SESIÓN (UTC en el runtime) y tacha la ventana desplazada exactamente el offset del hub: se
+-- ofrecían huecos ocupados y se escondían libres, en contradicción con `availability.check`.
+-- La comparación correcta entre dos datos que el módulo YA tiene en la mano es PARED contra
+-- PARED: el texto ISO de la fila recortado a su propia hora local (`substr(...,1,19)` conserva
+-- `YYYY-MM-DDTHH:MM:SS`, deja fuera el offset y los milisegundos) contra el hueco naive, como
+-- TEXTO — mismo formato, ancho fijo, cero-padded: lexicográfico = cronológico, sin zona horaria
+-- de por medio y a prueba del reloj de la sesión. Cada fila se compara en el reloj en que fue
+-- escrita; una fila con offset del hub (todas las que escribe la UI del módulo desde #76) es
+-- exactamente la pared del salón. Las comprobaciones contra `:now` (antelación mínima/máxima)
+-- siguen en el reloj de la sesión: convertir la pared a instante exige la zona horaria del
+-- NEGOCIO (hub#1022), que los módulos todavía no pueden leer — es el resto documentado.
 WITH RECURSIVE
 cfg AS (
     SELECT COALESCE(MAX(calendar_start_hour), 8)   AS start_hour,
@@ -92,10 +107,10 @@ WHERE
           AND (b.staff_id IS NULL OR b.staff_id = ''
                OR (CAST(:staff_id AS TEXT) IS NOT NULL AND b.staff_id = :staff_id))
           AND (
-              (b.all_day = 1 AND erp_date(b.start_datetime) <= erp_date(:date)
-                             AND erp_date(:date) <= erp_date(b.end_datetime))
-              OR (erp_dt(b.start_datetime) < erp_dt(c.slot_end)
-                  AND erp_dt(b.end_datetime) > erp_dt(c.slot_start))
+              (b.all_day = 1 AND substr(b.start_datetime, 1, 10) <= substr(c.slot_start, 1, 10)
+                             AND substr(c.slot_start, 1, 10) <= substr(b.end_datetime, 1, 10))
+              OR (substr(b.start_datetime, 1, 19) < c.slot_end
+                  AND substr(b.end_datetime, 1, 19) > c.slot_start)
           )
     )
     -- sin citas vivas que solapen (salvo allow_overlapping); con :staff_id solo su agenda
@@ -107,8 +122,8 @@ WHERE
             WHERE a.hub_id = :hub_id AND a.is_deleted = 0
               AND a.status NOT IN ('cancelled', 'no_show')
               AND (CAST(:staff_id AS TEXT) IS NULL OR a.staff_id = :staff_id)
-              AND erp_dt(a.start_datetime) < erp_dt(c.slot_end)
-              AND erp_dt(a.end_datetime) > erp_dt(c.slot_start)
+              AND substr(a.start_datetime, 1, 19) < c.slot_end
+              AND substr(a.end_datetime, 1, 19) > c.slot_start
         )
     )
     -- ni franjas RETENIDAS por una decisión pendiente (appointments#69). Ofrecer un hueco que
@@ -127,8 +142,8 @@ WHERE
               AND erp_dt(h.expires_at) > erp_dt(:now)
               AND COALESCE(CAST(:exclude_hold_ref AS TEXT), '') <> h.source_ref
               AND (CAST(:staff_id AS TEXT) IS NULL OR h.staff_id = '' OR h.staff_id = :staff_id)
-              AND erp_dt(h.start_datetime) < erp_dt(c.slot_end)
-              AND erp_dt(h.end_datetime) > erp_dt(c.slot_start)
+              AND substr(h.start_datetime, 1, 19) < c.slot_end
+              AND substr(h.end_datetime, 1, 19) > c.slot_start
         )
     )
 ORDER BY c.start_min;

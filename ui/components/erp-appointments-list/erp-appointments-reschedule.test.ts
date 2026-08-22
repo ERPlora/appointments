@@ -180,7 +180,7 @@ describe('the row bar can move an appointment', () => {
     expect(form.querySelector('ion-input[type="datetime-local"]'), 'the new slot is picked here').toBeTruthy();
   });
 
-  it('sends appointment_id, the new slot in UTC and the duration — never the end', async () => {
+  it('sends appointment_id, the new slot in the SALON wall clock (+ its offset) and the duration — never the end', async () => {
     const el = await mount();
     await fireRowAction(el, 'reschedule', DAY_APPOINTMENTS[0]);
     el.rescheduleStart = '2026-08-07T16:45';
@@ -191,7 +191,14 @@ describe('the row bar can move an appointment', () => {
     expect(sent, 'the reschedule command was not dispatched').toBeTruthy();
     const p = sent!.payload;
     expect(p.appointment_id).toBe('a1');
-    expect(p.start_datetime).toBe(new Date('2026-08-07T16:45').toISOString());
+    // appointments#76: the stored text must carry the LOCAL wall clock + its offset, not a UTC
+    // wall. Same INSTANT (never moves the booking), but the wall part is what the availability
+    // engine compares row against row: a UTC wall here is a window tatted two hours off.
+    expect(
+      new Date(p.start_datetime as string).getTime(),
+      'the instant changed — the booking moved',
+    ).toBe(new Date('2026-08-07T16:45').getTime());
+    expect(String(p.start_datetime).slice(0, 16), 'the WALL clock changed').toBe('2026-08-07T16:45');
     expect(p.duration_minutes, 'the schema wants an integer, not the input string').toBe(45);
     // appointments#10: `end = start + duration` is arithmetic, and the handler does it. An
     // `end_datetime` sent from here is a second opinion that could disagree with the duration —

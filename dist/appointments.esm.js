@@ -4952,6 +4952,13 @@ function localInputValue(iso) {
   const p4 = (n6) => String(n6).padStart(2, "0");
   return `${d3.getFullYear()}-${p4(d3.getMonth() + 1)}-${p4(d3.getDate())}T${p4(d3.getHours())}:${p4(d3.getMinutes())}`;
 }
+function localIso(d3) {
+  const p4 = (n6) => String(n6).padStart(2, "0");
+  const offset = -d3.getTimezoneOffset();
+  const sign = offset >= 0 ? "+" : "-";
+  const abs = Math.abs(offset);
+  return `${d3.getFullYear()}-${p4(d3.getMonth() + 1)}-${p4(d3.getDate())}T${p4(d3.getHours())}:${p4(d3.getMinutes())}:${p4(d3.getSeconds())}${sign}${p4(Math.floor(abs / 60))}:${p4(abs % 60)}`;
+}
 var ErpAppointmentsList = class extends i3 {
   constructor() {
     super(...arguments);
@@ -5180,7 +5187,7 @@ var ErpAppointmentsList = class extends i3 {
     this.saving = true;
     this.error = "";
     try {
-      const startIso = new Date(this.newStart).toISOString();
+      const startIso = localIso(new Date(this.newStart));
       await erplora2().command("appointments.appointments.create", {
         // Vínculos + su snapshot denormalizado (lo que se reservó, aunque la ficha cambie).
         customer_id: customer.id,
@@ -5337,7 +5344,7 @@ var ErpAppointmentsList = class extends i3 {
     try {
       await erplora2().command("appointments.appointments.reschedule", {
         appointment_id: id,
-        start_datetime: (/* @__PURE__ */ new Date(`${this.day}T${start}`)).toISOString(),
+        start_datetime: localIso(/* @__PURE__ */ new Date(`${this.day}T${start}`)),
         duration_minutes: appointment.duration_minutes
       });
       await this.refresh();
@@ -5374,7 +5381,8 @@ var ErpAppointmentsList = class extends i3 {
       const start = new Date(this.rescheduleStart);
       await erplora2().command("appointments.appointments.reschedule", {
         appointment_id: this.rescheduleId,
-        start_datetime: start.toISOString(),
+        // Pared local + offset (appointments#76): mismo instante, el reloj del salón en el texto.
+        start_datetime: localIso(start),
         duration_minutes: minutes
       });
       this.clearReschedule();

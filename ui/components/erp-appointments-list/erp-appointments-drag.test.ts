@@ -185,7 +185,7 @@ describe('the agenda wires the drag of ok-scheduler (appointments#74)', () => {
     expect(scheduler.hasAttribute('movable'), 'reflected, so the styles can key off it').toBe(true);
   });
 
-  it('a drop on the same lane sends reschedule: new start in UTC, the row duration, nothing else', async () => {
+  it('a drop on the same lane sends reschedule: new start in the salon wall clock, the row duration, nothing else', async () => {
     const el = await mount();
     const scheduler = await staffView(el);
     el.day = '2026-08-07';
@@ -201,7 +201,14 @@ describe('the agenda wires the drag of ok-scheduler (appointments#74)', () => {
     const sent = rescheduleSent();
     expect(sent, 'the drag must reach the same command the panel uses').toBeTruthy();
     expect(sent!.payload.appointment_id).toBe('a1');
-    expect(sent!.payload.start_datetime).toBe(new Date('2026-08-07T12:00').toISOString());
+    // appointments#76: same instant, but the text carries the SALON's wall clock + its local
+    // offset. A UTC wall here is a moved appointment the availability engine reads on the wrong
+    // clock (it compares rows wall against wall).
+    expect(
+      new Date(sent!.payload.start_datetime as string).getTime(),
+      'the sent instant does not match the dropped time',
+    ).toBe(new Date('2026-08-07T12:00').getTime());
+    expect(String(sent!.payload.start_datetime).slice(0, 16), 'the sent WALL clock shifted').toBe('2026-08-07T12:00');
     expect(sent!.payload.duration_minutes, 'the grid preserves the length; the row is the truth').toBe(30);
     expect(Object.keys(sent!.payload).sort(), 'the schema is additionalProperties:false').toEqual([
       'appointment_id',

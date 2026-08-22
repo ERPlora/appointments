@@ -210,6 +210,24 @@ function localInputValue(iso: string): string {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
+/** ISO 8601 con la hora de pared LOCAL del salón y SU offset (appointments#76). `toISOString()`
+ *  escribe la pared de UTC: el INSTANTE viaja intacto, pero el texto guardado deja de decir la
+ *  hora que el salón ve en la pared — y el motor de disponibilidad compara las citas contra los
+ *  huecos PARED contra PARED (queries/availability_slots.sql): una pared en UTC es una ventana
+ *  tachada con el desfase horario de por medio. Misma fecha, misma hora, mismo instante; solo
+ *  cambia el reloj con el que se escribe. */
+function localIso(d: Date): string {
+  const p = (n: number): string => String(n).padStart(2, '0');
+  const offset = -d.getTimezoneOffset();
+  const sign = offset >= 0 ? '+' : '-';
+  const abs = Math.abs(offset);
+  return (
+    `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}` +
+    `T${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}` +
+    `${sign}${p(Math.floor(abs / 60))}:${p(abs % 60)}`
+  );
+}
+
 export class ErpAppointmentsList extends LitElement {
   static styles = css`
     :host { display:flex; flex-direction:column; height:100%; min-height:0; font-family: system-ui, sans-serif; color: var(--ion-text-color, #1c1b18); }
@@ -482,8 +500,10 @@ export class ErpAppointmentsList extends LitElement {
     this.saving = true;
     this.error = '';
     try {
-      // El input datetime-local da 'YYYY-MM-DDTHH:MM'; lo normalizamos a ISO con tz UTC.
-      const startIso = new Date(this.newStart).toISOString();
+      // El input datetime-local da 'YYYY-MM-DDTHH:MM'; se normaliza a ISO con la PARED local y
+      // su offset (appointments#76): el instante es el elegido y el texto guardado dice la hora
+      // que el salón ve en la pared, que es el reloj del motor de disponibilidad.
+      const startIso = localIso(new Date(this.newStart));
       await erplora().command('appointments.appointments.create', {
         // Vínculos + su snapshot denormalizado (lo que se reservó, aunque la ficha cambie).
         customer_id: customer.id,
@@ -644,9 +664,12 @@ export class ErpAppointmentsList extends LitElement {
     }
     try {
       // `start` es `HH:MM` de pared LOCAL del día visible — el mismo idioma que `ok-slot-click`.
+      // Se escribe en el reloj del salón (pared + offset, appointments#76): mismo instante, y el
+      // texto guardado es el que el motor de disponibilidad compara PARED contra PARED — una
+      // pared UTC en una cita movida volvería a tachar la ventana desplazada por el offset.
       await erplora().command('appointments.appointments.reschedule', {
         appointment_id: id,
-        start_datetime: new Date(`${this.day}T${start}`).toISOString(),
+        start_datetime: localIso(new Date(`${this.day}T${start}`)),
         duration_minutes: appointment.duration_minutes,
       });
       await this.refresh(); // la posición optimista se descarta: manda la fila del servidor
@@ -685,7 +708,8 @@ export class ErpAppointmentsList extends LitElement {
       const start = new Date(this.rescheduleStart);
       await erplora().command('appointments.appointments.reschedule', {
         appointment_id: this.rescheduleId,
-        start_datetime: start.toISOString(),
+        // Pared local + offset (appointments#76): mismo instante, el reloj del salón en el texto.
+        start_datetime: localIso(start),
         duration_minutes: minutes,
       });
       this.clearReschedule();
