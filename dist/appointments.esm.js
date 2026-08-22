@@ -1945,6 +1945,8 @@ var es_default = {
     confirmReschedule: "Mover la cita",
     cancelReschedule: "Cancelar",
     errReschedule: "No se ha podido mover la cita.",
+    errDragStaffChange: "Cambiar de profesional arrastrando a\xFAn no se puede: la cita se queda con su profesional. Mueve la hora o usa el panel.",
+    errDragNotMovable: "Esta cita ya no se puede mover (su estado es final).",
     bookingCustomer: "Cliente",
     bookingCustomerSearch: "Busca por tel\xE9fono o nombre\u2026",
     bookingCreateCustomer: "Crear este cliente",
@@ -2059,6 +2061,8 @@ var en_default = {
     confirmReschedule: "Move appointment",
     cancelReschedule: "Cancel",
     errReschedule: "The appointment could not be moved.",
+    errDragStaffChange: "Changing professional by dragging is not available yet - the appointment stays with its professional. Use the time change or the panel.",
+    errDragNotMovable: "This appointment can no longer be moved (its state is final).",
     bookingCustomer: "Customer",
     bookingCustomerSearch: "Search by phone or name\u2026",
     bookingCreateCustomer: "Create this customer",
@@ -2543,6 +2547,7 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
     this.exportable = false;
     this.importable = false;
     this.columnSelector = false;
+    this.rowClickable = false;
     this.selectable = false;
     this.inlineFilters = false;
     this.menuActions = [];
@@ -2557,10 +2562,12 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
     this.viewMode = "table";
     this.viewChosenByUser = false;
     this.isMobile = false;
+    this.xOverflow = false;
     this.hiddenKeys = /* @__PURE__ */ new Set();
     this.internalSelection = /* @__PURE__ */ new Set();
     this.menuOpen = false;
     this.onLocaleChanged = () => this.requestUpdate();
+    this.onWindowResize = () => this.measureXOverflow();
     this.onSearch = (ev) => {
       const value = ev.target.value ?? "";
       if (this.serverSide) {
@@ -2711,7 +2718,14 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
     .filters-panel { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 0.6rem; }
 
     /* ── Vista lista en CSS GRID (no <table>): permite ancho por columna ──────────────────── */
+    /* #67 — La barra horizontal es PERMANENTE cuando hay desbordamiento: la overlay de macOS se
+       esconde a los pocos ms y deja la tabla sin ninguna pista de que sigue a la derecha. Al
+       declarar ::-webkit-scrollbar el navegador pinta la clásica, que ocupa sitio y se ve. */
     .scroll { overflow-x: auto; }
+    .scroll::-webkit-scrollbar { height: 10px; }
+    .scroll::-webkit-scrollbar-track { background: transparent; }
+    .scroll::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--color) 25%, transparent); border-radius: 6px; }
+    .scroll::-webkit-scrollbar-thumb:hover { background: color-mix(in srgb, var(--color) 40%, transparent); }
     .grid { min-width: max-content; font-size: 14px; }
     .grow { display: grid; align-items: center; gap: 0.5rem; padding: 0 1rem; }
     .ghead { position: sticky; top: 0; z-index: 2; border-bottom: 1px solid var(--border-color);
@@ -2720,6 +2734,17 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
     .gcell > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .gcell.right { justify-content: flex-end; text-align: right; }
     .gcell.center { justify-content: center; text-align: center; }
+    /* #67 — COLUMNA DE ACCIONES FIJADA. Con seis columnas o más la rejilla desborda por diseño
+       (min-width: max-content) y el botón que abre el registro se iba fuera de la pantalla: a
+       1440px quedaba a 335px del borde, sin nada que lo delatara. Se queda pegada al borde
+       derecho, como en Zendesk/Freshdesk/Shopify. Con background:inherit la hereda de la fila (que
+       por eso es opaca), así conserva hover y selección sin que se lea nada por debajo. */
+    .gcell.actions-col { position: sticky; right: 0; z-index: 1; background: inherit;
+      margin-right: -1rem; padding-right: 1rem; }
+    /* La sombra solo aparece cuando de verdad hay algo escondido a la izquierda (clase x-overflow);
+       si la tabla cabe entera no se pinta nada. */
+    .scroll.x-overflow .gcell.actions-col { box-shadow: -10px 0 10px -10px color-mix(in srgb, var(--color) 45%, transparent); }
+    .ghead .gcell.actions-col { z-index: 3; }
     .gh { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--color-muted); }
     .gh.sortable { cursor: pointer; user-select: none; white-space: nowrap; transition: background-color var(--ok-transition, 150ms ease), color var(--ok-transition, 150ms ease), box-shadow var(--ok-transition, 150ms ease), transform 120ms ease; }
     @media (hover: hover) {
@@ -2728,13 +2753,17 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
     /* Caret de orden (3 estados, icono Ionic): neutral atenuado / activo en color primario. */
     .caret { display: inline-flex; align-items: center; margin-left: 0.25rem; flex: 0 0 auto; font-size: 13px; opacity: 0.3; }
     .caret.on { opacity: 1; color: var(--primary); }
-    .grow-data { border-bottom: 1px solid var(--border-color-soft); padding-top: 0.6rem; padding-bottom: 0.6rem; transition: background-color var(--ok-transition, 150ms ease), color var(--ok-transition, 150ms ease), box-shadow var(--ok-transition, 150ms ease), transform 120ms ease; }
+    .grow-data { background: var(--background); border-bottom: 1px solid var(--border-color-soft); padding-top: 0.6rem; padding-bottom: 0.6rem; transition: background-color var(--ok-transition, 150ms ease), color var(--ok-transition, 150ms ease), box-shadow var(--ok-transition, 150ms ease), transform 120ms ease; }
     .grow-data:last-child { border-bottom: 0; }
     @media (hover: hover) {
-      .grow-data:hover { background: var(--row-hover); }
+      .grow-data:hover { background: linear-gradient(var(--row-hover), var(--row-hover)), var(--background); }
     }
     .grow-data:active { transform: scale(0.995); }
-    .grow-data.selected { background: color-mix(in srgb, var(--primary) 10%, transparent); }
+    .grow-data.selected { background: linear-gradient(color-mix(in srgb, var(--primary) 10%, transparent), color-mix(in srgb, var(--primary) 10%, transparent)), var(--background); }
+    /* #67 — Fila clicable (opt-in row-clickable): es lo primero que intenta el usuario y lo que
+       hacen Odoo, Jira SM, Shopify o Square en sus listados. */
+    .grow-data.clickable { cursor: pointer; }
+    .grow-data.clickable:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
     .selcb { display: flex; align-items: center; justify-content: center; }
     .filters-grow { padding-top: 0.4rem; padding-bottom: 0.6rem; }
     .filters-grow input, .filters-grow select { width: 100%; box-sizing: border-box; font: inherit; font-size: 13px; padding: 0.3rem 0.4rem; border: 1px solid var(--border-color); border-radius: 6px; background: var(--background); color: var(--color); }
@@ -2810,6 +2839,7 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
     super.connectedCallback();
     if (typeof window !== "undefined") {
       window.addEventListener("erplora:locale-changed", this.onLocaleChanged);
+      window.addEventListener("resize", this.onWindowResize);
     }
     if (typeof window !== "undefined" && typeof window.matchMedia === "function") {
       this.mq = window.matchMedia(`(max-width: ${_OkDataTable2.MOBILE_BREAKPOINT}px)`);
@@ -2825,10 +2855,37 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
       this._mqHandler = handler;
     }
   }
+  /** #67 — Recalcula si la vista lista desborda a lo ancho (`scrollWidth > clientWidth`).
+   *
+   * Se mide después de renderizar, que es cuando el navegador ya conoce los anchos, y solo se
+   * escribe el estado si CAMBIA: asignarlo siempre reprogramaría un render en bucle. */
+  measureXOverflow() {
+    const scroll = this.renderRoot?.querySelector?.(".scroll");
+    const overflow = !!scroll && scroll.scrollWidth > scroll.clientWidth;
+    if (this.xOverflow !== overflow) this.xOverflow = overflow;
+  }
+  /** Engancha el observador al contenedor de scroll del render actual (cambia entre vistas). */
+  observeXOverflow() {
+    if (typeof ResizeObserver === "undefined") return;
+    const scroll = this.renderRoot?.querySelector?.(".scroll");
+    if (!scroll) return;
+    this.xObserver ??= new ResizeObserver(() => this.measureXOverflow());
+    this.xObserver.disconnect();
+    this.xObserver.observe(scroll);
+    const grid = scroll.querySelector(".grid");
+    if (grid) this.xObserver.observe(grid);
+  }
+  updated() {
+    this.observeXOverflow();
+    this.measureXOverflow();
+  }
   disconnectedCallback() {
     if (typeof window !== "undefined") {
       window.removeEventListener("erplora:locale-changed", this.onLocaleChanged);
+      window.removeEventListener("resize", this.onWindowResize);
     }
+    this.xObserver?.disconnect();
+    this.xObserver = void 0;
     if (this.mq) {
       const handler = this._mqHandler;
       if (handler) this.mq.removeEventListener("change", handler);
@@ -3603,6 +3660,13 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
       </div>
     `;
   }
+  /** #67 — Enter/Espacio activan la fila clicable: si se llega con el tabulador, el ratón no puede
+   *  ser el único camino. Espacio además NO debe desplazar la página. */
+  onRowKeydown(e5, row) {
+    if (e5.key !== "Enter" && e5.key !== " " && e5.key !== "Spacebar") return;
+    e5.preventDefault();
+    this.emit("rowClick", { row });
+  }
   emptyState() {
     return b2`
       <div class="empty">
@@ -3619,7 +3683,7 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
     const allOn = this.selectable && visible.length > 0 && visible.every((r6) => this.selection.has(this.keyOf(r6)));
     const alignCls = (a3) => a3 === "right" ? "right" : a3 === "center" ? "center" : "left";
     return b2`
-      <div class="scroll">
+      <div class=${`scroll${this.xOverflow ? " x-overflow" : ""}`}>
         <div class="grid" role="table">
           <!-- Cabecera -->
           <div class="grow ghead" role="row" style=${o6(tpl)}>
@@ -3640,7 +3704,7 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
                 </div>
               `;
     })}
-            ${this.actions.length ? b2`<div class="gcell gh right" role="columnheader">${this.t.actions}</div>` : A}
+            ${this.actions.length ? b2`<div class="gcell gh right actions-col" role="columnheader">${this.t.actions}</div>` : A}
           </div>
 
           <!-- Filas -->
@@ -3651,12 +3715,19 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
         const key = this.keyOf(row);
         const selected = this.selectable && this.selection.has(key);
         return b2`
-                <div class=${`grow grow-data${selected ? " selected" : ""}`} role="row" style=${o6(tpl)}>
-                  ${this.selectable ? b2`<span class="selcb"><ion-checkbox .checked=${selected} aria-label=${this.t.selectRow} @ionChange=${() => this.toggleRow(key)}></ion-checkbox></span>` : A}
+                <div
+                  class=${`grow grow-data${selected ? " selected" : ""}${this.rowClickable ? " clickable" : ""}`}
+                  role="row"
+                  style=${o6(tpl)}
+                  tabindex=${this.rowClickable ? "0" : A}
+                  @click=${this.rowClickable ? () => this.emit("rowClick", { row }) : A}
+                  @keydown=${this.rowClickable ? (e5) => this.onRowKeydown(e5, row) : A}
+                >
+                  ${this.selectable ? b2`<span class="selcb" @click=${(e5) => e5.stopPropagation()}><ion-checkbox .checked=${selected} aria-label=${this.t.selectRow} @ionChange=${() => this.toggleRow(key)}></ion-checkbox></span>` : A}
                   ${cols.map(
           (c5) => b2`<div class=${`gcell ${alignCls(c5.align)}`} role="cell">${c5.render ? c5.render(row) : b2`<span>${this.cell(c5, row)}</span>`}</div>`
         )}
-                  ${this.actions.length ? b2`<div class="gcell right" role="cell">${this.actionButtons(row)}</div>` : A}
+                  ${this.actions.length ? b2`<div class="gcell right actions-col" role="cell" @click=${(e5) => e5.stopPropagation()}>${this.actionButtons(row)}</div>` : A}
                 </div>
               `;
       }
@@ -3788,6 +3859,9 @@ __decorateClass4([
   n4({ attribute: false })
 ], _OkDataTable.prototype, "pageSizes");
 __decorateClass4([
+  n4({ type: Boolean, attribute: "row-clickable" })
+], _OkDataTable.prototype, "rowClickable");
+__decorateClass4([
   n4({ type: Boolean })
 ], _OkDataTable.prototype, "selectable");
 __decorateClass4([
@@ -3841,6 +3915,9 @@ __decorateClass4([
 __decorateClass4([
   r5()
 ], _OkDataTable.prototype, "isMobile");
+__decorateClass4([
+  r5()
+], _OkDataTable.prototype, "xOverflow");
 __decorateClass4([
   r5()
 ], _OkDataTable.prototype, "hiddenKeys");
@@ -5214,13 +5291,66 @@ var ErpAppointmentsList = class extends i3 {
   }
   /** Bloque del timeline → mismo panel pre-rellenado.
    *
-   *  El gesto que usa TODO el mercado (Fresha, Vagaro, Square Appointments, Booksy, Phorest,
-   *  Zenoti, Treatwell, Mindbody) es ARRASTRAR la cita por la rejilla. `ok-scheduler` no tiene
-   *  arrastre —emite `ok-event-click`, `ok-slot-click` y `ok-nav`, y vive en OutfitKit, otro
-   *  repo—, así que aquí se cablea el clic: en una tablet cuesta el mismo toque. */
+   *  El ARRASTRE (appointments#74, `onEventMove`) es la mitad rápida del gesto; el clic es la
+   *  mitad accesible —la ruta de teclado que `ok-scheduler` expone como botón enfocable— y en
+   *  una tablet cuesta el mismo toque. Las dos llegan al mismo command. */
   async onEventClick(ev) {
     const row = this.items.find((a3) => a3.id === ev.detail.id);
     if (row) await this.openReschedule(row);
+  }
+  /** Arrastre del timeline (appointments#74): `ok-scheduler` pinta el bloque en su destino y
+   *  pregunta; EL MÓDULO MANDA. La rejilla ya trae el gesto (outfitkit#64: puntero, y dedo tras
+   *  una pulsación mantenida —el estándar del sector contra el arrastre accidental en tablet—,
+   *  más las flechas de teclado), pero sin un host que escuche y persista, mover sería mentir.
+   *
+   *  Lo que NO hace este cableado, a propósito:
+   *  · CAMBIAR DE PROFESIONAL. Soltar el bloque en otro carril ES un cambio de profesional, y
+   *    `reschedule` mueve la hora nada más (appointments#11 sacó la identidad del profesional
+   *    de las manos del llamante). Dejarlo «medio funcionar» guardaría la hora y enseñaría el
+   *    carril: una mentira en la agenda. Se rechaza con un aviso claro y `revert()`.
+   *  · CONFIRMAR LIGERO al soltar (el diálogo con «avisar a la clienta» de Vagaro/Fresha).
+   *    Necesita un canal de notificación que este módulo no tiene; la reprogramación queda
+   *    visible en la agenda refrescada y con su historial (`_history_reschedule`).
+   *
+   *  El rechazo del servidor (solape, bloqueo, antelación, estado terminal) llama `revert()`
+   *  —el bloque vuelve a su sitio en vez de quedarse donde el servidor nunca lo aceptó— y el
+   *  fallo se ve DOS veces: toast del shell (el arrastre pasa lejos del banner) y el
+   *  `ok-inline-feedback` de siempre. */
+  async onEventMove(ev) {
+    const { id, resourceId, start, revert } = ev.detail;
+    const appointment = this.items.find((a3) => a3.id === id);
+    if (!appointment) {
+      revert();
+      return;
+    }
+    const lane = appointment.staff_id || UNASSIGNED;
+    if (!RESCHEDULABLE.includes(appointment.status)) {
+      revert();
+      this.refuseDrag("ui.errDragNotMovable");
+      return;
+    }
+    if (resourceId !== lane) {
+      revert();
+      this.refuseDrag("ui.errDragStaffChange");
+      return;
+    }
+    try {
+      await erplora2().command("appointments.appointments.reschedule", {
+        appointment_id: id,
+        start_datetime: (/* @__PURE__ */ new Date(`${this.day}T${start}`)).toISOString(),
+        duration_minutes: appointment.duration_minutes
+      });
+      await this.refresh();
+    } catch (e5) {
+      revert();
+      this.error = domainErrorText(e5, "ui.errReschedule");
+      erplora2().notify?.({ type: "error", message: this.error });
+    }
+  }
+  /** Rechazo local del arrastre: el bloque ya ha vuelto (`revert()`), queda DECIR por qué. */
+  refuseDrag(key) {
+    this.error = erplora2().t(CATALOG2, key);
+    erplora2().notify?.({ type: "error", message: this.error });
   }
   /** Mueve la cita. Solo viajan las TRES claves del esquema
    *  (`schemas/appointment_reschedule.json` es `additionalProperties: false`: una clave de más
@@ -5308,6 +5438,8 @@ var ErpAppointmentsList = class extends i3 {
               .locale=${erplora2().locale || "es"}
               .resources=${this.schedulerResources}
               .events=${this.schedulerEvents}
+              movable
+              snap-minutes="15"
               .labels=${{ prevDay: t5("ui.prevDay"), nextDay: t5("ui.nextDay"), empty: t5("ui.noStaff") }}
               @ok-nav=${(e5) => {
       this.day = e5.detail.date;
@@ -5315,6 +5447,7 @@ var ErpAppointmentsList = class extends i3 {
     }}
               @ok-slot-click=${(e5) => this.onSlotClick(e5)}
               @ok-event-click=${(e5) => this.onEventClick(e5)}
+              @ok-event-move=${(e5) => this.onEventMove(e5)}
             ></ok-scheduler>` : b2`<ok-data-table .fill=${true} .primaryAction=${{ label: t5("ui.addAppointment"), icon: "add" }} @primaryAction=${() => this.openCreate()} .labels=${this.rescheduleId ? { newRecord: t5("ui.rescheduleTitle") } : {}} .views=${true} .cardTitle=${(row) => String(row.appointment_number ?? row.customer_name ?? "")} .columns=${this.columns} .rows=${this.items} .searchKeys=${["appointment_number", "customer_name", "service_name", "staff_name"]} .searchPlaceholder=${t5("ui.searchPlaceholder")} .actions=${this.rowActions} @rowAction=${(e5) => this.onRowAction(e5)} .emptyMessage=${this.loading ? t5("ui.loading") : t5("ui.empty")}>
           <!-- El panel es UNO: alta si no hay cita en curso, mover si la hay (appointments#42). -->
           ${this.rescheduleId ? this.renderRescheduleForm(t5) : this.renderCreateForm(t5)}

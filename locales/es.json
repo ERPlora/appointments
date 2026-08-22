@@ -62,6 +62,8 @@
     "confirmReschedule": "Mover la cita",
     "cancelReschedule": "Cancelar",
     "errReschedule": "No se ha podido mover la cita.",
+    "errDragStaffChange": "Cambiar de profesional arrastrando aún no se puede: la cita se queda con su profesional. Mueve la hora o usa el panel.",
+    "errDragNotMovable": "Esta cita ya no se puede mover (su estado es final).",
     "bookingCustomer": "Cliente",
     "bookingCustomerSearch": "Busca por teléfono o nombre…",
     "bookingCreateCustomer": "Crear este cliente",

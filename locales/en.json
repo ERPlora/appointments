@@ -61,6 +61,8 @@
     "confirmReschedule": "Move appointment",
     "cancelReschedule": "Cancel",
     "errReschedule": "The appointment could not be moved.",
+    "errDragStaffChange": "Changing professional by dragging is not available yet - the appointment stays with its professional. Use the time change or the panel.",
+    "errDragNotMovable": "This appointment can no longer be moved (its state is final).",
     "bookingCustomer": "Customer",
     "bookingCustomerSearch": "Search by phone or name…",
     "bookingCreateCustomer": "Create this customer",
