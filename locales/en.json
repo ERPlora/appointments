@@ -61,6 +61,7 @@
     "confirmReschedule": "Move appointment",
     "cancelReschedule": "Cancel",
     "errReschedule": "The appointment could not be moved.",
+    "errDragCrossLane": "Moving a booking to another professional is not a drag away: rebook it with the right professional from the appointment.",
     "bookingCustomer": "Customer",
     "bookingCustomerSearch": "Search by phone or name…",
     "bookingCreateCustomer": "Create this customer",

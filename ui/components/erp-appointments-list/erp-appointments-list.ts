@@ -196,6 +196,24 @@ function localInputValue(iso: string): string {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
+/** ISO 8601 con la hora de pared LOCAL del salón y SU offset (appointments#76). `toISOString()`
+ *  escribe la pared de UTC: el INSTANTE viaja intacto, pero el texto guardado deja de decir la
+ *  hora que el salón ve en la pared — y el motor de disponibilidad compara las citas contra los
+ *  huecos PARED contra PARED (queries/availability_slots.sql): una pared en UTC es una ventana
+ *  tachada con el desfase horario de por medio. Misma fecha, misma hora, mismo instante; solo
+ *  cambia el reloj con el que se escribe. */
+function localIso(d: Date): string {
+  const p = (n: number): string => String(n).padStart(2, '0');
+  const offset = -d.getTimezoneOffset();
+  const sign = offset >= 0 ? '+' : '-';
+  const abs = Math.abs(offset);
+  return (
+    `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}` +
+    `T${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}` +
+    `${sign}${p(Math.floor(abs / 60))}:${p(abs % 60)}`
+  );
+}
+
 export class ErpAppointmentsList extends LitElement {
   static styles = css`
     :host { display:flex; flex-direction:column; height:100%; min-height:0; font-family: system-ui, sans-serif; color: var(--ion-text-color, #1c1b18); }
@@ -584,13 +602,59 @@ export class ErpAppointmentsList extends LitElement {
 
   /** Bloque del timeline → mismo panel pre-rellenado.
    *
-   *  El gesto que usa TODO el mercado (Fresha, Vagaro, Square Appointments, Booksy, Phorest,
-   *  Zenoti, Treatwell, Mindbody) es ARRASTRAR la cita por la rejilla. `ok-scheduler` no tiene
-   *  arrastre —emite `ok-event-click`, `ok-slot-click` y `ok-nav`, y vive en OutfitKit, otro
-   *  repo—, así que aquí se cablea el clic: en una tablet cuesta el mismo toque. */
+   *  El bloque también se ARRASTRA (appointments#74, abajo `onEventMove`): el clic sigue siendo
+   *  la ruta accesible y la que llega a un hueco exacto tecleándolo. */
   private async onEventClick(ev: CustomEvent<{ id: string }>) {
     const row = this.items.find((a) => a.id === ev.detail.id);
     if (row) await this.openReschedule(row as unknown as Record<string, unknown>);
+  }
+
+  /** El gesto que usa TODO el mercado de agendas (Fresha, Vagaro, Square Appointments, Booksy,
+   *  Phorest, Zenoti — investigación completa en ERPlora/outfitkit#63): la cita se ARRASTRA por
+   *  la rejilla (appointments#74). El scheduler la muestra optimista en su destino y emite
+   *  `ok-event-move`; el módulo manda `reschedule` y refresca, y si el servidor dice que no,
+   *  `revert()` devuelve el bloque a su sitio — nunca queda pintado donde no está guardado.
+   *
+   *  ⚠️ SOLO EL EJE DEL TIEMPO. Soltar en OTRA carril es cambiar de profesional, y
+   *  `reschedule` NO lo hace a propósito (appointments#11: la identidad del profesional salió
+   *  del caller; el handler la lee de la fila). Activar el arrastre entre carriles sin un
+   *  command que cambie el profesional con su validación de elegibilidad dejaría la agenda
+   *  enseñando uno que no es el guardado — así que se rechaza en el acto, con revert y con la
+   *  razón a la vista. El cambio de profesional por arrastre espera ese command (trabajo
+   *  aparte, igual que en el panel de reprogramar). */
+  private async onEventMove(
+    ev: CustomEvent<{
+      id: string;
+      resourceId: string;
+      start: string;
+      from: { resourceId: string };
+      revert: () => void;
+    }>,
+  ) {
+    const { id, resourceId, start, from, revert } = ev.detail;
+    if (resourceId !== from.resourceId) {
+      revert();
+      this.error = erplora().t(CATALOG, 'ui.errDragCrossLane');
+      return;
+    }
+    const row = this.items.find((a) => a.id === id);
+    if (!row || !RESCHEDULABLE.includes(row.status)) {
+      revert();
+      this.error = domainErrorText(new Error('appointments.cannot_reschedule'), 'ui.errReschedule');
+      return;
+    }
+    try {
+      await erplora().command('appointments.appointments.reschedule', {
+        appointment_id: id,
+        // La pared del día del scheduler + la hora de la caída, en el reloj del salón (#76).
+        start_datetime: localIso(new Date(`${this.day}T${start}:00`)),
+        duration_minutes: row.duration_minutes,
+      });
+      await this.refresh();
+    } catch (e) {
+      revert();
+      this.error = domainErrorText(e, 'ui.errReschedule');
+    }
   }
 
   /** Mueve la cita. Solo viajan las TRES claves del esquema
@@ -685,6 +749,8 @@ export class ErpAppointmentsList extends LitElement {
               .locale=${erplora().locale || 'es'}
               .resources=${this.schedulerResources}
               .events=${this.schedulerEvents}
+              movable
+              snap-minutes="15"
               .labels=${{ prevDay: t('ui.prevDay'), nextDay: t('ui.nextDay'), empty: t('ui.noStaff') }}
               @ok-nav=${(e: CustomEvent<{ date: string }>) => {
                 this.day = e.detail.date;
@@ -692,6 +758,7 @@ export class ErpAppointmentsList extends LitElement {
               }}
               @ok-slot-click=${(e: CustomEvent<{ resourceId: string; time: string }>) => this.onSlotClick(e)}
               @ok-event-click=${(e: CustomEvent<{ id: string }>) => this.onEventClick(e)}
+              @ok-event-move=${(e: CustomEvent) => this.onEventMove(e)}
             ></ok-scheduler>`
           : html`<ok-data-table .fill=${true} .primaryAction=${{ label: t('ui.addAppointment'), icon: 'add' }} @primaryAction=${() => this.openCreate()} .labels=${this.rescheduleId ? { newRecord: t('ui.rescheduleTitle') } : {}} .views=${true} .cardTitle=${(row: Record<string, unknown>) => String(row.appointment_number ?? row.customer_name ?? '')} .columns=${this.columns} .rows=${this.items as unknown as Record<string, unknown>[]} .searchKeys=${['appointment_number', 'customer_name', 'service_name', 'staff_name']} .searchPlaceholder=${t('ui.searchPlaceholder')} .actions=${this.rowActions} @rowAction=${(e: CustomEvent) => this.onRowAction(e)} .emptyMessage=${this.loading ? t('ui.loading') : t('ui.empty')}>
           <!-- El panel es UNO: alta si no hay cita en curso, mover si la hay (appointments#42). -->
