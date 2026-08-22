@@ -664,9 +664,12 @@ export class ErpAppointmentsList extends LitElement {
     }
     try {
       // `start` es `HH:MM` de pared LOCAL del día visible — el mismo idioma que `ok-slot-click`.
+      // Se escribe en el reloj del salón (pared + offset, appointments#76): mismo instante, y el
+      // texto guardado es el que el motor de disponibilidad compara PARED contra PARED — una
+      // pared UTC en una cita movida volvería a tachar la ventana desplazada por el offset.
       await erplora().command('appointments.appointments.reschedule', {
         appointment_id: id,
-        start_datetime: new Date(`${this.day}T${start}`).toISOString(),
+        start_datetime: localIso(new Date(`${this.day}T${start}`)),
         duration_minutes: appointment.duration_minutes,
       });
       await this.refresh(); // la posición optimista se descarta: manda la fila del servidor

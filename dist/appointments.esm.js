@@ -5344,7 +5344,7 @@ var ErpAppointmentsList = class extends i3 {
     try {
       await erplora2().command("appointments.appointments.reschedule", {
         appointment_id: id,
-        start_datetime: (/* @__PURE__ */ new Date(`${this.day}T${start}`)).toISOString(),
+        start_datetime: localIso(/* @__PURE__ */ new Date(`${this.day}T${start}`)),
         duration_minutes: appointment.duration_minutes
       });
       await this.refresh();
