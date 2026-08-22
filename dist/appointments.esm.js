@@ -2386,12 +2386,53 @@ var o6 = e4(class extends i4 {
 
 // ../outfitkit/dist/ok-data-table.js
 var CSV_BOM = "\uFEFF";
+var WINDOWS_1252_C1 = [
+  8364,
+  129,
+  8218,
+  402,
+  8222,
+  8230,
+  8224,
+  8225,
+  710,
+  8240,
+  352,
+  8249,
+  338,
+  141,
+  381,
+  143,
+  144,
+  8216,
+  8217,
+  8220,
+  8221,
+  8226,
+  8211,
+  8212,
+  732,
+  8482,
+  353,
+  8250,
+  339,
+  157,
+  382,
+  376
+];
+function decodeWindows1252(bytes) {
+  let text = "";
+  for (const byte of bytes) {
+    text += String.fromCharCode(byte >= 128 && byte <= 159 ? WINDOWS_1252_C1[byte - 128] : byte);
+  }
+  return text;
+}
 function decodeCsvBuffer(buf) {
   let text;
   try {
     text = new TextDecoder("utf-8", { fatal: true }).decode(buf);
   } catch {
-    text = new TextDecoder("windows-1252").decode(buf);
+    text = decodeWindows1252(new Uint8Array(buf));
   }
   return text.charCodeAt(0) === 65279 ? text.slice(1) : text;
 }
@@ -3827,6 +3868,9 @@ var DEFAULT_LABELS3 = {
   nextDay: "Next day",
   empty: "No resources to display."
 };
+var DRAG_THRESHOLD_PX = 5;
+var TOUCH_HOLD_MS = 400;
+var TOUCH_HOLD_TOLERANCE_PX = 10;
 var OkScheduler = class extends i3 {
   constructor() {
     super(...arguments);
@@ -3838,8 +3882,21 @@ var OkScheduler = class extends i3 {
     this.slotMin = 60;
     this.locale = "en-US";
     this.labels = {};
+    this.movable = false;
+    this.resizable = false;
+    this.snapMin = 15;
     this.cursor = /* @__PURE__ */ new Date();
     this.seeded = false;
+    this.drag = null;
+    this.pending = null;
+    this.announcement = "";
+    this.heldId = null;
+    this.pointerDrag = null;
+    this.suppressClick = false;
+    this.suppressClickTimer = null;
+    this.blockScrollWhileDragging = (e5) => {
+      if (this.pointerDrag?.held) e5.preventDefault();
+    };
   }
   static {
     this.styles = i`
@@ -4050,6 +4107,93 @@ var OkScheduler = class extends i3 {
     .event:active {
       transform: scale(var(--ok-press-scale, 0.97));
     }
+    /* Solo cuando el host activa movable: el bloque es una superficie de arrastre.
+       NO se pone touch-action:none — el dedo tiene que poder hacer scroll de la rejilla desde
+       encima del bloque. El arrastre táctil se arma con la pulsación mantenida y a partir de ahí
+       el scroll se corta a mano (preventDefault del touchmove). */
+    .event.movable {
+      cursor: grab;
+    }
+    /* Pulsación mantenida completada: el bloque "se levanta" y avisa de que ya está cogido. */
+    .event.held {
+      transform: scale(1.03);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    }
+    .event.dragging {
+      cursor: grabbing;
+      z-index: 5;
+      opacity: 0.92;
+      box-shadow: 0 6px 16px rgba(0, 0, 0, 0.32);
+      /* Deja pasar el hit-test al carril de debajo para saber sobre qué recurso está. */
+      pointer-events: none;
+      transition: none;
+    }
+    .event.resizing {
+      z-index: 5;
+      box-shadow: 0 6px 16px rgba(0, 0, 0, 0.32);
+      transition: none;
+    }
+    .event:focus-visible {
+      outline: 2px solid var(--primary-color);
+      outline-offset: 2px;
+    }
+    /* Asa del borde de FIN. Una franja estrecha con su propio cursor, para que se vea que ahí el
+       gesto es otro. En puntero grueso (dedo) se ensancha: 0.85 rem son ~14 px, y un dedo no
+       acierta en 14 px. No se llega a 44 px a propósito — el asa se come el bloque entero en una
+       cita de 15 min y ya no se podría ni mover ni abrir. */
+    .resize-handle {
+      position: absolute;
+      top: 0;
+      right: 0;
+      bottom: 0;
+      width: var(--resize-handle-width, 0.85rem);
+      cursor: col-resize;
+      border-top-right-radius: 6px;
+      border-bottom-right-radius: 6px;
+      background: linear-gradient(to right, transparent, rgba(0, 0, 0, 0.22));
+      touch-action: none;
+    }
+    /* La marquita del centro: sin ella el asa es invisible y nadie sabe que se puede arrastrar. */
+    .resize-handle::after {
+      content: '';
+      position: absolute;
+      top: 50%;
+      right: 0.28rem;
+      width: 2px;
+      height: 0.9rem;
+      transform: translateY(-50%);
+      border-radius: 1px;
+      background: var(--primary-contrast);
+      opacity: 0.75;
+    }
+    @media (pointer: coarse) {
+      .resize-handle {
+        width: var(--resize-handle-width, 1.35rem);
+      }
+    }
+    /* Hueco de origen: dice de dónde salió el bloque mientras está en el aire. */
+    .ghost {
+      position: absolute;
+      top: 0.25rem;
+      bottom: 0.25rem;
+      border-radius: 6px;
+      border: 2px dashed var(--border-color);
+      background: var(--hover-bg);
+      pointer-events: none;
+      z-index: 0;
+    }
+    /* Anuncio para lector de pantalla del movimiento por teclado. */
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0 0 0 0);
+      white-space: nowrap;
+      border: 0;
+    }
     .event-title {
       font-size: 0.78rem;
       font-weight: 600;
@@ -4075,7 +4219,8 @@ var OkScheduler = class extends i3 {
 
     @media (prefers-reduced-motion: reduce) {
       .slot:active,
-      .event:active {
+      .event:active,
+      .event.held {
         transform: none;
       }
     }
@@ -4105,6 +4250,10 @@ var OkScheduler = class extends i3 {
   /** Textos efectivos: defaults INGLÉS mezclados con los del consumidor. */
   get t() {
     return { ...DEFAULT_LABELS3, ...this.labels };
+  }
+  // El refresco del host manda: descarta la posición optimista en cuanto llegan eventos nuevos.
+  willUpdate(changed) {
+    if (changed.has("events")) this.pending = null;
   }
   // ── Helpers de fecha ──────────────────────────────────────────
   // Convierte una `Date` a clave local `YYYY-MM-DD`.
@@ -4164,6 +4313,7 @@ var OkScheduler = class extends i3 {
   // Emite el click sobre un evento (sin propagar al slot de fondo).
   clickEvent(ev, e5) {
     e5.stopPropagation();
+    if (this.suppressClick) return;
     this.dispatchEvent(
       new CustomEvent("ok-event-click", {
         detail: { id: ev.id, event: ev },
@@ -4181,6 +4331,270 @@ var OkScheduler = class extends i3 {
         composed: true
       })
     );
+  }
+  // ── Mover un bloque ───────────────────────────────────────────
+  // Primer y último minuto pintables de la franja.
+  get dayStartMin() {
+    return this.startHour * 60;
+  }
+  // Dónde está un bloque AHORA: el gesto en curso y el movimiento sin confirmar mandan sobre la
+  // prop, para que el bloque no vuelva a saltar a su sitio viejo entre el drop y el refresco.
+  placement(ev) {
+    if (this.drag?.id === ev.id) return this.drag;
+    if (this.pending?.id === ev.id) return this.pending;
+    return {
+      resourceId: ev.resourceId,
+      startMin: this.minutesOf(ev.start),
+      endMin: this.minutesOf(ev.end)
+    };
+  }
+  // Imanta el inicio a la rejilla y garantiza que el bloque entero cabe en la franja visible.
+  snapStart(startMin, durationMin) {
+    const step = this.snapMin > 0 ? this.snapMin : 1;
+    const snapped = Math.round(startMin / step) * step;
+    const last = this.dayStartMin + this.rangeMinutes - durationMin;
+    return Math.min(Math.max(snapped, this.dayStartMin), Math.max(this.dayStartMin, last));
+  }
+  // Imanta el FIN a la rejilla: nunca por debajo de un `snap` de duración ni más allá de la franja.
+  snapEnd(endMin, startMin) {
+    const step = this.snapMin > 0 ? this.snapMin : 1;
+    const snapped = Math.round(endMin / step) * step;
+    const last = this.dayStartMin + this.rangeMinutes;
+    return Math.min(Math.max(snapped, startMin + step), last);
+  }
+  // Único sitio donde nace un redimensionado (asa y teclado). Mismo contrato que el movimiento:
+  // se pinta optimista y MANDA EL HOST; si el servidor lo rechaza, `revert()`.
+  requestResize(ev, from, endMin) {
+    if (endMin === from.endMin) return;
+    const resized = { id: ev.id, ...from, endMin };
+    this.pending = resized;
+    const detail = {
+      id: ev.id,
+      start: this.fmtTime(from.startMin),
+      end: this.fmtTime(endMin),
+      from: { start: this.fmtTime(from.startMin), end: this.fmtTime(from.endMin) },
+      event: ev,
+      // Se comprueba la identidad para no deshacer el cambio SIGUIENTE si el revert llega tarde.
+      revert: () => {
+        if (this.pending === resized) this.pending = null;
+      }
+    };
+    this.dispatchEvent(
+      new CustomEvent("ok-event-resize", {
+        detail,
+        bubbles: true,
+        composed: true
+      })
+    );
+  }
+  // Único sitio donde nace un movimiento (arrastre y teclado). Pinta optimista y pregunta al host.
+  requestMove(ev, from, to) {
+    if (to.resourceId === from.resourceId && to.startMin === from.startMin) return;
+    const move = { id: ev.id, ...to };
+    this.pending = move;
+    const detail = {
+      id: ev.id,
+      resourceId: to.resourceId,
+      start: this.fmtTime(to.startMin),
+      end: this.fmtTime(to.endMin),
+      from: {
+        resourceId: from.resourceId,
+        start: this.fmtTime(from.startMin),
+        end: this.fmtTime(from.endMin)
+      },
+      event: ev,
+      // Rechazo del host: el bloque vuelve. Se comprueba la identidad para no deshacer el
+      // movimiento SIGUIENTE si el revert llega tarde.
+      revert: () => {
+        if (this.pending === move) this.pending = null;
+      }
+    };
+    this.dispatchEvent(
+      new CustomEvent("ok-event-move", {
+        detail,
+        bubbles: true,
+        composed: true
+      })
+    );
+  }
+  capturePointer(target, pointerId) {
+    try {
+      target.setPointerCapture?.(pointerId);
+    } catch {
+    }
+  }
+  releasePointer(state2) {
+    try {
+      if (state2.captureTarget.hasPointerCapture?.(state2.pointerId)) {
+        state2.captureTarget.releasePointerCapture?.(state2.pointerId);
+      }
+    } catch {
+    }
+  }
+  startGesture(e5, ev, mode) {
+    if (this.pointerDrag || e5.button !== 0) return;
+    if (mode === "move" ? !this.movable : !this.resizable) return;
+    const captureTarget = e5.currentTarget;
+    const lane = captureTarget.closest(".lane");
+    const laneWidth = lane?.getBoundingClientRect().width ?? 0;
+    if (laneWidth <= 0) return;
+    const state2 = {
+      mode,
+      pointerId: e5.pointerId,
+      startX: e5.clientX,
+      startY: e5.clientY,
+      active: false,
+      // Con ratón o lápiz el gesto ya está armado: el umbral en píxeles basta. En el ASA tampoco
+      // hay pulsación mantenida ni con el dedo — el asa YA es el objetivo deliberado.
+      held: mode === "resize" || e5.pointerType !== "touch",
+      holdTimer: null,
+      captureTarget,
+      laneWidth,
+      id: ev.id,
+      from: this.placement(ev)
+    };
+    if (!state2.held) {
+      state2.holdTimer = setTimeout(() => {
+        state2.held = true;
+        state2.holdTimer = null;
+        this.heldId = state2.id;
+      }, TOUCH_HOLD_MS);
+    }
+    this.pointerDrag = state2;
+    this.capturePointer(captureTarget, e5.pointerId);
+  }
+  onEventPointerDown(e5, ev) {
+    this.startGesture(e5, ev, "move");
+  }
+  // El asa gana sobre el cuerpo: se para la propagación para que el `pointerdown` del bloque no
+  // llegue a ver este gesto. Sin esto los dos arrancarían con el mismo evento.
+  onHandlePointerDown(e5, ev) {
+    e5.stopPropagation();
+    this.startGesture(e5, ev, "resize");
+  }
+  // Suelta el candidato y apaga su temporizador (una sola puerta de salida del gesto).
+  endGesture(state2) {
+    if (state2.holdTimer) clearTimeout(state2.holdTimer);
+    this.releasePointer(state2);
+    this.pointerDrag = null;
+    this.heldId = null;
+  }
+  /** Elemento real bajo el puntero capturado, dentro del shadow root. */
+  elementFromPoint(x2, y3) {
+    const root = this.renderRoot;
+    return root.elementFromPoint?.(x2, y3) ?? null;
+  }
+  // Cuántos minutos ha recorrido el puntero desde que empezó el gesto.
+  travelledMinutes(e5, state2) {
+    return (e5.clientX - state2.startX) / state2.laneWidth * this.rangeMinutes;
+  }
+  // Traduce las coordenadas del puntero a «qué carril y qué hora», imantado a la rejilla.
+  dropTarget(e5, state2) {
+    const duration = state2.from.endMin - state2.from.startMin;
+    const startMin = this.snapStart(state2.from.startMin + this.travelledMinutes(e5, state2), duration);
+    const hit = this.elementFromPoint(e5.clientX, e5.clientY);
+    const lane = hit?.closest(".lane[data-resource-id]") ?? null;
+    const resourceId = lane?.dataset.resourceId ?? state2.from.resourceId;
+    return { resourceId, startMin, endMin: startMin + duration };
+  }
+  // Redimensionar solo mueve el FIN: ni la hora de inicio ni el recurso cambian.
+  resizeTarget(e5, state2) {
+    const endMin = this.snapEnd(state2.from.endMin + this.travelledMinutes(e5, state2), state2.from.startMin);
+    return { ...state2.from, endMin };
+  }
+  // Dónde quedaría el bloque si se soltara aquí, según el gesto en curso.
+  gestureTarget(e5, state2) {
+    return state2.mode === "resize" ? this.resizeTarget(e5, state2) : this.dropTarget(e5, state2);
+  }
+  onPointerMove(e5) {
+    const state2 = this.pointerDrag;
+    if (!state2 || state2.pointerId !== e5.pointerId) return;
+    const travelled = Math.hypot(e5.clientX - state2.startX, e5.clientY - state2.startY);
+    if (!state2.held) {
+      if (travelled >= TOUCH_HOLD_TOLERANCE_PX) this.endGesture(state2);
+      return;
+    }
+    if (!state2.active) {
+      const needsThreshold = state2.mode === "resize" || e5.pointerType !== "touch";
+      if (needsThreshold && travelled < DRAG_THRESHOLD_PX) return;
+      state2.active = true;
+    }
+    e5.preventDefault();
+    this.drag = { id: state2.id, from: state2.from, ...this.gestureTarget(e5, state2) };
+  }
+  connectedCallback() {
+    super.connectedCallback();
+    this.addEventListener("touchmove", this.blockScrollWhileDragging, { passive: false });
+  }
+  suppressNextEventClick() {
+    this.suppressClick = true;
+    if (this.suppressClickTimer) clearTimeout(this.suppressClickTimer);
+    this.suppressClickTimer = setTimeout(() => {
+      this.suppressClick = false;
+      this.suppressClickTimer = null;
+    }, 0);
+  }
+  onPointerUp(e5) {
+    const state2 = this.pointerDrag;
+    if (!state2 || state2.pointerId !== e5.pointerId) return;
+    this.endGesture(state2);
+    if (!state2.active) return;
+    e5.preventDefault();
+    const to = this.gestureTarget(e5, state2);
+    this.drag = null;
+    this.suppressNextEventClick();
+    const ev = this.events.find((candidate) => candidate.id === state2.id);
+    if (!ev) return;
+    if (state2.mode === "resize") this.requestResize(ev, state2.from, to.endMin);
+    else this.requestMove(ev, state2.from, to);
+  }
+  onPointerCancel(e5) {
+    const state2 = this.pointerDrag;
+    if (!state2 || state2.pointerId !== e5.pointerId) return;
+    this.endGesture(state2);
+    this.drag = null;
+  }
+  // Teclado: el arrastre es un atajo, no la única vía (tables#16 hace esto mismo en el plano de
+  // sala). Enter/Espacio abre el panel del módulo; las flechas mueven.
+  onEventKeyDown(e5, ev) {
+    if (e5.key === "Enter" || e5.key === " ") {
+      e5.preventDefault();
+      this.clickEvent(ev, e5);
+      return;
+    }
+    const horizontal = e5.key === "ArrowRight" || e5.key === "ArrowLeft";
+    const snap = this.snapMin > 0 ? this.snapMin : 1;
+    if (this.resizable && horizontal && e5.shiftKey) {
+      const from2 = this.placement(ev);
+      const endMin = this.snapEnd(from2.endMin + (e5.key === "ArrowRight" ? snap : -snap), from2.startMin);
+      if (endMin === from2.endMin) return;
+      e5.preventDefault();
+      e5.stopPropagation();
+      this.requestResize(ev, from2, endMin);
+      this.announcement = `${ev.title} \u2014 ${this.fmtTime(from2.startMin)} \xB7 ${this.fmtTime(endMin)}`;
+      return;
+    }
+    if (!this.movable) return;
+    const from = this.placement(ev);
+    const duration = from.endMin - from.startMin;
+    const step = snap * (e5.shiftKey ? 4 : 1);
+    let to = null;
+    if (e5.key === "ArrowRight" || e5.key === "ArrowLeft") {
+      const delta = e5.key === "ArrowRight" ? step : -step;
+      to = { ...from, startMin: this.snapStart(from.startMin + delta, duration) };
+      to.endMin = to.startMin + duration;
+    } else if (e5.key === "ArrowDown" || e5.key === "ArrowUp") {
+      const index = this.resources.findIndex((r6) => r6.id === from.resourceId);
+      const next = index + (e5.key === "ArrowDown" ? 1 : -1);
+      if (index === -1 || next < 0 || next >= this.resources.length) return;
+      to = { ...from, resourceId: this.resources[next].id };
+    }
+    if (!to) return;
+    e5.preventDefault();
+    e5.stopPropagation();
+    this.requestMove(ev, from, to);
+    const resource = this.resources.find((r6) => r6.id === to.resourceId);
+    this.announcement = `${ev.title} \u2014 ${this.fmtTime(to.startMin)} \xB7 ${resource?.label ?? ""}`;
   }
   // ── Etiquetas ─────────────────────────────────────────────────
   // Etiqueta del día del cursor (capitalizada vía CSS).
@@ -4229,25 +4643,51 @@ var OkScheduler = class extends i3 {
         ></div>`
       );
     }
-    const blocks = this.events.filter((ev) => ev.resourceId === resource.id).map((ev) => {
-      const s5 = Math.max(this.minutesOf(ev.start), startMin);
-      const e5 = Math.min(this.minutesOf(ev.end), startMin + total);
+    const ghost = this.drag && this.drag.from.resourceId === resource.id ? (() => {
+      const s5 = Math.max(this.drag.from.startMin, startMin);
+      const e5 = Math.min(this.drag.from.endMin, startMin + total);
+      if (e5 <= s5) return "";
+      return b2`<div
+              class="ghost"
+              style=${`left:${(s5 - startMin) / total * 100}%;width:${(e5 - s5) / total * 100}%`}
+            ></div>`;
+    })() : "";
+    const blocks = this.events.filter((ev) => this.placement(ev).resourceId === resource.id).map((ev) => {
+      const at = this.placement(ev);
+      const s5 = Math.max(at.startMin, startMin);
+      const e5 = Math.min(at.endMin, startMin + total);
       if (e5 <= s5) return "";
       const left = (s5 - startMin) / total * 100;
       const width = (e5 - s5) / total * 100;
+      const gesturing = this.drag?.id === ev.id;
+      const resizing = gesturing && this.pointerDrag?.mode === "resize";
+      const dragging = gesturing && !resizing;
+      const held = this.heldId === ev.id;
+      const time = `${this.fmtTime(at.startMin)} \u2013 ${this.fmtTime(at.endMin)}`;
       return b2`<div
-          class="event"
+          class=${`event${this.movable ? " movable" : ""}${held ? " held" : ""}${dragging ? " dragging" : ""}${resizing ? " resizing" : ""}`}
+          data-event-id=${ev.id}
           style=${`left:${left}%;width:${width}%;background:${ev.color || "var(--primary-color)"}`}
           title=${ev.title}
+          role="button"
+          tabindex="0"
+          aria-label=${`${ev.title}, ${time}, ${resource.label}`}
           @click=${(domEv) => this.clickEvent(ev, domEv)}
+          @keydown=${(domEv) => this.onEventKeyDown(domEv, ev)}
+          @pointerdown=${(domEv) => this.onEventPointerDown(domEv, ev)}
         >
           <span class="event-title">${ev.title}</span>
-          <span class="event-time"
-            >${this.fmtTime(this.minutesOf(ev.start))} – ${this.fmtTime(this.minutesOf(ev.end))}</span
-          >
+          <span class="event-time">${time}</span>
+          ${this.resizable ? b2`<span
+                class="resize-handle"
+                data-resize-handle
+                aria-hidden="true"
+                @click=${(domEv) => domEv.stopPropagation()}
+                @pointerdown=${(domEv) => this.onHandlePointerDown(domEv, ev)}
+              ></span>` : ""}
         </div>`;
     });
-    return b2`<div class="lane">${slots}${blocks}</div>`;
+    return b2`<div class="lane" data-resource-id=${resource.id}>${slots}${ghost}${blocks}</div>`;
   }
   // Fila completa de un recurso: label sticky + lane.
   renderRow(resource) {
@@ -4287,14 +4727,28 @@ var OkScheduler = class extends i3 {
         </ion-button>
       </div>
       <div class="scroll">
-        <div class="grid" style=${gridStyle}>
+        <div
+          class="grid"
+          style=${gridStyle}
+          @pointermove=${this.onPointerMove}
+          @pointerup=${this.onPointerUp}
+          @pointercancel=${this.onPointerCancel}
+        >
           <div class="head-row">
             <div class="corner"></div>
             ${this.renderTimelineHead()}
           </div>
           ${this.resources.length ? this.resources.map((r6) => this.renderRow(r6)) : b2`<div class="empty">${this.t.empty}</div>`}
         </div>
-      </div>`;
+      </div>
+      <div class="sr-only" role="status" aria-live="polite">${this.announcement}</div>`;
+  }
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    this.removeEventListener("touchmove", this.blockScrollWhileDragging);
+    if (this.pointerDrag) this.endGesture(this.pointerDrag);
+    if (this.suppressClickTimer) clearTimeout(this.suppressClickTimer);
+    this.suppressClickTimer = null;
   }
 };
 __decorateClass5([
@@ -4322,8 +4776,29 @@ __decorateClass5([
   n4({ attribute: false })
 ], OkScheduler.prototype, "labels");
 __decorateClass5([
+  n4({ type: Boolean, reflect: true })
+], OkScheduler.prototype, "movable");
+__decorateClass5([
+  n4({ type: Boolean, reflect: true })
+], OkScheduler.prototype, "resizable");
+__decorateClass5([
+  n4({ type: Number, attribute: "snap-minutes" })
+], OkScheduler.prototype, "snapMin");
+__decorateClass5([
   r5()
 ], OkScheduler.prototype, "cursor");
+__decorateClass5([
+  r5()
+], OkScheduler.prototype, "drag");
+__decorateClass5([
+  r5()
+], OkScheduler.prototype, "pending");
+__decorateClass5([
+  r5()
+], OkScheduler.prototype, "announcement");
+__decorateClass5([
+  r5()
+], OkScheduler.prototype, "heldId");
 define("ok-scheduler", OkScheduler);
 
 // modules/appointments/ui/components/erp-appointments-list/erp-appointments-list.ts
@@ -4465,6 +4940,17 @@ var ErpAppointmentsList = class extends i3 {
     if (Number.isFinite(fromService) && fromService >= 1) return fromService;
     const fromSettings = Number(this.settings.default_duration);
     return Number.isFinite(fromSettings) && fromSettings >= 1 ? fromSettings : 60;
+  }
+  /** appointments#75: elegir servicio PRERRELLENA «Min.» con su duración de catálogo. La
+   *  pantalla ya la sabía (viajaba en el payload) pero el campo quedaba VACÍO con el número
+   *  solo como placeholder: la recepcionista no veía cuánto iba a durar la reserva, así que
+   *  no podía detectar un catálogo mal puesto ni ajustar a ojo. El servicio ES la duración
+   *  (Fresha, Vagaro, Square Appointments, Booksy); lo que se teclea es la excepción — y
+   *  cambiar de servicio re-llena desde el nuevo, porque la excepción era del anterior. */
+  onServiceChange(serviceId) {
+    this.newServiceId = serviceId;
+    const fromCatalogue = Number(this.services.find((s5) => s5.id === serviceId)?.duration_minutes);
+    this.newDuration = Number.isFinite(fromCatalogue) && fromCatalogue >= 1 ? String(fromCatalogue) : "";
   }
   // Getters (no campos): se re-evalúan en cada render para seguir el idioma activo.
   get columns() {
@@ -4862,16 +5348,17 @@ var ErpAppointmentsList = class extends i3 {
             <ion-select data-role="customer" fill="outline" label-placement="floating" label=${t5("ui.fieldCustomer")} placeholder=${t5("ui.pickCustomer")} .value=${this.newCustomerId} @ionChange=${(e5) => this.newCustomerId = e5.target.value}>
               ${this.customers.map((c5) => b2`<ion-select-option .value=${c5.id}>${c5.name}</ion-select-option>`)}
             </ion-select>
-            <ion-select data-role="service" fill="outline" label-placement="floating" label=${t5("ui.fieldService")} placeholder=${t5("ui.pickService")} .value=${this.newServiceId} @ionChange=${(e5) => this.newServiceId = e5.target.value}>
+            <ion-select data-role="service" fill="outline" label-placement="floating" label=${t5("ui.fieldService")} placeholder=${t5("ui.pickService")} .value=${this.newServiceId} @ionChange=${(e5) => this.onServiceChange(e5.target.value)}>
               ${this.services.map((s5) => b2`<ion-select-option .value=${s5.id}>${s5.name}</ion-select-option>`)}
             </ion-select>
             <ion-select data-role="staff" fill="outline" label-placement="floating" label=${t5("ui.fieldStaff")} placeholder=${t5("ui.pickStaff")} .value=${this.newStaffId} @ionChange=${(e5) => this.newStaffId = e5.target.value}>
               ${this.bookableStaff.map((m4) => b2`<ion-select-option .value=${m4.id}>${m4.full_name}</ion-select-option>`)}
             </ion-select>
             <ion-input fill="outline" label-placement="floating" label=${t5("ui.fieldStart")} type="datetime-local" .value=${this.newStart} @ionInput=${(e5) => this.newStart = e5.target.value}></ion-input>
-            <!-- Minutos vacío = la duración del servicio elegido (lo normal); se teclea solo para
-                 excepciones (una clienta que necesita más tiempo). -->
-            <ion-input fill="outline" label-placement="floating" label=${t5("ui.fieldMinutes")} type="number" min="1" placeholder=${String(this.effectiveDuration)} .value=${this.newDuration} @ionInput=${(e5) => this.newDuration = e5.target.value}></ion-input>
+            <!-- Minutos se PRERRELLENA al elegir servicio (appointments#75): la duración que la
+                 reserva va a tener tiene que estar EN PANTALLA; se teclea solo para excepciones
+                 (una clienta que necesita más tiempo). -->
+            <ion-input data-role="duration" fill="outline" label-placement="floating" label=${t5("ui.fieldMinutes")} type="number" min="1" .value=${this.newDuration} @ionInput=${(e5) => this.newDuration = e5.target.value}></ion-input>
             <ion-button type="submit" size="small" ?disabled=${this.saving || !this.newCustomerId || !this.newServiceId || !this.newStaffId || !this.newStart}>${this.saving ? t5("ui.saving") : t5("ui.addAppointment")}</ion-button>
           </form>`;
   }

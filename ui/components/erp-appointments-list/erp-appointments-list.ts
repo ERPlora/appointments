@@ -294,6 +294,18 @@ export class ErpAppointmentsList extends LitElement {
     return Number.isFinite(fromSettings) && fromSettings >= 1 ? fromSettings : 60;
   }
 
+  /** appointments#75: elegir servicio PRERRELLENA «Min.» con su duración de catálogo. La
+   *  pantalla ya la sabía (viajaba en el payload) pero el campo quedaba VACÍO con el número
+   *  solo como placeholder: la recepcionista no veía cuánto iba a durar la reserva, así que
+   *  no podía detectar un catálogo mal puesto ni ajustar a ojo. El servicio ES la duración
+   *  (Fresha, Vagaro, Square Appointments, Booksy); lo que se teclea es la excepción — y
+   *  cambiar de servicio re-llena desde el nuevo, porque la excepción era del anterior. */
+  private onServiceChange(serviceId: string): void {
+    this.newServiceId = serviceId;
+    const fromCatalogue = Number(this.services.find((s) => s.id === serviceId)?.duration_minutes);
+    this.newDuration = Number.isFinite(fromCatalogue) && fromCatalogue >= 1 ? String(fromCatalogue) : '';
+  }
+
   // Getters (no campos): se re-evalúan en cada render para seguir el idioma activo.
   private get columns(): DataTableColumn[] {
     const t = (k: string): string => erplora().t(CATALOG, k);
@@ -713,16 +725,17 @@ export class ErpAppointmentsList extends LitElement {
             <ion-select data-role="customer" fill="outline" label-placement="floating" label=${t('ui.fieldCustomer')} placeholder=${t('ui.pickCustomer')} .value=${this.newCustomerId} @ionChange=${(e: any) => (this.newCustomerId = e.target.value)}>
               ${this.customers.map((c) => html`<ion-select-option .value=${c.id}>${c.name}</ion-select-option>`)}
             </ion-select>
-            <ion-select data-role="service" fill="outline" label-placement="floating" label=${t('ui.fieldService')} placeholder=${t('ui.pickService')} .value=${this.newServiceId} @ionChange=${(e: any) => (this.newServiceId = e.target.value)}>
+            <ion-select data-role="service" fill="outline" label-placement="floating" label=${t('ui.fieldService')} placeholder=${t('ui.pickService')} .value=${this.newServiceId} @ionChange=${(e: any) => this.onServiceChange(e.target.value)}>
               ${this.services.map((s) => html`<ion-select-option .value=${s.id}>${s.name}</ion-select-option>`)}
             </ion-select>
             <ion-select data-role="staff" fill="outline" label-placement="floating" label=${t('ui.fieldStaff')} placeholder=${t('ui.pickStaff')} .value=${this.newStaffId} @ionChange=${(e: any) => (this.newStaffId = e.target.value)}>
               ${this.bookableStaff.map((m) => html`<ion-select-option .value=${m.id}>${m.full_name}</ion-select-option>`)}
             </ion-select>
             <ion-input fill="outline" label-placement="floating" label=${t('ui.fieldStart')} type="datetime-local" .value=${this.newStart} @ionInput=${(e: any) => (this.newStart = e.target.value)}></ion-input>
-            <!-- Minutos vacío = la duración del servicio elegido (lo normal); se teclea solo para
-                 excepciones (una clienta que necesita más tiempo). -->
-            <ion-input fill="outline" label-placement="floating" label=${t('ui.fieldMinutes')} type="number" min="1" placeholder=${String(this.effectiveDuration)} .value=${this.newDuration} @ionInput=${(e: any) => (this.newDuration = e.target.value)}></ion-input>
+            <!-- Minutos se PRERRELLENA al elegir servicio (appointments#75): la duración que la
+                 reserva va a tener tiene que estar EN PANTALLA; se teclea solo para excepciones
+                 (una clienta que necesita más tiempo). -->
+            <ion-input data-role="duration" fill="outline" label-placement="floating" label=${t('ui.fieldMinutes')} type="number" min="1" .value=${this.newDuration} @ionInput=${(e: any) => (this.newDuration = e.target.value)}></ion-input>
             <ion-button type="submit" size="small" ?disabled=${this.saving || !this.newCustomerId || !this.newServiceId || !this.newStaffId || !this.newStart}>${this.saving ? t('ui.saving') : t('ui.addAppointment')}</ion-button>
           </form>`;
   }

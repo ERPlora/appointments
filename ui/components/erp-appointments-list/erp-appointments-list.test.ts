@@ -189,6 +189,50 @@ describe('el alta sigue funcionando desde el panel', () => {
   });
 });
 
+// appointments#75: choosing a service PRE-FILLS «Min.» with its catalogue duration. The screen
+// already knew the number (it sent it in the payload) but painted the field EMPTY with the
+// duration only as a pale placeholder: the receptionist could not see what the booking would
+// last, so she could neither spot a wrong catalogue nor trim it by eye. The service IS the
+// duration (Fresha, Vagaro, Square Appointments, Booksy); the operator edits the exception.
+describe('al elegir servicio, «Min.» muestra la duración del catálogo (appointments#75)', () => {
+  const elegirServicio = async (el: HTMLElement & { shadowRoot: ShadowRoot; updateComplete: Promise<unknown> }, id: string) => {
+    const service = el.shadowRoot.querySelector('[data-role="service"]') as HTMLElement & { value?: string };
+    service.value = id;
+    service.dispatchEvent(new Event('ionChange'));
+    await el.updateComplete;
+  };
+
+  it('elegir un servicio de 30 min rellena el campo Min. con 30', async () => {
+    const el = await montar();
+    tabla(el)?.open('create');
+    await elegirServicio(el as never, 'sv1');
+    const minutes = el.shadowRoot.querySelector('[data-role="duration"]') as HTMLElement & { value?: string };
+    expect(minutes?.value, 'el campo Min. sigue vacío: la duración solo está en el placeholder').toBe('30');
+  });
+
+  it('la excepción tecleada por la recepcionista sigue mandando en el payload', async () => {
+    const el = await montar();
+    tabla(el)?.open('create');
+    await elegirServicio(el as never, 'sv1');
+    const wc = el as unknown as {
+      newCustomerId: string;
+      newStaffId: string;
+      newStart: string;
+      createAppointment: (ev: Event) => Promise<void>;
+    };
+    const minutes = el.shadowRoot.querySelector('[data-role="duration"]') as HTMLElement & { value?: string };
+    minutes.value = '45';
+    minutes.dispatchEvent(new Event('ionInput'));
+    await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
+    wc.newCustomerId = 'c1';
+    wc.newStaffId = 's1';
+    wc.newStart = '2026-07-13T10:00';
+    await wc.createAppointment(new Event('submit'));
+    const alta = comandos.find((c) => c.name === 'appointments.appointments.create');
+    expect(alta?.payload.duration_minutes, 'la excepción tecleada se perdió').toBe(45);
+  });
+});
+
 // La HORA de la cita: el módulo guarda en UTC (el propio alta hace `new Date(local).toISOString()`),
 // así que al PINTARLA hay que devolverla a la hora LOCAL del salón. Se pintaba con
 // `toISOString().slice(11,16)` — o sea, en UTC —, y una cita creada a las 09:30 en Madrid (07:30Z)
