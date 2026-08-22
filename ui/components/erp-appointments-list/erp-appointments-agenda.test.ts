@@ -197,7 +197,10 @@ describe('linked booking: the create panel books against real records', () => {
     expect(p.staff_id).toBe('s1');
     expect(p.staff_name).toBe('Eva Pro');
     expect(p.duration_minutes, 'duration defaults to the service duration').toBe(30);
-    expect(p.start_datetime).toBe(new Date('2026-08-07T10:00').toISOString());
+    // appointments#76: same instant, but the text carries the SALON's wall clock + its local
+    // offset — a UTC wall here is a window the availability engine tatts by the tz offset.
+    expect(new Date(p.start_datetime as string).getTime()).toBe(new Date('2026-08-07T10:00').getTime());
+    expect(String(p.start_datetime).slice(0, 16)).toBe('2026-08-07T10:00');
   });
 
   it('a typed duration overrides the service default', async () => {

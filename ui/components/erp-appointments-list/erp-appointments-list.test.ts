@@ -185,6 +185,14 @@ describe('el alta sigue funcionando desde el panel', () => {
     expect(alta!.payload.service_name).toBe('Corte');
     expect(alta!.payload.staff_id).toBe('s1');
     expect(alta!.payload.duration_minutes).toBe(45);
+    // appointments#76: the stored text carries the SALON's wall clock + its local offset, not a
+    // UTC wall. The instant is the same the receptionist picked; the wall part is what the
+    // availability engine compares row against row (a UTC wall = a window tatted by the offset).
+    expect(
+      new Date(alta!.payload.start_datetime as string).getTime(),
+      'the sent instant does not match the picked time',
+    ).toBe(new Date('2026-07-13T10:00').getTime());
+    expect(String(alta!.payload.start_datetime).slice(0, 16), 'the sent WALL clock shifted').toBe('2026-07-13T10:00');
     expect(tabla(el)?.panel, 'el panel de alta se queda abierto tras crear').toBe('none');
   });
 });
