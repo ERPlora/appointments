@@ -54,9 +54,14 @@ SELECT c.slot_start,
        erp_timefmt(c.end_min / 60, c.end_min % 60)     AS end_time
 FROM cand c, cfg
 WHERE
-    -- antelación mínima / máxima respecto a :now
+    -- antelación mínima / máxima respecto a :now. `advance_days = 0` DESACTIVA el tope
+    -- (appointments#78): mismo significado que ya le da el handler (`lead_time_refusal` solo
+    -- aplica el máximo `if max_days > 0`) y que el doc del módulo — sin este caso, un hub con
+    -- «antelación máxima = 0» se quedaba con CERO huecos y `check` decía too_far mientras
+    -- `create` seguía reservando ese mismo instante.
     erp_dt(c.slot_start) >= erp_dateadd(:now, cfg.notice_min, 'minutes')
-    AND erp_date(:date) <= erp_date(erp_dateadd(:now, cfg.advance_days, 'days'))
+    AND (cfg.advance_days = 0
+         OR erp_date(:date) <= erp_date(erp_dateadd(:now, cfg.advance_days, 'days')))
     -- dentro de un tramo activo del horario (si el hub tiene horarios configurados)
     AND (
         NOT EXISTS (

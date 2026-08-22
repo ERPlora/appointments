@@ -35,7 +35,12 @@ checks AS (
         CASE WHEN w.s_start IS NULL THEN 1 ELSE 0 END AS invalid_start,
         CASE WHEN w.s_start < erp_dateadd(:now, c.notice_min, 'minutes')
              THEN 1 ELSE 0 END AS too_soon,
-        CASE WHEN erp_date(w.s_start) > erp_date(erp_dateadd(:now, c.advance_days, 'days'))
+        -- `advance_days = 0` DESACTIVA el tope (appointments#78): mismo significado que el
+        -- handler (`lead_time_refusal` solo aplica el máximo `if max_days > 0`). Sin este caso,
+        -- TODO instante futuro era too_far y la pantalla —que consulta `check` antes de crear—
+        -- no podía reservar aunque `create` habría aceptado ese mismo instante.
+        CASE WHEN c.advance_days > 0
+                  AND erp_date(w.s_start) > erp_date(erp_dateadd(:now, c.advance_days, 'days'))
              THEN 1 ELSE 0 END AS too_far,
         CASE WHEN EXISTS (
                  SELECT 1

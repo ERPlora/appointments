@@ -2694,6 +2694,13 @@ mod tests {
     fn a_zero_lead_time_disables_the_limit() {
         let inp = input(item("2026-07-31T10:01:00Z", 30, "s1"), Some(lead_time(0, 0)));
         assert_eq!(domain_code(&create_appointment_pure(inp).unwrap()), None);
+        // appointments#78: the FAR side of the same zero. `check` used to call this same instant
+        // `too_far` while `create` accepted it — the read and the write must read the setting
+        // with one meaning, and here the meaning is "no cap".
+        let far = input(item("2027-03-31T11:00:00Z", 30, "s1"), Some(lead_time(0, 0)));
+        let out = create_appointment_pure(far).unwrap();
+        assert_eq!(domain_code(&out), None, "a zero max-advance cap must not refuse far bookings");
+        assert!(out.error.is_none(), "{:?}", out.error);
     }
 
     // ── blocked time: holidays, closures, a professional's block (appointments#10) ──────────
