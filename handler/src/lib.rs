@@ -2110,6 +2110,123 @@ mod tests {
         assert!(end.starts_with("2026-07-31T11:30:00"), "end_datetime = {end}");
     }
 
+    // ── appointments#75 · a schema `default` overrides the handler's resolution chain ──
+    //
+    // The runtime does not hand the handler what the caller sent: after validating, it fills
+    // every ABSENT top-level property with its schema `default` (`registry.rs::apply_defaults`,
+    // ADR-0073) — for every tier, WASM included. `duration_minutes` is a "compute it when
+    // absent" field (payload → professional's override → catalogue → module default): with a
+    // `default` in the schema the key NEVER arrives absent, so the chain below it is dead code
+    // and every API / assistant / WhatsApp booking silently lasts the schema's default. The
+    // tests above call the handler directly, so they cannot see this seam: these ones apply
+    // the binder first, against the REAL schema file shipped with the module.
+
+    const CREATE_SCHEMA: &str = include_str!("../../schemas/appointment_create.json");
+    const BULK_CREATE_SCHEMA: &str = include_str!("../../schemas/appointment_bulk_create.json");
+
+    /// The binder's exact behaviour (`registry.rs::apply_defaults`): first-level properties
+    /// only, ABSENT keys only, never overwriting a value the caller provided.
+    fn binder_applied_defaults(schema_json: &str, payload: &mut Value) {
+        let schema: Value = serde_json::from_str(schema_json).expect("schema parses");
+        let Some(props) = schema.get("properties").and_then(|p| p.as_object()) else {
+            return;
+        };
+        let Some(obj) = payload.as_object_mut() else { return };
+        for (key, prop) in props {
+            if !obj.contains_key(key) {
+                if let Some(default) = prop.get("default") {
+                    obj.insert(key.clone(), default.clone());
+                }
+            }
+        }
+    }
+
+    /// The issue's exact scenario: a 90-minute service booked through the public API without
+    /// `duration_minutes`. The binder runs BEFORE the handler, so the booking only lasts 90
+    /// minutes if the schema does not default the key away.
+    #[test]
+    fn create_resolves_the_catalogue_duration_after_the_binder_applies_schema_defaults() {
+        let reads = json!({ "services.services.get": [
+            { "id": "s-corte", "name": "Tinte", "price": 2000, "duration_minutes": 90,
+              "is_bookable": 1, "is_active": 1 }
+        ]});
+        let mut payload = item("2026-07-31T11:00:00Z", 30, "s1");
+        payload.as_object_mut().unwrap().remove("duration_minutes");
+        binder_applied_defaults(CREATE_SCHEMA, &mut payload);
+        let out = create_appointment_pure(input(payload, Some(reads))).unwrap();
+        assert!(out.error.is_none(), "{:?}", out.error);
+        assert_eq!(insert_op(&out).params.get("duration_minutes"), Some(&json!(90)));
+        let end = insert_op(&out).params.get("end_datetime").and_then(|v| v.as_str()).unwrap_or("");
+        assert!(end.starts_with("2026-07-31T12:30:00"), "end_datetime = {end}");
+    }
+
+    /// The exception the receptionist types still wins: an explicit `duration_minutes` is
+    /// PRESENT, so the binder must not touch it and the handler must honour it.
+    #[test]
+    fn an_explicit_duration_survives_the_binder() {
+        let mut payload = item("2026-07-31T11:00:00Z", 45, "s1");
+        binder_applied_defaults(CREATE_SCHEMA, &mut payload);
+        assert_eq!(payload.get("duration_minutes"), Some(&json!(45)), "the binder overwrote a value the caller provided");
+        let out = create_appointment_pure(input(payload, None)).unwrap();
+        assert_eq!(insert_op(&out).params.get("duration_minutes"), Some(&json!(45)));
+    }
+
+    /// The professional's override (`custom_duration`, staff#9) beats the catalogue even when
+    /// neither caller nor schema says a duration.
+    #[test]
+    fn the_professionals_override_survives_the_binder() {
+        let reads = json!({
+            "services.services.get": [
+                { "id": "s-corte", "name": "Tinte", "price": 2000, "duration_minutes": 90,
+                  "is_bookable": 1, "is_active": 1 }
+            ],
+            "staff.services.eligible_for_service": [
+                { "staff_id": "s1", "full_name": "Bea Pro", "custom_duration": 120,
+                  "custom_price": null, "is_primary": 1 }
+            ]
+        });
+        let mut payload = item("2026-07-31T11:00:00Z", 30, "s1");
+        payload.as_object_mut().unwrap().remove("duration_minutes");
+        binder_applied_defaults(CREATE_SCHEMA, &mut payload);
+        let out = create_appointment_pure(input(payload, Some(reads))).unwrap();
+        assert!(out.error.is_none(), "{:?}", out.error);
+        assert_eq!(insert_op(&out).params.get("duration_minutes"), Some(&json!(120)));
+    }
+
+    /// Parity with `bulk_create` — the issue's isolated proof that the module KNOWS how to
+    /// resolve the duration: same input through both commands, each after its own schema's
+    /// binder pass, must book the same duration.
+    #[test]
+    fn create_and_bulk_create_book_the_same_duration_after_their_binders() {
+        let reads = json!({ "services.services.get": [
+            { "id": "s-corte", "name": "Tinte", "price": 2000, "duration_minutes": 90,
+              "is_bookable": 1, "is_active": 1 }
+        ]});
+
+        let mut payload = item("2026-07-31T11:00:00Z", 30, "s1");
+        payload.as_object_mut().unwrap().remove("duration_minutes");
+        binder_applied_defaults(CREATE_SCHEMA, &mut payload);
+        let create = create_appointment_pure(input(payload, Some(reads.clone()))).unwrap();
+        assert_eq!(insert_op(&create).params.get("duration_minutes"), Some(&json!(90)));
+
+        let mut batch = json!({
+            "customer_id": "c1",
+            "service_id": "s-corte",
+            "staff_id": "s1",
+            "appointments": [{ "start_datetime": "2026-07-31T11:00:00Z" }]
+        });
+        binder_applied_defaults(BULK_CREATE_SCHEMA, &mut batch);
+        let mut bulk_input = input(batch, Some(reads));
+        bulk_input["context"]["new_ids"] = json!(["apt-1"]);
+        let bulk = bulk_create_pure(bulk_input).unwrap();
+        assert!(bulk.error.is_none(), "{:?}", bulk.error);
+        assert_eq!(
+            insert_op(&bulk).params.get("duration_minutes"),
+            insert_op(&create).params.get("duration_minutes"),
+            "create and bulk_create must resolve the duration the same way"
+        );
+    }
+
     /// staff#9: the per-professional overrides (`custom_price` / `custom_duration`) are part of
     /// the authoritative snapshot when the competency declares them.
     #[test]

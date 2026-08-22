@@ -66,8 +66,7 @@
     "duration_minutes": {
       "type": "integer",
       "minimum": 1,
-      "default": 60,
-      "description": "Optional. When omitted, the professional's override, else the service's catalogue duration, else the module default applies."
+      "description": "Optional. When omitted, the professional's override, else the service's catalogue duration, else the module default applies. Deliberately NO `default`: the runtime applies schema defaults BEFORE the handler runs (ADR-0073), so a default here would make the key never arrive absent and the whole chain below it dead code (appointments#75)."
     },
     "notes": {
       "type": "string",
