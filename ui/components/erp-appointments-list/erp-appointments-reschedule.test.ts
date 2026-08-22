@@ -8,10 +8,10 @@
 //
 // What the market does (Fresha, Vagaro, Square Appointments, Booksy, Phorest, Zenoti, Treatwell,
 // Mindbody): the appointment is DRAGGED on the grid, and there is also an explicit "Reschedule"
-// entry that opens the booking form pre-filled. We ship both halves we can ship: the row action
-// and, as the grid gesture, a click on the appointment block — `ok-scheduler` has no drag today
-// (it emits `ok-event-click`/`ok-slot-click`/`ok-nav` and nothing else) and it lives in OutfitKit,
-// another repo. The panel is the one `ok-data-table` already exposes for exactly this
+// entry that opens the booking form pre-filled. Both halves ship: the drag since appointments#74
+// (see erp-appointments-drag.test.ts) and this file's panel — the row action and the click on the
+// block, which is the accessible route (the block is a focusable button). The panel is the one
+// `ok-data-table` already exposes for exactly this
 // ("open('create') → the edit form pre-filled", ok-data-table.ts:848).
 //
 // WHAT THE PANEL DOES NOT DO: change the professional. `reschedule` is Tier 0 SQL and moves time
@@ -235,9 +235,8 @@ describe('the row bar can move an appointment', () => {
 });
 
 describe('the grid moves an appointment too', () => {
-  // Dragging the block is the fastest gesture and the one every salon product ships, but
-  // `ok-scheduler` exposes no drag (OutfitKit's repo, not this one). Clicking the block is the
-  // gesture available today and it costs the same one tap on a tablet.
+  // Dragging the block (appointments#74) is the fastest gesture; clicking it is the accessible
+  // one — the block is a focusable button, and Enter/Space reaches this same panel.
   it('clicking an appointment block opens the same pre-filled panel', async () => {
     const el = await mount();
     el.view = 'staff';

@@ -21,6 +21,8 @@ interface ErploraClientLike {
   /** i18n del módulo (ADR-0055): idioma activo + traducción del catálogo `ui`. */
   locale: string;
   t(catalog: Record<string, unknown>, key: string, params?: Record<string, unknown>): string;
+  /** Toast del shell (canal de feedback del TPV de sales). Opcional: preview sin SDK. */
+  notify?(n: { type: string; message: string }): void;
 }
 
 interface Appointment {
@@ -97,6 +99,18 @@ const STATUS_COLORS: Record<string, string> = {
 
 /** Carril del timeline para las citas SIN profesional asignado (filas heredadas). */
 const UNASSIGNED = 'unassigned';
+
+/** Detail de `ok-event-move` (OutfitKit#64): la rejilla ha PINTADO el bloque en su destino y
+ *  pregunta. `revert()` es cómo este módulo dice «el servidor dijo que no». */
+interface SchedulerMoveDetail {
+  id: string;
+  /** Carril donde cayó el bloque (`HH:MM` locales de pared en `start`/`end`). */
+  resourceId: string;
+  start: string;
+  end: string;
+  from: { resourceId: string; start: string; end: string };
+  revert(): void;
+}
 
 /** Estados que `appointments.appointments.reschedule` acepta (el handler los comprueba contra
  *  la fila leída, y `_reschedule_state_assert.sql` cierra la carrera dentro de la transacción).
@@ -584,13 +598,69 @@ export class ErpAppointmentsList extends LitElement {
 
   /** Bloque del timeline → mismo panel pre-rellenado.
    *
-   *  El gesto que usa TODO el mercado (Fresha, Vagaro, Square Appointments, Booksy, Phorest,
-   *  Zenoti, Treatwell, Mindbody) es ARRASTRAR la cita por la rejilla. `ok-scheduler` no tiene
-   *  arrastre —emite `ok-event-click`, `ok-slot-click` y `ok-nav`, y vive en OutfitKit, otro
-   *  repo—, así que aquí se cablea el clic: en una tablet cuesta el mismo toque. */
+   *  El ARRASTRE (appointments#74, `onEventMove`) es la mitad rápida del gesto; el clic es la
+   *  mitad accesible —la ruta de teclado que `ok-scheduler` expone como botón enfocable— y en
+   *  una tablet cuesta el mismo toque. Las dos llegan al mismo command. */
   private async onEventClick(ev: CustomEvent<{ id: string }>) {
     const row = this.items.find((a) => a.id === ev.detail.id);
     if (row) await this.openReschedule(row as unknown as Record<string, unknown>);
+  }
+
+  /** Arrastre del timeline (appointments#74): `ok-scheduler` pinta el bloque en su destino y
+   *  pregunta; EL MÓDULO MANDA. La rejilla ya trae el gesto (outfitkit#64: puntero, y dedo tras
+   *  una pulsación mantenida —el estándar del sector contra el arrastre accidental en tablet—,
+   *  más las flechas de teclado), pero sin un host que escuche y persista, mover sería mentir.
+   *
+   *  Lo que NO hace este cableado, a propósito:
+   *  · CAMBIAR DE PROFESIONAL. Soltar el bloque en otro carril ES un cambio de profesional, y
+   *    `reschedule` mueve la hora nada más (appointments#11 sacó la identidad del profesional
+   *    de las manos del llamante). Dejarlo «medio funcionar» guardaría la hora y enseñaría el
+   *    carril: una mentira en la agenda. Se rechaza con un aviso claro y `revert()`.
+   *  · CONFIRMAR LIGERO al soltar (el diálogo con «avisar a la clienta» de Vagaro/Fresha).
+   *    Necesita un canal de notificación que este módulo no tiene; la reprogramación queda
+   *    visible en la agenda refrescada y con su historial (`_history_reschedule`).
+   *
+   *  El rechazo del servidor (solape, bloqueo, antelación, estado terminal) llama `revert()`
+   *  —el bloque vuelve a su sitio en vez de quedarse donde el servidor nunca lo aceptó— y el
+   *  fallo se ve DOS veces: toast del shell (el arrastre pasa lejos del banner) y el
+   *  `ok-inline-feedback` de siempre. */
+  private async onEventMove(ev: CustomEvent<SchedulerMoveDetail>) {
+    const { id, resourceId, start, revert } = ev.detail;
+    const appointment = this.items.find((a) => a.id === id);
+    if (!appointment) {
+      revert(); // una cita que ya no está en el día cargado: no hay nada que mover
+      return;
+    }
+    const lane = appointment.staff_id || UNASSIGNED;
+    if (!RESCHEDULABLE.includes(appointment.status)) {
+      revert();
+      this.refuseDrag('ui.errDragNotMovable');
+      return;
+    }
+    if (resourceId !== lane) {
+      revert();
+      this.refuseDrag('ui.errDragStaffChange');
+      return;
+    }
+    try {
+      // `start` es `HH:MM` de pared LOCAL del día visible — el mismo idioma que `ok-slot-click`.
+      await erplora().command('appointments.appointments.reschedule', {
+        appointment_id: id,
+        start_datetime: new Date(`${this.day}T${start}`).toISOString(),
+        duration_minutes: appointment.duration_minutes,
+      });
+      await this.refresh(); // la posición optimista se descarta: manda la fila del servidor
+    } catch (e) {
+      revert();
+      this.error = domainErrorText(e, 'ui.errReschedule');
+      erplora().notify?.({ type: 'error', message: this.error });
+    }
+  }
+
+  /** Rechazo local del arrastre: el bloque ya ha vuelto (`revert()`), queda DECIR por qué. */
+  private refuseDrag(key: string): void {
+    this.error = erplora().t(CATALOG, key);
+    erplora().notify?.({ type: 'error', message: this.error });
   }
 
   /** Mueve la cita. Solo viajan las TRES claves del esquema
@@ -685,6 +755,8 @@ export class ErpAppointmentsList extends LitElement {
               .locale=${erplora().locale || 'es'}
               .resources=${this.schedulerResources}
               .events=${this.schedulerEvents}
+              movable
+              snap-minutes="15"
               .labels=${{ prevDay: t('ui.prevDay'), nextDay: t('ui.nextDay'), empty: t('ui.noStaff') }}
               @ok-nav=${(e: CustomEvent<{ date: string }>) => {
                 this.day = e.detail.date;
@@ -692,6 +764,7 @@ export class ErpAppointmentsList extends LitElement {
               }}
               @ok-slot-click=${(e: CustomEvent<{ resourceId: string; time: string }>) => this.onSlotClick(e)}
               @ok-event-click=${(e: CustomEvent<{ id: string }>) => this.onEventClick(e)}
+              @ok-event-move=${(e: CustomEvent<SchedulerMoveDetail>) => this.onEventMove(e)}
             ></ok-scheduler>`
           : html`<ok-data-table .fill=${true} .primaryAction=${{ label: t('ui.addAppointment'), icon: 'add' }} @primaryAction=${() => this.openCreate()} .labels=${this.rescheduleId ? { newRecord: t('ui.rescheduleTitle') } : {}} .views=${true} .cardTitle=${(row: Record<string, unknown>) => String(row.appointment_number ?? row.customer_name ?? '')} .columns=${this.columns} .rows=${this.items as unknown as Record<string, unknown>[]} .searchKeys=${['appointment_number', 'customer_name', 'service_name', 'staff_name']} .searchPlaceholder=${t('ui.searchPlaceholder')} .actions=${this.rowActions} @rowAction=${(e: CustomEvent) => this.onRowAction(e)} .emptyMessage=${this.loading ? t('ui.loading') : t('ui.empty')}>
           <!-- El panel es UNO: alta si no hay cita en curso, mover si la hay (appointments#42). -->
