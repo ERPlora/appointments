@@ -8,6 +8,7 @@
 //      positioned by time; legacy rows without staff fall into an "unassigned" lane.
 //   3. NO-SHOW — the API always had it; the receptionist needs it as a row action.
 import { beforeEach, describe, expect, it } from 'vitest';
+import { todayISO as localDay } from '../../lib/day-bounds';
 
 const commands: { name: string; payload: Record<string, unknown> }[] = [];
 const queries: { name: string; params: Record<string, unknown> }[] = [];
@@ -262,7 +263,9 @@ describe('per-professional day view (ok-scheduler timeline)', () => {
       startHour: number;
       endHour: number;
     };
-    expect(scheduler.date).toBe(new Date().toISOString().slice(0, 10));
+    // pm#93: el día LOCAL. Antes se comparaba con `toISOString()` (UTC), que a las 00:30 en
+    // Madrid habría dado el día de ayer — el mismo bug que arrastraba el componente.
+    expect(scheduler.date).toBe(localDay());
     expect(scheduler.startHour, 'start hour comes from appointments settings').toBe(9);
     expect(scheduler.endHour, 'end hour comes from appointments settings').toBe(19);
   });

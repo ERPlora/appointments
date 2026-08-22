@@ -12,6 +12,8 @@ import type { DataTableColumn } from '@erplora/outfitkit';
 // con `erplora.t(CATALOG, 'ui.clave')` (idioma activo, fallback locale→en→clave).
 import esLocale from '../../../locales/es.json';
 import enLocale from '../../../locales/en.json';
+// pm#93: el día de la agenda es el LOCAL, no el UTC. Ver `ui/lib/day-bounds.ts`.
+import { todayISO, dayBounds } from '../../lib/day-bounds';
 const CATALOG: Record<string, unknown> = { es: esLocale, en: enLocale };
 
 interface ErploraClientLike {
@@ -161,15 +163,7 @@ function domainErrorText(e: unknown, fallbackKey: string): string {
   return message || erplora().t(CATALOG, fallbackKey);
 }
 
-function todayISO(): string {
-  return new Date().toISOString().slice(0, 10);
-}
 
-function dayBounds(day: string): { day_start: string; day_end: string } {
-  const start = new Date(`${day}T00:00:00.000Z`);
-  const end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
-  return { day_start: start.toISOString(), day_end: end.toISOString() };
-}
 
 /** Filas de una query: el motor paginado devuelve `{rows,total,…}`; las simples, un array. */
 function rows<T>(r: unknown): T[] {

@@ -4,6 +4,7 @@ import { define } from '@erplora/outfitkit/define';
 import '@erplora/outfitkit/ok-inline-feedback';
 import esLocale from '../../../locales/es.json';
 import enLocale from '../../../locales/en.json';
+import { todayISO } from '../../lib/day-bounds';
 
 const CATALOG: Record<string, unknown> = { es: esLocale, en: enLocale };
 
@@ -77,10 +78,9 @@ function rows<T>(r: unknown): T[] {
   return [];
 }
 
-/** Today as `YYYY-MM-DD`, the shape `appointments.availability.slots` binds. */
-function today(): string {
-  return new Date().toISOString().slice(0, 10);
-}
+/** Today as `YYYY-MM-DD`, the shape `appointments.availability.slots` binds.
+ *  pm#93: the LOCAL day, not the UTC one — at 00:30 in Madrid the UTC day is still yesterday's. */
+const today = todayISO;
 
 export class ErpAppointmentsRequestBooking extends LitElement {
   static styles = css`
