@@ -90,7 +90,8 @@
       "migrations/postgres/003_gate.sql",
       "migrations/postgres/004_converted_sale.sql",
       "migrations/postgres/005_recurring_occurrence.sql",
-      "migrations/postgres/006_slot_hold.sql"
+      "migrations/postgres/006_slot_hold.sql",
+      "migrations/postgres/007_recurring_split.sql"
     ]
   },
   "queries": {
@@ -377,184 +378,77 @@
     }
   },
   "commands": {
-    "appointments.appointments.create": {
+    "appointments._appointment_overlap_assert": {
+      "permission": "appointments.change_appointment",
+      "sql": [
+        "commands/_appointment_overlap_assert.sql"
+      ]
+    },
+    "appointments._book_from_request": {
       "permission": "appointments.add_appointment",
-      "schema": "schemas/appointment_create.json",
+      "internal": true,
+      "schema": "schemas/book_from_request.json",
       "handler": {
         "type": "wasm",
         "file": "dist/handler.wasm",
-        "function": "create_appointment"
-      },
-      "emit": [
-        "appointments.appointment.created"
-      ],
-      "ai": {
-        "description": "Creates a new appointment for a customer with a specified service, professional and date/time. The customer, service and professional are resolved against the hub's records (name, price and duration are frozen from the catalogue, never from the caller)."
+        "function": "book_from_request"
       },
       "reads": [
         {
-          "query": "appointments.appointments.conflicting",
-          "params": {
-            "staff_id": "payload.staff_id",
-            "start_datetime": "payload.start_datetime"
-          },
-          "required": true
-        },
-        {
-          "query": "appointments.settings.get",
-          "required": true
+          "query": "appointments.settings.get"
         },
         {
           "query": "customers.get",
           "params": {
             "customer_id": "payload.customer_id"
-          },
-          "required": true
+          }
         },
         {
           "query": "services.services.get",
           "params": {
             "service_id": "payload.service_id"
-          },
-          "required": true
+          }
         },
         {
           "query": "staff.members.get",
           "params": {
             "staff_id": "payload.staff_id"
-          },
-          "required": true
+          }
         },
         {
           "query": "staff.services.eligible_for_service",
           "params": {
             "service_id": "payload.service_id"
-          },
-          "required": true
+          }
+        },
+        {
+          "query": "appointments.appointments.conflicting",
+          "params": {
+            "staff_id": "payload.staff_id",
+            "start_datetime": "payload.start_datetime"
+          }
         },
         {
           "query": "appointments.blocked_times.overlapping",
           "params": {
             "staff_id": "payload.staff_id",
             "start_datetime": "payload.start_datetime"
-          },
-          "required": true
+          }
         },
         {
           "query": "appointments.slot_holds.live",
           "params": {
             "staff_id": "payload.staff_id",
             "start_datetime": "payload.start_datetime"
-          },
-          "required": true
+          }
         }
       ]
     },
-    "appointments.appointments.update": {
-      "permission": "appointments.change_appointment",
-      "transaction": true,
+    "appointments._bump_counter": {
+      "permission": "appointments.add_appointment",
       "sql": [
-        "commands/appointment_update.sql",
-        "commands/_appointment_overlap_assert.sql"
-      ],
-      "schema": "schemas/appointment_update.json",
-      "emit": [
-        "appointments.appointment.updated"
-      ],
-      "ai": {
-        "description": "Updates an existing appointment's details such as notes, duration, or assigned employee."
-      }
-    },
-    "appointments.appointments.confirm": {
-      "permission": "appointments.change_appointment",
-      "transaction": true,
-      "sql": [
-        "commands/appointment_confirm.sql",
-        "commands/_history_confirm.sql"
-      ],
-      "expect_rows": {
-        "op": "min",
-        "n": 1,
-        "error": "appointments.cannot_confirm",
-        "message": "This appointment can no longer be confirmed: it is not pending any more."
-      },
-      "schema": "schemas/appointment_id.json",
-      "emit": [
-        "appointments.appointment.confirmed"
-      ],
-      "ai": {
-        "description": "Confirms a pending appointment, changing its status to confirmed."
-      }
-    },
-    "appointments.appointments.start": {
-      "permission": "appointments.change_appointment",
-      "transaction": true,
-      "sql": [
-        "commands/appointment_start.sql",
-        "commands/_history_start.sql"
-      ],
-      "expect_rows": {
-        "op": "min",
-        "n": 1,
-        "error": "appointments.cannot_start",
-        "message": "This appointment cannot be started: it is not confirmed."
-      },
-      "schema": "schemas/appointment_id.json",
-      "emit": [
-        "appointments.appointment.started"
-      ],
-      "ai": {
-        "description": "Marks a confirmed appointment as in progress (service started)."
-      }
-    },
-    "appointments.appointments.complete": {
-      "permission": "appointments.change_appointment",
-      "transaction": true,
-      "sql": [
-        "commands/appointment_complete.sql",
-        "commands/_history_complete.sql"
-      ],
-      "expect_rows": {
-        "op": "min",
-        "n": 1,
-        "error": "appointments.cannot_complete",
-        "message": "This appointment cannot be completed: it has not been started."
-      },
-      "schema": "schemas/appointment_id.json",
-      "emit": [
-        "appointments.appointment.completed"
-      ],
-      "ai": {
-        "description": "Marks an in-progress appointment as completed."
-      }
-    },
-    "appointments.appointments.cancel": {
-      "permission": "appointments.change_appointment",
-      "schema": "schemas/appointment_cancel.json",
-      "handler": {
-        "type": "wasm",
-        "file": "dist/handler.wasm",
-        "function": "cancel_appointment"
-      },
-      "reads": [
-        {
-          "query": "appointments.appointments.get",
-          "params": {
-            "appointment_id": "payload.appointment_id"
-          },
-          "required": true
-        },
-        {
-          "query": "appointments.settings.get",
-          "required": true
-        }
-      ],
-      "emit": [
-        "appointments.appointment.cancelled"
-      ],
-      "ai": {
-        "description": "Cancels an appointment with a specified cancellation reason. Staff can always cancel; a cancellation on behalf of the customer (channel=customer) is subject to the cancellation policy (allow_customer_cancellation, cancellation_notice_hours)."
-      }
+        "commands/_bump_counter.sql"
+      ]
     },
     "appointments._cancel_row": {
       "permission": "appointments.change_appointment",
@@ -568,77 +462,60 @@
         "commands/_history_cancel.sql"
       ]
     },
-    "appointments.appointments.no_show": {
+    "appointments._history_reschedule": {
+      "permission": "appointments.change_appointment",
+      "sql": [
+        "commands/_history_reschedule.sql"
+      ]
+    },
+    "appointments._hold_consume": {
+      "permission": "appointments.add_appointment",
+      "internal": true,
+      "sql": [
+        "commands/_hold_consume.sql"
+      ]
+    },
+    "appointments._insert_appointment": {
+      "permission": "appointments.add_appointment",
+      "sql": [
+        "commands/_insert_appointment.sql"
+      ]
+    },
+    "appointments._insert_history": {
+      "permission": "appointments.add_appointment",
+      "sql": [
+        "commands/_insert_history.sql"
+      ]
+    },
+    "appointments._mark_converted": {
       "permission": "appointments.change_appointment",
       "transaction": true,
       "sql": [
-        "commands/appointment_no_show.sql",
-        "commands/_history_no_show.sql"
-      ],
-      "expect_rows": {
-        "op": "min",
-        "n": 1,
-        "error": "appointments.cannot_mark_no_show",
-        "message": "This appointment cannot be marked as a no-show in its current state."
-      },
-      "schema": "schemas/appointment_id.json",
-      "emit": [
-        "appointments.appointment.no_show"
-      ],
-      "ai": {
-        "description": "Records that the customer did not show up for their scheduled appointment."
-      }
-    },
-    "appointments.appointments.reschedule": {
-      "permission": "appointments.change_appointment",
-      "schema": "schemas/appointment_reschedule.json",
-      "handler": {
-        "type": "wasm",
-        "file": "dist/handler.wasm",
-        "function": "reschedule_appointment"
-      },
-      "emit": [
-        "appointments.appointment.rescheduled"
-      ],
-      "ai": {
-        "description": "Moves an appointment to another date and time. The end of the slot is computed from the start and the duration, and the move is refused when it lands on a blocked period or breaks the hub's minimum notice or maximum advance. The professional is the appointment's own; this command does not change it."
-      },
-      "reads": [
-        {
-          "query": "appointments.appointments.get",
-          "params": {
-            "appointment_id": "payload.appointment_id"
-          },
-          "required": true
-        },
-        {
-          "query": "appointments.settings.get",
-          "required": true
-        },
-        {
-          "query": "appointments.appointments.conflicting",
-          "params": {
-            "start_datetime": "payload.start_datetime"
-          },
-          "required": true
-        },
-        {
-          "query": "appointments.blocked_times.upcoming",
-          "required": true
-        },
-        {
-          "query": "appointments.slot_holds.live",
-          "params": {
-            "start_datetime": "payload.start_datetime"
-          },
-          "required": true
-        }
+        "commands/_mark_converted.sql"
       ]
     },
-    "appointments._reschedule_state_assert": {
+    "appointments._recurring_close": {
       "permission": "appointments.change_appointment",
       "sql": [
-        "commands/_reschedule_state_assert.sql"
+        "commands/_recurring_close.sql"
+      ]
+    },
+    "appointments._recurring_edit": {
+      "permission": "appointments.change_appointment",
+      "sql": [
+        "commands/_recurring_edit.sql"
+      ]
+    },
+    "appointments._recurring_move_occurrence": {
+      "permission": "appointments.change_appointment",
+      "sql": [
+        "commands/_recurring_move_occurrence.sql"
+      ]
+    },
+    "appointments._recurring_split": {
+      "permission": "appointments.change_appointment",
+      "sql": [
+        "commands/_recurring_split.sql"
       ]
     },
     "appointments._reschedule_row": {
@@ -647,32 +524,11 @@
         "commands/appointment_reschedule.sql"
       ]
     },
-    "appointments._appointment_overlap_assert": {
+    "appointments._reschedule_state_assert": {
       "permission": "appointments.change_appointment",
       "sql": [
-        "commands/_appointment_overlap_assert.sql"
+        "commands/_reschedule_state_assert.sql"
       ]
-    },
-    "appointments._history_reschedule": {
-      "permission": "appointments.change_appointment",
-      "sql": [
-        "commands/_history_reschedule.sql"
-      ]
-    },
-    "appointments.appointments.delete": {
-      "permission": "appointments.delete_appointment",
-      "transaction": true,
-      "sql": [
-        "commands/appointment_delete.sql"
-      ],
-      "schema": "schemas/appointment_id.json",
-      "emit": [
-        "appointments.appointment.deleted"
-      ],
-      "ai": {
-        "description": "Permanently deletes an appointment from the system (destructive).",
-        "risk": "destructive"
-      }
     },
     "appointments.appointments.bulk_create": {
       "permission": "appointments.add_appointment",
@@ -749,6 +605,319 @@
       "ai": {
         "description": "Permanently deletes multiple appointments in bulk (destructive).",
         "risk": "bulk_destructive"
+      }
+    },
+    "appointments.appointments.cancel": {
+      "permission": "appointments.change_appointment",
+      "schema": "schemas/appointment_cancel.json",
+      "handler": {
+        "type": "wasm",
+        "file": "dist/handler.wasm",
+        "function": "cancel_appointment"
+      },
+      "reads": [
+        {
+          "query": "appointments.appointments.get",
+          "params": {
+            "appointment_id": "payload.appointment_id"
+          },
+          "required": true
+        },
+        {
+          "query": "appointments.settings.get",
+          "required": true
+        }
+      ],
+      "emit": [
+        "appointments.appointment.cancelled"
+      ],
+      "ai": {
+        "description": "Cancels an appointment with a specified cancellation reason. Staff can always cancel; a cancellation on behalf of the customer (channel=customer) is subject to the cancellation policy (allow_customer_cancellation, cancellation_notice_hours)."
+      }
+    },
+    "appointments.appointments.complete": {
+      "permission": "appointments.change_appointment",
+      "transaction": true,
+      "sql": [
+        "commands/appointment_complete.sql",
+        "commands/_history_complete.sql"
+      ],
+      "expect_rows": {
+        "op": "min",
+        "n": 1,
+        "error": "appointments.cannot_complete",
+        "message": "This appointment cannot be completed: it has not been started."
+      },
+      "schema": "schemas/appointment_id.json",
+      "emit": [
+        "appointments.appointment.completed"
+      ],
+      "ai": {
+        "description": "Marks an in-progress appointment as completed."
+      }
+    },
+    "appointments.appointments.confirm": {
+      "permission": "appointments.change_appointment",
+      "transaction": true,
+      "sql": [
+        "commands/appointment_confirm.sql",
+        "commands/_history_confirm.sql"
+      ],
+      "expect_rows": {
+        "op": "min",
+        "n": 1,
+        "error": "appointments.cannot_confirm",
+        "message": "This appointment can no longer be confirmed: it is not pending any more."
+      },
+      "schema": "schemas/appointment_id.json",
+      "emit": [
+        "appointments.appointment.confirmed"
+      ],
+      "ai": {
+        "description": "Confirms a pending appointment, changing its status to confirmed."
+      }
+    },
+    "appointments.appointments.create": {
+      "permission": "appointments.add_appointment",
+      "schema": "schemas/appointment_create.json",
+      "handler": {
+        "type": "wasm",
+        "file": "dist/handler.wasm",
+        "function": "create_appointment"
+      },
+      "emit": [
+        "appointments.appointment.created"
+      ],
+      "ai": {
+        "description": "Creates a new appointment for a customer with a specified service, professional and date/time. The customer, service and professional are resolved against the hub's records (name, price and duration are frozen from the catalogue, never from the caller)."
+      },
+      "reads": [
+        {
+          "query": "appointments.appointments.conflicting",
+          "params": {
+            "staff_id": "payload.staff_id",
+            "start_datetime": "payload.start_datetime"
+          },
+          "required": true
+        },
+        {
+          "query": "appointments.settings.get",
+          "required": true
+        },
+        {
+          "query": "customers.get",
+          "params": {
+            "customer_id": "payload.customer_id"
+          },
+          "required": true
+        },
+        {
+          "query": "services.services.get",
+          "params": {
+            "service_id": "payload.service_id"
+          },
+          "required": true
+        },
+        {
+          "query": "staff.members.get",
+          "params": {
+            "staff_id": "payload.staff_id"
+          },
+          "required": true
+        },
+        {
+          "query": "staff.services.eligible_for_service",
+          "params": {
+            "service_id": "payload.service_id"
+          },
+          "required": true
+        },
+        {
+          "query": "appointments.blocked_times.overlapping",
+          "params": {
+            "staff_id": "payload.staff_id",
+            "start_datetime": "payload.start_datetime"
+          },
+          "required": true
+        },
+        {
+          "query": "appointments.slot_holds.live",
+          "params": {
+            "staff_id": "payload.staff_id",
+            "start_datetime": "payload.start_datetime"
+          },
+          "required": true
+        }
+      ]
+    },
+    "appointments.appointments.delete": {
+      "permission": "appointments.delete_appointment",
+      "transaction": true,
+      "sql": [
+        "commands/appointment_delete.sql"
+      ],
+      "schema": "schemas/appointment_id.json",
+      "emit": [
+        "appointments.appointment.deleted"
+      ],
+      "ai": {
+        "description": "Permanently deletes an appointment from the system (destructive).",
+        "risk": "destructive"
+      }
+    },
+    "appointments.appointments.no_show": {
+      "permission": "appointments.change_appointment",
+      "transaction": true,
+      "sql": [
+        "commands/appointment_no_show.sql",
+        "commands/_history_no_show.sql"
+      ],
+      "expect_rows": {
+        "op": "min",
+        "n": 1,
+        "error": "appointments.cannot_mark_no_show",
+        "message": "This appointment cannot be marked as a no-show in its current state."
+      },
+      "schema": "schemas/appointment_id.json",
+      "emit": [
+        "appointments.appointment.no_show"
+      ],
+      "ai": {
+        "description": "Records that the customer did not show up for their scheduled appointment."
+      }
+    },
+    "appointments.appointments.reschedule": {
+      "permission": "appointments.change_appointment",
+      "schema": "schemas/appointment_reschedule.json",
+      "handler": {
+        "type": "wasm",
+        "file": "dist/handler.wasm",
+        "function": "reschedule_appointment"
+      },
+      "emit": [
+        "appointments.appointment.rescheduled"
+      ],
+      "ai": {
+        "description": "Moves an appointment to another date and time. The end of the slot is computed from the start and the duration, and the move is refused when it lands on a blocked period or breaks the hub's minimum notice or maximum advance. The professional is the appointment's own; this command does not change it."
+      },
+      "reads": [
+        {
+          "query": "appointments.appointments.get",
+          "params": {
+            "appointment_id": "payload.appointment_id"
+          },
+          "required": true
+        },
+        {
+          "query": "appointments.settings.get",
+          "required": true
+        },
+        {
+          "query": "appointments.appointments.conflicting",
+          "params": {
+            "start_datetime": "payload.start_datetime"
+          },
+          "required": true
+        },
+        {
+          "query": "appointments.blocked_times.upcoming",
+          "required": true
+        },
+        {
+          "query": "appointments.slot_holds.live",
+          "params": {
+            "start_datetime": "payload.start_datetime"
+          },
+          "required": true
+        }
+      ]
+    },
+    "appointments.appointments.start": {
+      "permission": "appointments.change_appointment",
+      "transaction": true,
+      "sql": [
+        "commands/appointment_start.sql",
+        "commands/_history_start.sql"
+      ],
+      "expect_rows": {
+        "op": "min",
+        "n": 1,
+        "error": "appointments.cannot_start",
+        "message": "This appointment cannot be started: it is not confirmed."
+      },
+      "schema": "schemas/appointment_id.json",
+      "emit": [
+        "appointments.appointment.started"
+      ],
+      "ai": {
+        "description": "Marks a confirmed appointment as in progress (service started)."
+      }
+    },
+    "appointments.appointments.update": {
+      "permission": "appointments.change_appointment",
+      "transaction": true,
+      "sql": [
+        "commands/appointment_update.sql",
+        "commands/_appointment_overlap_assert.sql"
+      ],
+      "schema": "schemas/appointment_update.json",
+      "emit": [
+        "appointments.appointment.updated"
+      ],
+      "ai": {
+        "description": "Updates an existing appointment's details such as notes, duration, or assigned employee."
+      }
+    },
+    "appointments.blocked_times.create": {
+      "permission": "appointments.manage_schedule",
+      "transaction": true,
+      "sql": [
+        "commands/blocked_time_create.sql"
+      ],
+      "schema": "schemas/blocked_time_create.json",
+      "emit": [
+        "appointments.blocked_time.created"
+      ],
+      "ai": {
+        "description": "Registers a blocked time period for an employee (holiday, vacation, etc.)."
+      }
+    },
+    "appointments.blocked_times.delete": {
+      "permission": "appointments.manage_schedule",
+      "transaction": true,
+      "sql": [
+        "commands/blocked_time_delete.sql"
+      ],
+      "schema": "schemas/blocked_time_id.json",
+      "ai": {
+        "description": "Removes a blocked time period from an employee's schedule (destructive).",
+        "risk": "destructive"
+      }
+    },
+    "appointments.recurring.create": {
+      "permission": "appointments.add_appointment",
+      "transaction": true,
+      "sql": [
+        "commands/recurring_create.sql"
+      ],
+      "schema": "schemas/recurring_create.json",
+      "emit": [
+        "appointments.recurring.created"
+      ],
+      "ai": {
+        "description": "Creates a recurring appointment template with its repetition pattern."
+      }
+    },
+    "appointments.recurring.delete": {
+      "permission": "appointments.change_appointment",
+      "transaction": true,
+      "sql": [
+        "commands/recurring_delete.sql"
+      ],
+      "schema": "schemas/recurring_id.json",
+      "ai": {
+        "description": "Deletes a recurring appointment template (destructive).",
+        "risk": "destructive"
       }
     },
     "appointments.recurring.materialize": {
@@ -829,22 +998,36 @@
         }
       ]
     },
-    "appointments._bump_counter": {
-      "permission": "appointments.add_appointment",
-      "sql": [
-        "commands/_bump_counter.sql"
-      ]
-    },
-    "appointments._insert_appointment": {
-      "permission": "appointments.add_appointment",
-      "sql": [
-        "commands/_insert_appointment.sql"
-      ]
-    },
-    "appointments._insert_history": {
-      "permission": "appointments.add_appointment",
-      "sql": [
-        "commands/_insert_history.sql"
+    "appointments.recurring.update": {
+      "permission": "appointments.change_appointment",
+      "transaction": true,
+      "schema": "schemas/recurring_update.json",
+      "handler": {
+        "type": "wasm",
+        "file": "dist/handler.wasm",
+        "function": "update_recurring_series"
+      },
+      "emit": [
+        "appointments.recurring.updated"
+      ],
+      "ai": {
+        "description": "Edits a recurring appointment from one of its occurrences onwards ('this and all following'), changing the time and/or the duration. The series is split in two: the original template stops the day before, a new one starts at that occurrence, and the appointments already booked from there on are moved to the new time. Appointments before today, cancelled ones and ones already turned into a sale are never touched."
+      },
+      "reads": [
+        {
+          "query": "appointments.recurring.get",
+          "params": {
+            "recurring_id": "payload.recurring_id"
+          },
+          "required": true
+        },
+        {
+          "query": "appointments.recurring.occurrences",
+          "params": {
+            "recurring_id": "payload.recurring_id"
+          },
+          "required": true
+        }
       ]
     },
     "appointments.schedules.create": {
@@ -876,87 +1059,6 @@
         "risk": "destructive"
       }
     },
-    "appointments.timeslots.create": {
-      "permission": "appointments.manage_schedule",
-      "transaction": true,
-      "sql": [
-        "commands/timeslot_create.sql"
-      ],
-      "schema": "schemas/timeslot_create.json",
-      "ai": {
-        "description": "Adds a time slot block to a staff availability schedule."
-      },
-      "expect_rows": {
-        "op": "min",
-        "n": 1,
-        "error": "appointments.schedule_unavailable",
-        "message": "That schedule is not available: it does not exist in this business or it has been deleted."
-      }
-    },
-    "appointments.timeslots.delete": {
-      "permission": "appointments.manage_schedule",
-      "transaction": true,
-      "sql": [
-        "commands/timeslot_delete.sql"
-      ],
-      "schema": "schemas/timeslot_id.json",
-      "ai": {
-        "description": "Removes a time slot block from a staff availability schedule (destructive).",
-        "risk": "destructive"
-      }
-    },
-    "appointments.blocked_times.create": {
-      "permission": "appointments.manage_schedule",
-      "transaction": true,
-      "sql": [
-        "commands/blocked_time_create.sql"
-      ],
-      "schema": "schemas/blocked_time_create.json",
-      "emit": [
-        "appointments.blocked_time.created"
-      ],
-      "ai": {
-        "description": "Registers a blocked time period for an employee (holiday, vacation, etc.)."
-      }
-    },
-    "appointments.blocked_times.delete": {
-      "permission": "appointments.manage_schedule",
-      "transaction": true,
-      "sql": [
-        "commands/blocked_time_delete.sql"
-      ],
-      "schema": "schemas/blocked_time_id.json",
-      "ai": {
-        "description": "Removes a blocked time period from an employee's schedule (destructive).",
-        "risk": "destructive"
-      }
-    },
-    "appointments.recurring.create": {
-      "permission": "appointments.add_appointment",
-      "transaction": true,
-      "sql": [
-        "commands/recurring_create.sql"
-      ],
-      "schema": "schemas/recurring_create.json",
-      "emit": [
-        "appointments.recurring.created"
-      ],
-      "ai": {
-        "description": "Creates a recurring appointment template with its repetition pattern."
-      }
-    },
-    "appointments.recurring.delete": {
-      "permission": "appointments.change_appointment",
-      "transaction": true,
-      "sql": [
-        "commands/recurring_delete.sql"
-      ],
-      "schema": "schemas/recurring_id.json",
-      "ai": {
-        "description": "Deletes a recurring appointment template (destructive).",
-        "risk": "destructive"
-      }
-    },
     "appointments.settings.upsert": {
       "permission": "appointments.manage_settings",
       "transaction": true,
@@ -971,71 +1073,14 @@
         "description": "Creates or updates the general settings for the appointments module."
       }
     },
-    "appointments._mark_converted": {
+    "appointments.slots.expire_holds": {
       "permission": "appointments.change_appointment",
       "transaction": true,
       "sql": [
-        "commands/_mark_converted.sql"
-      ]
-    },
-    "appointments._book_from_request": {
-      "permission": "appointments.add_appointment",
-      "internal": true,
-      "schema": "schemas/book_from_request.json",
-      "handler": {
-        "type": "wasm",
-        "file": "dist/handler.wasm",
-        "function": "book_from_request"
-      },
-      "reads": [
-        {
-          "query": "appointments.settings.get"
-        },
-        {
-          "query": "customers.get",
-          "params": {
-            "customer_id": "payload.customer_id"
-          }
-        },
-        {
-          "query": "services.services.get",
-          "params": {
-            "service_id": "payload.service_id"
-          }
-        },
-        {
-          "query": "staff.members.get",
-          "params": {
-            "staff_id": "payload.staff_id"
-          }
-        },
-        {
-          "query": "staff.services.eligible_for_service",
-          "params": {
-            "service_id": "payload.service_id"
-          }
-        },
-        {
-          "query": "appointments.appointments.conflicting",
-          "params": {
-            "staff_id": "payload.staff_id",
-            "start_datetime": "payload.start_datetime"
-          }
-        },
-        {
-          "query": "appointments.blocked_times.overlapping",
-          "params": {
-            "staff_id": "payload.staff_id",
-            "start_datetime": "payload.start_datetime"
-          }
-        },
-        {
-          "query": "appointments.slot_holds.live",
-          "params": {
-            "staff_id": "payload.staff_id",
-            "start_datetime": "payload.start_datetime"
-          }
-        }
+        "commands/slot_hold_expire.sql"
+      ],
+      "emit": [
+        "appointments.slot.hold_released"
       ]
     },
     "appointments.slots.hold": {
@@ -1066,22 +1111,34 @@
         "description": "Gives back a slot that was set aside for a pending request, because another time was chosen or the request was turned down."
       }
     },
-    "appointments.slots.expire_holds": {
-      "permission": "appointments.change_appointment",
+    "appointments.timeslots.create": {
+      "permission": "appointments.manage_schedule",
       "transaction": true,
       "sql": [
-        "commands/slot_hold_expire.sql"
+        "commands/timeslot_create.sql"
       ],
-      "emit": [
-        "appointments.slot.hold_released"
-      ]
+      "schema": "schemas/timeslot_create.json",
+      "ai": {
+        "description": "Adds a time slot block to a staff availability schedule."
+      },
+      "expect_rows": {
+        "op": "min",
+        "n": 1,
+        "error": "appointments.schedule_unavailable",
+        "message": "That schedule is not available: it does not exist in this business or it has been deleted."
+      }
     },
-    "appointments._hold_consume": {
-      "permission": "appointments.add_appointment",
-      "internal": true,
+    "appointments.timeslots.delete": {
+      "permission": "appointments.manage_schedule",
+      "transaction": true,
       "sql": [
-        "commands/_hold_consume.sql"
-      ]
+        "commands/timeslot_delete.sql"
+      ],
+      "schema": "schemas/timeslot_id.json",
+      "ai": {
+        "description": "Removes a time slot block from a staff availability schedule (destructive).",
+        "risk": "destructive"
+      }
     }
   },
   "events": {
@@ -1107,6 +1164,7 @@
       "appointments.booking_request.failed",
       "appointments.booking_request.fulfilled",
       "appointments.recurring.created",
+      "appointments.recurring.updated",
       "appointments.schedule.created",
       "appointments.schedule.deleted",
       "appointments.settings.updated",
