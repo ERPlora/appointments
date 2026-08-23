@@ -10,7 +10,12 @@
 -- Outlook, Fresha y Square. Las BORRADAS sí quedan fuera: borrar es una acción destructiva de
 -- administración y el índice único de la migración 005 también las excluye, así que ese día vuelve
 -- a estar libre. Runtime inyecta :hub_id.
-SELECT occurrence_date, status
+-- appointments#15 (edición de serie): además del día y el estado van el ID y el hueco actual, que
+-- es lo que el handler de `recurring.update` necesita para MOVER la fila en sitio en vez de
+-- borrarla y volver a materializar (la cita conserva su número y su historial), y
+-- `converted_sale_id` para no tocar la que ya arrastra registro fiscal (ADR-0331).
+SELECT id, occurrence_date, status, start_datetime, end_datetime, duration_minutes,
+       converted_sale_id
 FROM appointments_appointment
 WHERE hub_id = :hub_id
   AND is_deleted = 0

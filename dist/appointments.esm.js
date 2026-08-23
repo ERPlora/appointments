@@ -1964,7 +1964,14 @@ var es_default = {
     holdCountdown: "Hueco apartado para ti \xB7 {mins}:{secs}",
     holdExpired: "Se acab\xF3 el tiempo que ten\xEDamos apartado ese hueco y ha vuelto a la venta. Elige la hora otra vez.",
     holdFailed: "No se ha podido apartar ese hueco; alguien puede reservarlo mientras decides.",
-    deviceZoneNotice: "Este dispositivo est\xE1 en otra zona horaria. La agenda siempre muestra el reloj del negocio:"
+    deviceZoneNotice: "Este dispositivo est\xE1 en otra zona horaria. La agenda siempre muestra el reloj del negocio:",
+    seriesScopeTitle: "Editar cita peri\xF3dica",
+    seriesScopeMessage: "Esta cita forma parte de una serie peri\xF3dica.",
+    seriesScopeThisOnly: "Solo esta cita",
+    seriesScopeFollowing: "Esta y todas las siguientes",
+    seriesScopeConfirm: "Guardar cambios",
+    seriesScopeMoved: "Las citas de esta serie que se modificaron por separado volver\xE1n al horario de la serie. Las citas anteriores a hoy nunca se modifican.",
+    seriesScopeCancelledKept: "Las citas que anulaste a mano siguen anuladas."
   },
   setup: {
     title: "Tu horario de trabajo",
@@ -1995,7 +2002,8 @@ var es_default = {
     "appointments.overlapping_appointment": "Ese profesional ya tiene una cita en esa franja. Elige otra hora u otro profesional.",
     "appointments.booking_refused": "No se ha podido reservar la cita a partir de esa petici\xF3n.",
     "appointments.slot_on_hold": "Esa franja est\xE1 apartada para una petici\xF3n pendiente. Se libera sola en unos minutos, o elige otra hora.",
-    "appointments.invalid_local_time": "Esa hora no existe en el reloj del negocio: el cambio de hora la salta. Elige otra."
+    "appointments.invalid_local_time": "Esa hora no existe en el reloj del negocio: el cambio de hora la salta. Elige otra.",
+    "appointments.series_locked": "Algunas citas de esta serie no se han podido cambiar: ya est\xE1n facturadas."
   }
 };
 
@@ -2082,7 +2090,14 @@ var en_default = {
     holdCountdown: "Slot held for you \xB7 {mins}:{secs}",
     holdExpired: "The hold on that slot lapsed, so it is back on sale. Pick a time again.",
     holdFailed: "That slot could not be set aside; someone else may book it while you decide.",
-    deviceZoneNotice: "This device is on a different time zone. The agenda always shows the business clock:"
+    deviceZoneNotice: "This device is on a different time zone. The agenda always shows the business clock:",
+    seriesScopeTitle: "Edit repeating appointment",
+    seriesScopeMessage: "This appointment is part of a repeating series.",
+    seriesScopeThisOnly: "This appointment only",
+    seriesScopeFollowing: "This and all following appointments",
+    seriesScopeConfirm: "Save changes",
+    seriesScopeMoved: "Appointments in this series that were edited separately will go back to the series schedule. Appointments before today are never changed.",
+    seriesScopeCancelledKept: "Appointments you cancelled by hand stay cancelled."
   },
   setup: {
     title: "Your working hours",
@@ -2113,7 +2128,8 @@ var en_default = {
     "appointments.overlapping_appointment": "That professional already has an appointment in that slot. Pick another time or another professional.",
     "appointments.booking_refused": "The appointment could not be booked from that request.",
     "appointments.slot_on_hold": "That slot is being held for a pending request. It frees itself in a few minutes, or pick another time.",
-    "appointments.invalid_local_time": "That time does not exist on the business clock: the daylight saving change skips it. Pick another one."
+    "appointments.invalid_local_time": "That time does not exist on the business clock: the daylight saving change skips it. Pick another one.",
+    "appointments.series_locked": "Some appointments of this series could not be changed: they are already invoiced."
   }
 };
 
@@ -5182,6 +5198,10 @@ var ErpAppointmentsList = class extends i3 {
     this.rescheduleStart = "";
     this.rescheduleDuration = "";
     this.rescheduleStaffName = "";
+    this.rescheduleSeriesId = "";
+    this.rescheduleOccurrence = "";
+    this.askingSeriesScope = false;
+    this.seriesScope = "this_only";
     // i18n (ADR-0055): re-renderiza al recibir `erplora:locale-changed`.
     this.onLocaleChange = () => this.requestUpdate();
   }
@@ -5481,6 +5501,10 @@ var ErpAppointmentsList = class extends i3 {
     this.rescheduleStart = "";
     this.rescheduleDuration = "";
     this.rescheduleStaffName = "";
+    this.rescheduleSeriesId = "";
+    this.rescheduleOccurrence = "";
+    this.askingSeriesScope = false;
+    this.seriesScope = "this_only";
   }
   /** Abre el panel pre-rellenado con la cita que se va a mover. La fila manda: no se re-teclea
    *  nada que ya esté guardado. Fuera de pending|confirmed no se abre — el command lo rechazaría
@@ -5491,6 +5515,8 @@ var ErpAppointmentsList = class extends i3 {
     this.rescheduleStart = toInputValue(String(row.start_datetime ?? ""));
     this.rescheduleDuration = String(row.duration_minutes ?? "");
     this.rescheduleStaffName = String(row.staff_name ?? "");
+    this.rescheduleSeriesId = String(row.recurring_id ?? "");
+    this.rescheduleOccurrence = String(row.occurrence_date ?? "");
     this.error = "";
     this.view = "list";
     await this.updateComplete;
@@ -5575,15 +5601,54 @@ var ErpAppointmentsList = class extends i3 {
     if (!this.rescheduleId || !this.rescheduleStart) return;
     const minutes = Math.trunc(Number(this.rescheduleDuration));
     if (!Number.isFinite(minutes) || minutes < 1) return;
+    if (this.rescheduleSeriesId && this.rescheduleOccurrence) {
+      this.seriesScope = "this_only";
+      this.askingSeriesScope = true;
+      return;
+    }
+    await this.applyReschedule("this_only");
+  }
+  /** La recepcionista ha contestado la pregunta del alcance. */
+  async confirmSeriesScope() {
+    const scope = this.seriesScope;
+    this.askingSeriesScope = false;
+    await this.applyReschedule(scope);
+  }
+  /** Se echa atrás: no se escribe nada y lo tecleado sigue ahí — elige otra vez, no desde cero. */
+  cancelSeriesScope() {
+    this.askingSeriesScope = false;
+  }
+  /** Escribe el movimiento con el alcance elegido.
+   *
+   *  `this_only` mueve UNA cita, que es lo que esta pantalla hacía siempre. `this_and_following`
+   *  es otro command: parte la serie en dos y arrastra las ocurrencias futuras — el trabajo vive
+   *  en el servidor, porque decidir cuáles se mueven exige saber cuáles están canceladas y cuáles
+   *  ya se cobraron, y eso no se le pregunta al navegador. */
+  async applyReschedule(scope) {
+    const minutes = Math.trunc(Number(this.rescheduleDuration));
     this.saving = true;
     this.error = "";
     try {
-      await erplora2().command("appointments.appointments.reschedule", {
-        appointment_id: this.rescheduleId,
-        // Pared local + offset (appointments#76): mismo instante, el reloj del salón en el texto.
-        start_datetime: wallToBusinessIso(this.rescheduleStart),
-        duration_minutes: minutes
-      });
+      if (scope === "this_and_following") {
+        await erplora2().command("appointments.recurring.update", {
+          recurring_id: this.rescheduleSeriesId,
+          scope,
+          from_occurrence_date: this.rescheduleOccurrence,
+          // HORA DE PARED, no un instante: la hora de una plantilla es una lectura de reloj y no
+          // se guarda convertida (appointments#12). El servidor la sitúa en la zona del negocio
+          // día a día, que es lo que conserva la hora al cruzar el cambio de hora.
+          time: this.rescheduleStart.slice(11, 16),
+          duration_minutes: minutes
+        });
+      } else {
+        await erplora2().command("appointments.appointments.reschedule", {
+          appointment_id: this.rescheduleId,
+          // Pared del salón + su offset (appointments#76/#12): mismo instante, y el texto dice la
+          // hora que el salón ve en la pared.
+          start_datetime: wallToBusinessIso(this.rescheduleStart),
+          duration_minutes: minutes
+        });
+      }
       this.clearReschedule();
       this.dataTable()?.close();
       await this.refresh();
@@ -5646,6 +5711,36 @@ var ErpAppointmentsList = class extends i3 {
               >${t5("ui.deviceZoneNotice")} ${businessTimezone()}</ok-inline-feedback
             >` : A}
         ${this.error ? b2`<ok-inline-feedback tone="danger" icon="alert-circle-outline">${this.error}</ok-inline-feedback>` : A}
+        <!-- appointments#15 — la pregunta del ALCANCE. Radios en un alert y no una action sheet
+             (que es más nativa en móvil) por una razón concreta: la action sheet no puede llevar
+             el AVISO de qué se va a pisar, y ese aviso es el contrato entero de la decisión. El
+             botón primario nombra la acción; «OK» no dice qué va a pasar. -->
+        ${this.askingSeriesScope ? b2`<ion-alert
+              .isOpen=${true}
+              .header=${t5("ui.seriesScopeTitle")}
+              .message=${`${t5("ui.seriesScopeMessage")} ${t5("ui.seriesScopeMoved")} ${t5("ui.seriesScopeCancelledKept")}`}
+              .inputs=${[
+      {
+        type: "radio",
+        label: t5("ui.seriesScopeThisOnly"),
+        value: "this_only",
+        checked: this.seriesScope === "this_only",
+        handler: () => this.seriesScope = "this_only"
+      },
+      {
+        type: "radio",
+        label: t5("ui.seriesScopeFollowing"),
+        value: "this_and_following",
+        checked: this.seriesScope === "this_and_following",
+        handler: () => this.seriesScope = "this_and_following"
+      }
+    ]}
+              .buttons=${[
+      { text: t5("ui.cancelReschedule"), role: "cancel", handler: () => this.cancelSeriesScope() },
+      { text: t5("ui.seriesScopeConfirm"), handler: () => this.confirmSeriesScope() }
+    ]}
+              @ionAlertDidDismiss=${() => this.cancelSeriesScope()}
+            ></ion-alert>` : A}
         ${this.view === "staff" ? b2`<ok-scheduler
               .date=${this.day}
               .startHour=${startHour}
@@ -5771,6 +5866,18 @@ __decorateClass([
 __decorateClass([
   r5()
 ], ErpAppointmentsList.prototype, "rescheduleStaffName", 2);
+__decorateClass([
+  r5()
+], ErpAppointmentsList.prototype, "rescheduleSeriesId", 2);
+__decorateClass([
+  r5()
+], ErpAppointmentsList.prototype, "rescheduleOccurrence", 2);
+__decorateClass([
+  r5()
+], ErpAppointmentsList.prototype, "askingSeriesScope", 2);
+__decorateClass([
+  r5()
+], ErpAppointmentsList.prototype, "seriesScope", 2);
 define("erp-appointments-list", ErpAppointmentsList);
 
 // modules/appointments/ui/components/erp-appointments-request-booking/erp-appointments-request-booking.ts

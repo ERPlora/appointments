@@ -57,6 +57,12 @@ interface Appointment {
    *  `_mark_converted` al recibir `sales.sale.created_from_appointment`; sales#89 la saca por fin
    *  en la query para que la agenda pueda contestar «¿esta cita ya se cobró?». */
   converted_sale_id: string | null;
+  /** La serie de la que salió esta cita, o `null` si se reservó suelta (appointments#15). Con
+   *  ella puesta, mover la cita pregunta el ALCANCE antes de escribir nada. */
+  recurring_id: string | null;
+  /** El día de PARED que la plantilla generó — la clave de la ocurrencia, no el hueco donde la
+   *  cita acabó. Es lo que el corte de «esta y las siguientes» nombra. */
+  occurrence_date: string | null;
 }
 
 /** Ficha mínima de cliente que necesita el alta (de `customers.list`). */
@@ -260,6 +266,18 @@ export class ErpAppointmentsList extends LitElement {
 
   /** Solo para enseñarlo: `reschedule` mueve la hora, no cambia de profesional (ver render). */
   @state() rescheduleStaffName = '';
+  /** appointments#15 — la serie de la cita que se está moviendo (`''` = ninguna) y su ocurrencia.
+   *  Se copian de la fila al abrir el panel: la agenda ya las tiene, y volver a preguntárselas al
+   *  servidor sería una segunda verdad. */
+  @state() rescheduleSeriesId = '';
+  @state() rescheduleOccurrence = '';
+  /** ¿Está la pregunta del alcance en pantalla? Se enciende AL GUARDAR, no al abrir el panel —
+   *  Google, Apple y Fresha preguntan al guardar; Outlook pregunta al abrir y es justo la
+   *  fricción que la gente reporta (decides el alcance antes de saber qué vas a cambiar). */
+  @state() askingSeriesScope = false;
+  /** El alcance elegido. `this_only` viene preseleccionado: es el menos destructivo y el default
+   *  de Google, Odoo y Apple. `all` NO EXISTE — reescribiría un pasado ya cobrado y sellado. */
+  @state() seriesScope: 'this_only' | 'this_and_following' = 'this_only';
 
   private unsub?: () => void;
 
@@ -563,6 +581,10 @@ export class ErpAppointmentsList extends LitElement {
     this.rescheduleStart = '';
     this.rescheduleDuration = '';
     this.rescheduleStaffName = '';
+    this.rescheduleSeriesId = '';
+    this.rescheduleOccurrence = '';
+    this.askingSeriesScope = false;
+    this.seriesScope = 'this_only';
   }
 
   /** Abre el panel pre-rellenado con la cita que se va a mover. La fila manda: no se re-teclea
@@ -574,6 +596,8 @@ export class ErpAppointmentsList extends LitElement {
     this.rescheduleStart = toInputValue(String(row.start_datetime ?? ''));
     this.rescheduleDuration = String(row.duration_minutes ?? '');
     this.rescheduleStaffName = String(row.staff_name ?? '');
+    this.rescheduleSeriesId = String(row.recurring_id ?? '');
+    this.rescheduleOccurrence = String(row.occurrence_date ?? '');
     this.error = '';
     this.view = 'list'; // el panel vive en la tabla
     await this.updateComplete;
@@ -666,15 +690,59 @@ export class ErpAppointmentsList extends LitElement {
     if (!this.rescheduleId || !this.rescheduleStart) return;
     const minutes = Math.trunc(Number(this.rescheduleDuration));
     if (!Number.isFinite(minutes) || minutes < 1) return;
+    // appointments#15 — una cita de una SERIE no se mueve sin decir a qué alcanza el cambio.
+    // Se pregunta aquí, al guardar, y no se escribe NADA hasta que hay respuesta.
+    if (this.rescheduleSeriesId && this.rescheduleOccurrence) {
+      this.seriesScope = 'this_only';
+      this.askingSeriesScope = true;
+      return;
+    }
+    await this.applyReschedule('this_only');
+  }
+
+  /** La recepcionista ha contestado la pregunta del alcance. */
+  private async confirmSeriesScope(): Promise<void> {
+    const scope = this.seriesScope;
+    this.askingSeriesScope = false;
+    await this.applyReschedule(scope);
+  }
+
+  /** Se echa atrás: no se escribe nada y lo tecleado sigue ahí — elige otra vez, no desde cero. */
+  private cancelSeriesScope(): void {
+    this.askingSeriesScope = false;
+  }
+
+  /** Escribe el movimiento con el alcance elegido.
+   *
+   *  `this_only` mueve UNA cita, que es lo que esta pantalla hacía siempre. `this_and_following`
+   *  es otro command: parte la serie en dos y arrastra las ocurrencias futuras — el trabajo vive
+   *  en el servidor, porque decidir cuáles se mueven exige saber cuáles están canceladas y cuáles
+   *  ya se cobraron, y eso no se le pregunta al navegador. */
+  private async applyReschedule(scope: 'this_only' | 'this_and_following'): Promise<void> {
+    const minutes = Math.trunc(Number(this.rescheduleDuration));
     this.saving = true;
     this.error = '';
     try {
-      await erplora().command('appointments.appointments.reschedule', {
-        appointment_id: this.rescheduleId,
-        // Pared local + offset (appointments#76): mismo instante, el reloj del salón en el texto.
-        start_datetime: wallToBusinessIso(this.rescheduleStart),
-        duration_minutes: minutes,
-      });
+      if (scope === 'this_and_following') {
+        await erplora().command('appointments.recurring.update', {
+          recurring_id: this.rescheduleSeriesId,
+          scope,
+          from_occurrence_date: this.rescheduleOccurrence,
+          // HORA DE PARED, no un instante: la hora de una plantilla es una lectura de reloj y no
+          // se guarda convertida (appointments#12). El servidor la sitúa en la zona del negocio
+          // día a día, que es lo que conserva la hora al cruzar el cambio de hora.
+          time: this.rescheduleStart.slice(11, 16),
+          duration_minutes: minutes,
+        });
+      } else {
+        await erplora().command('appointments.appointments.reschedule', {
+          appointment_id: this.rescheduleId,
+          // Pared del salón + su offset (appointments#76/#12): mismo instante, y el texto dice la
+          // hora que el salón ve en la pared.
+          start_datetime: wallToBusinessIso(this.rescheduleStart),
+          duration_minutes: minutes,
+        });
+      }
       this.clearReschedule();
       this.dataTable()?.close();
       await this.refresh();
@@ -744,6 +812,38 @@ export class ErpAppointmentsList extends LitElement {
             >`
           : nothing}
         ${this.error ? html`<ok-inline-feedback tone="danger" icon="alert-circle-outline">${this.error}</ok-inline-feedback>` : nothing}
+        <!-- appointments#15 — la pregunta del ALCANCE. Radios en un alert y no una action sheet
+             (que es más nativa en móvil) por una razón concreta: la action sheet no puede llevar
+             el AVISO de qué se va a pisar, y ese aviso es el contrato entero de la decisión. El
+             botón primario nombra la acción; «OK» no dice qué va a pasar. -->
+        ${this.askingSeriesScope
+          ? html`<ion-alert
+              .isOpen=${true}
+              .header=${t('ui.seriesScopeTitle')}
+              .message=${`${t('ui.seriesScopeMessage')} ${t('ui.seriesScopeMoved')} ${t('ui.seriesScopeCancelledKept')}`}
+              .inputs=${[
+                {
+                  type: 'radio',
+                  label: t('ui.seriesScopeThisOnly'),
+                  value: 'this_only',
+                  checked: this.seriesScope === 'this_only',
+                  handler: () => (this.seriesScope = 'this_only'),
+                },
+                {
+                  type: 'radio',
+                  label: t('ui.seriesScopeFollowing'),
+                  value: 'this_and_following',
+                  checked: this.seriesScope === 'this_and_following',
+                  handler: () => (this.seriesScope = 'this_and_following'),
+                },
+              ]}
+              .buttons=${[
+                { text: t('ui.cancelReschedule'), role: 'cancel', handler: () => this.cancelSeriesScope() },
+                { text: t('ui.seriesScopeConfirm'), handler: () => this.confirmSeriesScope() },
+              ]}
+              @ionAlertDidDismiss=${() => this.cancelSeriesScope()}
+            ></ion-alert>`
+          : nothing}
         ${this.view === 'staff'
           ? html`<ok-scheduler
               .date=${this.day}

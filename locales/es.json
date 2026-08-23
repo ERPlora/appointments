@@ -81,7 +81,14 @@
     "holdCountdown": "Hueco apartado para ti · {mins}:{secs}",
     "holdExpired": "Se acabó el tiempo que teníamos apartado ese hueco y ha vuelto a la venta. Elige la hora otra vez.",
     "holdFailed": "No se ha podido apartar ese hueco; alguien puede reservarlo mientras decides.",
-    "deviceZoneNotice": "Este dispositivo está en otra zona horaria. La agenda siempre muestra el reloj del negocio:"
+    "deviceZoneNotice": "Este dispositivo está en otra zona horaria. La agenda siempre muestra el reloj del negocio:",
+    "seriesScopeTitle": "Editar cita periódica",
+    "seriesScopeMessage": "Esta cita forma parte de una serie periódica.",
+    "seriesScopeThisOnly": "Solo esta cita",
+    "seriesScopeFollowing": "Esta y todas las siguientes",
+    "seriesScopeConfirm": "Guardar cambios",
+    "seriesScopeMoved": "Las citas de esta serie que se modificaron por separado volverán al horario de la serie. Las citas anteriores a hoy nunca se modifican.",
+    "seriesScopeCancelledKept": "Las citas que anulaste a mano siguen anuladas."
   },
   "setup": {
     "title": "Tu horario de trabajo",
@@ -112,6 +119,7 @@
     "appointments.overlapping_appointment": "Ese profesional ya tiene una cita en esa franja. Elige otra hora u otro profesional.",
     "appointments.booking_refused": "No se ha podido reservar la cita a partir de esa petición.",
     "appointments.slot_on_hold": "Esa franja está apartada para una petición pendiente. Se libera sola en unos minutos, o elige otra hora.",
-    "appointments.invalid_local_time": "Esa hora no existe en el reloj del negocio: el cambio de hora la salta. Elige otra."
+    "appointments.invalid_local_time": "Esa hora no existe en el reloj del negocio: el cambio de hora la salta. Elige otra.",
+    "appointments.series_locked": "Algunas citas de esta serie no se han podido cambiar: ya están facturadas."
   }
 }

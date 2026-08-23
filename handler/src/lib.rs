@@ -92,6 +92,14 @@ pub fn materialize_recurring(input: Json<erplora_guest_sdk::Input>) -> FnResult<
 
 #[cfg(feature = "guest")]
 #[plugin_fn]
+pub fn update_recurring_series(input: Json<erplora_guest_sdk::Input>) -> FnResult<Json<Output>> {
+    guest_result(update_recurring_series_pure(
+        input.into_inner().into_value(),
+    ))
+}
+
+#[cfg(feature = "guest")]
+#[plugin_fn]
 pub fn reschedule_appointment(input: Json<erplora_guest_sdk::Input>) -> FnResult<Json<Output>> {
     guest_result(reschedule_appointment_pure(input.into_inner().into_value()))
 }
@@ -341,6 +349,17 @@ fn business_wall_iso(
             .format("%Y-%m-%dT%H:%M:%S%:z")
             .to_string(),
     )
+}
+
+/// `iso` plus `minutes`, as INSTANTS, rendered back on the business clock.
+///
+/// Not «add the minutes to the wall clock»: on the day the clock changes, an appointment that
+/// starts at 01:30 and lasts an hour ends at 03:30 on the wall, and the room is busy for sixty
+/// minutes either way. Adding to the wall would say otherwise.
+fn business_iso_plus_minutes(iso: &str, minutes: i64, tz: chrono_tz::Tz) -> Option<String> {
+    let parsed = chrono::DateTime::parse_from_rfc3339(iso).ok()?;
+    let end = parsed.with_timezone(&tz) + chrono::Duration::minutes(minutes);
+    Some(end.format("%Y-%m-%dT%H:%M:%S%:z").to_string())
 }
 
 /// `YYYYMMDD` of the BUSINESS day an instant falls on — the key the appointment counter runs on.
@@ -1729,6 +1748,297 @@ pub fn bulk_delete_pure(input: Value) -> Result<Output, String> {
         events: vec![],
         ..Default::default()
     })
+}
+
+/// `appointments.recurring.update` — edit a series with scope «this and all following»
+/// (appointments#15).
+///
+/// The market decided this shape (15 references + 5 forums, recorded in the issue): **two**
+/// scopes, not three. «Only this appointment» is the `reschedule` that already exists, over ONE
+/// row. «All events» is deliberately **absent** — it means rewriting the past, and here the past
+/// is charged, invoiced and chained into VeriFactu. No product in the salon vertical offers it;
+/// Apple does not; Odoo blocks it the moment you touch the time and Google hides it.
+///
+/// «This and following» is a **split**, the canonical model of RFC 5545 (`RANGE=THISANDFUTURE`)
+/// and what Google (`UNTIL` + insert), Microsoft and Odoo (`_stop_at()`) all do: the original
+/// template is closed the day before the cut and a NEW one starts at the cut. Versioning the same
+/// template instead would break the partial unique index `(hub_id, recurring_id, occurrence_date)`
+/// — one series would hold two truths for the same wall day. Two ids do not.
+///
+/// What it refuses to touch, and why:
+/// - **anything before today** — the cut is pulled forward to the business day if the caller
+///   points at the past. RFC 5545 deprecated `THISANDPRIOR` outright.
+/// - **a cancelled occurrence** — it is the EXCEPTION of the series («not that week»), and an
+///   edit that resurrects it is the one that makes the receptionist stop trusting the screen.
+/// - **an occurrence already turned into a sale** — it carries a fiscal record (ADR-0331).
+///
+/// The occurrences that DO move are rewritten in place: same row, same appointment number, same
+/// audit trail, new slot on the business clock. That is better than deleting and re-materializing,
+/// which is what loses the history the salon needs at the chair.
+pub fn update_recurring_series_pure(input: Value) -> Result<Output, String> {
+    let payload = payload_of(&input);
+    let ctx = host_ctx(&input)?;
+
+    let recurring_id = str_or(&payload, "recurring_id", "");
+    if recurring_id.is_empty() {
+        return Err("invalid_payload: recurring_id is required".to_string());
+    }
+    // A CLOSED enum, checked here as well as in the JSON schema: an unknown scope must fail, never
+    // fall into a silent default. «all» arriving as a typo and rewriting the past is precisely
+    // what must not be possible.
+    let scope = str_or(&payload, "scope", "");
+    if scope != "this_and_following" {
+        return Err(format!(
+            "invalid_payload: scope `{scope}` no soportado (solo `this_and_following`)"
+        ));
+    }
+    let from = parse_dt(&str_or(&payload, "from_occurrence_date", ""))
+        .ok_or_else(|| "invalid_payload: from_occurrence_date inválida (YYYY-MM-DD)".to_string())?;
+
+    let new_time = payload.get("time").map(as_str).filter(|s| !s.is_empty());
+    if let Some(t) = &new_time {
+        parse_hhmm(t).ok_or_else(|| format!("invalid_payload: time inválido `{t}` (HH:MM)"))?;
+    }
+    let new_duration = payload
+        .get("duration_minutes")
+        .map(|v| as_i64(v, 0))
+        .filter(|d| *d >= 1);
+    if new_time.is_none() && new_duration.is_none() {
+        return Err(
+            "invalid_payload: nada que cambiar (se espera `time`, `duration_minutes` o ambos)"
+                .to_string(),
+        );
+    }
+
+    let Some(rows) = read_rows(&input, "appointments.recurring.get") else {
+        return Ok(refuse(
+            "appointments.recurring_unavailable",
+            "The recurring template could not be read; nothing was changed.",
+        ));
+    };
+    let Some(tmpl) = rows.first().cloned() else {
+        return Ok(refuse(
+            "appointments.recurring_not_found",
+            "That recurring appointment does not exist in this business.",
+        ));
+    };
+
+    // Fail closed: without knowing what is already on the books, moving «the following ones» is
+    // moving an unknown set — which is how a series quietly loses half its appointments.
+    let Some(occurrences) = read_rows(&input, "appointments.recurring.occurrences") else {
+        return Ok(refuse(
+            "appointments.recurring_unavailable",
+            "The occurrences already booked for this recurring appointment could not be read; nothing was changed.",
+        ));
+    };
+
+    // THE PAST IS FROZEN: the cut can never land before the business day that is running.
+    let today = business_day_of(&ctx.now, ctx.tz);
+    let cut_days = days_from_civil(from.y, from.mo, from.d).max(today);
+    let (cy, cmo, cd) = civil_from_days(cut_days);
+    let cut = format!("{cy:04}-{cmo:02}-{cd:02}");
+
+    let time = new_time.unwrap_or_else(|| str_or(&tmpl, "time", ""));
+    let (th, tm) = parse_hhmm(&time)
+        .ok_or_else(|| format!("invalid_payload: la plantilla tiene un time inválido `{time}`"))?;
+    let duration = new_duration
+        .unwrap_or_else(|| as_i64(tmpl.get("duration_minutes").unwrap_or(&Value::Null), 30));
+
+    let start_days = parse_dt(&str_or(&tmpl, "start_date", ""))
+        .map(|d| days_from_civil(d.y, d.mo, d.d))
+        .ok_or_else(|| "invalid_payload: la plantilla tiene un start_date inválido".to_string())?;
+
+    let mut ops: Vec<Operation> = Vec::new();
+    // The series the moved occurrences will belong to: the new half, or the template itself when
+    // the cut is at (or before) its very first occurrence and there is nothing to split.
+    let target_series = if cut_days <= start_days {
+        // «This and following» from the first occurrence IS «all events», and splitting would
+        // leave a closed husk with `end_date < start_date`: a row that generates nothing and that
+        // every list screen would still paint.
+        let mut p = Map::new();
+        p.insert("recurring_id".into(), json!(recurring_id));
+        p.insert("time".into(), json!(time));
+        p.insert("duration_minutes".into(), json!(duration));
+        ops.push(Operation::sql("appointments._recurring_edit", p));
+        recurring_id.clone()
+    } else {
+        let (py, pmo, pd) = civil_from_days(cut_days - 1);
+        let mut close = Map::new();
+        close.insert("recurring_id".into(), json!(recurring_id));
+        close.insert(
+            "end_date".into(),
+            json!(format!("{py:04}-{pmo:02}-{pd:02}")),
+        );
+        ops.push(Operation::sql("appointments._recurring_close", close));
+
+        let Some(new_series_id) = ctx.new_ids.first().cloned() else {
+            return Err("context.new_ids vacío (lo inyecta el host)".to_string());
+        };
+        let mut split = Map::new();
+        split.insert("new_id".into(), json!(new_series_id));
+        split.insert("split_from_id".into(), json!(recurring_id));
+        for key in [
+            "customer_id",
+            "customer_name",
+            "service_id",
+            "service_name",
+            "staff_id",
+            "staff_name",
+            "frequency",
+        ] {
+            split.insert(key.into(), json!(str_or(&tmpl, key, "")));
+        }
+        split.insert(
+            "day_of_week".into(),
+            tmpl.get("day_of_week").cloned().unwrap_or(Value::Null),
+        );
+        split.insert("time".into(), json!(time));
+        split.insert("duration_minutes".into(), json!(duration));
+        split.insert("start_date".into(), json!(cut));
+        split.insert(
+            "end_date".into(),
+            tmpl.get("end_date").cloned().unwrap_or(Value::Null),
+        );
+        // A series limited by COUNT keeps its count: the new half only gets what the old one had
+        // not spent. Carrying it over untouched doubles the series; dropping it makes a bounded
+        // series unbounded.
+        split.insert(
+            "max_occurrences".into(),
+            match tmpl
+                .get("max_occurrences")
+                .map(|v| as_i64(v, 0))
+                .filter(|n| *n > 0)
+            {
+                Some(max) => json!((max - occurrences_before(&tmpl, start_days, cut_days)).max(0)),
+                None => Value::Null,
+            },
+        );
+        ops.push(Operation::sql("appointments._recurring_split", split));
+        new_series_id
+    };
+
+    // The occurrences that move: from the cut onwards, still movable, not an exception, not
+    // invoiced. Everything that does not move is COUNTED and reported — silence about what did
+    // not happen is the failure every forum reports about this feature.
+    let mut moved = 0i64;
+    let mut locked_invoiced = 0i64;
+    let mut kept_cancelled = 0i64;
+    for row in occurrences.iter() {
+        let date = as_str(row.get("occurrence_date").unwrap_or(&Value::Null));
+        let Some(d) = parse_dt(&date) else { continue };
+        if days_from_civil(d.y, d.mo, d.d) < cut_days {
+            continue; // the past, and everything the old half keeps
+        }
+        let status = as_str(row.get("status").unwrap_or(&Value::Null));
+        if status == "cancelled" || status == "no_show" {
+            kept_cancelled += 1;
+            continue;
+        }
+        if !matches!(status.as_str(), "pending" | "confirmed") {
+            continue; // started or completed: it is history, not a plan
+        }
+        let sale = as_str(row.get("converted_sale_id").unwrap_or(&Value::Null));
+        if !sale.is_empty() {
+            locked_invoiced += 1;
+            continue;
+        }
+        let appointment_id = as_str(row.get("id").unwrap_or(&Value::Null));
+        if appointment_id.is_empty() {
+            continue;
+        }
+        if moved >= 50 {
+            break; // same per-invocation ceiling as `materialize` and `bulk_create`
+        }
+        // On the BUSINESS clock (appointments#12): the series keeps its wall time across a DST
+        // change, so an occurrence either side of it lands at the same hour of the salon.
+        let Some(start_iso) = business_wall_iso(d.y, d.mo, d.d, th, tm, 0, ctx.tz) else {
+            continue;
+        };
+        let Some(end_iso) = business_iso_plus_minutes(&start_iso, duration, ctx.tz) else {
+            continue;
+        };
+        let mut mv = Map::new();
+        mv.insert("appointment_id".into(), json!(appointment_id));
+        mv.insert("recurring_id".into(), json!(target_series));
+        mv.insert("start_datetime".into(), json!(start_iso));
+        mv.insert("end_datetime".into(), json!(end_iso));
+        mv.insert("duration_minutes".into(), json!(duration));
+        ops.push(Operation::sql(
+            "appointments._recurring_move_occurrence",
+            mv,
+        ));
+
+        // Every move leaves an audit row, like every other transition of this module: the trail is
+        // what lets anyone answer «why is this at 12:00 now?» a month later.
+        let mut h = Map::new();
+        h.insert("appointment_id".into(), json!(appointment_id));
+        ops.push(Operation::sql("appointments._history_reschedule", h));
+        moved += 1;
+    }
+
+    let mut out = Output::new();
+    for op in ops {
+        out = out.with_operation(op);
+    }
+    Ok(out.with_result(json!({
+        "recurring_id": target_series,
+        "split": target_series != recurring_id,
+        "from_occurrence_date": cut,
+        "moved": moved,
+        "locked_invoiced": locked_invoiced,
+        "kept_cancelled": kept_cancelled
+    })))
+}
+
+/// How many occurrences of `tmpl` fall strictly BEFORE `cut_days`, counting from its `start_date`.
+///
+/// Only needed to split a `max_occurrences` budget, and computed from the template's own rule
+/// rather than from what happens to be booked: an occurrence that was never materialized still
+/// spent its slot in the count.
+fn occurrences_before(tmpl: &Value, start_days: i64, cut_days: i64) -> i64 {
+    let frequency = str_or(tmpl, "frequency", "");
+    match frequency.as_str() {
+        "daily" | "weekly" | "biweekly" => {
+            let step = match frequency.as_str() {
+                "daily" => 1,
+                "weekly" => 7,
+                _ => 14,
+            };
+            let first = match tmpl
+                .get("day_of_week")
+                .map(|v| as_i64(v, -1))
+                .filter(|v| (0..=6).contains(v))
+            {
+                Some(dow) if step > 1 => {
+                    start_days + (dow - weekday_mon0(start_days)).rem_euclid(7)
+                }
+                _ => start_days,
+            };
+            if cut_days <= first {
+                0
+            } else {
+                (cut_days - first + step - 1) / step
+            }
+        }
+        _ => {
+            // monthly: count the month boundaries crossed, clamped like the expansion does.
+            let (sy, smo, _) = civil_from_days(start_days);
+            let (cy, cmo, _) = civil_from_days(cut_days);
+            let months = (cy - sy) * 12 + (cmo - smo);
+            let start_dom = civil_from_days(start_days).2;
+            let cut_dom = civil_from_days(cut_days).2;
+            (months + if cut_dom > start_dom { 1 } else { 0 }).max(0)
+        }
+    }
+}
+
+/// Days-since-epoch of the BUSINESS day an instant falls on.
+fn business_day_of(instant: &Dt, tz: chrono_tz::Tz) -> i64 {
+    let key = business_day_key(instant, tz);
+    let y: i64 = key[0..4].parse().unwrap_or(1970);
+    let mo: i64 = key[4..6].parse().unwrap_or(1);
+    let d: i64 = key[6..8].parse().unwrap_or(1);
+    days_from_civil(y, mo, d)
 }
 
 /// `appointments.recurring.materialize` — WASM-TODO pieza 6.
@@ -3750,6 +4060,489 @@ mod tests {
                 .unwrap()
                 .to_string();
             assert_eq!(start, expected, "{tz}");
+        }
+    }
+
+    // ── appointments#15 · EDITAR LA SERIE, «esta y las siguientes» ──────────────────────────
+    //
+    // Decisión de mercado (15 referencias + 5 foros, en la issue): DOS alcances, no tres —
+    // «solo esta» (que es el `reschedule` de siempre, sobre UNA cita) y «esta y las siguientes».
+    // «Todas» se OMITE a propósito: reescribir el pasado, que aquí está cobrado y sellado en la
+    // cadena fiscal. Ningún producto de salón lo ofrece; Apple tampoco; Odoo lo bloquea en cuanto
+    // tocas la hora y Google esconde la opción.
+    //
+    // «Esta y las siguientes» = SPLIT: se cierra la plantilla original en la ocurrencia anterior
+    // al corte y nace una plantilla NUEVA desde el corte. Es lo que hacen Google (`UNTIL` +
+    // insert), Microsoft, Odoo (`_stop_at()`) y lo que canoniza RFC 5545
+    // (`RANGE=THISANDFUTURE`). Versionar la misma plantilla rompería el índice único
+    // `(hub_id, recurring_id, occurrence_date)`: la misma serie daría dos verdades para el mismo
+    // día. Cada mitad con su `recurring_id` lo respeta gratis.
+
+    /// The occurrences already on the books, as `appointments.recurring.occurrences` returns them.
+    fn occurrence(date: &str, status: &str, extra: Value) -> Value {
+        let mut row = json!({
+            "id": format!("apt-{date}"),
+            "occurrence_date": date,
+            "status": status,
+            "start_datetime": format!("{date}T11:00:00+02:00"),
+            "end_datetime": format!("{date}T11:30:00+02:00"),
+            "duration_minutes": 30,
+            "converted_sale_id": null
+        });
+        if let Value::Object(fields) = extra {
+            for (k, v) in fields {
+                row[k] = v;
+            }
+        }
+        row
+    }
+
+    fn series_edit_input(payload: Value, tmpl: Value, occurrences: Value) -> Value {
+        let mut inp = series_input(series_payload(), json!([tmpl]), None);
+        inp["payload"] = payload;
+        inp["context"]["reads"]["appointments.recurring.occurrences"] = occurrences;
+        inp["context"]["new_ids"] = json!((1..=30).map(|n| format!("new-{n}")).collect::<Vec<_>>());
+        inp
+    }
+
+    fn edit_payload(from: &str, time: &str) -> Value {
+        json!({
+            "recurring_id": "r1",
+            "scope": "this_and_following",
+            "from_occurrence_date": from,
+            "time": time
+        })
+    }
+
+    fn ops_named<'a>(out: &'a Output, suffix: &str) -> Vec<&'a Operation> {
+        out.operations
+            .iter()
+            .filter(|op| op.command.ends_with(suffix))
+            .collect()
+    }
+
+    /// The shape of the whole operation: close the old template, open a new one, and move the
+    /// future occurrences onto it. In one transaction, in that order.
+    #[test]
+    fn editing_this_and_following_splits_the_series_in_two() {
+        let out = update_recurring_series_pure(series_edit_input(
+            edit_payload("2026-08-17", "12:00"),
+            template(json!({ "max_occurrences": null })),
+            json!([
+                occurrence("2026-08-03", "completed", json!({})),
+                occurrence("2026-08-10", "confirmed", json!({})),
+                occurrence("2026-08-17", "confirmed", json!({})),
+                occurrence("2026-08-24", "pending", json!({}))
+            ]),
+        ))
+        .unwrap();
+        assert!(out.error.is_none(), "{:?}", out.error);
+
+        // The original series ends the day BEFORE the cut — `UNTIL`, exactly as Google does it.
+        let closed = ops_named(&out, "_recurring_close");
+        assert_eq!(closed.len(), 1);
+        assert_eq!(
+            closed[0].params.get("end_date").and_then(|v| v.as_str()),
+            Some("2026-08-16")
+        );
+        assert_eq!(
+            closed[0]
+                .params
+                .get("recurring_id")
+                .and_then(|v| v.as_str()),
+            Some("r1")
+        );
+
+        // …and a NEW template starts at the cut, with the new time and the same links.
+        let opened = ops_named(&out, "_recurring_split");
+        assert_eq!(opened.len(), 1);
+        let p = &opened[0].params;
+        assert_eq!(
+            p.get("start_date").and_then(|v| v.as_str()),
+            Some("2026-08-17")
+        );
+        assert_eq!(p.get("time").and_then(|v| v.as_str()), Some("12:00"));
+        assert_eq!(p.get("customer_id").and_then(|v| v.as_str()), Some("c1"));
+        assert_eq!(
+            p.get("service_id").and_then(|v| v.as_str()),
+            Some("s-corte")
+        );
+        assert_eq!(p.get("staff_id").and_then(|v| v.as_str()), Some("s1"));
+        assert_eq!(p.get("frequency").and_then(|v| v.as_str()), Some("weekly"));
+        // Traceability: the new half says which one it came out of (#15 asks for TRAZABLE).
+        assert_eq!(p.get("split_from_id").and_then(|v| v.as_str()), Some("r1"));
+        let new_series = p
+            .get("new_id")
+            .and_then(|v| v.as_str())
+            .unwrap()
+            .to_string();
+
+        // The two future occurrences move to the new time and onto the new series.
+        let moved = ops_named(&out, "_recurring_move_occurrence");
+        let ids: Vec<_> = moved
+            .iter()
+            .filter_map(|op| op.params.get("appointment_id").and_then(|v| v.as_str()))
+            .collect();
+        assert_eq!(ids, vec!["apt-2026-08-17", "apt-2026-08-24"]);
+        assert_eq!(
+            moved[0]
+                .params
+                .get("start_datetime")
+                .and_then(|v| v.as_str()),
+            Some("2026-08-17T12:00:00+02:00"),
+            "the new slot is written on the business clock, with its offset"
+        );
+        assert_eq!(
+            moved[0].params.get("end_datetime").and_then(|v| v.as_str()),
+            Some("2026-08-17T12:30:00+02:00")
+        );
+        assert_eq!(
+            moved[0].params.get("recurring_id").and_then(|v| v.as_str()),
+            Some(new_series.as_str()),
+            "a moved occurrence belongs to the NEW half of the series"
+        );
+        // Every move leaves an audit row, like every other transition of this module.
+        assert_eq!(ops_named(&out, "_history_reschedule").len(), 2);
+    }
+
+    /// 🔴 THE PAST IS FROZEN. RFC 5545 deprecated `THISANDPRIOR` («MUST NOT be generated by
+    /// applications»), Apple only offers «All Future Events» and Fresha only «all future». Here it
+    /// is not a preference: a past appointment is charged, invoiced and chained into VeriFactu.
+    #[test]
+    fn the_past_is_never_touched_even_when_the_cut_is_in_the_past() {
+        // `now` is 2026-07-31 in the fixtures; the caller asks to cut at a date before that.
+        let out = update_recurring_series_pure(series_edit_input(
+            edit_payload("2026-07-06", "12:00"),
+            template(json!({ "start_date": "2026-07-06", "max_occurrences": null })),
+            json!([
+                occurrence("2026-07-06", "completed", json!({})),
+                occurrence("2026-07-13", "completed", json!({})),
+                occurrence("2026-08-03", "confirmed", json!({}))
+            ]),
+        ))
+        .unwrap();
+        assert!(out.error.is_none(), "{:?}", out.error);
+        // The cut is pulled forward to TODAY on the business clock, so the closed series keeps
+        // everything already served.
+        assert_eq!(
+            ops_named(&out, "_recurring_close")[0]
+                .params
+                .get("end_date")
+                .and_then(|v| v.as_str()),
+            Some("2026-07-30")
+        );
+        let ids: Vec<_> = ops_named(&out, "_recurring_move_occurrence")
+            .iter()
+            .filter_map(|op| op.params.get("appointment_id").and_then(|v| v.as_str()))
+            .collect();
+        assert_eq!(
+            ids,
+            vec!["apt-2026-08-03"],
+            "a served occurrence was rewritten"
+        );
+    }
+
+    /// A cancelled occurrence stays cancelled: it is the EXCEPTION of the series («not that
+    /// week»), and editing the series must not resurrect it. Same rule Google Calendar, Outlook,
+    /// Fresha and Square apply — and the one that decides whether the receptionist trusts this.
+    #[test]
+    fn a_cancelled_occurrence_is_not_resurrected_by_editing_the_series() {
+        let out = update_recurring_series_pure(series_edit_input(
+            edit_payload("2026-08-03", "12:00"),
+            template(json!({ "max_occurrences": null })),
+            json!([
+                occurrence("2026-08-10", "cancelled", json!({})),
+                occurrence("2026-08-17", "confirmed", json!({}))
+            ]),
+        ))
+        .unwrap();
+        let ids: Vec<_> = ops_named(&out, "_recurring_move_occurrence")
+            .iter()
+            .filter_map(|op| op.params.get("appointment_id").and_then(|v| v.as_str()))
+            .collect();
+        assert_eq!(ids, vec!["apt-2026-08-17"]);
+        // Counted as what it is — an EXCEPTION that was respected — and not merely swallowed by
+        // the «not a plan any more» guard further down. The difference matters: the screen tells
+        // the receptionist «the ones you cancelled by hand stay cancelled», which is the sentence
+        // that makes the feature safe to press.
+        let result = out.result.clone().expect("the command answers what it did");
+        assert_eq!(
+            result.get("kept_cancelled").and_then(|v| v.as_i64()),
+            Some(1)
+        );
+        assert_eq!(result.get("moved").and_then(|v| v.as_i64()), Some(1));
+    }
+
+    /// An occurrence already turned into a sale is LOCKED. It carries a fiscal record, and the
+    /// VeriFactu chain is not rewritten (ADR-0331). It is reported, not silently skipped.
+    #[test]
+    fn an_invoiced_occurrence_is_locked_and_reported() {
+        let out = update_recurring_series_pure(series_edit_input(
+            edit_payload("2026-08-03", "12:00"),
+            template(json!({ "max_occurrences": null })),
+            json!([
+                occurrence(
+                    "2026-08-10",
+                    "confirmed",
+                    json!({ "converted_sale_id": "sale-1" })
+                ),
+                occurrence("2026-08-17", "confirmed", json!({}))
+            ]),
+        ))
+        .unwrap();
+        let ids: Vec<_> = ops_named(&out, "_recurring_move_occurrence")
+            .iter()
+            .filter_map(|op| op.params.get("appointment_id").and_then(|v| v.as_str()))
+            .collect();
+        assert_eq!(ids, vec!["apt-2026-08-17"]);
+        // Counted in the answer, not swallowed: the screen tells the receptionist that one
+        // appointment did not move, and why. Silence is the failure the forums report about
+        // every product that does this (Google and Microsoft both reset exceptions mutely).
+        let result = out.result.clone().expect("the command answers what it did");
+        assert_eq!(result.get("moved").and_then(|v| v.as_i64()), Some(1));
+        assert_eq!(
+            result.get("locked_invoiced").and_then(|v| v.as_i64()),
+            Some(1)
+        );
+    }
+
+    /// Cutting at the very first occurrence is «all events» in disguise, and there is nothing to
+    /// split: the template itself is edited. Leaving a closed husk with `end_date < start_date`
+    /// would be a row that generates nothing and that every list screen would still paint.
+    #[test]
+    fn cutting_at_the_first_occurrence_edits_the_template_instead_of_splitting_it() {
+        let out = update_recurring_series_pure(series_edit_input(
+            edit_payload("2026-08-03", "12:00"),
+            template(json!({ "max_occurrences": null })),
+            json!([occurrence("2026-08-03", "confirmed", json!({}))]),
+        ))
+        .unwrap();
+        assert!(
+            ops_named(&out, "_recurring_close").is_empty(),
+            "nothing to close"
+        );
+        assert!(
+            ops_named(&out, "_recurring_split").is_empty(),
+            "nothing to split"
+        );
+        let edited = ops_named(&out, "_recurring_edit");
+        assert_eq!(edited.len(), 1);
+        assert_eq!(
+            edited[0].params.get("time").and_then(|v| v.as_str()),
+            Some("12:00")
+        );
+        assert_eq!(
+            edited[0]
+                .params
+                .get("recurring_id")
+                .and_then(|v| v.as_str()),
+            Some("r1")
+        );
+    }
+
+    /// A series limited by COUNT keeps its count: the new half only gets the occurrences the old
+    /// one had not spent. Carrying `max_occurrences` over untouched would silently double the
+    /// series; dropping it would make a bounded series unbounded.
+    #[test]
+    fn a_series_limited_by_count_splits_the_remaining_count_not_the_whole_one() {
+        let out = update_recurring_series_pure(series_edit_input(
+            edit_payload("2026-08-17", "12:00"),
+            template(json!({ "max_occurrences": 5, "start_date": "2026-08-03" })),
+            json!([]),
+        ))
+        .unwrap();
+        // Weekly from 03/08: 03, 10 fall before the cut → 3 left of the 5.
+        assert_eq!(
+            ops_named(&out, "_recurring_split")[0]
+                .params
+                .get("max_occurrences")
+                .and_then(|v| v.as_i64()),
+            Some(3)
+        );
+    }
+
+    #[test]
+    fn editing_the_series_changes_the_duration_too() {
+        let out = update_recurring_series_pure(series_edit_input(
+            json!({
+                "recurring_id": "r1",
+                "scope": "this_and_following",
+                "from_occurrence_date": "2026-08-17",
+                "duration_minutes": 45
+            }),
+            template(json!({ "max_occurrences": null })),
+            json!([occurrence("2026-08-17", "confirmed", json!({}))]),
+        ))
+        .unwrap();
+        let split = ops_named(&out, "_recurring_split");
+        assert_eq!(
+            split[0]
+                .params
+                .get("duration_minutes")
+                .and_then(|v| v.as_i64()),
+            Some(45)
+        );
+        assert_eq!(
+            split[0].params.get("time").and_then(|v| v.as_str()),
+            Some("11:00"),
+            "what was not asked for does not change"
+        );
+        let moved = ops_named(&out, "_recurring_move_occurrence");
+        assert_eq!(
+            moved[0].params.get("end_datetime").and_then(|v| v.as_str()),
+            Some("2026-08-17T11:45:00+02:00")
+        );
+    }
+
+    /// 🔴 The series keeps its WALL time across a DST change here too — the split writes the new
+    /// slots on the business clock, so an occurrence either side of the change lands at the same
+    /// hour of the salon and NOT at the same instant.
+    #[test]
+    fn moving_occurrences_across_a_dst_change_keeps_the_wall_time() {
+        let mut inp = series_edit_input(
+            edit_payload("2026-10-19", "12:00"),
+            template(json!({ "start_date": "2026-10-05", "max_occurrences": null })),
+            json!([
+                occurrence("2026-10-19", "confirmed", json!({})),
+                occurrence("2026-10-26", "confirmed", json!({}))
+            ]),
+        );
+        inp["context"]["now"] = json!("2026-10-15T09:00:00Z");
+        let out = update_recurring_series_pure(inp).unwrap();
+        let slots: Vec<_> = ops_named(&out, "_recurring_move_occurrence")
+            .iter()
+            .filter_map(|op| op.params.get("start_datetime").and_then(|v| v.as_str()))
+            .map(|s| s.to_string())
+            .collect();
+        assert_eq!(
+            slots,
+            vec!["2026-10-19T12:00:00+02:00", "2026-10-26T12:00:00+01:00"]
+        );
+    }
+
+    /// 🔴 The end of the slot is `start + duration` as INSTANTS, and the minutes have to carry.
+    /// `11:30 + 45` is not «minute 75»: a naive `tm + duration` produces a time the calendar
+    /// refuses, and the occurrence would be dropped from the move without a word — the series
+    /// would silently keep half its appointments at the old hour.
+    #[test]
+    fn the_new_slot_carries_the_minutes_over_the_hour() {
+        let out = update_recurring_series_pure(series_edit_input(
+            json!({
+                "recurring_id": "r1",
+                "scope": "this_and_following",
+                "from_occurrence_date": "2026-08-17",
+                "time": "11:30",
+                "duration_minutes": 45
+            }),
+            template(json!({ "max_occurrences": null })),
+            json!([occurrence("2026-08-17", "confirmed", json!({}))]),
+        ))
+        .unwrap();
+        let moved = ops_named(&out, "_recurring_move_occurrence");
+        assert_eq!(moved.len(), 1, "the occurrence was dropped from the move");
+        assert_eq!(
+            moved[0]
+                .params
+                .get("start_datetime")
+                .and_then(|v| v.as_str()),
+            Some("2026-08-17T11:30:00+02:00")
+        );
+        assert_eq!(
+            moved[0].params.get("end_datetime").and_then(|v| v.as_str()),
+            Some("2026-08-17T12:15:00+02:00")
+        );
+    }
+
+    /// And a slot that runs past midnight lands on the NEXT day, not on hour 25.
+    #[test]
+    fn a_slot_that_crosses_midnight_ends_on_the_next_day() {
+        let out = update_recurring_series_pure(series_edit_input(
+            json!({
+                "recurring_id": "r1",
+                "scope": "this_and_following",
+                "from_occurrence_date": "2026-08-17",
+                "time": "23:30",
+                "duration_minutes": 60
+            }),
+            template(json!({ "max_occurrences": null })),
+            json!([occurrence("2026-08-17", "confirmed", json!({}))]),
+        ))
+        .unwrap();
+        let moved = ops_named(&out, "_recurring_move_occurrence");
+        assert_eq!(moved.len(), 1);
+        assert_eq!(
+            moved[0].params.get("end_datetime").and_then(|v| v.as_str()),
+            Some("2026-08-18T00:30:00+02:00")
+        );
+    }
+
+    #[test]
+    fn editing_a_series_the_hub_does_not_have_is_refused() {
+        let mut inp = series_edit_input(
+            edit_payload("2026-08-17", "12:00"),
+            template(json!({})),
+            json!([]),
+        );
+        inp["context"]["reads"]["appointments.recurring.get"] = json!([]);
+        let out = update_recurring_series_pure(inp).unwrap();
+        assert_eq!(
+            domain_code(&out).as_deref(),
+            Some("appointments.recurring_not_found")
+        );
+    }
+
+    #[test]
+    fn editing_a_series_without_the_occurrences_read_refuses_instead_of_guessing() {
+        // Fail closed: without knowing what is already on the books, moving «the following ones»
+        // is moving an unknown set — which is how a series quietly loses half its appointments.
+        let mut inp = series_edit_input(
+            edit_payload("2026-08-17", "12:00"),
+            template(json!({})),
+            json!([]),
+        );
+        inp["context"]["reads"]
+            .as_object_mut()
+            .unwrap()
+            .remove("appointments.recurring.occurrences");
+        let out = update_recurring_series_pure(inp).unwrap();
+        assert_eq!(
+            domain_code(&out).as_deref(),
+            Some("appointments.recurring_unavailable")
+        );
+    }
+
+    #[test]
+    fn an_edit_that_changes_nothing_is_refused_instead_of_splitting_for_free() {
+        let err = update_recurring_series_pure(series_edit_input(
+            json!({
+                "recurring_id": "r1",
+                "scope": "this_and_following",
+                "from_occurrence_date": "2026-08-17"
+            }),
+            template(json!({})),
+            json!([]),
+        ))
+        .unwrap_err();
+        assert!(err.starts_with("invalid_payload:"), "{err}");
+    }
+
+    /// The scope is a CLOSED enum. An unknown value must fail, never fall into a silent default —
+    /// «all events» arriving as a typo and rewriting the past is exactly what must not happen.
+    #[test]
+    fn an_unknown_scope_is_refused_never_defaulted() {
+        for scope in ["all", "this_only", ""] {
+            let mut payload = edit_payload("2026-08-17", "12:00");
+            payload["scope"] = json!(scope);
+            let err = update_recurring_series_pure(series_edit_input(
+                payload,
+                template(json!({})),
+                json!([]),
+            ))
+            .unwrap_err();
+            assert!(
+                err.starts_with("invalid_payload:"),
+                "scope `{scope}`: {err}"
+            );
         }
     }
 
