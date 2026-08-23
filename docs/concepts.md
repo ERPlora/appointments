@@ -109,10 +109,55 @@ There is no Google Calendar field here, on purpose. A satellite module listens t
 already emits and injects itself into this screen — so uninstalling it leaves no trace in the
 appointments data.
 
+## The clock is the business's, and the business does not own it
+
+There is exactly one authority for what time it is here, and it is **the core**: the hub resolves
+the business timezone with `settings::timezone_of` (the declared `hub_settings.timezone`, or the one
+deduced from the country/region) and hands it to everything that needs it —
+`context.timezone` for a WASM handler, `:timezone` for declarative SQL, `erplora.timezone` for the
+Web Component. This module keeps **no timezone of its own**: a second copy is a second answer
+waiting to rot.
+
+**The device never rules.** Not the receptionist's tablet, not the stylist's phone, not the session
+clock of the database. A tablet set to another country used to paint the salon's day shifted and
+write bookings on its own clock — the failure Square carried for years and closed by locking the
+zone to the business.
+
+Two natures, deliberately kept apart:
+
+| | What it is | How it travels |
+|---|---|---|
+| **Instant** | a point in time (`start_datetime`, `end_datetime`) | ISO 8601 with **the business wall clock and its offset** (`2026-08-03T11:00:00+02:00`) |
+| **Wall time** | a civil clock reading (a recurring template's `time`, a schedule's hours) | `HH:MM` + the business zone; **never converted at rest** |
+
+The stored text carries both readings on purpose: the instant (offset applied) and the salon's wall
+clock (the first 19 characters), which is what the availability engine compares row against row.
+
+### Daylight saving is decided, not guessed
+
+The three answers are the **core's**, so a `cron` trigger and a recurring series can never disagree
+about what «02:30 on the day the clock changes» means:
+
+- a **normal** wall time is itself;
+- an **ambiguous** one (the hour that happens twice in autumn) is the **first** pass;
+- a **non-existent** one (the hour the spring jump skips) is refused at the screen
+  (`appointments.invalid_local_time` — never quietly moved to the hour next door), and for a series
+  already on the books it lands on **the instant the clock jumped into it**, because losing an
+  occurrence in silence means losing it until the client is at the door.
+
+A recurring series **keeps its wall time** across a change: an 11:00 appointment is at 11:00 in
+March and at 11:00 in April, and the instant is what moves. The agenda's day window is the business
+day, which lasts **23 or 25 hours** on those two days — never `midnight + 24 h`.
+
+Cost, stated out loud: the handler links the full IANA table (`chrono-tz`, the same crate the
+runtime uses), which is most of `dist/handler.wasm`'s size. The cheap alternative was our own
+timezone engine, which fails silently twice a year.
+
 ## Numbers, prices and times
 
-- Appointment numbers are `APT-YYYYMMDD-NNNN`, allocated atomically per hub per day.
+- Appointment numbers are `APT-YYYYMMDD-NNNN`, allocated atomically per hub per day — and the day
+  is the **business** day, the same one the cash register closes on, not the UTC one.
 - The service price is copied onto the appointment in **integer cents** (ADR-0123).
 - Datetimes are **ISO 8601 with offset**. The per-professional timeline positions blocks by reading
-  the time it is given, so it must be handed **local wall-clock time**, not a UTC instant.
+  the time it is given, so it must be handed **business wall-clock time**, not a UTC instant.
 - Weekdays are **0 = Monday** through **6 = Sunday**.
