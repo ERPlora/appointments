@@ -8,7 +8,16 @@
 //      positioned by time; legacy rows without staff fall into an "unassigned" lane.
 //   3. NO-SHOW — the API always had it; the receptionist needs it as a row action.
 import { beforeEach, describe, expect, it } from 'vitest';
-import { todayISO as localDay } from '../../lib/day-bounds';
+import { todayISO as localDay } from '../../lib/business-time';
+
+// appointments#12 — the clock of these fixtures is PINNED, it is not the machine's.
+// Until now these tests built their instants with `new Date(y, m, d, h, mi)` and compared them
+// against the component's output: green in Spain, red anywhere else, and green for the wrong
+// reason (device == business by luck). The business zone is declared on the SDK stub below, the
+// same way the shell publishes it in production, and the device is pinned to match it here so the
+// assertions stay about WIRING. That the two can DISAGREE is proven in
+// `erp-appointments-business-clock.test.ts`, with the device in Auckland.
+process.env.TZ = 'Europe/Madrid';
 
 const commands: { name: string; payload: Record<string, unknown> }[] = [];
 const queries: { name: string; params: Record<string, unknown> }[] = [];
@@ -53,6 +62,8 @@ beforeEach(() => {
   commands.length = 0;
   queries.length = 0;
   (globalThis as Record<string, unknown>).erplora = {
+    // The business timezone the runtime resolved (hub#1022) — what `erplora.timezone` carries.
+    timezone: 'Europe/Madrid',
     query: async (name: string, params: Record<string, unknown>) => {
       queries.push({ name, params });
       switch (name) {

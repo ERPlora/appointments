@@ -4,7 +4,7 @@ import { define } from '@erplora/outfitkit/define';
 import '@erplora/outfitkit/ok-inline-feedback';
 import esLocale from '../../../locales/es.json';
 import enLocale from '../../../locales/en.json';
-import { todayISO } from '../../lib/day-bounds';
+import { todayISO } from '../../lib/business-time';
 
 const CATALOG: Record<string, unknown> = { es: esLocale, en: enLocale };
 

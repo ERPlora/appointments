@@ -13,6 +13,15 @@
 // answer "was this charged?" — and nothing stopped a receptionist charging the same booking twice.
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+// appointments#12 — the clock of these fixtures is PINNED, it is not the machine's.
+// Until now these tests built their instants with `new Date(y, m, d, h, mi)` and compared them
+// against the component's output: green in Spain, red anywhere else, and green for the wrong
+// reason (device == business by luck). The business zone is declared on the SDK stub below, the
+// same way the shell publishes it in production, and the device is pinned to match it here so the
+// assertions stay about WIRING. That the two can DISAGREE is proven in
+// `erp-appointments-business-clock.test.ts`, with the device in Auckland.
+process.env.TZ = 'Europe/Madrid';
+
 const CHARGEABLE = {
   id: 'ap-1', appointment_number: 'A-001', customer_id: 'c-ana', customer_name: 'Ana Ruiz',
   service_id: 's-corte', service_name: 'Corte de señora', service_price: 1800,
@@ -25,6 +34,8 @@ const ALREADY_CHARGED = { ...CHARGEABLE, id: 'ap-2', appointment_number: 'A-002'
 
 function installSdk(rows: Record<string, unknown>[]) {
   (globalThis as Record<string, unknown>).erplora = {
+    // The business timezone the runtime resolved (hub#1022) — what `erplora.timezone` carries.
+    timezone: 'Europe/Madrid',
     query: async () => rows,
     queryAll: async () => [],
     queryOptional: async () => undefined,

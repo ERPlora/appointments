@@ -9,7 +9,7 @@ var __decorateClass = (decorators, target, key, kind) => {
   return result;
 };
 
-// ../../../module-toolkit/node_modules/@lit-labs/ssr-dom-shim/lib/element-internals.js
+// ../module-toolkit/node_modules/@lit-labs/ssr-dom-shim/lib/element-internals.js
 var ElementInternalsShim = class ElementInternals {
   get shadowRoot() {
     return this.__host.__shadowRoot;
@@ -88,7 +88,7 @@ var ElementInternalsShim = class ElementInternals {
   }
 };
 
-// ../../../module-toolkit/node_modules/@lit-labs/ssr-dom-shim/lib/events.js
+// ../module-toolkit/node_modules/@lit-labs/ssr-dom-shim/lib/events.js
 var __classPrivateFieldSet = function(receiver, state, value, kind, f3) {
   if (kind === "m") throw new TypeError("Private method is not writable");
   if (kind === "a" && !f3) throw new TypeError("Private accessor was defined without a setter");
@@ -246,7 +246,7 @@ Object.defineProperties(CustomEventShim.prototype, {
 var EventShimWithRealType = EventShim;
 var CustomEventShimWithRealType = CustomEventShim;
 
-// ../../../module-toolkit/node_modules/@lit-labs/ssr-dom-shim/lib/css.js
+// ../module-toolkit/node_modules/@lit-labs/ssr-dom-shim/lib/css.js
 var _a2;
 var CSSRuleShim = (_a2 = class CSSRule {
   constructor() {
@@ -277,7 +277,7 @@ var CSSRuleShim = (_a2 = class CSSRule {
   }
 }, _a2.STYLE_RULE = 1, _a2.CHARSET_RULE = 2, _a2.IMPORT_RULE = 3, _a2.MEDIA_RULE = 4, _a2.FONT_FACE_RULE = 5, _a2.PAGE_RULE = 6, _a2.NAMESPACE_RULE = 10, _a2.KEYFRAMES_RULE = 7, _a2.KEYFRAME_RULE = 8, _a2.SUPPORTS_RULE = 12, _a2.COUNTER_STYLE_RULE = 11, _a2.FONT_FEATURE_VALUES_RULE = 14, _a2.MARGIN_RULE = 9, _a2);
 
-// ../../../module-toolkit/node_modules/@lit-labs/ssr-dom-shim/index.js
+// ../module-toolkit/node_modules/@lit-labs/ssr-dom-shim/index.js
 globalThis.Event ??= EventShimWithRealType;
 globalThis.CustomEvent ??= CustomEventShimWithRealType;
 var constructionToken = Symbol();
@@ -674,7 +674,7 @@ var CustomElementRegistryShimWithRealType = CustomElementRegistry;
 var customElements2 = new CustomElementRegistryShimWithRealType();
 var windowShim = new WindowShim(constructionToken);
 
-// ../../../module-toolkit/node_modules/@lit/reactive-element/node/css-tag.js
+// ../module-toolkit/node_modules/@lit/reactive-element/node/css-tag.js
 var t = globalThis;
 var e = t.ShadowRoot && (void 0 === t.ShadyCSS || t.ShadyCSS.nativeShadow) && "adoptedStyleSheets" in Document.prototype && "replace" in CSSStyleSheet.prototype;
 var s = Symbol();
@@ -719,7 +719,7 @@ var c = e || void 0 === t.CSSStyleSheet ? (t5) => t5 : (t5) => t5 instanceof CSS
   return r(e5);
 })(t5) : t5;
 
-// ../../../module-toolkit/node_modules/@lit/reactive-element/node/reactive-element.js
+// ../module-toolkit/node_modules/@lit/reactive-element/node/reactive-element.js
 var { is: h, defineProperty: r2, getOwnPropertyDescriptor: o2, getOwnPropertyNames: n2, getOwnPropertySymbols: a, getPrototypeOf: c2 } = Object;
 var l = globalThis;
 l.customElements ??= customElements2;
@@ -942,7 +942,7 @@ var g = class extends (globalThis.HTMLElement ?? HTMLElementShimWithRealType) {
 };
 g.elementStyles = [], g.shadowRootOptions = { mode: "open" }, g[f("elementProperties")] = /* @__PURE__ */ new Map(), g[f("finalized")] = /* @__PURE__ */ new Map(), u?.({ ReactiveElement: g }), (l.reactiveElementVersions ??= []).push("2.1.2");
 
-// ../../node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/lit-html.js
+// node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/lit-html.js
 var t2 = globalThis;
 var i2 = (t5) => t5;
 var s2 = t2.trustedTypes;
@@ -1197,7 +1197,7 @@ var D = (t5, i7, s5) => {
   return h4._$AI(t5), h4;
 };
 
-// ../../node_modules/.pnpm/lit-element@4.2.2/node_modules/lit-element/lit-element.js
+// node_modules/.pnpm/lit-element@4.2.2/node_modules/lit-element/lit-element.js
 var s3 = globalThis;
 var i3 = class extends g {
   constructor() {
@@ -1226,7 +1226,7 @@ var o4 = s3.litElementPolyfillSupport;
 o4?.({ LitElement: i3 });
 (s3.litElementVersions ??= []).push("4.2.2");
 
-// ../../../module-toolkit/node_modules/@lit/reactive-element/node/decorators/property.js
+// ../module-toolkit/node_modules/@lit/reactive-element/node/decorators/property.js
 var o5 = { attribute: true, type: String, converter: b, reflect: false, hasChanged: m };
 var r4 = (t5 = o5, e5, r6) => {
   const { kind: n6, metadata: i7 } = r6;
@@ -1256,19 +1256,19 @@ function n4(t5) {
   })(t5, e5, o7);
 }
 
-// ../../../module-toolkit/node_modules/@lit/reactive-element/node/decorators/state.js
+// ../module-toolkit/node_modules/@lit/reactive-element/node/decorators/state.js
 function r5(r6) {
   return n4({ ...r6, state: true, attribute: false });
 }
 
-// ../../../outfitkit/dist/define.js
+// ../outfitkit/dist/define.js
 function define(tag, ctor) {
   if (typeof customElements !== "undefined" && !customElements.get(tag)) {
     customElements.define(tag, ctor);
   }
 }
 
-// ../../../outfitkit/dist/shared/icons.js
+// ../outfitkit/dist/shared/icons.js
 var rawAdd = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="M256 112v288m144-144H112"/></svg>';
 var rawAlertCircle = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="currentColor" d="M256 48C141.31 48 48 141.31 48 256s93.31 208 208 208s208-93.31 208-208S370.69 48 256 48m0 319.91a20 20 0 1 1 20-20a20 20 0 0 1-20 20m21.72-201.15l-5.74 122a16 16 0 0 1-32 0l-5.74-121.94v-.05a21.74 21.74 0 1 1 43.44 0Z"/></svg>';
 var rawAlertCircleOutline = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-miterlimit="10" stroke-width="32" d="M448 256c0-106-86-192-192-192S64 150 64 256s86 192 192 192s192-86 192-192Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="M250.26 166.05L256 288l5.73-121.95a5.74 5.74 0 0 0-5.79-6h0a5.74 5.74 0 0 0-5.68 6"/><path fill="currentColor" d="M256 367.91a20 20 0 1 1 20-20a20 20 0 0 1-20 20"/></svg>';
@@ -1416,7 +1416,7 @@ function okIcon(value) {
   return BY_NAME[value] ?? value;
 }
 
-// ../../../outfitkit/dist/ok-inline-feedback.js
+// ../outfitkit/dist/ok-inline-feedback.js
 var __defProp2 = Object.defineProperty;
 var __decorateClass2 = (decorators, target, key, kind) => {
   var result = void 0;
@@ -1633,7 +1633,7 @@ __decorateClass2([
 ], OkInlineFeedback.prototype, "hasActions");
 define("ok-inline-feedback", OkInlineFeedback);
 
-// ../../../outfitkit/dist/ok-timeline.js
+// ../outfitkit/dist/ok-timeline.js
 var __defProp3 = Object.defineProperty;
 var __decorateClass3 = (decorators, target, key, kind) => {
   var result = void 0;
@@ -1880,7 +1880,7 @@ __decorateClass3([
 ], OkTimeline.prototype, "align");
 define("ok-timeline", OkTimeline);
 
-// locales/es.json
+// modules/appointments/locales/es.json
 var es_default = {
   name: "Citas",
   description: "Agenda las citas de tus clientes con sus servicios y profesionales, y s\xEDguelas desde que se reservan hasta que se completan.",
@@ -1963,7 +1963,8 @@ var es_default = {
     errCreateCustomer: "No se ha podido crear el cliente",
     holdCountdown: "Hueco apartado para ti \xB7 {mins}:{secs}",
     holdExpired: "Se acab\xF3 el tiempo que ten\xEDamos apartado ese hueco y ha vuelto a la venta. Elige la hora otra vez.",
-    holdFailed: "No se ha podido apartar ese hueco; alguien puede reservarlo mientras decides."
+    holdFailed: "No se ha podido apartar ese hueco; alguien puede reservarlo mientras decides.",
+    deviceZoneNotice: "Este dispositivo est\xE1 en otra zona horaria. La agenda siempre muestra el reloj del negocio:"
   },
   setup: {
     title: "Tu horario de trabajo",
@@ -1993,11 +1994,12 @@ var es_default = {
     "appointments.request_not_bound": "La petici\xF3n se aprob\xF3 sin elegir cliente, servicio, profesional y hora, as\xED que no hab\xEDa nada que reservar. \xC1brela otra vez, el\xEDgelos y apru\xE9bala.",
     "appointments.overlapping_appointment": "Ese profesional ya tiene una cita en esa franja. Elige otra hora u otro profesional.",
     "appointments.booking_refused": "No se ha podido reservar la cita a partir de esa petici\xF3n.",
-    "appointments.slot_on_hold": "Esa franja est\xE1 apartada para una petici\xF3n pendiente. Se libera sola en unos minutos, o elige otra hora."
+    "appointments.slot_on_hold": "Esa franja est\xE1 apartada para una petici\xF3n pendiente. Se libera sola en unos minutos, o elige otra hora.",
+    "appointments.invalid_local_time": "Esa hora no existe en el reloj del negocio: el cambio de hora la salta. Elige otra."
   }
 };
 
-// locales/en.json
+// modules/appointments/locales/en.json
 var en_default = {
   name: "Appointments",
   navigation: {
@@ -2079,7 +2081,8 @@ var en_default = {
     errCreateCustomer: "Could not create the customer",
     holdCountdown: "Slot held for you \xB7 {mins}:{secs}",
     holdExpired: "The hold on that slot lapsed, so it is back on sale. Pick a time again.",
-    holdFailed: "That slot could not be set aside; someone else may book it while you decide."
+    holdFailed: "That slot could not be set aside; someone else may book it while you decide.",
+    deviceZoneNotice: "This device is on a different time zone. The agenda always shows the business clock:"
   },
   setup: {
     title: "Your working hours",
@@ -2109,11 +2112,159 @@ var en_default = {
     "appointments.request_not_bound": "The request was approved without choosing a customer, a service, a professional and a time, so there was nothing to book. Open it again, pick them, and approve.",
     "appointments.overlapping_appointment": "That professional already has an appointment in that slot. Pick another time or another professional.",
     "appointments.booking_refused": "The appointment could not be booked from that request.",
-    "appointments.slot_on_hold": "That slot is being held for a pending request. It frees itself in a few minutes, or pick another time."
+    "appointments.slot_on_hold": "That slot is being held for a pending request. It frees itself in a few minutes, or pick another time.",
+    "appointments.invalid_local_time": "That time does not exist on the business clock: the daylight saving change skips it. Pick another one."
   }
 };
 
-// ui/components/erp-appointments-customer-history/erp-appointments-customer-history.ts
+// modules/appointments/ui/lib/business-time.ts
+var InvalidLocalTimeError = class extends Error {
+  constructor(wall, timezone) {
+    super(`invalid_local_time: ${wall} does not exist in ${timezone}`);
+    this.wall = wall;
+    this.timezone = timezone;
+    this.code = "appointments.invalid_local_time";
+    this.name = "InvalidLocalTimeError";
+  }
+};
+var DAY_MS = 864e5;
+var WALL_TIME = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?$/;
+var formatters = /* @__PURE__ */ new Map();
+function partsFormatter(timezone) {
+  let f3 = formatters.get(timezone);
+  if (!f3) {
+    f3 = new Intl.DateTimeFormat("en-US", {
+      timeZone: timezone,
+      hourCycle: "h23",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit"
+    });
+    formatters.set(timezone, f3);
+  }
+  return f3;
+}
+function partsAt(instantMs, timezone) {
+  const got = {};
+  for (const p4 of partsFormatter(timezone).formatToParts(new Date(instantMs))) {
+    if (p4.type !== "literal") got[p4.type] = p4.value;
+  }
+  return {
+    y: Number(got.year),
+    mo: Number(got.month),
+    d: Number(got.day),
+    h: Number(got.hour),
+    mi: Number(got.minute),
+    s: Number(got.second)
+  };
+}
+var asUtcMs = (p4) => Date.UTC(p4.y, p4.mo - 1, p4.d, p4.h, p4.mi, p4.s);
+function offsetMinutesAt(instantMs, timezone) {
+  return Math.round((asUtcMs(partsAt(instantMs, timezone)) - instantMs) / 6e4);
+}
+var pad = (n6) => String(n6).padStart(2, "0");
+function candidateInstants(wall, timezone) {
+  const wallMs = asUtcMs(wall);
+  const offsets = /* @__PURE__ */ new Set([
+    offsetMinutesAt(wallMs - DAY_MS, timezone),
+    offsetMinutesAt(wallMs + DAY_MS, timezone)
+  ]);
+  const matches = [];
+  for (const off of offsets) {
+    const candidate = wallMs - off * 6e4;
+    if (asUtcMs(partsAt(candidate, timezone)) === wallMs) matches.push(candidate);
+  }
+  return [...new Set(matches)].sort((a3, b3) => a3 - b3);
+}
+function parseWall(wall) {
+  const m4 = WALL_TIME.exec(wall.trim());
+  if (!m4) return null;
+  const p4 = {
+    y: Number(m4[1]),
+    mo: Number(m4[2]),
+    d: Number(m4[3]),
+    h: Number(m4[4]),
+    mi: Number(m4[5]),
+    s: m4[6] ? Number(m4[6]) : 0
+  };
+  const back = new Date(asUtcMs(p4));
+  const same = back.getUTCFullYear() === p4.y && back.getUTCMonth() + 1 === p4.mo && back.getUTCDate() === p4.d && back.getUTCHours() === p4.h && back.getUTCMinutes() === p4.mi;
+  return same ? p4 : null;
+}
+function businessTimezone() {
+  const tz = globalThis.erplora?.timezone;
+  return typeof tz === "string" && tz.trim() ? tz.trim() : "UTC";
+}
+function todayISO(timezone = businessTimezone(), now = /* @__PURE__ */ new Date()) {
+  const p4 = partsAt(now.getTime(), timezone);
+  return `${p4.y}-${pad(p4.mo)}-${pad(p4.d)}`;
+}
+function dayBounds(day, timezone = businessTimezone()) {
+  const startOf = (isoDay) => {
+    const p4 = parseWall(`${isoDay}T00:00:00`);
+    if (!p4) throw new InvalidLocalTimeError(isoDay, timezone);
+    const candidates = candidateInstants(p4, timezone);
+    if (candidates.length > 0) return candidates[0];
+    return asUtcMs(p4) - offsetMinutesAt(asUtcMs(p4) - DAY_MS, timezone) * 6e4;
+  };
+  const start = startOf(day);
+  const next = new Date(start + 36 * 36e5);
+  const nextParts = partsAt(next.getTime(), timezone);
+  return {
+    day_start: new Date(start).toISOString(),
+    day_end: new Date(
+      startOf(`${nextParts.y}-${pad(nextParts.mo)}-${pad(nextParts.d)}`)
+    ).toISOString()
+  };
+}
+function wallClock(iso, timezone = businessTimezone()) {
+  const t5 = Date.parse(iso);
+  if (Number.isNaN(t5)) return "00:00";
+  const p4 = partsAt(t5, timezone);
+  return `${pad(p4.h)}:${pad(p4.mi)}`;
+}
+function formatWallTime(iso, timezone = businessTimezone(), locale = "es") {
+  const t5 = Date.parse(iso);
+  if (Number.isNaN(t5)) return iso;
+  return new Date(t5).toLocaleTimeString(locale || "es", {
+    timeZone: timezone,
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23"
+  });
+}
+function toInputValue(iso, timezone = businessTimezone()) {
+  const t5 = Date.parse(iso);
+  if (Number.isNaN(t5)) return "";
+  const p4 = partsAt(t5, timezone);
+  return `${p4.y}-${pad(p4.mo)}-${pad(p4.d)}T${pad(p4.h)}:${pad(p4.mi)}`;
+}
+function wallToInstant(wall, timezone = businessTimezone()) {
+  const p4 = parseWall(wall);
+  if (!p4) throw new InvalidLocalTimeError(wall, timezone);
+  const candidates = candidateInstants(p4, timezone);
+  if (candidates.length === 0) throw new InvalidLocalTimeError(wall, timezone);
+  return new Date(candidates[0]).toISOString();
+}
+function wallToBusinessIso(wall, timezone = businessTimezone()) {
+  const instant = Date.parse(wallToInstant(wall, timezone));
+  const p4 = partsAt(instant, timezone);
+  const off = offsetMinutesAt(instant, timezone);
+  const sign = off < 0 ? "-" : "+";
+  const abs = Math.abs(off);
+  return `${p4.y}-${pad(p4.mo)}-${pad(p4.d)}T${pad(p4.h)}:${pad(p4.mi)}:${pad(p4.s)}${sign}${pad(Math.floor(abs / 60))}:${pad(abs % 60)}`;
+}
+function deviceZoneDiffers(timezone = businessTimezone()) {
+  const device = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  if (device === timezone) return false;
+  const now = Date.now();
+  return offsetMinutesAt(now, timezone) !== -new Date(now).getTimezoneOffset();
+}
+
+// modules/appointments/ui/components/erp-appointments-customer-history/erp-appointments-customer-history.ts
 var CATALOG = { es: es_default, en: en_default };
 function erplora() {
   const c5 = globalThis.erplora;
@@ -2151,7 +2302,11 @@ function formatWhen(iso, locale) {
   const d3 = new Date(iso);
   if (Number.isNaN(d3.getTime())) return iso;
   try {
-    return new Intl.DateTimeFormat(locale || void 0, { dateStyle: "medium", timeStyle: "short" }).format(d3);
+    return new Intl.DateTimeFormat(locale || void 0, {
+      dateStyle: "medium",
+      timeStyle: "short",
+      timeZone: businessTimezone()
+    }).format(d3);
   } catch {
     return iso;
   }
@@ -2253,7 +2408,7 @@ __decorateClass([
 ], ErpAppointmentsCustomerHistory.prototype, "error", 2);
 define("erp-appointments-customer-history", ErpAppointmentsCustomerHistory);
 
-// ../../node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directive.js
+// node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directive.js
 var t3 = { ATTRIBUTE: 1, CHILD: 2, PROPERTY: 3, BOOLEAN_ATTRIBUTE: 4, EVENT: 5, ELEMENT: 6 };
 var e4 = (t5) => (...e5) => ({ _$litDirective$: t5, values: e5 });
 var i4 = class {
@@ -2273,7 +2428,7 @@ var i4 = class {
   }
 };
 
-// ../../node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directive-helpers.js
+// node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directive-helpers.js
 var { I: t4 } = j;
 var i5 = (o7) => o7;
 var s4 = () => document.createComment("");
@@ -2306,7 +2461,7 @@ var h3 = (o7) => {
   o7._$AR(), o7._$AA.remove();
 };
 
-// ../../node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directives/repeat.js
+// node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directives/repeat.js
 var u4 = (e5, s5, t5) => {
   const r6 = /* @__PURE__ */ new Map();
   for (let l3 = s5; l3 <= t5; l3++) r6.set(e5[l3], l3);
@@ -2359,7 +2514,7 @@ var c4 = e4(class extends i4 {
   }
 });
 
-// ../../node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directives/style-map.js
+// node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directives/style-map.js
 var n5 = "important";
 var i6 = " !" + n5;
 var o6 = e4(class extends i4 {
@@ -2388,7 +2543,7 @@ var o6 = e4(class extends i4 {
   }
 });
 
-// ../../../outfitkit/dist/ok-data-table.js
+// ../outfitkit/dist/ok-data-table.js
 var CSV_BOM = "\uFEFF";
 var WINDOWS_1252_C1 = [
   8364,
@@ -3930,7 +4085,7 @@ __decorateClass4([
 var OkDataTable = _OkDataTable;
 define("ok-data-table", OkDataTable);
 
-// ../../../outfitkit/dist/ok-scheduler.js
+// ../outfitkit/dist/ok-scheduler.js
 var __defProp5 = Object.defineProperty;
 var __decorateClass5 = (decorators, target, key, kind) => {
   var result = void 0;
@@ -3948,6 +4103,7 @@ var DEFAULT_LABELS3 = {
 var DRAG_THRESHOLD_PX = 5;
 var TOUCH_HOLD_MS = 400;
 var TOUCH_HOLD_TOLERANCE_PX = 10;
+var STACK_GAP_PX = 2;
 var OkScheduler = class extends i3 {
   constructor() {
     super(...arguments);
@@ -3990,6 +4146,12 @@ var OkScheduler = class extends i3 {
       --resource-width: var(--ok-scheduler-resource-width, 11rem);
       --hour-width: var(--ok-scheduler-hour-width, 6rem);
       --row-height: var(--ok-scheduler-row-height, 3.5rem);
+      /* Alto mínimo de un sub-carril de solape. NO hay tope de citas simultáneas: se reparte
+         mientras cada bloque quepa en una línea legible y, por debajo de eso, la FILA CRECE. Es el
+         minPackSize de Bryntum y el default de Mobiscroll en timeline horizontal — el parámetro
+         correcto es el alto, no un número: una cita de 15 min partida en tres es ilegible aunque
+         «tres» suene poco. */
+      --min-stack-height: var(--ok-scheduler-min-stack-height, 1.6rem);
       --font: var(--ok-font, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif);
 
       /* Por defecto ocupa el ancho del contenedor y es responsive. */
@@ -4130,7 +4292,11 @@ var OkScheduler = class extends i3 {
     .lane {
       position: relative;
       flex: 1 1 auto;
-      min-height: var(--row-height);
+      /* Con un solo ocupante la fila es la de siempre. En cuanto los sub-carriles no caben con su
+         alto mínimo, la fila CRECE en vez de adelgazar los bloques: aquí el timeline es horizontal,
+         así que el alto de la fila es un recurso ABIERTO —crecer una fila no le quita nada a las
+         demás— al revés que el ancho de columna de una agenda de día vertical. */
+      min-height: max(var(--row-height), calc(var(--stacks, 1) * var(--min-stack-height)));
       background: var(--background);
     }
     /* Celdas-slot clicables de fondo (para crear turnos). */
@@ -4425,6 +4591,58 @@ var OkScheduler = class extends i3 {
       endMin: this.minutesOf(ev.end)
     };
   }
+  // ── Reparto de los solapes (side-by-side por clúster) ─────────
+  //
+  // Dos citas a la misma hora en el mismo carril NO pueden pintarse una encima de otra: en pantalla
+  // solo existiría la de arriba, justo cuando hay que ver que hay dos personas citadas
+  // (outfitkit#71). El reparto es el algoritmo clásico de las agendas —el de Google Calendar,
+  // Outlook, Fresha, Vagaro, Square—: se agrupan las citas por solape TRANSITIVO (un clúster) y el
+  // clúster se parte en tantos sub-carriles como haga falta.
+  //
+  // El detalle que hace que la agenda no se adelgace entera: cada bloque cae en el PRIMER sub-carril
+  // ya libre, así que dos citas que no se pisan entre sí lo reutilizan. Una cadena A→B→C donde A y C
+  // no se tocan ocupa DOS sub-carriles, no tres. Y un clúster no afecta a otro: la mañana llena no
+  // parte la tarde vacía.
+  //
+  // Aquí el timeline es HORIZONTAL (el eje X es el tiempo), así que lo que se reparte es el ALTO de
+  // la fila, no el ancho como en las agendas de día vertical.
+  packLane(items) {
+    const slots = /* @__PURE__ */ new Map();
+    const sorted = [...items].sort(
+      (a3, b3) => a3.at.startMin - b3.at.startMin || a3.at.endMin - b3.at.endMin || (a3.id < b3.id ? -1 : a3.id > b3.id ? 1 : 0)
+    );
+    let cluster = [];
+    let laneEnds = [];
+    let clusterEnd = -Infinity;
+    const closeCluster = () => {
+      const count = Math.max(1, laneEnds.length);
+      for (const id of cluster) slots.get(id).count = count;
+      cluster = [];
+      laneEnds = [];
+      clusterEnd = -Infinity;
+    };
+    for (const item of sorted) {
+      if (item.at.startMin >= clusterEnd) closeCluster();
+      let index = laneEnds.findIndex((end) => end <= item.at.startMin);
+      if (index === -1) {
+        index = laneEnds.length;
+        laneEnds.push(item.at.endMin);
+      } else {
+        laneEnds[index] = item.at.endMin;
+      }
+      slots.set(item.id, { index, count: 1 });
+      cluster.push(item.id);
+      clusterEnd = Math.max(clusterEnd, item.at.endMin);
+    }
+    closeCluster();
+    return slots;
+  }
+  // Geometría vertical de un bloque según su sub-carril. Con un solo ocupante no se toca nada: el
+  // bloque sigue ocupando el alto entero del carril, exactamente como antes.
+  stackStyle(slot) {
+    if (slot.count <= 1) return "";
+    return `top:calc(0.25rem + (100% - 0.5rem) * ${slot.index} / ${slot.count});height:calc((100% - 0.5rem) / ${slot.count} - ${STACK_GAP_PX}px);bottom:auto;`;
+  }
   // Imanta el inicio a la rejilla y garantiza que el bloque entero cabe en la franja visible.
   snapStart(startMin, durationMin) {
     const step = this.snapMin > 0 ? this.snapMin : 1;
@@ -4707,12 +4925,12 @@ var OkScheduler = class extends i3 {
     const startMin = this.startHour * 60;
     const step = this.slotMin > 0 ? this.slotMin : 60;
     const count = this.slotCount;
-    const slots = [];
+    const cells = [];
     for (let i7 = 0; i7 < count; i7++) {
       const slotStart = startMin + i7 * step;
       const left = (slotStart - startMin) / total * 100;
       const width = step / total * 100;
-      slots.push(
+      cells.push(
         b2`<div
           class="slot"
           style=${`left:${left}%;width:${width}%`}
@@ -4729,8 +4947,12 @@ var OkScheduler = class extends i3 {
               style=${`left:${(s5 - startMin) / total * 100}%;width:${(e5 - s5) / total * 100}%`}
             ></div>`;
     })() : "";
-    const blocks = this.events.filter((ev) => this.placement(ev).resourceId === resource.id).map((ev) => {
+    const mine = this.events.filter((ev) => this.placement(ev).resourceId === resource.id);
+    const slots = this.packLane(mine.map((ev) => ({ id: ev.id, at: this.placement(ev) })));
+    const stacks = Math.max(1, ...[...slots.values()].map((s5) => s5.count));
+    const blocks = mine.map((ev) => {
       const at = this.placement(ev);
+      const slot = slots.get(ev.id) ?? { index: 0, count: 1 };
       const s5 = Math.max(at.startMin, startMin);
       const e5 = Math.min(at.endMin, startMin + total);
       if (e5 <= s5) return "";
@@ -4744,7 +4966,9 @@ var OkScheduler = class extends i3 {
       return b2`<div
           class=${`event${this.movable ? " movable" : ""}${held ? " held" : ""}${dragging ? " dragging" : ""}${resizing ? " resizing" : ""}`}
           data-event-id=${ev.id}
-          style=${`left:${left}%;width:${width}%;background:${ev.color || "var(--primary-color)"}`}
+          data-lane-index=${slot.index}
+          data-lane-count=${slot.count}
+          style=${`left:${left}%;width:${width}%;background:${ev.color || "var(--primary-color)"};${this.stackStyle(slot)}`}
           title=${ev.title}
           role="button"
           tabindex="0"
@@ -4764,7 +4988,14 @@ var OkScheduler = class extends i3 {
               ></span>` : ""}
         </div>`;
     });
-    return b2`<div class="lane" data-resource-id=${resource.id}>${slots}${ghost}${blocks}</div>`;
+    return b2`<div
+      class="lane"
+      data-resource-id=${resource.id}
+      data-stacks=${stacks}
+      style=${`--stacks:${stacks}`}
+    >
+      ${cells}${ghost}${blocks}
+    </div>`;
   }
   // Fila completa de un recurso: label sticky + lane.
   renderRow(resource) {
@@ -4878,20 +5109,7 @@ __decorateClass5([
 ], OkScheduler.prototype, "heldId");
 define("ok-scheduler", OkScheduler);
 
-// ui/lib/day-bounds.ts
-function todayISO() {
-  const d3 = /* @__PURE__ */ new Date();
-  const pad = (n6) => String(n6).padStart(2, "0");
-  return `${d3.getFullYear()}-${pad(d3.getMonth() + 1)}-${pad(d3.getDate())}`;
-}
-function dayBounds(day) {
-  const [y3, m4, d3] = day.split("-").map(Number);
-  const start = new Date(y3, m4 - 1, d3, 0, 0, 0, 0);
-  const end = new Date(y3, m4 - 1, d3 + 1, 0, 0, 0, 0);
-  return { day_start: start.toISOString(), day_end: end.toISOString() };
-}
-
-// ui/components/erp-appointments-list/erp-appointments-list.ts
+// modules/appointments/ui/components/erp-appointments-list/erp-appointments-list.ts
 var CATALOG2 = { es: es_default, en: en_default };
 var STATUS_KEYS2 = {
   pending: "ui.statusPending",
@@ -4940,30 +5158,7 @@ function rows2(r6) {
   }
   return [];
 }
-function fmtTime(iso) {
-  if (!iso) return "";
-  const d3 = new Date(iso);
-  if (Number.isNaN(d3.getTime())) return iso;
-  return d3.toLocaleTimeString(erplora2().locale || "es", { hour: "2-digit", minute: "2-digit" });
-}
-function wallClock(iso) {
-  const d3 = new Date(iso);
-  if (Number.isNaN(d3.getTime())) return "00:00";
-  return `${String(d3.getHours()).padStart(2, "0")}:${String(d3.getMinutes()).padStart(2, "0")}`;
-}
-function localInputValue(iso) {
-  const d3 = new Date(iso);
-  if (Number.isNaN(d3.getTime())) return "";
-  const p4 = (n6) => String(n6).padStart(2, "0");
-  return `${d3.getFullYear()}-${p4(d3.getMonth() + 1)}-${p4(d3.getDate())}T${p4(d3.getHours())}:${p4(d3.getMinutes())}`;
-}
-function localIso(d3) {
-  const p4 = (n6) => String(n6).padStart(2, "0");
-  const offset = -d3.getTimezoneOffset();
-  const sign = offset >= 0 ? "+" : "-";
-  const abs = Math.abs(offset);
-  return `${d3.getFullYear()}-${p4(d3.getMonth() + 1)}-${p4(d3.getDate())}T${p4(d3.getHours())}:${p4(d3.getMinutes())}:${p4(d3.getSeconds())}${sign}${p4(Math.floor(abs / 60))}:${p4(abs % 60)}`;
-}
+var fmtTime = (iso) => formatWallTime(iso, businessTimezone(), erplora2().locale);
 var ErpAppointmentsList = class extends i3 {
   constructor() {
     super(...arguments);
@@ -5192,7 +5387,7 @@ var ErpAppointmentsList = class extends i3 {
     this.saving = true;
     this.error = "";
     try {
-      const startIso = localIso(new Date(this.newStart));
+      const startIso = wallToBusinessIso(this.newStart);
       await erplora2().command("appointments.appointments.create", {
         // Vínculos + su snapshot denormalizado (lo que se reservó, aunque la ficha cambie).
         customer_id: customer.id,
@@ -5293,7 +5488,7 @@ var ErpAppointmentsList = class extends i3 {
   async openReschedule(row) {
     if (!RESCHEDULABLE.includes(String(row.status))) return;
     this.rescheduleId = String(row.id ?? "");
-    this.rescheduleStart = localInputValue(String(row.start_datetime ?? ""));
+    this.rescheduleStart = toInputValue(String(row.start_datetime ?? ""));
     this.rescheduleDuration = String(row.duration_minutes ?? "");
     this.rescheduleStaffName = String(row.staff_name ?? "");
     this.error = "";
@@ -5349,7 +5544,7 @@ var ErpAppointmentsList = class extends i3 {
     try {
       await erplora2().command("appointments.appointments.reschedule", {
         appointment_id: id,
-        start_datetime: localIso(/* @__PURE__ */ new Date(`${this.day}T${start}`)),
+        start_datetime: wallToBusinessIso(`${this.day}T${start}`),
         duration_minutes: appointment.duration_minutes
       });
       await this.refresh();
@@ -5383,11 +5578,10 @@ var ErpAppointmentsList = class extends i3 {
     this.saving = true;
     this.error = "";
     try {
-      const start = new Date(this.rescheduleStart);
       await erplora2().command("appointments.appointments.reschedule", {
         appointment_id: this.rescheduleId,
         // Pared local + offset (appointments#76): mismo instante, el reloj del salón en el texto.
-        start_datetime: localIso(start),
+        start_datetime: wallToBusinessIso(this.rescheduleStart),
         duration_minutes: minutes
       });
       this.clearReschedule();
@@ -5443,6 +5637,14 @@ var ErpAppointmentsList = class extends i3 {
             </ion-segment-button>
           </ion-segment>
         </div>
+        <!-- appointments#12: el aparato NO manda, pero tampoco se le engaña en silencio. Si el
+             tablet está en otra zona, la agenda sigue pintando el reloj del NEGOCIO y lo dice —
+             el patrón que Square acabó adoptando tras años de citas movidas por el huso del
+             dispositivo. Con los dos relojes de acuerdo no se pinta nada: un aviso permanente es
+             un aviso que nadie lee. -->
+        ${deviceZoneDiffers() ? b2`<ok-inline-feedback tone="warning" icon="globe-outline"
+              >${t5("ui.deviceZoneNotice")} ${businessTimezone()}</ok-inline-feedback
+            >` : A}
         ${this.error ? b2`<ok-inline-feedback tone="danger" icon="alert-circle-outline">${this.error}</ok-inline-feedback>` : A}
         ${this.view === "staff" ? b2`<ok-scheduler
               .date=${this.day}
@@ -5571,7 +5773,7 @@ __decorateClass([
 ], ErpAppointmentsList.prototype, "rescheduleStaffName", 2);
 define("erp-appointments-list", ErpAppointmentsList);
 
-// ui/components/erp-appointments-request-booking/erp-appointments-request-booking.ts
+// modules/appointments/ui/components/erp-appointments-request-booking/erp-appointments-request-booking.ts
 var CATALOG3 = { es: es_default, en: en_default };
 function erplora3() {
   const c5 = globalThis.erplora;

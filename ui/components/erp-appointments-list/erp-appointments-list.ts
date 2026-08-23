@@ -12,8 +12,19 @@ import type { DataTableColumn } from '@erplora/outfitkit';
 // con `erplora.t(CATALOG, 'ui.clave')` (idioma activo, fallback locale→en→clave).
 import esLocale from '../../../locales/es.json';
 import enLocale from '../../../locales/en.json';
-// pm#93: el día de la agenda es el LOCAL, no el UTC. Ver `ui/lib/day-bounds.ts`.
-import { todayISO, dayBounds } from '../../lib/day-bounds';
+// appointments#12: el reloj de esta pantalla es el del NEGOCIO (`erplora.timezone`, resuelta por
+// el core), nunca el del aparato. Ver `ui/lib/business-time.ts`.
+import {
+  todayISO,
+  dayBounds,
+  wallClock,
+  formatWallTime,
+  toInputValue,
+  wallToBusinessIso,
+  deviceZoneDiffers,
+  businessTimezone,
+  InvalidLocalTimeError,
+} from '../../lib/business-time';
 const CATALOG: Record<string, unknown> = { es: esLocale, en: enLocale };
 
 interface ErploraClientLike {
@@ -174,53 +185,12 @@ function rows<T>(r: unknown): T[] {
   return [];
 }
 
-/** Hora de la cita EN LOCAL. La cita se guarda en UTC (el alta hace `new Date(local).toISOString()`),
- *  así que pintarla con `toISOString()` la devolvía en UTC: una cita de las 09:30 en Madrid (07:30Z)
- *  se listaba como «07:30» — el salón parecía lleno dos horas antes de abrir. */
-function fmtTime(iso: string): string {
-  if (!iso) return '';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleTimeString(erplora().locale || 'es', { hour: '2-digit', minute: '2-digit' });
-}
-
-/** `HH:MM` de pared LOCAL. `ok-scheduler` posiciona los bloques leyendo la hora del texto tal
- *  cual (`minutesOf`), así que darle el ISO en UTC pondría la cita dos horas antes en el
- *  timeline — el mismo fallo que ya arregló `fmtTime` en la lista. */
-function wallClock(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '00:00';
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-}
-
-/** `YYYY-MM-DDTHH:MM` LOCAL: lo que un `<input type="datetime-local">` sabe leer y devolver.
- *  La cita se guarda en UTC, así que recortar su ISO pre-rellenaría el panel con la hora
- *  desplazada por el huso — mover una cita de las 10:00 en Madrid la habría enseñado a las 08:00
- *  y la recepcionista habría "confirmado" un hueco que no era. */
-function localInputValue(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '';
-  const p = (n: number): string => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
-}
-
-/** ISO 8601 con la hora de pared LOCAL del salón y SU offset (appointments#76). `toISOString()`
- *  escribe la pared de UTC: el INSTANTE viaja intacto, pero el texto guardado deja de decir la
- *  hora que el salón ve en la pared — y el motor de disponibilidad compara las citas contra los
- *  huecos PARED contra PARED (queries/availability_slots.sql): una pared en UTC es una ventana
- *  tachada con el desfase horario de por medio. Misma fecha, misma hora, mismo instante; solo
- *  cambia el reloj con el que se escribe. */
-function localIso(d: Date): string {
-  const p = (n: number): string => String(n).padStart(2, '0');
-  const offset = -d.getTimezoneOffset();
-  const sign = offset >= 0 ? '+' : '-';
-  const abs = Math.abs(offset);
-  return (
-    `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}` +
-    `T${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}` +
-    `${sign}${p(Math.floor(abs / 60))}:${p(abs % 60)}`
-  );
-}
+/** Hora de la cita en el reloj del NEGOCIO, en el idioma activo.
+ *
+ * appointments#12: antes esto pintaba con la hora del APARATO (`toLocaleTimeString` sin zona). Un
+ * iPad configurado en otro país listaba el día del salón desplazado — y antes de eso, pintaba
+ * directamente en UTC y una cita de las 09:30 en Madrid salía como «07:30». */
+const fmtTime = (iso: string): string => formatWallTime(iso, businessTimezone(), erplora().locale);
 
 export class ErpAppointmentsList extends LitElement {
   static styles = css`
@@ -497,7 +467,7 @@ export class ErpAppointmentsList extends LitElement {
       // El input datetime-local da 'YYYY-MM-DDTHH:MM'; se normaliza a ISO con la PARED local y
       // su offset (appointments#76): el instante es el elegido y el texto guardado dice la hora
       // que el salón ve en la pared, que es el reloj del motor de disponibilidad.
-      const startIso = localIso(new Date(this.newStart));
+      const startIso = wallToBusinessIso(this.newStart);
       await erplora().command('appointments.appointments.create', {
         // Vínculos + su snapshot denormalizado (lo que se reservó, aunque la ficha cambie).
         customer_id: customer.id,
@@ -601,7 +571,7 @@ export class ErpAppointmentsList extends LitElement {
   private async openReschedule(row: Record<string, unknown>) {
     if (!RESCHEDULABLE.includes(String(row.status))) return;
     this.rescheduleId = String(row.id ?? '');
-    this.rescheduleStart = localInputValue(String(row.start_datetime ?? ''));
+    this.rescheduleStart = toInputValue(String(row.start_datetime ?? ''));
     this.rescheduleDuration = String(row.duration_minutes ?? '');
     this.rescheduleStaffName = String(row.staff_name ?? '');
     this.error = '';
@@ -663,7 +633,7 @@ export class ErpAppointmentsList extends LitElement {
       // pared UTC en una cita movida volvería a tachar la ventana desplazada por el offset.
       await erplora().command('appointments.appointments.reschedule', {
         appointment_id: id,
-        start_datetime: localIso(new Date(`${this.day}T${start}`)),
+        start_datetime: wallToBusinessIso(`${this.day}T${start}`),
         duration_minutes: appointment.duration_minutes,
       });
       await this.refresh(); // la posición optimista se descarta: manda la fila del servidor
@@ -699,11 +669,10 @@ export class ErpAppointmentsList extends LitElement {
     this.saving = true;
     this.error = '';
     try {
-      const start = new Date(this.rescheduleStart);
       await erplora().command('appointments.appointments.reschedule', {
         appointment_id: this.rescheduleId,
         // Pared local + offset (appointments#76): mismo instante, el reloj del salón en el texto.
-        start_datetime: localIso(start),
+        start_datetime: wallToBusinessIso(this.rescheduleStart),
         duration_minutes: minutes,
       });
       this.clearReschedule();
@@ -764,6 +733,16 @@ export class ErpAppointmentsList extends LitElement {
             </ion-segment-button>
           </ion-segment>
         </div>
+        <!-- appointments#12: el aparato NO manda, pero tampoco se le engaña en silencio. Si el
+             tablet está en otra zona, la agenda sigue pintando el reloj del NEGOCIO y lo dice —
+             el patrón que Square acabó adoptando tras años de citas movidas por el huso del
+             dispositivo. Con los dos relojes de acuerdo no se pinta nada: un aviso permanente es
+             un aviso que nadie lee. -->
+        ${deviceZoneDiffers()
+          ? html`<ok-inline-feedback tone="warning" icon="globe-outline"
+              >${t('ui.deviceZoneNotice')} ${businessTimezone()}</ok-inline-feedback
+            >`
+          : nothing}
         ${this.error ? html`<ok-inline-feedback tone="danger" icon="alert-circle-outline">${this.error}</ok-inline-feedback>` : nothing}
         ${this.view === 'staff'
           ? html`<ok-scheduler
