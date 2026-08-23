@@ -21,6 +21,7 @@
       "appointments.appointments.no_show",
       "appointments.appointments.reschedule",
       "appointments.appointments.start",
+      "appointments.recurring.update",
       "appointments.slots.hold",
       "appointments.slots.release_hold",
       "customers.create"

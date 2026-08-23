@@ -97,6 +97,43 @@ materialising:
 
 Monthly recurrence keeps the same day of the month, clamping when the month is shorter.
 
+## Editing a series: two scopes, and «all events» is not one of them
+
+Moving an appointment that belongs to a repeating series asks **which appointments the change
+applies to — at save time, not when the panel opens** (Google, Apple and Fresha ask on save;
+Outlook asks on open, which is the friction people report: you decide the scope before you know
+what you are changing).
+
+| Scope | What it does |
+|---|---|
+| **This appointment only** *(preselected)* | The `reschedule` of always, over one row. The rest of the series does not move. |
+| **This and all following** | The series is **split in two**: the original template stops the day before, a new one starts at this occurrence, and the appointments already booked from here on move to the new time. |
+
+**«All events» does not exist, on purpose.** It means rewriting a past that is already charged,
+invoiced and chained into VeriFactu. No product of the salon vertical offers it — Fresha gives «all
+future», Apple «All Future Events» — Odoo blocks it the moment you touch the time, Google hides it,
+and RFC 5545 deprecated `RANGE=THISANDPRIOR` outright. Nothing is lost: cutting at the first future
+occurrence already is «all the ones that still matter».
+
+**Why a split and not a version of the same template.** The unique index is
+`(hub_id, recurring_id, occurrence_date)`. A versioned template would hold two truths for the same
+wall day under one id — exactly the duplicate that index exists to prevent. Two ids do not collide,
+and `split_from_id` keeps the trail between the halves.
+
+What editing the following occurrences never touches:
+
+- **anything before today** — the cut is pulled forward to the business day if it points at the past;
+- **a cancelled occurrence** — it is the *exception* of the series («not that week»), and an edit
+  that resurrects it is the one that makes the receptionist stop trusting the screen;
+- **an occurrence already turned into a sale** — it carries a fiscal record (ADR-0331).
+
+And what did **not** move is **counted in the answer** (`moved`, `locked_invoiced`,
+`kept_cancelled`). Doing this in silence is the failure every forum reports about the feature:
+Google documents that it «resets any exceptions» and Microsoft repeats it, and neither warns first.
+
+The occurrences that do move are rewritten **in place** — same row, same appointment number, same
+history. Deleting and re-materializing would throw away exactly what the stylist needs at the chair.
+
 ## Nothing sends reminders
 
 The settings hold reminder and cancellation policy, and the appointment has reminder flags. **No code
