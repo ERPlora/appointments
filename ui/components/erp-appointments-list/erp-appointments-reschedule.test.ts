@@ -22,6 +22,15 @@
 // is moving inside.
 import { beforeEach, describe, expect, it } from 'vitest';
 
+// appointments#12 — the clock of these fixtures is PINNED, it is not the machine's.
+// Until now these tests built their instants with `new Date(y, m, d, h, mi)` and compared them
+// against the component's output: green in Spain, red anywhere else, and green for the wrong
+// reason (device == business by luck). The business zone is declared on the SDK stub below, the
+// same way the shell publishes it in production, and the device is pinned to match it here so the
+// assertions stay about WIRING. That the two can DISAGREE is proven in
+// `erp-appointments-business-clock.test.ts`, with the device in Auckland.
+process.env.TZ = 'Europe/Madrid';
+
 const commands: { name: string; payload: Record<string, unknown> }[] = [];
 let commandFails: string | null = null;
 
@@ -66,6 +75,8 @@ beforeEach(() => {
   commands.length = 0;
   commandFails = null;
   (globalThis as Record<string, unknown>).erplora = {
+    // The business timezone the runtime resolved (hub#1022) — what `erplora.timezone` carries.
+    timezone: 'Europe/Madrid',
     query: async (name: string) => {
       switch (name) {
         case 'appointments.appointments.list':

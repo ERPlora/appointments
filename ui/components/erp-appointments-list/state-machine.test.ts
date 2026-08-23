@@ -17,6 +17,15 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
+// appointments#12 — the clock of these fixtures is PINNED, it is not the machine's.
+// Until now these tests built their instants with `new Date(y, m, d, h, mi)` and compared them
+// against the component's output: green in Spain, red anywhere else, and green for the wrong
+// reason (device == business by luck). The business zone is declared on the SDK stub below, the
+// same way the shell publishes it in production, and the device is pinned to match it here so the
+// assertions stay about WIRING. That the two can DISAGREE is proven in
+// `erp-appointments-business-clock.test.ts`, with the device in Auckland.
+process.env.TZ = 'Europe/Madrid';
+
 const ROOT = join(__dirname, '../../..');
 const manifest = JSON.parse(readFileSync(join(ROOT, 'module.json'), 'utf8')) as {
   id: string;

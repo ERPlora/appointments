@@ -129,7 +129,11 @@ fn as_bool(v: &Value) -> bool {
 
 fn str_or(p: &Value, k: &str, d: &str) -> String {
     let s = as_str(p.get(k).unwrap_or(&Value::Null));
-    if s.is_empty() { d.to_string() } else { s }
+    if s.is_empty() {
+        d.to_string()
+    } else {
+        s
+    }
 }
 
 // ───────────────────────────── fecha/hora (sin deps) ─────────────────────────────
@@ -158,7 +162,13 @@ fn days_in_month(y: i64, m: i64) -> i64 {
     match m {
         1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
         4 | 6 | 9 | 11 => 30,
-        2 => if is_leap(y) { 29 } else { 28 },
+        2 => {
+            if is_leap(y) {
+                29
+            } else {
+                28
+            }
+        }
         _ => 0,
     }
 }
@@ -199,10 +209,7 @@ fn weekday_mon0(days: i64) -> i64 {
 impl Dt {
     /// Segundos de pared (sin aplicar offset) desde la época.
     fn wall_secs(&self) -> i64 {
-        days_from_civil(self.y, self.mo, self.d) * 86_400
-            + self.h * 3_600
-            + self.mi * 60
-            + self.s
+        days_from_civil(self.y, self.mo, self.d) * 86_400 + self.h * 3_600 + self.mi * 60 + self.s
     }
 
     /// Instante UTC en segundos (aplica el offset si lo hay).
@@ -258,6 +265,99 @@ fn cmp_secs(a: &Dt, b: &Dt) -> i64 {
     }
 }
 
+// ───────────────────────────── el reloj del NEGOCIO (appointments#12) ─────────────────────────
+//
+// The core owns the business timezone (`settings::timezone_of`, hub#731) and hands it to every
+// command as `context.timezone` (hub#1022). This module CONSUMES it: no column of its own, no
+// second copy, no guessing an offset.
+//
+// What the core hands over is the IANA NAME, not the rules, so the table travels with the guest —
+// the same `chrono-tz` the runtime itself uses, so there is one implementation of time zones in
+// the hub instead of two that can disagree.
+
+/// The business clock. Degrades to `UTC` exactly like the runtime's `timezone_name()` does: an
+/// unreadable name is a wrong clock by a known amount, never a guess.
+fn business_tz(input: &Value) -> chrono_tz::Tz {
+    input
+        .get("context")
+        .and_then(|c| c.get("timezone"))
+        .map(as_str)
+        .and_then(|name| name.parse::<chrono_tz::Tz>().ok())
+        .unwrap_or(chrono_tz::UTC)
+}
+
+/// The first instant whose local time has reached `naive`, when `naive` itself never happens.
+///
+/// Byte-for-byte the core's rule (`crates/runtime/src/scheduler.rs::gap_end`), and deliberately
+/// so: a `cron` trigger and a recurring series must never disagree about what «02:30 on the day
+/// the clock jumps» means. Bisection instead of «add one hour» because the jump is 30 minutes in
+/// Lord Howe, and a hard-coded hour is how a rule that «should be fine everywhere» is wrong
+/// somewhere.
+fn gap_end(naive: &chrono::NaiveDateTime, tz: chrono_tz::Tz) -> chrono::DateTime<chrono::Utc> {
+    use chrono::TimeZone;
+    // A 60 h window around the wall-clock time brackets any real transition (the largest UTC
+    // offset in the tz database is ±14 h).
+    let base = *naive - chrono::Duration::hours(30);
+    let (mut lo, mut hi) = (0i64, 60 * 60i64);
+    while lo < hi {
+        let mid = (lo + hi) / 2;
+        let candidate = chrono::Utc.from_utc_datetime(&(base + chrono::Duration::minutes(mid)));
+        if candidate.with_timezone(&tz).naive_local() >= *naive {
+            hi = mid;
+        } else {
+            lo = mid + 1;
+        }
+    }
+    chrono::Utc.from_utc_datetime(&(base + chrono::Duration::minutes(lo)))
+}
+
+/// A business WALL time (`Y-M-D H:M:S` on the salon clock) as the ISO text this module stores:
+/// the wall clock plus the offset that zone had at that moment (`2026-08-03T11:00:00+02:00`).
+///
+/// Two readings in one string, both true — the instant, and the salon's wall clock, which is what
+/// the availability engine compares row against row (appointments#76). The three DST answers are
+/// the core's, not new ones: normal → itself; ambiguous → the FIRST pass; non-existent → the
+/// instant the clock jumped into it.
+fn business_wall_iso(
+    y: i64,
+    mo: i64,
+    d: i64,
+    h: i64,
+    mi: i64,
+    sec: i64,
+    tz: chrono_tz::Tz,
+) -> Option<String> {
+    use chrono::TimeZone;
+    let naive = chrono::NaiveDate::from_ymd_opt(y as i32, mo as u32, d as u32)?
+        .and_hms_opt(h as u32, mi as u32, sec as u32)?;
+    let instant = match tz.from_local_datetime(&naive) {
+        chrono::LocalResult::Single(dt) => dt.with_timezone(&chrono::Utc),
+        chrono::LocalResult::Ambiguous(earliest, _) => earliest.with_timezone(&chrono::Utc),
+        chrono::LocalResult::None => gap_end(&naive, tz),
+    };
+    Some(
+        instant
+            .with_timezone(&tz)
+            .format("%Y-%m-%dT%H:%M:%S%:z")
+            .to_string(),
+    )
+}
+
+/// `YYYYMMDD` of the BUSINESS day an instant falls on — the key the appointment counter runs on.
+///
+/// It used to be the wall part of `context.now`, which the host sends in UTC: in Madrid the
+/// numbering started a new series at 02:00 in summer, so a late appointment carried tomorrow's
+/// stamp and two bookings of the same working day were filed under different days. Every POS in
+/// the market cuts its numbering on the business day; it is the same day the cash register closes.
+fn business_day_key(instant: &Dt, tz: chrono_tz::Tz) -> String {
+    match chrono::DateTime::from_timestamp(instant.epoch_secs(), 0) {
+        Some(dt) => dt.with_timezone(&tz).format("%Y%m%d").to_string(),
+        // Unreachable for any date a calendar can hold; degrading to the wall day beats panicking
+        // inside a guest, where a panic is a command that never answers.
+        None => instant.day_key(),
+    }
+}
+
 /// Parsea ISO 8601 laxo: `YYYY-MM-DD[ T HH:MM[:SS[.fff]]][Z|±HH[:]MM]`.
 pub fn parse_dt(input: &str) -> Option<Dt> {
     let t = input.trim();
@@ -271,7 +371,16 @@ pub fn parse_dt(input: &str) -> Option<Dt> {
         return None;
     }
     let rest = &t[10..];
-    let mut dt = Dt { y, mo, d, h: 0, mi: 0, s: 0, offset_min: 0, has_offset: false };
+    let mut dt = Dt {
+        y,
+        mo,
+        d,
+        h: 0,
+        mi: 0,
+        s: 0,
+        offset_min: 0,
+        has_offset: false,
+    };
     if rest.is_empty() {
         return Some(dt);
     }
@@ -282,9 +391,9 @@ pub fn parse_dt(input: &str) -> Option<Dt> {
     let rest = &rest[1..];
 
     // Separa hora y offset ('Z' o '±HH[:]MM'; la hora solo contiene dígitos, ':' y '.').
-    let off_pos = rest.char_indices().find_map(|(i, c)| {
-        matches!(c, 'Z' | 'z' | '+' | '-').then_some(i)
-    });
+    let off_pos = rest
+        .char_indices()
+        .find_map(|(i, c)| matches!(c, 'Z' | 'z' | '+' | '-').then_some(i));
     let (time_part, off_part) = match off_pos {
         Some(i) => (&rest[..i], &rest[i..]),
         None => (rest, ""),
@@ -305,10 +414,16 @@ pub fn parse_dt(input: &str) -> Option<Dt> {
             dt.offset_min = 0;
         } else {
             let sign: i64 = if off_part.starts_with('-') { -1 } else { 1 };
-            let digits: String = off_part[1..].chars().filter(|c| c.is_ascii_digit()).collect();
+            let digits: String = off_part[1..]
+                .chars()
+                .filter(|c| c.is_ascii_digit())
+                .collect();
             let (oh, om) = match digits.len() {
                 2 => (digits.parse::<i64>().ok()?, 0),
-                4 => (digits[..2].parse::<i64>().ok()?, digits[2..].parse::<i64>().ok()?),
+                4 => (
+                    digits[..2].parse::<i64>().ok()?,
+                    digits[2..].parse::<i64>().ok()?,
+                ),
                 _ => return None,
             };
             dt.offset_min = sign * (oh * 60 + om);
@@ -322,6 +437,8 @@ pub fn parse_dt(input: &str) -> Option<Dt> {
 struct HostCtx {
     now: Dt,
     new_ids: Vec<String>,
+    /// The business clock the core resolved (hub#1022). `UTC` when the context has none.
+    tz: chrono_tz::Tz,
 }
 
 fn host_ctx(input: &Value) -> Result<HostCtx, String> {
@@ -333,7 +450,11 @@ fn host_ctx(input: &Value) -> Result<HostCtx, String> {
         .and_then(|v| v.as_array())
         .map(|a| a.iter().map(as_str).collect())
         .unwrap_or_default();
-    Ok(HostCtx { now, new_ids })
+    Ok(HostCtx {
+        now,
+        new_ids,
+        tz: business_tz(input),
+    })
 }
 
 /// Cita candidata a solape (lectura aportada por el caller en el payload).
@@ -364,28 +485,36 @@ struct Candidate {
 fn candidates_from(input: &Value, staff_id: &str, exclude_id: &str) -> Option<Vec<Candidate>> {
     let rows = read_rows(input, "appointments.appointments.conflicting")
         .or_else(|| read_rows(input, "appointments.appointments.upcoming_for_staff"))?;
-    Some(rows.iter()
-        .filter_map(|row| {
-            let status = as_str(row.get("status").unwrap_or(&Value::Null));
-            if status == "cancelled" || status == "no_show" {
-                return None;
-            }
-            if row.get("is_deleted").map(as_bool).unwrap_or(false) {
-                return None;
-            }
-            if !exclude_id.is_empty() && as_str(row.get("id").unwrap_or(&Value::Null)) == exclude_id {
-                return None;
-            }
-            let owner = as_str(row.get("staff_id").unwrap_or(&Value::Null));
-            if !owner.is_empty() && !staff_id.is_empty() && owner != staff_id {
-                return None;
-            }
-            let start = parse_dt(&as_str(row.get("start_datetime")?))?;
-            let end = parse_dt(&as_str(row.get("end_datetime")?))?;
-            let number = str_or(row, "appointment_number", "(sin número)");
-            Some(Candidate { start, end, label: number })
-        })
-        .collect())
+    Some(
+        rows.iter()
+            .filter_map(|row| {
+                let status = as_str(row.get("status").unwrap_or(&Value::Null));
+                if status == "cancelled" || status == "no_show" {
+                    return None;
+                }
+                if row.get("is_deleted").map(as_bool).unwrap_or(false) {
+                    return None;
+                }
+                if !exclude_id.is_empty()
+                    && as_str(row.get("id").unwrap_or(&Value::Null)) == exclude_id
+                {
+                    return None;
+                }
+                let owner = as_str(row.get("staff_id").unwrap_or(&Value::Null));
+                if !owner.is_empty() && !staff_id.is_empty() && owner != staff_id {
+                    return None;
+                }
+                let start = parse_dt(&as_str(row.get("start_datetime")?))?;
+                let end = parse_dt(&as_str(row.get("end_datetime")?))?;
+                let number = str_or(row, "appointment_number", "(sin número)");
+                Some(Candidate {
+                    start,
+                    end,
+                    label: number,
+                })
+            })
+            .collect(),
+    )
 }
 
 /// The command payload, or `Null` when there is none.
@@ -446,7 +575,10 @@ fn settings_read(input: &Value) -> Option<Value> {
 }
 
 fn allow_overlapping_of(settings: &Value) -> bool {
-    settings.get("allow_overlapping").map(as_bool).unwrap_or(false)
+    settings
+        .get("allow_overlapping")
+        .map(as_bool)
+        .unwrap_or(false)
 }
 
 fn default_duration_of(settings: &Value) -> i64 {
@@ -469,7 +601,10 @@ fn default_duration_of(settings: &Value) -> i64 {
 fn lead_time_refusal(settings: &Value, start: &Dt, now: &Dt) -> Option<DomainError> {
     let ahead = cmp_secs(start, now);
 
-    let notice_min = settings.get("min_booking_notice").map(|v| as_i64(v, 0)).unwrap_or(0);
+    let notice_min = settings
+        .get("min_booking_notice")
+        .map(|v| as_i64(v, 0))
+        .unwrap_or(0);
     if notice_min > 0 && ahead < notice_min * 60 {
         return Some(DomainError::new(
             "appointments.too_soon",
@@ -477,7 +612,10 @@ fn lead_time_refusal(settings: &Value, start: &Dt, now: &Dt) -> Option<DomainErr
         ));
     }
 
-    let max_days = settings.get("max_advance_booking").map(|v| as_i64(v, 0)).unwrap_or(0);
+    let max_days = settings
+        .get("max_advance_booking")
+        .map(|v| as_i64(v, 0))
+        .unwrap_or(0);
     if max_days > 0 && ahead > max_days * 86_400 {
         return Some(DomainError::new(
             "appointments.too_far",
@@ -575,7 +713,11 @@ fn holds_from(input: &Value, staff_id: &str, exclude_ref: &str) -> Vec<Candidate
             }
             let start = parse_dt(&as_str(row.get("start_datetime")?))?;
             let end = parse_dt(&as_str(row.get("end_datetime")?))?;
-            Some(Candidate { start, end, label: str_or(row, "label", "(en espera)") })
+            Some(Candidate {
+                start,
+                end,
+                label: str_or(row, "label", "(en espera)"),
+            })
         })
         .collect()
 }
@@ -668,7 +810,10 @@ fn read_rows<'a>(input: &'a Value, query: &str) -> Option<&'a Vec<Value>> {
 ///   (`staff_not_eligible`); when it has none, the hub has not narrowed it (every team member
 ///   performs every service until told otherwise) and any bookable member is accepted;
 /// - price/duration: the professional's override, else the catalogue.
-fn resolve_booking(input: &Value, item: &Value) -> Result<Result<ResolvedBooking, DomainError>, String> {
+fn resolve_booking(
+    input: &Value,
+    item: &Value,
+) -> Result<Result<ResolvedBooking, DomainError>, String> {
     let (Some(customers), Some(services), Some(members), Some(eligible)) = (
         read_rows(input, "customers.get"),
         read_rows(input, "services.services.get"),
@@ -685,10 +830,13 @@ fn resolve_booking(input: &Value, item: &Value) -> Result<Result<ResolvedBooking
     let service_id = str_or(item, "service_id", "");
     let staff_id = str_or(item, "staff_id", "");
     if customer_id.is_empty() || service_id.is_empty() || staff_id.is_empty() {
-        return Err("invalid_payload: customer_id, service_id and staff_id are required".to_string());
+        return Err(
+            "invalid_payload: customer_id, service_id and staff_id are required".to_string(),
+        );
     }
 
-    let same_id = |row: &&Value, key: &str, id: &str| as_str(row.get(key).unwrap_or(&Value::Null)) == id;
+    let same_id =
+        |row: &&Value, key: &str, id: &str| as_str(row.get(key).unwrap_or(&Value::Null)) == id;
 
     let Some(customer) = customers.iter().find(|r| same_id(r, "id", &customer_id)) else {
         return Ok(Err(DomainError::new(
@@ -749,9 +897,13 @@ fn resolve_booking(input: &Value, item: &Value) -> Result<Result<ResolvedBooking
     let staff_name = {
         let full = str_or(member, "full_name", "");
         if full.is_empty() {
-            format!("{} {}", str_or(member, "first_name", ""), str_or(member, "last_name", ""))
-                .trim()
-                .to_string()
+            format!(
+                "{} {}",
+                str_or(member, "first_name", ""),
+                str_or(member, "last_name", "")
+            )
+            .trim()
+            .to_string()
         } else {
             full
         }
@@ -852,7 +1004,9 @@ fn prepare_appointment(
 
     // Duration: the caller's explicit choice (the receptionist may shorten/lengthen a booking),
     // else the professional's override / the service's catalogue duration, else the module default.
-    let catalogue_dur = resolved.service_duration.unwrap_or_else(|| default_duration_of(settings));
+    let catalogue_dur = resolved
+        .service_duration
+        .unwrap_or_else(|| default_duration_of(settings));
     let duration = item
         .get("duration_minutes")
         .map(|v| as_i64(v, catalogue_dur))
@@ -877,7 +1031,11 @@ fn prepare_appointment(
         // appointments#69: y las franjas RETENIDAS por una decisión pendiente. Van detrás del
         // solape a propósito — una cita real es una razón más firme que una retención que caduca
         // sola, y cuando las dos aplican es la cita la que hay que nombrar.
-        let held = holds_from(input, &resolved.staff_id, &str_or(&payload_of(input), "request_id", ""));
+        let held = holds_from(
+            input,
+            &resolved.staff_id,
+            &str_or(&payload_of(input), "request_id", ""),
+        );
         if let Some(c) = held
             .iter()
             .find(|c| cmp_secs(&c.start, &end) < 0 && cmp_secs(&c.end, &start) > 0)
@@ -890,7 +1048,11 @@ fn prepare_appointment(
     // (ADR-0007) — and anything the item says about them is ignored.
     let (service_name, service_price) = (resolved.service_name.clone(), resolved.service_price);
 
-    let day = now.day_key();
+    // appointments#12: the counter's day is the SALON's day (`context.timezone`, hub#1022), not
+    // UTC's. Read from `input` and not passed down as an argument on purpose — every caller of
+    // this function already hands over the whole guest input, and one more parameter that four
+    // call sites must remember to forward is one more place to forget it.
+    let day = business_day_key(now, business_tz(input));
     let mut ops: Vec<Operation> = Vec::with_capacity(3);
 
     let mut bump = Map::new();
@@ -916,7 +1078,9 @@ fn prepare_appointment(
     );
     p.insert(
         "occurrence_date".into(),
-        series.map(|s| json!(s.occurrence_date)).unwrap_or(Value::Null),
+        series
+            .map(|s| json!(s.occurrence_date))
+            .unwrap_or(Value::Null),
     );
     p.insert("service_name".into(), json!(service_name.clone()));
     p.insert("service_price".into(), json!(service_price));
@@ -925,7 +1089,10 @@ fn prepare_appointment(
     p.insert("duration_minutes".into(), json!(duration));
     p.insert("status".into(), json!("pending"));
     p.insert("notes".into(), json!(str_or(item, "notes", "")));
-    p.insert("internal_notes".into(), json!(str_or(item, "internal_notes", "")));
+    p.insert(
+        "internal_notes".into(),
+        json!(str_or(item, "internal_notes", "")),
+    );
     p.insert(
         "booked_online".into(),
         json!(item.get("booked_online").map(as_bool).unwrap_or(false) as i64),
@@ -949,7 +1116,11 @@ fn prepare_appointment(
     h.insert("new_value".into(), json!(new_value));
     ops.push(Operation::sql("appointments._insert_history", h));
 
-    candidates.push(Candidate { start, end, label: format!("(nueva {})", start.iso()) });
+    candidates.push(Candidate {
+        start,
+        end,
+        label: format!("(nueva {})", start.iso()),
+    });
     Ok(ops)
 }
 
@@ -1040,8 +1211,9 @@ pub fn cancel_appointment_pure(input: Value) -> Result<Output, String> {
             .filter(|h| *h >= 0)
             .unwrap_or(24);
         let raw_start = as_str(row.get("start_datetime").unwrap_or(&Value::Null));
-        let start = parse_dt(&raw_start)
-            .ok_or_else(|| format!("invalid_state: appointment start `{raw_start}` is not ISO 8601"))?;
+        let start = parse_dt(&raw_start).ok_or_else(|| {
+            format!("invalid_state: appointment start `{raw_start}` is not ISO 8601")
+        })?;
         if cmp_secs(&start, &ctx.now) < notice_hours * 3_600 {
             return Ok(refuse(
                 "appointments.cancellation_notice_required",
@@ -1251,7 +1423,11 @@ pub fn create_appointment_pure(input: Value) -> Result<Output, String> {
     // `..Default::default()` para que el literal compile contra LAS DOS formas de `Output`: la de
     // antes de hub#139 y la que ganó `error` (rechazo de dominio). Sin esto el handler deja de
     // compilar en cuanto el checkout del hub avanza, y nadie puede regenerar el wasm (pm#81).
-    Ok(Output { operations: ops, events: vec![], ..Default::default() })
+    Ok(Output {
+        operations: ops,
+        events: vec![],
+        ..Default::default()
+    })
 }
 
 // ───────────────── una petición aprobada en otro módulo → una cita (appointments#38) ─────────────
@@ -1372,7 +1548,11 @@ pub fn book_from_request_pure(input: Value) -> Result<Output, String> {
         // Since appointments#70 the overlap comes through HERE, with the same
         // `appointments.overlapping_appointment` the inbox already showed — no prefix to sniff, no
         // `format!` in `prepare_appointment` that can rename the error behind this module's back.
-        return Ok(booking_refused(&request_id, &refusal.code, &refusal.message));
+        return Ok(booking_refused(
+            &request_id,
+            &refusal.code,
+            &refusal.message,
+        ));
     }
 
     // appointments#69: the slot this request had set aside is now an appointment, so the hold is
@@ -1434,12 +1614,18 @@ pub fn bulk_create_pure(input: Value) -> Result<Output, String> {
     let payload = input.get("payload").cloned().unwrap_or(Value::Null);
     let ctx = host_ctx(&input)?;
     let empty: Vec<Value> = Vec::new();
-    let items = payload.get("appointments").and_then(|v| v.as_array()).unwrap_or(&empty);
+    let items = payload
+        .get("appointments")
+        .and_then(|v| v.as_array())
+        .unwrap_or(&empty);
     if items.is_empty() {
         return Err("invalid_payload: `appointments` vacío".to_string());
     }
     if items.len() > 50 {
-        return Err(format!("invalid_payload: máximo 50 citas por lote (recibidas {})", items.len()));
+        return Err(format!(
+            "invalid_payload: máximo 50 citas por lote (recibidas {})",
+            items.len()
+        ));
     }
 
     let resolved = match resolve_booking(&input, &payload)? {
@@ -1493,9 +1679,16 @@ pub fn bulk_create_pure(input: Value) -> Result<Output, String> {
     }
 
     if created == 0 {
-        return Err(format!("bulk_create: 0 citas válidas — {}", errors.join("; ")));
+        return Err(format!(
+            "bulk_create: 0 citas válidas — {}",
+            errors.join("; ")
+        ));
     }
-    Ok(Output { operations: ops, events: vec![], ..Default::default() })
+    Ok(Output {
+        operations: ops,
+        events: vec![],
+        ..Default::default()
+    })
 }
 
 /// `appointments.appointments.bulk_delete` — WASM-TODO pieza 3 (máx. 50 ids).
@@ -1517,7 +1710,10 @@ pub fn bulk_delete_pure(input: Value) -> Result<Output, String> {
         return Err("invalid_payload: `ids` vacío".to_string());
     }
     if ids.len() > 50 {
-        return Err(format!("invalid_payload: máximo 50 ids por lote (recibidos {})", ids.len()));
+        return Err(format!(
+            "invalid_payload: máximo 50 ids por lote (recibidos {})",
+            ids.len()
+        ));
     }
 
     let ops = ids
@@ -1528,7 +1724,11 @@ pub fn bulk_delete_pure(input: Value) -> Result<Output, String> {
             Operation::sql("appointments.appointments.delete", p)
         })
         .collect();
-    Ok(Output { operations: ops, events: vec![], ..Default::default() })
+    Ok(Output {
+        operations: ops,
+        events: vec![],
+        ..Default::default()
+    })
 }
 
 /// `appointments.recurring.materialize` — WASM-TODO pieza 6.
@@ -1600,7 +1800,10 @@ pub fn materialize_recurring_pure(input: Value) -> Result<Output, String> {
     };
 
     let frequency = str_or(&r, "frequency", "");
-    if !matches!(frequency.as_str(), "daily" | "weekly" | "biweekly" | "monthly") {
+    if !matches!(
+        frequency.as_str(),
+        "daily" | "weekly" | "biweekly" | "monthly"
+    ) {
         return Err(format!("invalid_payload: frequency inválida `{frequency}`"));
     }
     let time = str_or(&r, "time", "");
@@ -1614,7 +1817,10 @@ pub fn materialize_recurring_pure(input: Value) -> Result<Output, String> {
         .filter(|s| !s.is_empty())
         .and_then(|s| parse_dt(&s))
         .map(|d| days_from_civil(d.y, d.mo, d.d));
-    let max_occurrences = r.get("max_occurrences").map(|v| as_i64(v, 0)).filter(|n| *n > 0);
+    let max_occurrences = r
+        .get("max_occurrences")
+        .map(|v| as_i64(v, 0))
+        .filter(|n| *n > 0);
     let duration = r
         .get("duration_minutes")
         .map(|v| as_i64(v, 0))
@@ -1665,7 +1871,11 @@ pub fn materialize_recurring_pure(input: Value) -> Result<Output, String> {
             } else {
                 // Alinear al day_of_week de la plantilla (0=Lun..6=Dom); si es NULL,
                 // se mantiene el día de la semana de start_date.
-                match r.get("day_of_week").map(|v| as_i64(v, -1)).filter(|v| (0..=6).contains(v)) {
+                match r
+                    .get("day_of_week")
+                    .map(|v| as_i64(v, -1))
+                    .filter(|v| (0..=6).contains(v))
+                {
                     Some(dow) => start_days + (dow - weekday_mon0(start_days)).rem_euclid(7),
                     None => start_days,
                 }
@@ -1771,13 +1981,25 @@ pub fn materialize_recurring_pure(input: Value) -> Result<Output, String> {
             skipped_as_booked += 1;
             continue;
         }
-        let start_iso = format!("{occurrence_date}T{th:02}:{tm:02}:00");
+        // appointments#12 — THE SERIES KEEPS ITS WALL TIME across a DST change. The template
+        // stores `HH:MM` on the salon clock; expanding it by adding days to an instant would drag
+        // the whole series an hour off twice a year (an 11:00 client arriving at 10:00, with no
+        // explanation on the screen). It is the rule Google Calendar states outright for recurring
+        // events, and the reason its API refuses to expand a series without a declared zone.
+        //
+        // Until hub#1022 this line wrote a NAIVE text with no offset at all: a time nobody could
+        // place on a clock, and one the database cannot order against the rows that do carry one.
+        let Some(start_iso) = business_wall_iso(y, mo, d, th, tm, 0, ctx.tz) else {
+            continue; // a date the calendar does not have; the rest of the series still books
+        };
         let item = json!({
             "start_datetime": start_iso,
             "duration_minutes": duration,
             "booked_online": false,
         });
-        let Some(id) = ctx.new_ids.get(created) else { break };
+        let Some(id) = ctx.new_ids.get(created) else {
+            break;
+        };
         let desc = format!("Cita materializada de la plantilla recurrente {recurring_id}");
         let stamp = SeriesStamp {
             recurring_id: recurring_id.clone(),
@@ -1812,7 +2034,11 @@ pub fn materialize_recurring_pure(input: Value) -> Result<Output, String> {
                 .to_string(),
         );
     }
-    Ok(Output { operations: ops, events: vec![], ..Default::default() })
+    Ok(Output {
+        operations: ops,
+        events: vec![],
+        ..Default::default()
+    })
 }
 
 /// Parsea `HH:MM` (o `HH:MM:SS`) → (hora, minuto).
@@ -1831,7 +2057,14 @@ mod tests {
     /// [`catalog_reads`], so every create test books against real records unless it removes
     /// them on purpose (appointments#11: the catalogue is not optional any more).
     fn input(payload: Value, reads: Option<Value>) -> Value {
-        let mut ctx = json!({ "now": "2026-07-31T10:00:00Z", "new_ids": ["apt-1"] });
+        // appointments#12: the runtime puts the business IANA in every command context
+        // (hub#1022, `commands.rs:889`). The tests carry it because production does — a handler
+        // that only ever sees `UTC` in its tests is one that ships the UTC bug.
+        let mut ctx = json!({
+            "now": "2026-07-31T10:00:00Z",
+            "new_ids": ["apt-1"],
+            "timezone": "Europe/Madrid"
+        });
         let mut merged = catalog_reads();
         if let Some(Value::Object(extra)) = reads {
             for (k, v) in extra {
@@ -1933,11 +2166,17 @@ mod tests {
     #[test]
     fn create_refuses_a_slot_another_request_is_holding() {
         let mut inp = input(item("2026-07-31T10:15:00Z", 30, "s1"), None);
-        inp["context"]["reads"]["appointments.slot_holds.live"] = json!([
-            hold("2026-07-31T10:00:00Z", "2026-07-31T10:30:00Z", "s1", "req-9")
-        ]);
+        inp["context"]["reads"]["appointments.slot_holds.live"] = json!([hold(
+            "2026-07-31T10:00:00Z",
+            "2026-07-31T10:30:00Z",
+            "s1",
+            "req-9"
+        )]);
         let out = create_appointment_pure(inp).unwrap();
-        assert_eq!(domain_code(&out).as_deref(), Some("appointments.slot_on_hold"));
+        assert_eq!(
+            domain_code(&out).as_deref(),
+            Some("appointments.slot_on_hold")
+        );
         assert!(out.operations.is_empty(), "a refusal writes nothing");
     }
 
@@ -1946,9 +2185,12 @@ mod tests {
     #[test]
     fn a_hold_on_another_professional_does_not_block_this_booking() {
         let mut inp = input(item("2026-07-31T10:15:00Z", 30, "s1"), None);
-        inp["context"]["reads"]["appointments.slot_holds.live"] = json!([
-            hold("2026-07-31T10:00:00Z", "2026-07-31T10:30:00Z", "s2", "req-9")
-        ]);
+        inp["context"]["reads"]["appointments.slot_holds.live"] = json!([hold(
+            "2026-07-31T10:00:00Z",
+            "2026-07-31T10:30:00Z",
+            "s2",
+            "req-9"
+        )]);
         assert!(create_appointment_pure(inp).unwrap().error.is_none());
     }
 
@@ -1957,9 +2199,12 @@ mod tests {
     #[test]
     fn a_hold_that_ends_where_the_booking_starts_does_not_block_it() {
         let mut inp = input(item("2026-07-31T10:15:00Z", 30, "s1"), None);
-        inp["context"]["reads"]["appointments.slot_holds.live"] = json!([
-            hold("2026-07-31T09:45:00Z", "2026-07-31T10:15:00Z", "s1", "req-9")
-        ]);
+        inp["context"]["reads"]["appointments.slot_holds.live"] = json!([hold(
+            "2026-07-31T09:45:00Z",
+            "2026-07-31T10:15:00Z",
+            "s1",
+            "req-9"
+        )]);
         assert!(create_appointment_pure(inp).unwrap().error.is_none());
     }
 
@@ -1969,9 +2214,12 @@ mod tests {
     #[test]
     fn the_request_that_holds_the_slot_can_book_it() {
         let mut inp = input(request_payload("2026-07-31T11:00:00Z"), None);
-        inp["context"]["reads"]["appointments.slot_holds.live"] = json!([
-            hold("2026-07-31T11:00:00Z", "2026-07-31T11:30:00Z", "s1", "req-1")
-        ]);
+        inp["context"]["reads"]["appointments.slot_holds.live"] = json!([hold(
+            "2026-07-31T11:00:00Z",
+            "2026-07-31T11:30:00Z",
+            "s1",
+            "req-1"
+        )]);
         let out = book_from_request_pure(inp).unwrap();
         assert!(
             event(&out, "appointments.booking_request.fulfilled").is_some(),
@@ -1988,16 +2236,26 @@ mod tests {
     /// propia cita.
     #[test]
     fn booking_a_request_consumes_the_hold_it_was_holding() {
-        let out = book_from_request_pure(input(request_payload("2026-07-31T11:00:00Z"), None)).unwrap();
+        let out =
+            book_from_request_pure(input(request_payload("2026-07-31T11:00:00Z"), None)).unwrap();
         let consume = out
             .operations
             .iter()
             .find(|op| op.command.ends_with("_hold_consume"))
             .expect("the hold is consumed with the booking, not after it");
         assert_eq!(consume.params.get("source_ref"), Some(&json!("req-1")));
-        let insert = out.operations.iter().position(|op| op.command.ends_with("_insert_appointment"));
-        let pos = out.operations.iter().position(|op| op.command.ends_with("_hold_consume"));
-        assert!(insert < pos, "the appointment is written first; the hold is closed behind it");
+        let insert = out
+            .operations
+            .iter()
+            .position(|op| op.command.ends_with("_insert_appointment"));
+        let pos = out
+            .operations
+            .iter()
+            .position(|op| op.command.ends_with("_hold_consume"));
+        assert!(
+            insert < pos,
+            "the appointment is written first; the hold is closed behind it"
+        );
     }
 
     /// Una reserva RECHAZADA no consume nada: la retención sigue viva hasta que caduque o alguien
@@ -2026,11 +2284,17 @@ mod tests {
             booked_row("2026-07-31T11:00:00Z", 60, "confirmed"),
             None,
         );
-        inp["context"]["reads"]["appointments.slot_holds.live"] = json!([
-            hold("2026-07-31T15:15:00Z", "2026-07-31T16:00:00Z", "s1", "req-9")
-        ]);
+        inp["context"]["reads"]["appointments.slot_holds.live"] = json!([hold(
+            "2026-07-31T15:15:00Z",
+            "2026-07-31T16:00:00Z",
+            "s1",
+            "req-9"
+        )]);
         let out = reschedule_appointment_pure(inp).unwrap();
-        assert_eq!(domain_code(&out).as_deref(), Some("appointments.slot_on_hold"));
+        assert_eq!(
+            domain_code(&out).as_deref(),
+            Some("appointments.slot_on_hold")
+        );
         assert!(out.operations.is_empty(), "a refusal moves nothing");
     }
 
@@ -2040,12 +2304,14 @@ mod tests {
     #[test]
     fn a_hub_that_allows_overlapping_ignores_holds_too() {
         let mut inp = input(item("2026-07-31T10:15:00Z", 30, "s1"), None);
-        inp["context"]["reads"]["appointments.settings.get"] =
-            json!([{ "allow_overlapping": 1, "default_duration": 60,
+        inp["context"]["reads"]["appointments.settings.get"] = json!([{ "allow_overlapping": 1, "default_duration": 60,
                      "min_booking_notice": 0, "max_advance_booking": 0 }]);
-        inp["context"]["reads"]["appointments.slot_holds.live"] = json!([
-            hold("2026-07-31T10:00:00Z", "2026-07-31T10:30:00Z", "s1", "req-9")
-        ]);
+        inp["context"]["reads"]["appointments.slot_holds.live"] = json!([hold(
+            "2026-07-31T10:00:00Z",
+            "2026-07-31T10:30:00Z",
+            "s1",
+            "req-9"
+        )]);
         assert!(create_appointment_pure(inp).unwrap().error.is_none());
     }
 
@@ -2082,9 +2348,18 @@ mod tests {
         assert!(out.error.is_none(), "{:?}", out.error);
         let insert = insert_op(&out);
         assert_eq!(insert.params.get("customer_id"), Some(&json!("c1")));
-        assert_eq!(insert.params.get("customer_name"), Some(&json!("Ada Lovelace")));
-        assert_eq!(insert.params.get("customer_phone"), Some(&json!("+34600000001")));
-        assert_eq!(insert.params.get("customer_email"), Some(&json!("ada@example.com")));
+        assert_eq!(
+            insert.params.get("customer_name"),
+            Some(&json!("Ada Lovelace"))
+        );
+        assert_eq!(
+            insert.params.get("customer_phone"),
+            Some(&json!("+34600000001"))
+        );
+        assert_eq!(
+            insert.params.get("customer_email"),
+            Some(&json!("ada@example.com"))
+        );
     }
 
     #[test]
@@ -2093,7 +2368,10 @@ mod tests {
         payload["staff_name"] = json!("Invented employee");
         let out = create_appointment_pure(input(payload, None)).unwrap();
         assert!(out.error.is_none(), "{:?}", out.error);
-        assert_eq!(insert_op(&out).params.get("staff_name"), Some(&json!("Bea Pro")));
+        assert_eq!(
+            insert_op(&out).params.get("staff_name"),
+            Some(&json!("Bea Pro"))
+        );
     }
 
     /// The service duration comes from the catalogue when the caller does not choose one; the
@@ -2105,9 +2383,19 @@ mod tests {
         payload.as_object_mut().unwrap().remove("duration_minutes");
         let out = create_appointment_pure(input(payload, None)).unwrap();
         assert!(out.error.is_none(), "{:?}", out.error);
-        assert_eq!(insert_op(&out).params.get("duration_minutes"), Some(&json!(30)));
-        let end = insert_op(&out).params.get("end_datetime").and_then(|v| v.as_str()).unwrap_or("");
-        assert!(end.starts_with("2026-07-31T11:30:00"), "end_datetime = {end}");
+        assert_eq!(
+            insert_op(&out).params.get("duration_minutes"),
+            Some(&json!(30))
+        );
+        let end = insert_op(&out)
+            .params
+            .get("end_datetime")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        assert!(
+            end.starts_with("2026-07-31T11:30:00"),
+            "end_datetime = {end}"
+        );
     }
 
     // ── appointments#75 · a schema `default` overrides the handler's resolution chain ──
@@ -2131,7 +2419,9 @@ mod tests {
         let Some(props) = schema.get("properties").and_then(|p| p.as_object()) else {
             return;
         };
-        let Some(obj) = payload.as_object_mut() else { return };
+        let Some(obj) = payload.as_object_mut() else {
+            return;
+        };
         for (key, prop) in props {
             if !obj.contains_key(key) {
                 if let Some(default) = prop.get("default") {
@@ -2155,9 +2445,19 @@ mod tests {
         binder_applied_defaults(CREATE_SCHEMA, &mut payload);
         let out = create_appointment_pure(input(payload, Some(reads))).unwrap();
         assert!(out.error.is_none(), "{:?}", out.error);
-        assert_eq!(insert_op(&out).params.get("duration_minutes"), Some(&json!(90)));
-        let end = insert_op(&out).params.get("end_datetime").and_then(|v| v.as_str()).unwrap_or("");
-        assert!(end.starts_with("2026-07-31T12:30:00"), "end_datetime = {end}");
+        assert_eq!(
+            insert_op(&out).params.get("duration_minutes"),
+            Some(&json!(90))
+        );
+        let end = insert_op(&out)
+            .params
+            .get("end_datetime")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        assert!(
+            end.starts_with("2026-07-31T12:30:00"),
+            "end_datetime = {end}"
+        );
     }
 
     /// The exception the receptionist types still wins: an explicit `duration_minutes` is
@@ -2166,9 +2466,16 @@ mod tests {
     fn an_explicit_duration_survives_the_binder() {
         let mut payload = item("2026-07-31T11:00:00Z", 45, "s1");
         binder_applied_defaults(CREATE_SCHEMA, &mut payload);
-        assert_eq!(payload.get("duration_minutes"), Some(&json!(45)), "the binder overwrote a value the caller provided");
+        assert_eq!(
+            payload.get("duration_minutes"),
+            Some(&json!(45)),
+            "the binder overwrote a value the caller provided"
+        );
         let out = create_appointment_pure(input(payload, None)).unwrap();
-        assert_eq!(insert_op(&out).params.get("duration_minutes"), Some(&json!(45)));
+        assert_eq!(
+            insert_op(&out).params.get("duration_minutes"),
+            Some(&json!(45))
+        );
     }
 
     /// The professional's override (`custom_duration`, staff#9) beats the catalogue even when
@@ -2190,7 +2497,10 @@ mod tests {
         binder_applied_defaults(CREATE_SCHEMA, &mut payload);
         let out = create_appointment_pure(input(payload, Some(reads))).unwrap();
         assert!(out.error.is_none(), "{:?}", out.error);
-        assert_eq!(insert_op(&out).params.get("duration_minutes"), Some(&json!(120)));
+        assert_eq!(
+            insert_op(&out).params.get("duration_minutes"),
+            Some(&json!(120))
+        );
     }
 
     /// Parity with `bulk_create` — the issue's isolated proof that the module KNOWS how to
@@ -2207,7 +2517,10 @@ mod tests {
         payload.as_object_mut().unwrap().remove("duration_minutes");
         binder_applied_defaults(CREATE_SCHEMA, &mut payload);
         let create = create_appointment_pure(input(payload, Some(reads.clone()))).unwrap();
-        assert_eq!(insert_op(&create).params.get("duration_minutes"), Some(&json!(90)));
+        assert_eq!(
+            insert_op(&create).params.get("duration_minutes"),
+            Some(&json!(90))
+        );
 
         let mut batch = json!({
             "customer_id": "c1",
@@ -2239,8 +2552,14 @@ mod tests {
         ]});
         let out = create_appointment_pure(input(payload, Some(reads))).unwrap();
         assert!(out.error.is_none(), "{:?}", out.error);
-        assert_eq!(insert_op(&out).params.get("service_price"), Some(&json!(2500)));
-        assert_eq!(insert_op(&out).params.get("duration_minutes"), Some(&json!(45)));
+        assert_eq!(
+            insert_op(&out).params.get("service_price"),
+            Some(&json!(2500))
+        );
+        assert_eq!(
+            insert_op(&out).params.get("duration_minutes"),
+            Some(&json!(45))
+        );
     }
 
     /// An id the read does not resolve (unknown, another hub, deleted) is a domain refusal, and
@@ -2252,7 +2571,10 @@ mod tests {
             Some(json!({ "services.services.get": [] })),
         ))
         .unwrap();
-        assert_eq!(domain_code(&out).as_deref(), Some("appointments.service_not_found"));
+        assert_eq!(
+            domain_code(&out).as_deref(),
+            Some("appointments.service_not_found")
+        );
         assert!(out.operations.is_empty());
     }
 
@@ -2282,7 +2604,10 @@ mod tests {
             Some(json!({ "customers.get": [] })),
         ))
         .unwrap();
-        assert_eq!(domain_code(&out).as_deref(), Some("appointments.customer_not_found"));
+        assert_eq!(
+            domain_code(&out).as_deref(),
+            Some("appointments.customer_not_found")
+        );
         assert!(out.operations.is_empty());
     }
 
@@ -2293,7 +2618,10 @@ mod tests {
             Some(json!({ "staff.members.get": [] })),
         ))
         .unwrap();
-        assert_eq!(domain_code(&out).as_deref(), Some("appointments.staff_not_found"));
+        assert_eq!(
+            domain_code(&out).as_deref(),
+            Some("appointments.staff_not_found")
+        );
         assert!(out.operations.is_empty());
     }
 
@@ -2324,9 +2652,13 @@ mod tests {
             { "staff_id": "s2", "full_name": "Other Pro", "custom_duration": null,
               "custom_price": null, "is_primary": 1 }
         ]});
-        let out = create_appointment_pure(input(item("2026-07-31T11:00:00Z", 30, "s1"), Some(reads)))
-            .unwrap();
-        assert_eq!(domain_code(&out).as_deref(), Some("appointments.staff_not_eligible"));
+        let out =
+            create_appointment_pure(input(item("2026-07-31T11:00:00Z", 30, "s1"), Some(reads)))
+                .unwrap();
+        assert_eq!(
+            domain_code(&out).as_deref(),
+            Some("appointments.staff_not_eligible")
+        );
         assert!(out.operations.is_empty());
     }
 
@@ -2338,7 +2670,10 @@ mod tests {
         ))
         .unwrap();
         assert!(out.error.is_none(), "{:?}", out.error);
-        assert_eq!(insert_op(&out).params.get("staff_name"), Some(&json!("Bea Pro")));
+        assert_eq!(
+            insert_op(&out).params.get("staff_name"),
+            Some(&json!("Bea Pro"))
+        );
     }
 
     /// The hole sales#68 named: when the runtime does not deliver the catalogue, `create` must
@@ -2353,7 +2688,10 @@ mod tests {
             "staff.services.eligible_for_service",
         ] {
             let mut inp = input(item("2026-07-31T11:00:00Z", 30, "s1"), None);
-            inp["context"]["reads"].as_object_mut().unwrap().remove(missing);
+            inp["context"]["reads"]
+                .as_object_mut()
+                .unwrap()
+                .remove(missing);
             let out = create_appointment_pure(inp).unwrap();
             assert_eq!(
                 domain_code(&out).as_deref(),
@@ -2379,7 +2717,8 @@ mod tests {
         ]});
         // Misma franja 10:15–10:45, mismo staff → debe solapar y rechazar.
         let inp = input(item("2026-07-31T10:15:00Z", 30, "s1"), Some(reads));
-        let out = create_appointment_pure(inp).expect("an overlap is a refusal, not a command fault");
+        let out =
+            create_appointment_pure(inp).expect("an overlap is a refusal, not a command fault");
         assert_eq!(
             domain_code(&out).as_deref(),
             Some("appointments.overlapping_appointment")
@@ -2488,7 +2827,10 @@ mod tests {
     /// appointments#45: the table (INTEGER 1) allows overlapping → the same booking is accepted.
     #[test]
     fn create_allows_overlap_when_settings_read_says_so() {
-        let inp = input(item("2026-07-31T10:15:00Z", 30, "s1"), Some(overlapping_reads(json!(1))));
+        let inp = input(
+            item("2026-07-31T10:15:00Z", 30, "s1"),
+            Some(overlapping_reads(json!(1))),
+        );
         assert!(create_appointment_pure(inp).is_ok());
     }
 
@@ -2512,8 +2854,15 @@ mod tests {
             .find(|op| op.command.ends_with("_insert_appointment"))
             .expect("insert operation");
         assert_eq!(insert.params.get("duration_minutes"), Some(&json!(45)));
-        let end = insert.params.get("end_datetime").and_then(|v| v.as_str()).unwrap_or("");
-        assert!(end.starts_with("2026-07-31T11:45:00"), "end_datetime = {end}");
+        let end = insert
+            .params
+            .get("end_datetime")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        assert!(
+            end.starts_with("2026-07-31T11:45:00"),
+            "end_datetime = {end}"
+        );
     }
 
     // ── appointments#6: cancellation policy (`now` in the fixture is 2026-07-31T10:00Z) ──────
@@ -2553,7 +2902,11 @@ mod tests {
             policy(1, 24),
         ))
         .unwrap();
-        assert!(out.error.is_none(), "staff must always be able to cancel: {:?}", out.error);
+        assert!(
+            out.error.is_none(),
+            "staff must always be able to cancel: {:?}",
+            out.error
+        );
         assert_eq!(
             op_commands(&out),
             vec!["appointments._cancel_row", "appointments._history_cancel"]
@@ -2561,7 +2914,10 @@ mod tests {
         let row = &out.operations[0].params;
         assert_eq!(row.get("appointment_id"), Some(&json!("apt-1")));
         assert_eq!(row.get("reason"), Some(&json!("sick")));
-        assert_eq!(out.operations[1].params.get("channel"), Some(&json!("staff")));
+        assert_eq!(
+            out.operations[1].params.get("channel"),
+            Some(&json!("staff"))
+        );
     }
 
     /// Customer channel INSIDE the window: rejected with the domain code the UI translates,
@@ -2592,7 +2948,10 @@ mod tests {
         ))
         .unwrap();
         assert!(out.error.is_none(), "{:?}", out.error);
-        assert_eq!(out.operations[1].params.get("channel"), Some(&json!("customer")));
+        assert_eq!(
+            out.operations[1].params.get("channel"),
+            Some(&json!("customer"))
+        );
     }
 
     /// Exactly at the boundary (24 h before, policy 24 h) the customer is still in time.
@@ -2777,7 +3136,10 @@ mod tests {
     /// classic online-booking abuse: the customer books while walking in.
     #[test]
     fn create_refuses_a_booking_inside_the_minimum_notice() {
-        let inp = input(item("2026-07-31T10:15:00Z", 30, "s1"), Some(lead_time(60, 0)));
+        let inp = input(
+            item("2026-07-31T10:15:00Z", 30, "s1"),
+            Some(lead_time(60, 0)),
+        );
         let out = create_appointment_pure(inp).unwrap();
         assert_eq!(domain_code(&out).as_deref(), Some("appointments.too_soon"));
         assert!(out.operations.is_empty());
@@ -2786,22 +3148,35 @@ mod tests {
     /// Exactly on the boundary is IN: 60 minutes' notice means 60 is enough, not "more than 60".
     #[test]
     fn create_accepts_a_booking_exactly_at_the_minimum_notice() {
-        let inp = input(item("2026-07-31T11:00:00Z", 30, "s1"), Some(lead_time(60, 0)));
+        let inp = input(
+            item("2026-07-31T11:00:00Z", 30, "s1"),
+            Some(lead_time(60, 0)),
+        );
         let out = create_appointment_pure(inp).unwrap();
-        assert_eq!(domain_code(&out), None, "60 minutes ahead with a 60 minute notice is valid");
+        assert_eq!(
+            domain_code(&out),
+            None,
+            "60 minutes ahead with a 60 minute notice is valid"
+        );
     }
 
     /// `max_advance_booking` (days): a booking a year out blocks a slot nobody will honour.
     #[test]
     fn create_refuses_a_booking_beyond_the_maximum_advance() {
-        let inp = input(item("2026-12-31T11:00:00Z", 30, "s1"), Some(lead_time(0, 90)));
+        let inp = input(
+            item("2026-12-31T11:00:00Z", 30, "s1"),
+            Some(lead_time(0, 90)),
+        );
         let out = create_appointment_pure(inp).unwrap();
         assert_eq!(domain_code(&out).as_deref(), Some("appointments.too_far"));
     }
 
     #[test]
     fn create_accepts_a_booking_inside_the_maximum_advance() {
-        let inp = input(item("2026-08-15T11:00:00Z", 30, "s1"), Some(lead_time(0, 90)));
+        let inp = input(
+            item("2026-08-15T11:00:00Z", 30, "s1"),
+            Some(lead_time(0, 90)),
+        );
         assert_eq!(domain_code(&create_appointment_pure(inp).unwrap()), None);
     }
 
@@ -2809,14 +3184,24 @@ mod tests {
     /// zero must not mean "nothing can ever be booked".
     #[test]
     fn a_zero_lead_time_disables_the_limit() {
-        let inp = input(item("2026-07-31T10:01:00Z", 30, "s1"), Some(lead_time(0, 0)));
+        let inp = input(
+            item("2026-07-31T10:01:00Z", 30, "s1"),
+            Some(lead_time(0, 0)),
+        );
         assert_eq!(domain_code(&create_appointment_pure(inp).unwrap()), None);
         // appointments#78: the FAR side of the same zero. `check` used to call this same instant
         // `too_far` while `create` accepted it — the read and the write must read the setting
         // with one meaning, and here the meaning is "no cap".
-        let far = input(item("2027-03-31T11:00:00Z", 30, "s1"), Some(lead_time(0, 0)));
+        let far = input(
+            item("2027-03-31T11:00:00Z", 30, "s1"),
+            Some(lead_time(0, 0)),
+        );
         let out = create_appointment_pure(far).unwrap();
-        assert_eq!(domain_code(&out), None, "a zero max-advance cap must not refuse far bookings");
+        assert_eq!(
+            domain_code(&out),
+            None,
+            "a zero max-advance cap must not refuse far bookings"
+        );
         assert!(out.error.is_none(), "{:?}", out.error);
     }
 
@@ -2835,7 +3220,9 @@ mod tests {
             { "id": "b1", "title": "Festivo local", "staff_id": null, "all_day": 1,
               "start_datetime": "2026-07-31T00:00:00Z", "end_datetime": "2026-08-01T00:00:00Z" }
         ]));
-        let out = create_appointment_pure(input(item("2026-07-31T11:00:00Z", 30, "s1"), Some(reads))).unwrap();
+        let out =
+            create_appointment_pure(input(item("2026-07-31T11:00:00Z", 30, "s1"), Some(reads)))
+                .unwrap();
         assert_eq!(domain_code(&out).as_deref(), Some("appointments.blocked"));
         assert!(out.operations.is_empty());
     }
@@ -2847,7 +3234,9 @@ mod tests {
             { "id": "b2", "title": "Formación", "staff_id": "s1", "all_day": 0,
               "start_datetime": "2026-07-31T10:30:00Z", "end_datetime": "2026-07-31T12:00:00Z" }
         ]));
-        let out = create_appointment_pure(input(item("2026-07-31T11:00:00Z", 30, "s1"), Some(reads))).unwrap();
+        let out =
+            create_appointment_pure(input(item("2026-07-31T11:00:00Z", 30, "s1"), Some(reads)))
+                .unwrap();
         assert_eq!(domain_code(&out).as_deref(), Some("appointments.blocked"));
     }
 
@@ -2859,7 +3248,13 @@ mod tests {
               "start_datetime": "2026-07-31T10:30:00Z", "end_datetime": "2026-07-31T12:00:00Z" }
         ]));
         assert_eq!(
-            domain_code(&create_appointment_pure(input(item("2026-07-31T11:00:00Z", 30, "s1"), Some(reads))).unwrap()),
+            domain_code(
+                &create_appointment_pure(input(
+                    item("2026-07-31T11:00:00Z", 30, "s1"),
+                    Some(reads)
+                ))
+                .unwrap()
+            ),
             None
         );
     }
@@ -2872,7 +3267,13 @@ mod tests {
               "start_datetime": "2026-07-31T10:00:00Z", "end_datetime": "2026-07-31T11:00:00Z" }
         ]));
         assert_eq!(
-            domain_code(&create_appointment_pure(input(item("2026-07-31T11:00:00Z", 30, "s1"), Some(reads))).unwrap()),
+            domain_code(
+                &create_appointment_pure(input(
+                    item("2026-07-31T11:00:00Z", 30, "s1"),
+                    Some(reads)
+                ))
+                .unwrap()
+            ),
             None
         );
     }
@@ -2901,7 +3302,13 @@ mod tests {
               "start_datetime": "2026-07-31T10:30:00Z", "end_datetime": "2026-07-31T12:00:00Z" }
         ]));
         assert_eq!(
-            domain_code(&create_appointment_pure(input(item("2026-07-31T11:00:00Z", 30, "s1"), Some(reads))).unwrap()),
+            domain_code(
+                &create_appointment_pure(input(
+                    item("2026-07-31T11:00:00Z", 30, "s1"),
+                    Some(reads)
+                ))
+                .unwrap()
+            ),
             None
         );
     }
@@ -2927,13 +3334,14 @@ mod tests {
     /// test that plants a block or a conflicting appointment plants it where the command looks.
     fn batch_input(payload: Value, reads: Option<Value>) -> Value {
         let mut inp = input(payload, reads);
-        inp["context"]["new_ids"] =
-            json!((1..=60).map(|n| format!("apt-{n}")).collect::<Vec<_>>());
+        inp["context"]["new_ids"] = json!((1..=60).map(|n| format!("apt-{n}")).collect::<Vec<_>>());
         let slot_reads = inp["context"]["reads"].as_object_mut().unwrap();
         let blocks = slot_reads
             .remove("appointments.blocked_times.overlapping")
             .unwrap_or_else(|| json!([]));
-        slot_reads.entry("appointments.blocked_times.upcoming").or_insert(blocks);
+        slot_reads
+            .entry("appointments.blocked_times.upcoming")
+            .or_insert(blocks);
         let booked = slot_reads
             .remove("appointments.appointments.conflicting")
             .unwrap_or_else(|| json!([]));
@@ -2965,12 +3373,18 @@ mod tests {
 
     #[test]
     fn bulk_create_takes_the_snapshot_from_the_catalogue_reads_not_the_payload() {
-        let out =
-            bulk_create_pure(batch_input(batch(json!([slot("2026-08-03T11:00:00Z")])), None)).unwrap();
+        let out = bulk_create_pure(batch_input(
+            batch(json!([slot("2026-08-03T11:00:00Z")])),
+            None,
+        ))
+        .unwrap();
         assert!(out.error.is_none(), "{:?}", out.error);
         let insert = insert_op(&out);
         assert_eq!(insert.params.get("customer_id"), Some(&json!("c1")));
-        assert_eq!(insert.params.get("customer_name"), Some(&json!("Ada Lovelace")));
+        assert_eq!(
+            insert.params.get("customer_name"),
+            Some(&json!("Ada Lovelace"))
+        );
         assert_eq!(insert.params.get("service_name"), Some(&json!("Corte")));
         assert_eq!(insert.params.get("service_price"), Some(&json!(2000)));
         assert_eq!(insert.params.get("staff_name"), Some(&json!("Bea Pro")));
@@ -3008,7 +3422,10 @@ mod tests {
             Some(json!({ "services.services.get": [] })),
         ))
         .unwrap();
-        assert_eq!(domain_code(&out).as_deref(), Some("appointments.service_not_found"));
+        assert_eq!(
+            domain_code(&out).as_deref(),
+            Some("appointments.service_not_found")
+        );
         assert!(out.operations.is_empty(), "nothing is written on a refusal");
     }
 
@@ -3017,10 +3434,15 @@ mod tests {
         let reads = json!({ "staff.services.eligible_for_service": [
             { "staff_id": "other", "full_name": "Otra", "is_primary": 1 }
         ]});
-        let out =
-            bulk_create_pure(batch_input(batch(json!([slot("2026-08-03T11:00:00Z")])), Some(reads)))
-                .unwrap();
-        assert_eq!(domain_code(&out).as_deref(), Some("appointments.staff_not_eligible"));
+        let out = bulk_create_pure(batch_input(
+            batch(json!([slot("2026-08-03T11:00:00Z")])),
+            Some(reads),
+        ))
+        .unwrap();
+        assert_eq!(
+            domain_code(&out).as_deref(),
+            Some("appointments.staff_not_eligible")
+        );
     }
 
     /// The batch reads the booking policy like `create` does; the browser cannot hand it an
@@ -3033,7 +3455,10 @@ mod tests {
             .unwrap()
             .remove("appointments.settings.get");
         let out = bulk_create_pure(inp).unwrap();
-        assert_eq!(domain_code(&out).as_deref(), Some("appointments.settings_unavailable"));
+        assert_eq!(
+            domain_code(&out).as_deref(),
+            Some("appointments.settings_unavailable")
+        );
     }
 
     // ── recurring.materialize ──
@@ -3086,6 +3511,248 @@ mod tests {
         })
     }
 
+    // ── appointments#12 · the BUSINESS clock inside the handler ─────────────────────────────
+    //
+    // The core resolves the business timezone (`settings::timezone_of`, hub#731) and hands it to
+    // every command as `context.timezone` (hub#1022). Two things in this handler were reasoning
+    // on the WRONG clock until that door existed, and both are user-visible.
+
+    /// The appointment number rolls over with the SALON's day, not with UTC's.
+    ///
+    /// `day_key()` used to read the wall part of `context.now`, which arrives as UTC. In Madrid
+    /// that means the counter starts a new series at 02:00 in summer: the 01:30 appointment of a
+    /// late night is numbered as the next day's first, and two appointments of the same working
+    /// day carry different date stamps. Every POS in the market cuts its own numbering on the
+    /// business day — it is the same rule the cash register closes on.
+    #[test]
+    fn the_appointment_number_rolls_over_with_the_business_day_not_utc() {
+        // 2026-07-31T22:30Z is already 2026-08-01 at 00:30 in Madrid (CEST).
+        let mut inp = input(item("2026-08-01T09:00:00+02:00", 30, "s1"), None);
+        inp["context"]["now"] = json!("2026-07-31T22:30:00Z");
+        let out = create_appointment_pure(inp).unwrap();
+        let bump = out
+            .operations
+            .iter()
+            .find(|op| op.command.ends_with("_bump_counter"))
+            .expect("counter bump");
+        assert_eq!(
+            bump.params.get("day").and_then(|v| v.as_str()),
+            Some("20260801"),
+            "the counter rolled on the UTC midnight, not the salon's"
+        );
+    }
+
+    /// And the other way round: still the same business day though UTC already turned.
+    #[test]
+    fn the_appointment_number_keeps_the_business_day_when_utc_has_already_turned() {
+        // 2026-01-15T23:30Z is 00:30 of the 16th in Madrid (CET) — a different day BOTH ways
+        // depending on which clock you ask, which is what makes it worth pinning.
+        let mut inp = input(item("2026-01-16T09:00:00+01:00", 30, "s1"), None);
+        inp["context"]["now"] = json!("2026-01-15T23:30:00Z");
+        let out = create_appointment_pure(inp).unwrap();
+        let bump = out
+            .operations
+            .iter()
+            .find(|op| op.command.ends_with("_bump_counter"))
+            .expect("counter bump");
+        assert_eq!(
+            bump.params.get("day").and_then(|v| v.as_str()),
+            Some("20260116")
+        );
+    }
+
+    /// With no timezone in the context the handler degrades to UTC, exactly like the runtime's
+    /// own `timezone_name()` — never to a guess.
+    #[test]
+    fn without_a_timezone_in_the_context_the_business_day_is_utc() {
+        let mut inp = input(item("2026-08-01T09:00:00+02:00", 30, "s1"), None);
+        inp["context"]["now"] = json!("2026-07-31T22:30:00Z");
+        inp["context"]["timezone"] = json!("");
+        let out = create_appointment_pure(inp).unwrap();
+        let bump = out
+            .operations
+            .iter()
+            .find(|op| op.command.ends_with("_bump_counter"))
+            .expect("counter bump");
+        assert_eq!(
+            bump.params.get("day").and_then(|v| v.as_str()),
+            Some("20260731")
+        );
+    }
+
+    /// A recurring template stores a WALL time (`HH:MM`). Materializing it wrote that time NAIVE,
+    /// with no offset at all — a text the database cannot order against the rows that do carry
+    /// one, and a time nobody could place on a clock.
+    ///
+    /// It is written on the salon's clock now, with the offset of THAT day.
+    #[test]
+    fn materialize_writes_the_occurrence_on_the_business_clock_with_its_offset() {
+        let out = materialize_recurring_pure(series_input(
+            series_payload(),
+            json!([template(json!({}))]),
+            None,
+        ))
+        .unwrap();
+        let starts: Vec<_> = insert_ops(&out)
+            .iter()
+            .filter_map(|op| op.params.get("start_datetime").and_then(|v| v.as_str()))
+            .map(|s| s.to_string())
+            .collect();
+        assert_eq!(
+            starts,
+            vec!["2026-08-03T11:00:00+02:00", "2026-08-10T11:00:00+02:00"],
+            "a naive occurrence has no place on any clock"
+        );
+    }
+
+    /// 🔴 The rule Google Calendar states outright for recurring events: the series keeps its WALL
+    /// TIME across a DST change. An 11:00 appointment is at 11:00 in March and at 11:00 in April;
+    /// the INSTANT moves by an hour, which is exactly the point.
+    ///
+    /// Adding 7 × 24 h — which is what expanding without a timezone amounts to — would drag the
+    /// whole series an hour off twice a year, and the salon would find its Monday client arriving
+    /// at 10:00 with no explanation.
+    #[test]
+    fn a_weekly_series_keeps_its_wall_time_across_the_spring_dst_change() {
+        // 2026-03-29 is the spring change in Madrid (CET +1 → CEST +2). The series runs on
+        // Mondays 11:00 either side of it.
+        let mut inp = series_input(
+            series_payload(),
+            json!([template(json!({
+                "frequency": "weekly",
+                "time": "11:00",
+                "start_date": "2026-03-23",
+                "max_occurrences": 3
+            }))]),
+            None,
+        );
+        inp["context"]["now"] = json!("2026-03-20T09:00:00Z");
+        let out = materialize_recurring_pure(inp).unwrap();
+        let starts: Vec<_> = insert_ops(&out)
+            .iter()
+            .filter_map(|op| op.params.get("start_datetime").and_then(|v| v.as_str()))
+            .map(|s| s.to_string())
+            .collect();
+        assert_eq!(
+            starts,
+            vec![
+                "2026-03-23T11:00:00+01:00", // winter: 10:00Z
+                "2026-03-30T11:00:00+02:00", // summer: 09:00Z — the WALL time did not move
+                "2026-04-06T11:00:00+02:00",
+            ]
+        );
+    }
+
+    /// Same across the autumn change, the other way.
+    #[test]
+    fn a_weekly_series_keeps_its_wall_time_across_the_autumn_dst_change() {
+        let mut inp = series_input(
+            series_payload(),
+            json!([template(json!({
+                "frequency": "weekly",
+                "time": "11:00",
+                "start_date": "2026-10-19",
+                "max_occurrences": 2
+            }))]),
+            None,
+        );
+        inp["context"]["now"] = json!("2026-10-15T09:00:00Z");
+        let out = materialize_recurring_pure(inp).unwrap();
+        let starts: Vec<_> = insert_ops(&out)
+            .iter()
+            .filter_map(|op| op.params.get("start_datetime").and_then(|v| v.as_str()))
+            .map(|s| s.to_string())
+            .collect();
+        assert_eq!(
+            starts,
+            vec!["2026-10-19T11:00:00+02:00", "2026-10-26T11:00:00+01:00"]
+        );
+    }
+
+    /// The one occurrence a year whose wall time DOES NOT EXIST (a series at 02:30 crossing the
+    /// spring jump) is moved forward to the instant the clock jumps into — it is not skipped and
+    /// it does not abort the series. Dropping an occurrence in silence loses a booking nobody will
+    /// notice is missing until the client is at the door.
+    #[test]
+    fn an_occurrence_inside_the_spring_gap_lands_on_the_jump_instead_of_vanishing() {
+        let mut inp = series_input(
+            series_payload(),
+            json!([template(json!({
+                "frequency": "daily",
+                "time": "02:30",
+                "start_date": "2026-03-29",
+                "max_occurrences": 2
+            }))]),
+            None,
+        );
+        inp["context"]["now"] = json!("2026-03-27T09:00:00Z");
+        let out = materialize_recurring_pure(inp).unwrap();
+        let starts: Vec<_> = insert_ops(&out)
+            .iter()
+            .filter_map(|op| op.params.get("start_datetime").and_then(|v| v.as_str()))
+            .map(|s| s.to_string())
+            .collect();
+        assert_eq!(
+            starts,
+            vec![
+                "2026-03-29T03:00:00+02:00", // 02:30 never happens: the clock jumps 02:00 → 03:00
+                "2026-03-30T02:30:00+02:00",
+            ],
+            "an occurrence must never disappear without a trace"
+        );
+    }
+
+    /// An AMBIGUOUS occurrence (the hour that happens twice in autumn) resolves to the FIRST
+    /// pass, deterministically — the same rule the core's own scheduler applies
+    /// (`LocalResult::Ambiguous(earliest, _)`), so a `cron` trigger and a series never disagree.
+    #[test]
+    fn an_ambiguous_occurrence_resolves_to_the_first_pass() {
+        let mut inp = series_input(
+            series_payload(),
+            json!([template(json!({
+                "frequency": "daily",
+                "time": "02:30",
+                "start_date": "2026-10-25",
+                "max_occurrences": 1
+            }))]),
+            None,
+        );
+        inp["context"]["now"] = json!("2026-10-23T09:00:00Z");
+        let out = materialize_recurring_pure(inp).unwrap();
+        let starts: Vec<_> = insert_ops(&out)
+            .iter()
+            .filter_map(|op| op.params.get("start_datetime").and_then(|v| v.as_str()))
+            .map(|s| s.to_string())
+            .collect();
+        assert_eq!(starts, vec!["2026-10-25T02:30:00+02:00"]);
+    }
+
+    /// This module is not Spain-only: a hub in a zone with a different rule gets the same
+    /// treatment, and one WITHOUT daylight saving gets a constant offset.
+    #[test]
+    fn the_business_clock_is_whatever_the_hub_declared_not_ours() {
+        for (tz, expected) in [
+            ("America/New_York", "2026-08-03T11:00:00-04:00"),
+            ("America/Phoenix", "2026-08-03T11:00:00-07:00"),
+            ("Pacific/Auckland", "2026-08-03T11:00:00+12:00"),
+        ] {
+            let mut inp = series_input(
+                series_payload(),
+                json!([template(json!({ "max_occurrences": 1 }))]),
+                None,
+            );
+            inp["context"]["timezone"] = json!(tz);
+            let out = materialize_recurring_pure(inp).unwrap();
+            let start = insert_ops(&out)[0]
+                .params
+                .get("start_datetime")
+                .and_then(|v| v.as_str())
+                .unwrap()
+                .to_string();
+            assert_eq!(start, expected, "{tz}");
+        }
+    }
+
     #[test]
     fn materialize_takes_the_template_from_the_read_not_the_payload() {
         let out = materialize_recurring_pure(series_input(
@@ -3101,7 +3768,11 @@ mod tests {
             .iter()
             .filter_map(|op| op.params.get("start_datetime").and_then(|v| v.as_str()))
             .collect();
-        assert_eq!(starts, vec!["2026-08-03T11:00:00", "2026-08-10T11:00:00"]);
+        // appointments#12: on the SALON clock with its offset, never naive.
+        assert_eq!(
+            starts,
+            vec!["2026-08-03T11:00:00+02:00", "2026-08-10T11:00:00+02:00"]
+        );
     }
 
     /// Every materialized occurrence carries the snapshot resolved against the catalogue — not the
@@ -3113,11 +3784,14 @@ mod tests {
             "service_name": "Stale service",
             "staff_name": "Stale pro"
         }));
-        let out =
-            materialize_recurring_pure(series_input(series_payload(), json!([stale]), None)).unwrap();
+        let out = materialize_recurring_pure(series_input(series_payload(), json!([stale]), None))
+            .unwrap();
         assert!(out.error.is_none(), "{:?}", out.error);
         let insert = insert_op(&out);
-        assert_eq!(insert.params.get("customer_name"), Some(&json!("Ada Lovelace")));
+        assert_eq!(
+            insert.params.get("customer_name"),
+            Some(&json!("Ada Lovelace"))
+        );
         assert_eq!(insert.params.get("service_name"), Some(&json!("Corte")));
         assert_eq!(insert.params.get("service_price"), Some(&json!(2000)));
         assert_eq!(insert.params.get("staff_name"), Some(&json!("Bea Pro")));
@@ -3127,7 +3801,10 @@ mod tests {
     fn materialize_refuses_a_template_the_hub_does_not_have() {
         let out =
             materialize_recurring_pure(series_input(series_payload(), json!([]), None)).unwrap();
-        assert_eq!(domain_code(&out).as_deref(), Some("appointments.recurring_not_found"));
+        assert_eq!(
+            domain_code(&out).as_deref(),
+            Some("appointments.recurring_not_found")
+        );
         assert!(out.operations.is_empty());
     }
 
@@ -3139,7 +3816,10 @@ mod tests {
             None,
         ))
         .unwrap();
-        assert_eq!(domain_code(&out).as_deref(), Some("appointments.recurring_inactive"));
+        assert_eq!(
+            domain_code(&out).as_deref(),
+            Some("appointments.recurring_inactive")
+        );
     }
 
     /// The ids travel in the payload because that is the only place `reads.params` can look, so
@@ -3158,7 +3838,10 @@ mod tests {
             ]})),
         ))
         .unwrap();
-        assert_eq!(domain_code(&out).as_deref(), Some("appointments.recurring_mismatch"));
+        assert_eq!(
+            domain_code(&out).as_deref(),
+            Some("appointments.recurring_mismatch")
+        );
         assert!(out.operations.is_empty());
     }
 
@@ -3170,7 +3853,10 @@ mod tests {
             Some(json!({ "services.services.get": [] })),
         ))
         .unwrap();
-        assert_eq!(domain_code(&out).as_deref(), Some("appointments.service_not_found"));
+        assert_eq!(
+            domain_code(&out).as_deref(),
+            Some("appointments.service_not_found")
+        );
     }
 
     // ── appointments#10 · the batch and the series apply the SAME availability rules as `create` ──
@@ -3185,9 +3871,11 @@ mod tests {
             { "id": "b1", "title": "Festivo", "staff_id": null, "all_day": 1,
               "start_datetime": "2026-08-03T00:00:00Z", "end_datetime": "2026-08-04T00:00:00Z" }
         ]));
-        let out =
-            bulk_create_pure(batch_input(batch(json!([slot("2026-08-03T11:00:00Z")])), Some(reads)))
-                .unwrap();
+        let out = bulk_create_pure(batch_input(
+            batch(json!([slot("2026-08-03T11:00:00Z")])),
+            Some(reads),
+        ))
+        .unwrap();
         assert_eq!(domain_code(&out).as_deref(), Some("appointments.blocked"));
         assert!(out.operations.is_empty());
     }
@@ -3229,9 +3917,11 @@ mod tests {
             { "id": "a9", "appointment_number": "APT-1", "staff_id": "s1", "status": "confirmed",
               "start_datetime": "2026-08-03T11:15:00Z", "end_datetime": "2026-08-03T11:45:00Z" }
         ]});
-        let out =
-            bulk_create_pure(batch_input(batch(json!([slot("2026-08-03T11:00:00Z")])), Some(reads)))
-                .expect("an overlap is a refusal, not a command fault");
+        let out = bulk_create_pure(batch_input(
+            batch(json!([slot("2026-08-03T11:00:00Z")])),
+            Some(reads),
+        ))
+        .expect("an overlap is a refusal, not a command fault");
         assert_eq!(
             domain_code(&out).as_deref(),
             Some("appointments.overlapping_appointment")
@@ -3256,9 +3946,17 @@ mod tests {
         assert!(out.error.is_none(), "{:?}", out.error);
         let starts: Vec<_> = insert_ops(&out)
             .iter()
-            .filter_map(|op| op.params.get("start_datetime").and_then(|v| v.as_str().map(String::from)))
+            .filter_map(|op| {
+                op.params
+                    .get("start_datetime")
+                    .and_then(|v| v.as_str().map(String::from))
+            })
             .collect();
-        assert_eq!(starts, vec!["2026-08-10T11:00:00"], "the blocked 03/08 is skipped");
+        assert_eq!(
+            starts,
+            vec!["2026-08-10T11:00:00+02:00"],
+            "the blocked 03/08 is skipped"
+        );
     }
 
     // ── appointments#10 · `reschedule` stops trusting the caller ──
@@ -3293,7 +3991,9 @@ mod tests {
         let blocks = planted
             .remove("appointments.blocked_times.overlapping")
             .unwrap_or_else(|| json!([]));
-        planted.entry("appointments.blocked_times.upcoming").or_insert(blocks);
+        planted
+            .entry("appointments.blocked_times.upcoming")
+            .or_insert(blocks);
         inp
     }
 
@@ -3324,8 +4024,14 @@ mod tests {
         .unwrap();
         assert!(out.error.is_none(), "{:?}", out.error);
         let p = op_params(&out, "_reschedule_row");
-        assert_eq!(p.get("start_datetime"), Some(&json!("2026-07-31T15:00:00+00:00")));
-        assert_eq!(p.get("end_datetime"), Some(&json!("2026-07-31T15:45:00+00:00")));
+        assert_eq!(
+            p.get("start_datetime"),
+            Some(&json!("2026-07-31T15:00:00+00:00"))
+        );
+        assert_eq!(
+            p.get("end_datetime"),
+            Some(&json!("2026-07-31T15:45:00+00:00"))
+        );
         assert_eq!(p.get("duration_minutes"), Some(&json!(45)));
     }
 
@@ -3342,7 +4048,10 @@ mod tests {
         assert!(out.error.is_none(), "{:?}", out.error);
         let p = op_params(&out, "_reschedule_row");
         assert_eq!(p.get("duration_minutes"), Some(&json!(90)));
-        assert_eq!(p.get("end_datetime"), Some(&json!("2026-07-31T16:30:00+00:00")));
+        assert_eq!(
+            p.get("end_datetime"),
+            Some(&json!("2026-07-31T16:30:00+00:00"))
+        );
     }
 
     #[test]
@@ -3394,7 +4103,10 @@ mod tests {
         let mut inp = input(move_to("2026-07-31T15:00:00Z", Some(30)), None);
         inp["context"]["reads"]["appointments.appointments.get"] = json!([]);
         let out = reschedule_appointment_pure(inp).unwrap();
-        assert_eq!(domain_code(&out).as_deref(), Some("appointments.cannot_reschedule"));
+        assert_eq!(
+            domain_code(&out).as_deref(),
+            Some("appointments.cannot_reschedule")
+        );
     }
 
     #[test]
@@ -3409,7 +4121,10 @@ mod tests {
             .unwrap()
             .remove("appointments.settings.get");
         let out = reschedule_appointment_pure(inp).unwrap();
-        assert_eq!(domain_code(&out).as_deref(), Some("appointments.settings_unavailable"));
+        assert_eq!(
+            domain_code(&out).as_deref(),
+            Some("appointments.settings_unavailable")
+        );
     }
 
     /// The day read is not filtered by professional (there is no `staff_id` in this payload to
@@ -3632,7 +4347,10 @@ mod tests {
             .unwrap()
             .remove("appointments.recurring.occurrences");
         let out = materialize_recurring_pure(inp).unwrap();
-        assert_eq!(domain_code(&out).as_deref(), Some("appointments.recurring_unavailable"));
+        assert_eq!(
+            domain_code(&out).as_deref(),
+            Some("appointments.recurring_unavailable")
+        );
     }
 
     // ── appointments#38 · a request approved on WhatsApp becomes a REAL appointment ──
@@ -3668,7 +4386,8 @@ mod tests {
 
     #[test]
     fn an_approved_request_books_the_appointment_and_answers_fulfilled() {
-        let out = book_from_request_pure(input(request_payload("2026-07-31T11:00:00Z"), None)).unwrap();
+        let out =
+            book_from_request_pure(input(request_payload("2026-07-31T11:00:00Z"), None)).unwrap();
         assert!(out.error.is_none(), "{:?}", out.error);
         let insert = insert_op(&out);
         assert_eq!(insert.params.get("customer_id"), Some(&json!("c1")));
@@ -3688,7 +4407,8 @@ mod tests {
     /// The listener is not a second door into the agenda: what a booking normally emits, it emits.
     #[test]
     fn a_booking_made_from_a_request_still_announces_the_appointment() {
-        let out = book_from_request_pure(input(request_payload("2026-07-31T11:00:00Z"), None)).unwrap();
+        let out =
+            book_from_request_pure(input(request_payload("2026-07-31T11:00:00Z"), None)).unwrap();
         assert!(
             event(&out, "appointments.appointment.created").is_some(),
             "a listener that books in silence leaves reminders, KPIs and every other subscriber \
@@ -3756,7 +4476,10 @@ mod tests {
     #[test]
     fn an_unreadable_catalogue_answers_failed_instead_of_dead_lettering() {
         let mut inp = input(request_payload("2026-07-31T11:00:00Z"), None);
-        inp["context"]["reads"].as_object_mut().unwrap().remove("customers.get");
+        inp["context"]["reads"]
+            .as_object_mut()
+            .unwrap()
+            .remove("customers.get");
         let out = book_from_request_pure(inp).unwrap();
         assert!(out.operations.is_empty());
         let answer = event(&out, "appointments.booking_request.failed").expect("failure answer");

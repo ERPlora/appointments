@@ -6,6 +6,7 @@ import '@erplora/outfitkit/ok-inline-feedback';
 import '@erplora/outfitkit/ok-timeline';
 import esLocale from '../../../locales/es.json';
 import enLocale from '../../../locales/en.json';
+import { businessTimezone } from '../../lib/business-time';
 
 const CATALOG: Record<string, unknown> = { es: esLocale, en: enLocale };
 
@@ -95,7 +96,15 @@ function formatWhen(iso: string, locale: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
   try {
-    return new Intl.DateTimeFormat(locale || undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(d);
+    // appointments#12: the BUSINESS clock, never the device's. The stylist opens this sheet on her
+    // own phone as often as on the salon tablet; without `timeZone` a 10:00 visit is filed at
+    // whatever hour her phone happens to be in, and the last formula gets attached to the wrong
+    // visit. The zone comes from the core (`erplora.timezone`), the single authority.
+    return new Intl.DateTimeFormat(locale || undefined, {
+      dateStyle: 'medium',
+      timeStyle: 'short',
+      timeZone: businessTimezone(),
+    }).format(d);
   } catch {
     return iso;
   }

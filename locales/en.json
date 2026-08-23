@@ -79,7 +79,8 @@
     "errCreateCustomer": "Could not create the customer",
     "holdCountdown": "Slot held for you · {mins}:{secs}",
     "holdExpired": "The hold on that slot lapsed, so it is back on sale. Pick a time again.",
-    "holdFailed": "That slot could not be set aside; someone else may book it while you decide."
+    "holdFailed": "That slot could not be set aside; someone else may book it while you decide.",
+    "deviceZoneNotice": "This device is on a different time zone. The agenda always shows the business clock:"
   },
   "setup": {
     "title": "Your working hours",
@@ -109,6 +110,7 @@
     "appointments.request_not_bound": "The request was approved without choosing a customer, a service, a professional and a time, so there was nothing to book. Open it again, pick them, and approve.",
     "appointments.overlapping_appointment": "That professional already has an appointment in that slot. Pick another time or another professional.",
     "appointments.booking_refused": "The appointment could not be booked from that request.",
-    "appointments.slot_on_hold": "That slot is being held for a pending request. It frees itself in a few minutes, or pick another time."
+    "appointments.slot_on_hold": "That slot is being held for a pending request. It frees itself in a few minutes, or pick another time.",
+    "appointments.invalid_local_time": "That time does not exist on the business clock: the daylight saving change skips it. Pick another one."
   }
 }

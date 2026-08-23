@@ -26,6 +26,11 @@ const VISITS = [
     staff_id: 'st-bea', staff_name: 'Bea', notes: '', internal_notes: '', converted_sale_id: null },
 ];
 
+// appointments#12 — the visit history is read on the BUSINESS clock too. Pinned on purpose to a
+// device that is NOT the salon: an `Intl.DateTimeFormat` without `timeZone` renders the tablet's
+// reading, and a visit at 10:00 in the salon would be filed at 20:00 on the stylist's own phone.
+process.env.TZ = 'Pacific/Auckland';
+
 const consultas: { name: string; params?: Record<string, unknown> }[] = [];
 let respuesta: () => Promise<unknown> = async () => VISITS;
 
@@ -34,6 +39,7 @@ beforeEach(() => {
   respuesta = async () => VISITS;
   document.body.innerHTML = '';
   (globalThis as Record<string, unknown>).erplora = {
+    timezone: 'Europe/Madrid',
     query: async (name: string, params?: Record<string, unknown>) => {
       consultas.push({ name, params });
       return respuesta();
@@ -129,5 +135,13 @@ describe('erp-appointments-customer-history (filler of customers.detail)', () =>
     const el = await mount();
     await open(el, 'cus-ada');
     expect(text(el)).toContain('ui.historyError');
+  });
+
+  it('files each visit at the hour of the SALON, not the hour of the device', async () => {
+    // `2026-08-10T08:00:00Z` is 10:00 in Madrid and 20:00 in Auckland.
+    respuesta = async () => [{ ...VISITS[0], start_datetime: '2026-08-10T08:00:00Z' }];
+    const el = await mount();
+    await open(el, 'cus-ada');
+    expect(items(el)[0].time, 'the history is painted on the device clock').toContain('10:00');
   });
 });
