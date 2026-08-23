@@ -15,6 +15,16 @@ guest = ["dep:extism-pdk"]
 erplora-guest-sdk = { path = "../../../../hub/crates/guest-sdk" }
 extism-pdk = { version = "1", optional = true }
 serde = { version = "1", features = ["derive"] }
+# EL RELOJ DEL NEGOCIO (appointments#12). El core resuelve la zona (`settings::timezone_of`) y la
+# entrega como `context.timezone` (hub#1022), pero manda el NOMBRE IANA, no las reglas: convertir
+# hora de pared ↔ instante dentro del guest necesita la tabla. Es el MISMO crate que ya usa el
+# runtime (`crates/runtime/Cargo.toml`), así que el hub tiene una sola implementación de husos.
+# `chrono` sin `clock`: el guest no tiene reloj, el `now` lo aporta el host.
+# Cuesta ~900 KB de tabla, y se paga a propósito: la alternativa era un motor de reglas POSIX
+# propio de unos KB — o sea, nuestra propia implementación de husos horarios, que falla en
+# silencio dos veces al año.
+chrono = { version = "0.4", default-features = false, features = ["alloc"] }
+chrono-tz = { version = "0.10", default-features = false, features = ["std"] }
 serde_json = "1"
 
 [profile.release]
