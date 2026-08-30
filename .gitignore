@@ -3,3 +3,4 @@ node_modules/
 .DS_Store
 handler/target/
 build/
+tests/__pycache__/
