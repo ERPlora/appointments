@@ -5,6 +5,48 @@
       "label": "Appointments"
     }
   },
+  "settings": {
+    "title": "Appointments",
+    "fields": {
+      "default_duration": {
+        "label": "Default duration (minutes)"
+      },
+      "min_booking_notice": {
+        "label": "Minimum booking notice (minutes)"
+      },
+      "max_advance_booking": {
+        "label": "Book at most this far ahead (days)"
+      },
+      "allow_overlapping": {
+        "label": "Allow overlapping appointments"
+      },
+      "send_reminders": {
+        "label": "Send reminders"
+      },
+      "reminder_hours_before": {
+        "label": "Send the reminder this many hours before"
+      },
+      "allow_customer_cancellation": {
+        "label": "Let customers cancel their appointment"
+      },
+      "cancellation_notice_hours": {
+        "label": "Minimum cancellation notice (hours)"
+      },
+      "calendar_start_hour": {
+        "label": "Calendar starts at (hour)"
+      },
+      "calendar_end_hour": {
+        "label": "Calendar ends at (hour)"
+      },
+      "slot_interval": {
+        "label": "Slot interval (minutes)"
+      },
+      "hold_minutes": {
+        "label": "Hold a slot for (minutes)",
+        "description": "Minutes a slot stays set aside while somebody decides on a pending booking request. 0 switches holds off."
+      }
+    }
+  },
   "ui": {
     "title": "Appointments",
     "allStatuses": "All statuses",

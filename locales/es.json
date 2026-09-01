@@ -6,6 +6,48 @@
       "label": "Citas"
     }
   },
+  "settings": {
+    "title": "Citas",
+    "fields": {
+      "default_duration": {
+        "label": "Duración por defecto (minutos)"
+      },
+      "min_booking_notice": {
+        "label": "Antelación mínima para reservar (minutos)"
+      },
+      "max_advance_booking": {
+        "label": "Reservar como máximo con esta antelación (días)"
+      },
+      "allow_overlapping": {
+        "label": "Permitir citas solapadas"
+      },
+      "send_reminders": {
+        "label": "Enviar recordatorios"
+      },
+      "reminder_hours_before": {
+        "label": "Enviar el recordatorio con estas horas de antelación"
+      },
+      "allow_customer_cancellation": {
+        "label": "Permitir que el cliente cancele su cita"
+      },
+      "cancellation_notice_hours": {
+        "label": "Antelación mínima para cancelar (horas)"
+      },
+      "calendar_start_hour": {
+        "label": "El calendario empieza a las (hora)"
+      },
+      "calendar_end_hour": {
+        "label": "El calendario termina a las (hora)"
+      },
+      "slot_interval": {
+        "label": "Intervalo entre huecos (minutos)"
+      },
+      "hold_minutes": {
+        "label": "Apartar el hueco durante (minutos)",
+        "description": "Minutos que un hueco queda apartado mientras alguien decide sobre una solicitud de cita pendiente. 0 desactiva la reserva temporal."
+      }
+    }
+  },
   "ui": {
     "title": "Citas",
     "allStatuses": "Todos los estados",
