@@ -16,6 +16,8 @@
     "appointments.catalog_unavailable": {},
     "appointments.customer_cancellation_disabled": {},
     "appointments.customer_not_found": {},
+    "appointments.invalid_start": {},
+    "appointments.outside_schedule": {},
     "appointments.overlapping_appointment": {},
     "appointments.recurring_inactive": {},
     "appointments.recurring_mismatch": {},
@@ -207,6 +209,13 @@
       "sql": "queries/schedule_timeslots.sql",
       "ai": {
         "description": "Retrieves the available time slots for a given staff schedule."
+      }
+    },
+    "appointments.schedules.active_timeslots": {
+      "permission": "appointments.view_schedule",
+      "sql": "queries/schedule_active_timeslots.sql",
+      "ai": {
+        "description": "The hub's live business opening hours as weekday time ranges. The authoritative answer to when the business is open."
       }
     },
     "appointments.availability.slots": {
@@ -622,8 +631,12 @@
             "staff_id": "payload.staff_id"
           },
           "required": true
+        },
+        {
+          "query": "appointments.schedules.active_timeslots",
+          "required": true
         }
-      ]
+]
     },
     "appointments.appointments.bulk_delete": {
       "permission": "appointments.delete_appointment",
@@ -778,8 +791,12 @@
             "start_datetime": "payload.start_datetime"
           },
           "required": true
+        },
+        {
+          "query": "appointments.schedules.active_timeslots",
+          "required": true
         }
-      ]
+]
     },
     "appointments.appointments.delete": {
       "permission": "appointments.delete_appointment",
@@ -860,8 +877,12 @@
             "start_datetime": "payload.start_datetime"
           },
           "required": true
+        },
+        {
+          "query": "appointments.schedules.active_timeslots",
+          "required": true
         }
-      ]
+]
     },
     "appointments.appointments.start": {
       "permission": "appointments.change_appointment",
@@ -1026,8 +1047,12 @@
             "staff_id": "payload.staff_id"
           },
           "required": true
+        },
+        {
+          "query": "appointments.schedules.active_timeslots",
+          "required": true
         }
-      ]
+]
     },
     "appointments.recurring.update": {
       "permission": "appointments.change_appointment",

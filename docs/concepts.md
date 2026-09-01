@@ -80,6 +80,18 @@ When a slot is not free, you are told **why**:
 
 "No slots today" almost always means a schedule is missing, not that the day is full.
 
+These reasons are not only advice any more. `outside_schedule`, `blocked`, `too_soon`, `too_far`
+and `invalid_start` are **refused at the door**: whoever books — the screen, the assistant, a flow,
+`whatsapp_inbox`, the public API — gets the same answer, because the rule is checked where the
+appointment is written and not only where it is drawn (appointments#89). Opening hours are read on
+the **business clock**, so the two days a year the clock moves do not shift what counts as open.
+
+One deliberate exception: a hub that has **not configured its opening hours yet** can still book at
+any hour. «I have not set my schedule» must not mean «I cannot take bookings».
+
+Still advisory, and tracked in appointments#98: whether that particular **professional** works that
+hour. The business being open is what the door checks today.
+
 ## Blocked time with no professional blocks everybody
 
 Leaving the professional empty on a block means it applies to the **whole hub** — that is how a
@@ -198,3 +210,35 @@ timezone engine, which fails silently twice a year.
 - Datetimes are **ISO 8601 with offset**. The per-professional timeline positions blocks by reading
   the time it is given, so it must be handed **business wall-clock time**, not a UTC instant.
 - Weekdays are **0 = Monday** through **6 = Sunday**.
+
+## A flag is `true`/`false` on the wire and `0`/`1` at rest
+
+One idea, one type at each boundary — and the two boundaries are deliberately different
+(appointments#79):
+
+- **At rest** a flag is an `INTEGER` 0/1. That is the hub's row contract (§2.5 / ADR-0007): the
+  portable DDL has no `BOOLEAN`, and money and counters share the same column type.
+- **On the wire** a flag is a JSON `boolean`, in **both** directions. The commands already declared
+  it (`allow_overlapping`, `all_day`, `is_default`, `booked_online`…), so the queries say the same
+  by projecting `col <> 0 AS col`.
+
+Both halves are free, because the runtime already speaks both (`hub/crates/db/src/lib.rs`): a JSON
+boolean is bound into an `INTEGER` column as 0/1 (hub#208 / ADR-0154 — no `CASE WHEN` needed), and
+a boolean SQL expression comes back as JSON `true`/`false`, while a plain `INTEGER` column always
+comes back as a number.
+
+**Why it matters, and it is not the screen.** The Settings tab is generated *from* the schema, so
+the form always sent booleans and never noticed the mismatch. What broke was everything that reads
+before it writes — the assistant, the flows, the public API, any configuration script: `settings.get`
+handed back `allow_overlapping: 0` and `settings.upsert` answered `422 … 0 is not of type "boolean"`.
+The most ordinary operation an API has (read a row, change one field, save it back) was impossible.
+
+Keeping `boolean` as the wire type — rather than relaxing the schemas to accept `0/1` as well — is
+what preserves that generated form: a property that is no longer plainly `boolean` stops being a
+toggle. Relaxing the schemas would also have kept the asymmetry instead of removing it.
+
+`tests/flag_round_trip.postgres.test.py` holds the line: it fails if any query hands back a flag as
+the bare `INTEGER` column, and it round-trips `settings` and `blocked_times` through a real Postgres
+built from these migrations. **`services` and `schedules` still expose entity flags as
+`"type": "integer", "enum": [0, 1]`** and should converge on this convention when they are next
+touched — the rule is the same one, not an appointments-only habit.

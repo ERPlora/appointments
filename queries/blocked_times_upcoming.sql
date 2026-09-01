@@ -13,7 +13,8 @@
 -- de los festivos, cierres y formaciones futuras de un negocio: decenas de filas, no miles.
 --
 -- `:now` lo inyecta el runtime (system_params) en TODA query, no solo en los commands.
-SELECT id, title, block_type, start_datetime, end_datetime, all_day, staff_id, reason
+-- appointments#79: `all_day` como BOOLEANO, igual que en sus gemelas `list`/`overlapping`.
+SELECT id, title, block_type, start_datetime, end_datetime, all_day <> 0 AS all_day, staff_id, reason
 FROM appointments_blocked_time
 WHERE hub_id = :hub_id
   AND is_deleted = 0

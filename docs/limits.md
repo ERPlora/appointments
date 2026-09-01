@@ -10,7 +10,7 @@
 | `appointments.cannot_cancel` | It is already finished, cancelled or a no-show | Nothing to cancel |
 | `appointments.cannot_mark_no_show` | Its state does not allow it | Check the state |
 | Slot not available — `overlap` | That professional is already booked | Pick another time or another professional |
-| Slot not available — `outside_schedule` | You are not open then | Add or fix a schedule |
+| Slot not available — `outside_schedule` | You are not open then (checked on the business clock, and now refused by every door, not just the screen) | Add or fix a schedule — a hub with no schedule at all books at any hour |
 | Slot not available — `blocked` | Holiday, vacation, break or maintenance | Remove the block or book elsewhere |
 | Slot not available — `too_soon` / `too_far` | Breaks the minimum notice or the maximum advance | Adjust the booking or the settings |
 | Slot not available — `invalid_start` | The start is in the past or malformed | Pick a valid future time |

@@ -30,11 +30,15 @@ handler inside the runtime's transaction. The `*.postgres.test.py` batteries nex
 the SQL's own edges (untyped binds, the wall-clock window, `max_advance_booking = 0`) far more
 cheaply; this one proves the engine as the kernel runs it.
 
-What this file does NOT cover, and it is not an oversight: `outside_schedule` is ADVISORY today —
-it informs the screen, it does not close the door. `create`/`reschedule` do not refuse a booking
-outside business hours because crossing WALL-CLOCK opening hours with a UTC instant needs the
-business timezone in the handler (appointments#89, open). This battery asserts the engine's answer,
-which is what exists; the door's refusal belongs to that issue and gets its own test there.
+What this file covers, and what it deliberately leaves next door: here the ENGINE's answer — the
+`reason` the availability query computes for the screen. The DOOR's refusal (the handler turning
+that same reason into `appointments.outside_schedule` and rolling the command back) landed with
+appointments#89 and is pinned by the Rust cases in `handler/src/lib.rs`, DST included. Both must
+keep saying the same thing: a screen that greys out an hour the door would accept — or the other
+way round — is the bug this pair exists to make impossible.
+
+What is still ADVISORY: whether that particular PROFESSIONAL works that hour. The business being
+open is enforced; the person's own shift is appointments#98, blocked on `reads.params`.
 
 Usage: tests/availability.hub.test.py   (exit 0 = green)
   Needs a live runtime with `taxes`+`customers`+`services`+`staff`+`appointments` installed:

@@ -15,7 +15,10 @@
 -- de pared, así que compararlos NO necesita la zona horaria del negocio — por eso esta regla sí
 -- puede entrar mientras hub#1022 mantiene fuera de alcance el horario comercial y el turno de la
 -- profesional, que sí son hora de pared. erp_date = función-puente portable (ADR-0007 §4a).
-SELECT id, title, block_type, start_datetime, end_datetime, all_day, staff_id, reason
+-- appointments#79: `all_day` como BOOLEANO, igual que en `blocked_times.list` (una misma idea no
+-- puede tener dos tipos según la query que la devuelva). El handler lo lee con `as_bool`, que
+-- acepta booleano y número, así que la guarda de bloqueos no se entera del cambio.
+SELECT id, title, block_type, start_datetime, end_datetime, all_day <> 0 AS all_day, staff_id, reason
 FROM appointments_blocked_time
 WHERE hub_id = :hub_id
   AND is_deleted = 0

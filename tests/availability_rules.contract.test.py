@@ -26,11 +26,19 @@ instead of refusing — a guard whose input can go missing is a guard that OPENS
      between «the handler read the state» and «the row moves» only closes there.
   5. Every domain code these rules answer with is translated (ADR-0055).
 
-What is NOT here, and is not an oversight: `outside_schedule`. Business hours
-(`schedules.business_hours.list`) and the professional's shift (`staff.availability.for_member`)
-are WALL CLOCK, an appointment is a UTC instant, and crossing them needs the business timezone,
-which a module still cannot read — hub#1022. Guessing the offset would reject correct bookings
-twice a year, at the DST change. It is blocked, not forgotten.
+  6. Every writing command declares the hub's opening hours as a `required` read, so
+     `outside_schedule` is enforced at the DOOR and not merely reported by the screen
+     (appointments#89). This one used to be the section's famous absence: business hours are WALL
+     CLOCK, an appointment is an instant, and crossing them needs the business timezone, which a
+     module could not read. `context.timezone` (hub#1022) landed, so the rule moved from
+     `queries/availability_check.sql` — advisory — into the handler.
+
+What is NOT here, and is not an oversight: the PROFESSIONAL's own working hours. The business is
+open, but whether that particular person works that hour is a second rule, and its read
+(`staff.availability.for_member`) needs `:staff_id` plus a `:date_from`/`:date_to` range that
+`reads.params` cannot express — it binds literal `payload.<field>` values only, and `reschedule`
+does not even carry a `staff_id`. Tracked in appointments#98; it is blocked on the runtime, not
+forgotten.
 
 Usage: tests/availability_rules.contract.test.py   (exit 0 = green)
 """
@@ -70,7 +78,23 @@ DOMAIN_CODES = (
     "appointments.settings_unavailable",
     "appointments.availability_unavailable",
     "appointments.cannot_reschedule",
+    # appointments#89 — the opening-hours door.
+    "appointments.outside_schedule",
+    # appointments#79 — used to escape as a raw WASM error instead of a code.
+    "appointments.invalid_start",
 )
+
+# appointments#89: the four commands that put an appointment on the books. The opening-hours read
+# is the WIRE of that door — without it the handler has nothing to check against, so it is pinned
+# here as well as in the Rust tests. `required` matters as much as its presence: a read that may
+# quietly fail to resolve is a guard that opens.
+BOOKING_COMMANDS = (
+    "appointments.appointments.create",
+    "appointments.appointments.reschedule",
+    "appointments.appointments.bulk_create",
+    "appointments.recurring.materialize",
+)
+OPENING_HOURS_READ = "appointments.schedules.active_timeslots"
 
 failures: list[str] = []
 
@@ -206,9 +230,35 @@ def check_i18n() -> None:
                 )
 
 
+def check_opening_hours_read() -> None:
+    """appointments#89 — the door needs its hinge: the opening-hours read, declared and required."""
+    query = MANIFEST.get("queries", {}).get(OPENING_HOURS_READ)
+    if not isinstance(query, dict):
+        fail(f"queries.{OPENING_HOURS_READ}: not declared — the handler has nothing to read")
+    elif not (MODULE_DIR / str(query.get("sql"))).exists():
+        fail(f"queries.{OPENING_HOURS_READ}.sql: {query.get('sql')!r} is not in the package")
+    elif "list" in query:
+        fail(
+            f"queries.{OPENING_HOURS_READ}: is a paginated `list`; a handler read gets plain rows"
+        )
+    for command in BOOKING_COMMANDS:
+        read = reads_of(command).get(OPENING_HOURS_READ)
+        if read is None:
+            fail(
+                f"{command}: declares no read of {OPENING_HOURS_READ!r} — it can book outside the "
+                "business opening hours, which is the whole of appointments#89"
+            )
+        elif read.get("required") is not True:
+            fail(
+                f"{command}: the {OPENING_HOURS_READ!r} read is not `required: true` — a read that "
+                "may fail to resolve leaves the opening-hours gate open"
+            )
+
+
 def main() -> int:
     check_writers()
     check_reschedule()
+    check_opening_hours_read()
     check_i18n()
     if failures:
         print(f"FAIL ({len(failures)}):")
