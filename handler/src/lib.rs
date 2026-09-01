@@ -611,9 +611,9 @@ fn default_duration_of(settings: &Value) -> i64 {
 /// Lead time: how soon, and how far out, this hub accepts a booking.
 ///
 /// `min_booking_notice` (minutes) and `max_advance_booking` (days) are both DURATIONS measured
-/// from `now`, so they compare two UTC instants and need **no timezone** — which is why they can
-/// land while hub#1022 keeps the wall-clock rules (opening hours, the professional's shift) out
-/// of reach. `0` disables a limit: a hub that wants no minimum notice says so with a zero, and a
+/// from `now`, so they compare two UTC instants and need **no timezone** — unlike the wall-clock
+/// rules next door, which had to wait for `context.timezone` (hub#1022) and now live in
+/// [`schedule_refusal`]. `0` disables a limit: a hub that wants no minimum notice says so with a zero, and a
 /// zero must never mean "nothing can be booked".
 ///
 /// The boundary is inclusive: with a 60 minute notice, booking exactly 60 minutes ahead is valid.
@@ -690,6 +690,110 @@ fn blocked_refusal(input: &Value, staff_id: &str, start: &Dt, end: &Dt) -> Optio
     Some(DomainError::new(
         "appointments.blocked",
         &format!("That slot is blocked in the agenda ({title})."),
+    ))
+}
+
+/// An instant read on the BUSINESS wall clock: `(day_of_week, minute of the day)`.
+///
+/// `day_of_week` is 0 = Monday … 6 = Sunday, the module's convention everywhere (docs/concepts.md)
+/// and the one stored in `appointments_schedule_timeslot.day_of_week`.
+///
+/// This is the crossing the opening-hours rule needed and could not do before: the timeslots are
+/// wall clock (`HH:MM` on a weekday), an appointment is an instant, and only the business timezone
+/// relates the two. `chrono_tz` applies the real IANA rules, so the answer stays right on the two
+/// days a year when the offset moves — which is the whole reason this was not done by guessing.
+fn business_wall_parts(instant: &Dt, tz: chrono_tz::Tz) -> Option<(i64, i64)> {
+    use chrono::{Datelike, Timelike};
+    let local = chrono::DateTime::from_timestamp(instant.epoch_secs(), 0)?.with_timezone(&tz);
+    let dow = local.weekday().num_days_from_monday() as i64;
+    Some((dow, local.hour() as i64 * 60 + local.minute() as i64))
+}
+
+/// `HH:MM[:SS]` → minutes since midnight.
+fn wall_minutes(text: &str) -> Option<i64> {
+    let mut parts = text.trim().split(':');
+    let h: i64 = parts.next()?.parse().ok()?;
+    let m: i64 = parts.next()?.parse().ok()?;
+    if !(0..=24).contains(&h) || !(0..60).contains(&m) {
+        return None;
+    }
+    Some(h * 60 + m)
+}
+
+/// The business's opening hours, enforced (appointments#89).
+///
+/// `queries/availability_check.sql` has computed `outside_schedule` since the beginning, but a
+/// query only INFORMS the screen. Every other door — the assistant, a flow, `whatsapp_inbox`, the
+/// public API — could book at three in the morning. This is the same rule, where the decision is
+/// actually taken, reading `appointments.schedules.active_timeslots` as an AUTHORITATIVE read
+/// (ADR-0069) and never from the payload.
+///
+/// The semantics are deliberately the SQL's, so screen and door cannot disagree:
+///
+///   * the timeslots are the hub's, not the professional's — there is no `staff_id` join in the
+///     query either. Whether a given professional works that hour is a different rule, and it
+///     needs a read this module cannot express yet (appointments#98);
+///   * a hub with NO active timeslot has not configured its opening hours, and then every calendar
+///     hour counts. Refusing there would turn «I have not set my hours yet» into «I cannot take
+///     bookings», which is an outage, not a guard;
+///   * the appointment must fit WHOLE inside one timeslot of its weekday — `[start, end]`, both
+///     ends included, so a booking that runs past closing is out.
+///
+/// Missing read = refusal, never an open door: the manifest declares it `required`, and a guard
+/// that shrugs when its input is absent is a guard that opens (appointments#10).
+fn schedule_refusal(
+    input: &Value,
+    tz: chrono_tz::Tz,
+    start: &Dt,
+    end: &Dt,
+) -> Option<DomainError> {
+    let Some(rows) = read_rows(input, "appointments.schedules.active_timeslots") else {
+        return Some(DomainError::new(
+            "appointments.availability_unavailable",
+            "The business opening hours could not be read; the appointment was not booked.",
+        ));
+    };
+    // Not configured yet: every hour of the calendar is bookable (same as `availability_slots`).
+    if rows.is_empty() {
+        return None;
+    }
+
+    let (Some((dow, start_min)), Some((end_dow, end_min))) = (
+        business_wall_parts(start, tz),
+        business_wall_parts(end, tz),
+    ) else {
+        return Some(DomainError::new(
+            "appointments.availability_unavailable",
+            "The appointment's time could not be read on the business clock.",
+        ));
+    };
+    // An appointment that runs past midnight leaves its weekday, and no single timeslot can hold
+    // it. Treating it as outside is the honest answer, and it matches the SQL, which compares one
+    // `day_of_week` only.
+    let end_min = if end_dow == dow { end_min } else { 24 * 60 + 1 };
+
+    let open = rows.iter().any(|row| {
+        if row.get("is_deleted").map(as_bool).unwrap_or(false) {
+            return false;
+        }
+        if row.get("day_of_week").map(|v| as_i64(v, -1)).unwrap_or(-1) != dow {
+            return false;
+        }
+        let (Some(from), Some(to)) = (
+            wall_minutes(&as_str(row.get("start_time").unwrap_or(&Value::Null))),
+            wall_minutes(&as_str(row.get("end_time").unwrap_or(&Value::Null))),
+        ) else {
+            return false;
+        };
+        from <= start_min && end_min <= to
+    });
+
+    if open {
+        return None;
+    }
+    Some(DomainError::new(
+        "appointments.outside_schedule",
+        "That time is outside the business opening hours.",
     ))
 }
 
@@ -1009,16 +1113,24 @@ fn prepare_appointment(
         ));
     }
 
+    // appointments#79: a `Domain` error, not an `Invalid` one. `Invalid` is re-raised as a raw
+    // `Err` by `create` (and by `book_from_request`), which the host turns into «error de handler
+    // WASM: …» — the plumbing on screen instead of a code. The two callers that report per item
+    // keep behaving as they should: `bulk_create` stops the batch, exactly as it already does for
+    // `blocked` / `too_soon`, and `materialize` skips the occurrence and carries on with the
+    // series.
     let raw_start = as_str(item.get("start_datetime").unwrap_or(&Value::Null));
     let Some(start) = parse_dt(&raw_start) else {
-        return Err(PrepareError::Invalid(format!(
-            "invalid_start: fecha/hora inválida `{raw_start}` (esperado ISO 8601)"
+        return Err(PrepareError::Domain(DomainError::new(
+            "appointments.invalid_start",
+            "That start date and time is not a valid instant.",
         )));
     };
     if cmp_secs(&start, now) < 0 {
-        return Err(PrepareError::Invalid(
-            "invalid_start: la cita no puede empezar en el pasado".to_string(),
-        ));
+        return Err(PrepareError::Domain(DomainError::new(
+            "appointments.invalid_start",
+            "An appointment cannot start in the past.",
+        )));
     }
 
     // Duration: the caller's explicit choice (the receptionist may shorten/lengthen a booking),
@@ -1036,6 +1148,12 @@ fn prepare_appointment(
     if let Some(refusal) = lead_time_refusal(settings, &start, now) {
         return Err(PrepareError::Domain(refusal));
     }
+    // appointments#89: opening hours before blocked time, the same order `availability_check.sql`
+    // reports its `reason` in — the screen and the door must not rank the same refusals differently.
+    if let Some(refusal) = schedule_refusal(input, business_tz(input), &start, &end) {
+        return Err(PrepareError::Domain(refusal));
+    }
+
     if let Some(refusal) = blocked_refusal(input, &resolved.staff_id, &start, &end) {
         return Err(PrepareError::Domain(refusal));
     }
@@ -1282,8 +1400,9 @@ pub fn cancel_appointment_pure(input: Value) -> Result<Output, String> {
 /// - overlap keeps its SERVER-SIDE gate in the same transaction (appointments#20): the handler
 ///   decides with a read and the row moves afterwards, so only the gate closes the race.
 ///
-/// What is NOT here: changing the professional (it needs the staff catalogue reads, and is its own
-/// piece of work) and `outside_schedule`, which needs the business timezone — hub#1022.
+/// What is NOT here: changing the professional — it needs the staff catalogue reads, and is its
+/// own piece of work. `outside_schedule` IS here now (appointments#89): `context.timezone`
+/// (hub#1022) landed, so the opening hours are checked at this door and not only by the screen.
 pub fn reschedule_appointment_pure(input: Value) -> Result<Output, String> {
     let payload = input.get("payload").cloned().unwrap_or(Value::Null);
     let ctx = host_ctx(&input)?;
@@ -1315,12 +1434,23 @@ pub fn reschedule_appointment_pure(input: Value) -> Result<Output, String> {
         ));
     };
 
+    // appointments#79: both of these used to be a raw `Err`, which the host re-wraps as
+    // «error de handler WASM: wasm call to `reschedule_appointment` failed: …» — the runtime's
+    // plumbing on the caller's screen, in one hard-coded language, with no code to key on. They
+    // are ordinary domain rejections and now say so. Aborting the transaction is unchanged: an
+    // `Output` carrying an error rolls the whole command back (hub#139).
     let raw_start = as_str(payload.get("start_datetime").unwrap_or(&Value::Null));
-    let start = parse_dt(&raw_start).ok_or_else(|| {
-        format!("invalid_start: fecha/hora inválida `{raw_start}` (esperado ISO 8601)")
-    })?;
+    let Some(start) = parse_dt(&raw_start) else {
+        return Ok(refuse(
+            "appointments.invalid_start",
+            "That start date and time is not a valid instant.",
+        ));
+    };
     if cmp_secs(&start, &ctx.now) < 0 {
-        return Err("invalid_start: la cita no puede empezar en el pasado".to_string());
+        return Ok(refuse(
+            "appointments.invalid_start",
+            "An appointment cannot start in the past.",
+        ));
     }
 
     // The length of the appointment is its own unless the caller deliberately changes it.
@@ -1342,6 +1472,10 @@ pub fn reschedule_appointment_pure(input: Value) -> Result<Output, String> {
     // The professional is the appointment's own, read from the row: this command moves the hour,
     // it does not hand the caller back the identity appointments#11 took away from `create`.
     let staff_id = str_or(&row, "staff_id", "");
+    if let Some(refusal) = schedule_refusal(&input, ctx.tz, &start, &end) {
+        return Ok(Output::new().with_error(refusal));
+    }
+
     if let Some(refusal) = blocked_refusal(&input, &staff_id, &start, &end) {
         return Ok(Output::new().with_error(refusal));
     }
@@ -2390,6 +2524,12 @@ mod tests {
     /// the service (staff#9). Ids match [`item`]: customer `c1`, service `s-corte`, staff `s1`.
     fn catalog_reads() -> Value {
         json!({
+            // appointments#89: the runtime pre-loads the hub's opening hours for all four booking
+            // commands, so the shared fixture carries it for the same reason it carries the
+            // catalogue — a test that never sees a read production always sends is a test of a
+            // different handler. Empty = a hub that has not configured its hours, which is the
+            // state most of these cases are really about; the ones that DO care plant their own.
+            "appointments.schedules.active_timeslots": [],
             "customers.get": [
                 { "id": "c1", "name": "Ada Lovelace", "phone": "+34600000001",
                   "email": "ada@example.com", "is_active": 1 }
@@ -3372,13 +3512,17 @@ mod tests {
     // authoritative reads (ADR-0069) — never from the payload — and both are pure instant
     // arithmetic, so they need no timezone.
     //
-    // WHAT IS NOT HERE, and why: the business opening hours (`schedules.business_hours.list`) and
-    // the professional's working hours (`staff.availability.for_member`) are WALL-CLOCK
-    // (`HH:MM:SS`), while an appointment is a UTC instant. Intersecting them needs the business
-    // timezone, and a module cannot read it yet — the core owns it (`settings::timezone_of`) but
-    // does not put it in the handler's `context` (hub#1022, OPEN). Enforcing them by guessing the
-    // offset would refuse correct bookings twice a year, at the DST change. They stay in
-    // `queries/availability_check.sql` (advisory) until hub#1022 lands.
+    // THE BUSINESS OPENING HOURS used to be the famous absence here, because they are WALL-CLOCK
+    // (`HH:MM` on a `day_of_week`) while an appointment is an instant, and crossing them needs the
+    // business timezone the core would not hand over. `context.timezone` (hub#1022) landed, so
+    // appointments#89 moved that rule out of `queries/availability_check.sql` — where it was only
+    // ADVISORY, informing the screen while every other door booked at three in the morning — and
+    // into [`schedule_refusal`], next to the two below. Its cases live further down, DST included:
+    // guessing the offset instead is what refuses correct bookings twice a year.
+    //
+    // WHAT IS STILL NOT HERE: the PROFESSIONAL's own working hours. `staff.availability.for_member`
+    // needs `:staff_id` and a derived `:date_from`/`:date_to`, and `reads.params` binds literal
+    // `payload.<field>` values only — `reschedule` does not even carry a `staff_id`. appointments#98.
 
     /// Settings row that switches both lead-time limits OFF (`0` = no limit), which is what the
     /// tests that are about something else need.
@@ -4874,6 +5018,65 @@ mod tests {
         assert_eq!(domain_code(&out).as_deref(), Some("appointments.too_soon"));
     }
 
+    // ── appointments#79 · a bad `start_datetime` is a REFUSAL, not a WASM stack ────────────────
+    //
+    // Every other rejection of this module already comes back as a domain code the shell can
+    // translate. `invalid_start` was the one exception, and it surfaced as the runtime's own
+    // plumbing:
+    //
+    //     {"code":"error","message":"error de handler WASM: wasm call to `reschedule_appointment`
+    //      failed: invalid_start: la cita no puede empezar en el pasado"}
+    //
+    // A caller cannot key on that (it is prose, and prose in the wrong language), the shell paints
+    // the raw string, and an aborted guest call is indistinguishable from a crash. Returning
+    // `Ok(refuse(...))` keeps the transaction semantics identical — an `Output` carrying an error
+    // rolls everything back (hub#139) — while giving the caller a code and a translation.
+
+    #[test]
+    fn reschedule_refuses_a_start_in_the_past_with_a_domain_code() {
+        let out = reschedule_appointment_pure(reschedule_input(
+            move_to("2026-07-30T10:00:00Z", Some(30)),
+            booked_row("2026-07-31T11:00:00Z", 60, "confirmed"),
+            Some(lead_time(0, 0)),
+        ))
+        .unwrap();
+        assert_eq!(
+            domain_code(&out).as_deref(),
+            Some("appointments.invalid_start")
+        );
+    }
+
+    #[test]
+    fn reschedule_refuses_an_unparseable_start_with_a_domain_code() {
+        let out = reschedule_appointment_pure(reschedule_input(
+            move_to("mañana por la tarde", Some(30)),
+            booked_row("2026-07-31T11:00:00Z", 60, "confirmed"),
+            Some(lead_time(0, 0)),
+        ))
+        .unwrap();
+        assert_eq!(
+            domain_code(&out).as_deref(),
+            Some("appointments.invalid_start")
+        );
+    }
+
+    /// `create` leaked the same way through the shared `prepare_appointment`, so the code has to
+    /// come out of that door too — otherwise the module answers with a domain code on one command
+    /// and a WASM stack on the next one for the very same mistake.
+    #[test]
+    fn create_refuses_a_start_in_the_past_with_a_domain_code() {
+        let out = create_appointment_pure(input(
+            item("2026-07-30T10:00:00Z", 30, "s1"),
+            Some(lead_time(0, 0)),
+        ))
+        .unwrap();
+        assert_eq!(
+            domain_code(&out).as_deref(),
+            Some("appointments.invalid_start")
+        );
+        assert!(out.operations.is_empty());
+    }
+
     #[test]
     fn reschedule_refuses_an_appointment_in_a_terminal_state() {
         for status in ["cancelled", "completed", "no_show"] {
@@ -5289,5 +5492,233 @@ mod tests {
         let mut payload = request_payload("2026-07-31T11:00:00Z");
         payload["request_id"] = json!("");
         assert!(book_from_request_pure(input(payload, None)).is_err());
+    }
+
+    // ── appointments#89 · the business hours are a DOOR, not a hint ────────────────────────────
+    //
+    // `queries/availability_check.sql` has always computed `outside_schedule`, but a query is
+    // ADVISORY: it tells the screen what to grey out, it does not stop anything. Every other way
+    // in — the assistant, a flow, `whatsapp_inbox`, the public API — booked at three in the
+    // morning and nothing said a word. The check now lives where the decision is made, reading the
+    // hub's active timeslots as an AUTHORITATIVE read (ADR-0069), never from the payload.
+    //
+    // The reason it could not live here before is written two sections down: the timeslots are
+    // WALL CLOCK (`HH:MM`, `day_of_week`) and an appointment is an instant. Crossing them needs the
+    // business timezone, which the core now hands over in `context.timezone` (hub#1022). Guessing a
+    // fixed offset instead is what refuses correct bookings twice a year — hence the DST cases.
+
+    fn hours(dow: i64, from: &str, to: &str) -> Value {
+        json!({ "day_of_week": dow, "start_time": from, "end_time": to })
+    }
+
+    /// The settings read plus the hub's active timeslots, which is what these four commands see.
+    fn with_slots(slots: Value) -> Value {
+        let mut reads = lead_time(0, 0);
+        reads["appointments.schedules.active_timeslots"] = slots;
+        reads
+    }
+
+    /// Monday–Friday, 09:00–18:00 — the shape of nearly every salon's week.
+    fn weekdays_nine_to_six() -> Value {
+        json!([
+            hours(0, "09:00", "18:00"),
+            hours(1, "09:00", "18:00"),
+            hours(2, "09:00", "18:00"),
+            hours(3, "09:00", "18:00"),
+            hours(4, "09:00", "18:00")
+        ])
+    }
+
+    /// 2026-07-31 is a FRIDAY (`day_of_week` 4) and the hub closes at 18:00, so 23:00 is shut.
+    #[test]
+    fn create_refuses_a_booking_outside_the_business_hours() {
+        let out = create_appointment_pure(input(
+            item("2026-07-31T23:00:00+02:00", 30, "s1"),
+            Some(with_slots(weekdays_nine_to_six())),
+        ))
+        .unwrap();
+        assert_eq!(
+            domain_code(&out).as_deref(),
+            Some("appointments.outside_schedule")
+        );
+        assert!(out.operations.is_empty());
+    }
+
+    /// The same Friday at 15:00 is open, and nothing about this gate may get in the way.
+    #[test]
+    fn create_accepts_a_booking_inside_the_business_hours() {
+        let out = create_appointment_pure(input(
+            item("2026-07-31T15:00:00+02:00", 30, "s1"),
+            Some(with_slots(weekdays_nine_to_six())),
+        ))
+        .unwrap();
+        assert_eq!(domain_code(&out), None);
+        assert!(!out.operations.is_empty());
+    }
+
+    /// An appointment that STARTS inside the day but RUNS PAST closing is outside it. The window
+    /// is `[start, end]`, the same one `availability_check.sql` compares.
+    #[test]
+    fn create_refuses_a_booking_that_runs_past_closing_time() {
+        let out = create_appointment_pure(input(
+            item("2026-07-31T17:45:00+02:00", 30, "s1"),
+            Some(with_slots(weekdays_nine_to_six())),
+        ))
+        .unwrap();
+        assert_eq!(
+            domain_code(&out).as_deref(),
+            Some("appointments.outside_schedule")
+        );
+    }
+
+    /// A day with no timeslot at all is a closed day — Saturday here.
+    #[test]
+    fn create_refuses_a_booking_on_a_day_the_hub_does_not_open() {
+        let out = create_appointment_pure(input(
+            item("2026-08-01T11:00:00+02:00", 30, "s1"),
+            Some(with_slots(weekdays_nine_to_six())),
+        ))
+        .unwrap();
+        assert_eq!(
+            domain_code(&out).as_deref(),
+            Some("appointments.outside_schedule")
+        );
+    }
+
+    /// 🔴 THE DEGRADATION THAT MUST NOT BREAK. A hub that has not configured its opening hours
+    /// yet cannot be a hub that can no longer book anything — that would turn a new feature into
+    /// an outage on day one. No timeslots = every calendar hour counts, which is exactly what
+    /// `availability_slots.sql` already does for the screen.
+    #[test]
+    fn a_hub_with_no_schedule_configured_can_still_book() {
+        let out = create_appointment_pure(input(
+            item("2026-07-31T23:00:00+02:00", 30, "s1"),
+            Some(with_slots(json!([]))),
+        ))
+        .unwrap();
+        assert_eq!(domain_code(&out), None);
+        assert!(!out.operations.is_empty());
+    }
+
+    /// The read is `required` in the manifest. If it does not arrive the answer is a refusal, not
+    /// an open door: a guard whose input is missing must fail CLOSED, like the blocked-times one.
+    #[test]
+    fn create_refuses_when_the_timeslots_read_is_missing() {
+        let mut inp = input(
+            item("2026-07-31T15:00:00+02:00", 30, "s1"),
+            Some(with_slots(weekdays_nine_to_six())),
+        );
+        inp["context"]["reads"]
+            .as_object_mut()
+            .expect("reads is an object")
+            .remove("appointments.schedules.active_timeslots");
+        let out = create_appointment_pure(inp).unwrap();
+        assert_eq!(
+            domain_code(&out).as_deref(),
+            Some("appointments.availability_unavailable")
+        );
+        assert!(out.operations.is_empty());
+    }
+
+    // ── the day the clock changes ──────────────────────────────────────────────────────────────
+    //
+    // 2026-10-25 is a SUNDAY and the day Madrid goes back from +02:00 to +01:00. Both cases below
+    // are the same hub, open 09:00–18:00 on Sundays, and both are decided on the SAME instant a
+    // fixed-offset guess would read one hour out.
+
+    /// The one the issue is about: a booking that IS inside the working day. Read with the offset
+    /// that was in force when the series was drawn up (+02:00), 16:30 UTC looks like 18:30 — shut —
+    /// and a correct booking gets refused. Twice a year, for everybody.
+    #[test]
+    fn a_booking_on_the_dst_day_is_judged_on_the_business_wall_clock() {
+        let out = create_appointment_pure(input(
+            item("2026-10-25T17:30:00+01:00", 20, "s1"),
+            Some(with_slots(json!([hours(6, "09:00", "18:00")]))),
+        ))
+        .unwrap();
+        assert_eq!(domain_code(&out), None);
+        assert!(!out.operations.is_empty());
+    }
+
+    /// And the gate still bites that day: 08:30 on the wall is before opening. Read as +02:00 the
+    /// same instant would look like 09:30 and slip through.
+    #[test]
+    fn the_gate_still_refuses_before_opening_on_the_dst_day() {
+        let out = create_appointment_pure(input(
+            item("2026-10-25T08:30:00+01:00", 20, "s1"),
+            Some(with_slots(json!([hours(6, "09:00", "18:00")]))),
+        ))
+        .unwrap();
+        assert_eq!(
+            domain_code(&out).as_deref(),
+            Some("appointments.outside_schedule")
+        );
+    }
+
+    /// Moving an appointment is booking it again: the same door, the same code.
+    #[test]
+    fn reschedule_refuses_a_slot_outside_the_business_hours() {
+        let out = reschedule_appointment_pure(reschedule_input(
+            move_to("2026-07-31T23:00:00+02:00", Some(30)),
+            booked_row("2026-07-31T11:00:00Z", 60, "confirmed"),
+            Some(with_slots(weekdays_nine_to_six())),
+        ))
+        .unwrap();
+        assert_eq!(
+            domain_code(&out).as_deref(),
+            Some("appointments.outside_schedule")
+        );
+    }
+
+    #[test]
+    fn reschedule_accepts_a_slot_inside_the_business_hours() {
+        let out = reschedule_appointment_pure(reschedule_input(
+            move_to("2026-07-31T15:00:00+02:00", Some(30)),
+            booked_row("2026-07-31T11:00:00Z", 60, "confirmed"),
+            Some(with_slots(weekdays_nine_to_six())),
+        ))
+        .unwrap();
+        assert_eq!(domain_code(&out), None);
+    }
+
+    /// appointments#89 point 4: an occurrence outside the opening hours is SKIPPED, exactly as a
+    /// blocked one already is — a year-long series does not collapse because the salon is shut on
+    /// Tuesdays. The template below runs DAILY from Monday 2026-08-03, and the hub opens on
+    /// Mondays only, so the first occurrence is booked and the second is quietly left out.
+    #[test]
+    fn materialize_skips_an_occurrence_outside_the_business_hours_without_aborting() {
+        let out = materialize_recurring_pure(series_input(
+            series_payload(),
+            json!([template(json!({ "frequency": "daily", "max_occurrences": 2 }))]),
+            Some(with_slots(json!([hours(0, "09:00", "18:00")]))),
+        ))
+        .unwrap();
+        assert_eq!(domain_code(&out), None, "the series must not be aborted");
+        let booked = out
+            .operations
+            .iter()
+            .filter(|op| op.command.ends_with("_insert_appointment"))
+            .count();
+        assert_eq!(booked, 1, "only the Monday occurrence is inside the hours");
+    }
+
+    /// The control for the one above: with the hub open every day, BOTH occurrences are booked.
+    /// Without it, «1 booked» would also be the answer to a series that silently stopped working.
+    #[test]
+    fn materialize_books_every_occurrence_when_the_hub_is_open_all_week() {
+        let all_week: Vec<Value> = (0..7).map(|d| hours(d, "09:00", "18:00")).collect();
+        let out = materialize_recurring_pure(series_input(
+            series_payload(),
+            json!([template(json!({ "frequency": "daily", "max_occurrences": 2 }))]),
+            Some(with_slots(Value::Array(all_week))),
+        ))
+        .unwrap();
+        assert_eq!(domain_code(&out), None);
+        let booked = out
+            .operations
+            .iter()
+            .filter(|op| op.command.ends_with("_insert_appointment"))
+            .count();
+        assert_eq!(booked, 2);
     }
 }
