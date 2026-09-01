@@ -1,7 +1,7 @@
 {
   "id": "appointments",
   "name": "Appointments",
-  "version": "1.1.54",
+  "version": "1.1.55",
   "errors": {
     "appointments.availability_unavailable": {},
     "appointments.blocked": {},
@@ -636,7 +636,7 @@
           "query": "appointments.schedules.active_timeslots",
           "required": true
         }
-]
+      ]
     },
     "appointments.appointments.bulk_delete": {
       "permission": "appointments.delete_appointment",
@@ -796,7 +796,7 @@
           "query": "appointments.schedules.active_timeslots",
           "required": true
         }
-]
+      ]
     },
     "appointments.appointments.delete": {
       "permission": "appointments.delete_appointment",
@@ -882,7 +882,7 @@
           "query": "appointments.schedules.active_timeslots",
           "required": true
         }
-]
+      ]
     },
     "appointments.appointments.start": {
       "permission": "appointments.change_appointment",
@@ -1052,7 +1052,7 @@
           "query": "appointments.schedules.active_timeslots",
           "required": true
         }
-]
+      ]
     },
     "appointments.recurring.update": {
       "permission": "appointments.change_appointment",
