@@ -50,6 +50,10 @@
   },
   "depends_on": [
     "customers",
+    {
+      "id": "schedules",
+      "min_version": "2.0.17"
+    },
     "services",
     "staff"
   ],
@@ -112,6 +116,7 @@
     "summary": "Schedule and manage client appointments and availability. Books appointments against services and customers, tracks status (pending → confirmed → in_progress → completed / cancelled / no_show), manages staff schedules with weekly time slots, blocked time (holidays/vacations) and recurring appointment templates.",
     "depends_on": [
       "customers",
+      "schedules",
       "services",
       "staff"
     ]
@@ -484,6 +489,18 @@
         },
         {
           "query": "appointments.schedules.active_timeslots"
+        },
+        {
+          "query": "schedules.business_hours.list"
+        },
+        {
+          "query": "schedules.special_days.list"
+        },
+        {
+          "query": "schedules.overrides.list"
+        },
+        {
+          "query": "schedules.exception_intervals.list"
         }
       ]
     },
@@ -637,6 +654,22 @@
         },
         {
           "query": "appointments.schedules.active_timeslots",
+          "required": true
+        },
+        {
+          "query": "schedules.business_hours.list",
+          "required": true
+        },
+        {
+          "query": "schedules.special_days.list",
+          "required": true
+        },
+        {
+          "query": "schedules.overrides.list",
+          "required": true
+        },
+        {
+          "query": "schedules.exception_intervals.list",
           "required": true
         }
       ]
@@ -798,6 +831,22 @@
         {
           "query": "appointments.schedules.active_timeslots",
           "required": true
+        },
+        {
+          "query": "schedules.business_hours.list",
+          "required": true
+        },
+        {
+          "query": "schedules.special_days.list",
+          "required": true
+        },
+        {
+          "query": "schedules.overrides.list",
+          "required": true
+        },
+        {
+          "query": "schedules.exception_intervals.list",
+          "required": true
         }
       ]
     },
@@ -883,6 +932,22 @@
         },
         {
           "query": "appointments.schedules.active_timeslots",
+          "required": true
+        },
+        {
+          "query": "schedules.business_hours.list",
+          "required": true
+        },
+        {
+          "query": "schedules.special_days.list",
+          "required": true
+        },
+        {
+          "query": "schedules.overrides.list",
+          "required": true
+        },
+        {
+          "query": "schedules.exception_intervals.list",
           "required": true
         }
       ]
@@ -1053,6 +1118,22 @@
         },
         {
           "query": "appointments.schedules.active_timeslots",
+          "required": true
+        },
+        {
+          "query": "schedules.business_hours.list",
+          "required": true
+        },
+        {
+          "query": "schedules.special_days.list",
+          "required": true
+        },
+        {
+          "query": "schedules.overrides.list",
+          "required": true
+        },
+        {
+          "query": "schedules.exception_intervals.list",
           "required": true
         }
       ]

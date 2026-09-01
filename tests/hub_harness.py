@@ -27,8 +27,9 @@ Three facts of the runtime a battery has to know, all resolved here so no batter
   * THE SESSION USER. Dev auth trusts `X-User-Id`. Each run mints its own, because batteries share
     one hub for the length of the run and a fixed id would mix this run's rows with a previous
     one's under the same shared hub.
-  * THE DEPENDENCIES. `appointments` declares `depends_on: ["customers", "services", "staff"]` and
-    `services` in turn depends on `taxes`, so the whole chain has to be installed through the same
+  * THE DEPENDENCIES. `appointments` declares `depends_on: ["customers", "schedules", "services",
+    "staff"]` — `schedules` since appointments#102, because the opening-hours gate reads ITS lists —
+    and `services` in turn depends on `taxes`, so the whole chain has to be installed through the same
     door, in topological order, BEFORE the module. `--against-hub` mounts one directory
     (module-toolkit#135), so today that install is done by hand; the harness refuses to run when
     any of them is missing rather than reporting an availability engine that answers about an
@@ -53,7 +54,7 @@ BASE = (
 ).rstrip("/")
 
 # The whole chain `appointments` needs installed to answer for itself.
-NEEDS = ("taxes", "customers", "services", "staff", "appointments")
+NEEDS = ("taxes", "customers", "schedules", "services", "staff", "appointments")
 
 
 class Hub:
@@ -119,8 +120,9 @@ class Hub:
             print(
                 f"{self.battery}: the runtime at {BASE} does not have {missing} installed "
                 f"(installed: {sorted(installed)}). `appointments` declares `depends_on: "
-                '["customers", "services", "staff"]` and `services` pulls in `taxes`, so the whole '
-                "chain has to go through `POST /api/modules/install` in topological order before "
+                '["customers", "schedules", "services", "staff"]` and `services` pulls in `taxes`, '
+                "so the whole chain has to go through `POST /api/modules/install` in topological "
+                "order before "
                 "the module. Not a skip: an availability engine asked about an empty catalogue "
                 "answers `available` to everything."
             )

@@ -65,6 +65,12 @@ cancelling — it keeps the record.
 
 ## Working hours (schedules)
 
+> ⚠️ **Set your opening hours in the Schedules module, not here** (appointments#102). Since that
+> change the booking door reads the hours, bank holidays and overrides of **Schedules**, which is
+> where the rest of the product asks whether the business is open. This screen is the module's own
+> older timetable: it still answers while Schedules has no rule at all, so a salon configured
+> before the change keeps working, and it is being retired in appointments#105.
+
 A schedule is a named availability template, with one or more **time slots** per weekday.
 
 1. Create the schedule, giving it a name. One can be the default.
