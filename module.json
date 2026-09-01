@@ -481,6 +481,9 @@
             "staff_id": "payload.staff_id",
             "start_datetime": "payload.start_datetime"
           }
+        },
+        {
+          "query": "appointments.schedules.active_timeslots"
         }
       ]
     },
