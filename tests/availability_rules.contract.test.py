@@ -94,6 +94,14 @@ BOOKING_COMMANDS = (
     "appointments.appointments.bulk_create",
     "appointments.recurring.materialize",
 )
+# PR#99 regression: `_book_from_request` (the `whatsapp_inbox.request.approved` listener) books
+# through `create_appointment_pure`, so it walks the SAME opening-hours gate — but the runtime
+# resolves the reads THIS command declares, not `create`'s. Without the read the gate fails
+# CLOSED and every approval answers `availability_unavailable`: the WhatsApp→appointment flow
+# dies. It is listed apart because its `required` semantics differ on purpose: all its reads are
+# graceful (no `required: true`) so a failed resolution becomes a `booking_refused` ANSWER the
+# inbox can show, instead of a runtime abort that retries into the dead-letter and answers nobody.
+LISTENER_BOOKING_COMMANDS = ("appointments._book_from_request",)
 OPENING_HOURS_READ = "appointments.schedules.active_timeslots"
 
 failures: list[str] = []
@@ -234,9 +242,13 @@ def check_opening_hours_read() -> None:
     """appointments#89 — the door needs its hinge: the opening-hours read, declared and required."""
     query = MANIFEST.get("queries", {}).get(OPENING_HOURS_READ)
     if not isinstance(query, dict):
-        fail(f"queries.{OPENING_HOURS_READ}: not declared — the handler has nothing to read")
+        fail(
+            f"queries.{OPENING_HOURS_READ}: not declared — the handler has nothing to read"
+        )
     elif not (MODULE_DIR / str(query.get("sql"))).exists():
-        fail(f"queries.{OPENING_HOURS_READ}.sql: {query.get('sql')!r} is not in the package")
+        fail(
+            f"queries.{OPENING_HOURS_READ}.sql: {query.get('sql')!r} is not in the package"
+        )
     elif "list" in query:
         fail(
             f"queries.{OPENING_HOURS_READ}: is a paginated `list`; a handler read gets plain rows"
@@ -252,6 +264,20 @@ def check_opening_hours_read() -> None:
             fail(
                 f"{command}: the {OPENING_HOURS_READ!r} read is not `required: true` — a read that "
                 "may fail to resolve leaves the opening-hours gate open"
+            )
+    for command in LISTENER_BOOKING_COMMANDS:
+        read = reads_of(command).get(OPENING_HOURS_READ)
+        if read is None:
+            fail(
+                f"{command}: declares no read of {OPENING_HOURS_READ!r} — it books through "
+                "`create_appointment_pure`, whose gate fails CLOSED, so every approval is refused "
+                "with `availability_unavailable` and the WhatsApp→appointment flow is dead"
+            )
+        elif read.get("required") is True:
+            fail(
+                f"{command}: the {OPENING_HOURS_READ!r} read must stay GRACEFUL (no `required: "
+                "true`), like every read of this listener — a runtime abort retries into the "
+                "dead-letter and the inbox never gets its answer; the handler already fails closed"
             )
 
 
