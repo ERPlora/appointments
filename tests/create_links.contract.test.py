@@ -24,6 +24,20 @@ import sys
 MODULE_DIR = pathlib.Path(__file__).resolve().parent.parent
 MANIFEST = json.loads((MODULE_DIR / "module.json").read_text())
 
+
+def depends_on_ids(manifest):
+    """The ids in `depends_on`, whichever of the two shapes the manifest uses.
+
+    An entry is either the plain string (`"customers"`) or `{"id": …, "min_version": …}` when the
+    contract was born in a concrete version (hub#681, sales#68). Reading the raw list as a set of
+    strings crashes on the second shape — appointments#102 pinned a floor on `schedules` and every
+    check below died with `unhashable type: dict` before it could assert anything.
+    """
+    out = set()
+    for dep in manifest.get("depends_on") or []:
+        out.add(dep["id"] if isinstance(dep, dict) else dep)
+    return out
+
 COMMAND = "appointments.appointments.create"
 # query -> {param name: payload expression}
 CATALOGUE_READS = {
@@ -60,7 +74,7 @@ def check_manifest() -> None:
             f"{COMMAND}: must run the WASM handler `create_appointment` (got {handler!r})"
         )
 
-    depends_on = set(MANIFEST.get("depends_on", []))
+    depends_on = depends_on_ids(MANIFEST)
     reads = {r.get("query"): r for r in cmd.get("reads", []) if isinstance(r, dict)}
     for query, params in CATALOGUE_READS.items():
         owner = query.split(".")[0]

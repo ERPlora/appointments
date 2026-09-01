@@ -693,20 +693,31 @@ fn blocked_refusal(input: &Value, staff_id: &str, start: &Dt, end: &Dt) -> Optio
     ))
 }
 
-/// An instant read on the BUSINESS wall clock: `(day_of_week, minute of the day)`.
+/// An instant read on the BUSINESS wall clock: the date, its weekday and the minute of the day.
 ///
-/// `day_of_week` is 0 = Monday … 6 = Sunday, the module's convention everywhere (docs/concepts.md)
-/// and the one stored in `appointments_schedule_timeslot.day_of_week`.
+/// `dow` is 0 = Monday … 6 = Sunday, the module's convention everywhere (docs/concepts.md), the one
+/// stored in `appointments_schedule_timeslot.day_of_week` and the one `schedules.business_hours`
+/// publishes.
 ///
-/// This is the crossing the opening-hours rule needed and could not do before: the timeslots are
-/// wall clock (`HH:MM` on a weekday), an appointment is an instant, and only the business timezone
+/// This is the crossing the opening-hours rule needed and could not do before: the hours are wall
+/// clock (`HH:MM` on a weekday), an appointment is an instant, and only the business timezone
 /// relates the two. `chrono_tz` applies the real IANA rules, so the answer stays right on the two
 /// days a year when the offset moves — which is the whole reason this was not done by guessing.
-fn business_wall_parts(instant: &Dt, tz: chrono_tz::Tz) -> Option<(i64, i64)> {
+struct WallStamp {
+    /// `YYYY-MM-DD` of the business, which is what a special day or an override is keyed by.
+    date: String,
+    dow: i64,
+    minute: i64,
+}
+
+fn business_wall_stamp(instant: &Dt, tz: chrono_tz::Tz) -> Option<WallStamp> {
     use chrono::{Datelike, Timelike};
     let local = chrono::DateTime::from_timestamp(instant.epoch_secs(), 0)?.with_timezone(&tz);
-    let dow = local.weekday().num_days_from_monday() as i64;
-    Some((dow, local.hour() as i64 * 60 + local.minute() as i64))
+    Some(WallStamp {
+        date: local.format("%Y-%m-%d").to_string(),
+        dow: local.weekday().num_days_from_monday() as i64,
+        minute: local.hour() as i64 * 60 + local.minute() as i64,
+    })
 }
 
 /// `HH:MM[:SS]` → minutes since midnight.
@@ -720,81 +731,386 @@ fn wall_minutes(text: &str) -> Option<i64> {
     Some(h * 60 + m)
 }
 
-/// The business's opening hours, enforced (appointments#89).
+/// The four published lists of `schedules`, the AUTHORITY for the business opening hours
+/// (appointments#102, ADR-0392). They arrive pre-loaded by the runtime (`reads`, ADR-0069) and
+/// never from the payload: a schedule the caller supplies is a schedule the caller can forge.
+const SCHEDULES_HOURS_READ: &str = "schedules.business_hours.list";
+const SCHEDULES_SPECIAL_DAYS_READ: &str = "schedules.special_days.list";
+const SCHEDULES_OVERRIDES_READ: &str = "schedules.overrides.list";
+const SCHEDULES_EXCEPTION_INTERVALS_READ: &str = "schedules.exception_intervals.list";
+
+/// The module's OWN timeslots, the transitional answer for a hub whose hours have not moved to
+/// `schedules` yet. Kept as a fallback, never as a second opinion — see [`schedule_refusal`].
+const OWN_TIMESLOTS_READ: &str = "appointments.schedules.active_timeslots";
+
+/// An open stretch of one date, in minutes from ITS midnight. `end` runs past 1440 when the
+/// stretch crosses midnight, and `start` goes negative for the tail of the previous night, so a
+/// booking window can be compared against it with plain arithmetic.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Span {
+    start: i64,
+    end: i64,
+}
+
+/// What `schedules` says about ONE date.
+enum DayOpening {
+    /// The authority shuts the date: a closed special day, a closed override, a weekday marked
+    /// closed, or a weekday it simply does not open.
+    Closed,
+    /// The stretches the business is open, breaks already carved out.
+    Open(Vec<Span>),
+}
+
+fn opt_str(row: &Value, key: &str) -> Option<String> {
+    let text = as_str(row.get(key)?);
+    (!text.is_empty()).then_some(text)
+}
+
+fn bool_or(row: &Value, key: &str, default: bool) -> bool {
+    match row.get(key) {
+        None | Some(Value::Null) => default,
+        Some(value) => as_bool(value),
+    }
+}
+
+/// `HH:MM` pair → a span. `00:00–00:00` is «open 24 hours» and `close <= open` crosses midnight,
+/// the two conventions `schedules` writes (schedules#8, the shape Google Business Profile uses).
+fn span_of(open: &str, close: &str) -> Option<Span> {
+    let (from, to) = (wall_minutes(open)?, wall_minutes(close)?);
+    if from == 0 && to == 0 {
+        return Some(Span {
+            start: 0,
+            end: 1440,
+        });
+    }
+    Some(Span {
+        start: from,
+        end: if to <= from { to + 1440 } else { to },
+    })
+}
+
+/// A break is CLOSED time inside an open stretch, so it splits it in two. Carving it out here —
+/// instead of testing «is this instant on a break?» as `schedules.is_open` does for a point in
+/// time — is what makes a booking that merely RUNS INTO the break not fit either.
+fn without_break(span: Span, break_start: Option<i64>, break_end: Option<i64>) -> Vec<Span> {
+    let (Some(from), Some(to)) = (break_start, break_end) else {
+        return vec![span];
+    };
+    if to <= from {
+        return vec![span];
+    }
+    let mut out = Vec::new();
+    if from > span.start {
+        out.push(Span {
+            start: span.start,
+            end: from.min(span.end),
+        });
+    }
+    if to < span.end {
+        out.push(Span {
+            start: to.max(span.start),
+            end: span.end,
+        });
+    }
+    out
+}
+
+/// The stretches of one exception (a special day or an override), in `position` order
+/// (schedules#23). Several rows for the same exception are a split shift.
+fn exception_spans(intervals: &[Value], kind: &str, id: &Value) -> Vec<Span> {
+    let owner = as_str(id);
+    let mut rows: Vec<&Value> = intervals
+        .iter()
+        .filter(|r| {
+            str_or(r, "exception_kind", "") == kind && str_or(r, "exception_id", "") == owner
+        })
+        .collect();
+    rows.sort_by_key(|r| as_i64(r.get("position").unwrap_or(&Value::Null), 0));
+    rows.iter()
+        .filter_map(|r| {
+            span_of(
+                &str_or(r, "open_time", "00:00"),
+                &str_or(r, "close_time", "00:00"),
+            )
+        })
+        .collect()
+}
+
+/// One exception row → what it does to its date. `closed_by_default` is the difference `schedules`
+/// makes between the two kinds: a special day with no flag is a CLOSURE (a bank holiday), an
+/// override with no flag is a change of hours.
+fn exception_opening(
+    row: &Value,
+    kind: &str,
+    intervals: &[Value],
+    closed_by_default: bool,
+) -> DayOpening {
+    if bool_or(row, "is_closed", closed_by_default) {
+        return DayOpening::Closed;
+    }
+    let spans = exception_spans(intervals, kind, row.get("id").unwrap_or(&Value::Null));
+    if !spans.is_empty() {
+        return DayOpening::Open(spans);
+    }
+    // No interval rows: the legacy pair on the exception's own row still decides, and an exception
+    // that opens without saying any hours is open all day.
+    match (opt_str(row, "open_time"), opt_str(row, "close_time")) {
+        (Some(open), Some(close)) => match span_of(&open, &close) {
+            Some(span) => DayOpening::Open(vec![span]),
+            None => DayOpening::Closed,
+        },
+        _ => DayOpening::Open(vec![Span {
+            start: 0,
+            end: 1440,
+        }]),
+    }
+}
+
+/// What the AUTHORITY says about the date of this booking, or `Ok(None)` when it says nothing at
+/// all — no exception covers the date and the hub has not written a single weekly interval — and
+/// the module's own timeslots still answer (see [`schedule_refusal`]).
 ///
-/// `queries/availability_check.sql` has computed `outside_schedule` since the beginning, but a
-/// query only INFORMS the screen. Every other door — the assistant, a flow, `whatsapp_inbox`, the
-/// public API — could book at three in the morning. This is the same rule, where the decision is
-/// actually taken, reading `appointments.schedules.active_timeslots` as an AUTHORITATIVE read
-/// (ADR-0069) and never from the payload.
-///
-/// The semantics are deliberately the SQL's, so screen and door cannot disagree:
-///
-///   * the timeslots are the hub's, not the professional's — there is no `staff_id` join in the
-///     query either. Whether a given professional works that hour is a different rule, and it
-///     needs a read this module cannot express yet (appointments#98);
-///   * a hub with NO active timeslot has not configured its opening hours, and then every calendar
-///     hour counts. Refusing there would turn «I have not set my hours yet» into «I cannot take
-///     bookings», which is an outage, not a guard;
-///   * the appointment must fit WHOLE inside one timeslot of its weekday — `[start, end]`, both
-///     ends included, so a booking that runs past closing is out.
-///
-/// Missing read = refusal, never an open door: the manifest declares it `required`, and a guard
-/// that shrugs when its input is absent is a guard that opens (appointments#10).
-fn schedule_refusal(
-    input: &Value,
-    tz: chrono_tz::Tz,
-    start: &Dt,
-    end: &Dt,
-) -> Option<DomainError> {
-    let Some(rows) = read_rows(input, "appointments.schedules.active_timeslots") else {
-        return Some(DomainError::new(
+/// The precedence is ADR-0392's, in its order: exact special day > yearly special day > override
+/// range > weekly hours. `schedules.is_open` resolves the same chain for an INSTANT; a booking
+/// needs the stretches themselves, because it has to fit whole inside one of them.
+fn schedules_opening(input: &Value, at: &WallStamp) -> Result<Option<DayOpening>, DomainError> {
+    let (Some(hours), Some(special_days), Some(overrides), Some(intervals)) = (
+        read_rows(input, SCHEDULES_HOURS_READ),
+        read_rows(input, SCHEDULES_SPECIAL_DAYS_READ),
+        read_rows(input, SCHEDULES_OVERRIDES_READ),
+        read_rows(input, SCHEDULES_EXCEPTION_INTERVALS_READ),
+    ) else {
+        return Err(DomainError::new(
             "appointments.availability_unavailable",
             "The business opening hours could not be read; the appointment was not booked.",
         ));
     };
-    // Not configured yet: every hour of the calendar is bookable (same as `availability_slots`).
-    if rows.is_empty() {
-        return None;
+
+    // 1) A special day: the exact date beats a yearly one (ADR-0392), which matches on MM-DD.
+    let exact = special_days
+        .iter()
+        .find(|r| str_or(r, "date", "") == at.date);
+    let yearly = special_days.iter().find(|r| {
+        let date = str_or(r, "date", "");
+        bool_or(r, "recurring_yearly", false) && date.len() == 10 && date[5..] == at.date[5..]
+    });
+    if let Some(day) = exact.or(yearly) {
+        return Ok(Some(exception_opening(day, "special_day", intervals, true)));
     }
 
-    let (Some((dow, start_min)), Some((end_dow, end_min))) = (
-        business_wall_parts(start, tz),
-        business_wall_parts(end, tz),
-    ) else {
+    // 2) An override range covering the date.
+    if let Some(override_row) = overrides.iter().find(|r| {
+        let from = str_or(r, "start_date", "");
+        let to = str_or(r, "end_date", "");
+        !from.is_empty()
+            && !to.is_empty()
+            && from.as_str() <= at.date.as_str()
+            && at.date.as_str() <= to.as_str()
+    }) {
+        return Ok(Some(exception_opening(
+            override_row,
+            "override",
+            intervals,
+            false,
+        )));
+    }
+
+    // 3) The weekly hours. With not one row the hub has not set them here at all, and the answer
+    //    belongs to the fallback, not to this function.
+    if hours.is_empty() {
+        return Ok(None);
+    }
+
+    let of_day = |day: i64| -> Vec<&Value> {
+        hours
+            .iter()
+            .filter(|r| as_i64(r.get("day_of_week").unwrap_or(&Value::Null), -1) == day)
+            .collect()
+    };
+    // Last night's overnight shift (a bar open 20:00–02:00) reaches into this morning, so it is a
+    // stretch of TODAY measured from today's midnight — hence the negative start.
+    let mut spans: Vec<Span> = of_day((at.dow + 6) % 7)
+        .into_iter()
+        .filter(|r| !bool_or(r, "is_closed", false))
+        .filter_map(|r| {
+            span_of(
+                &str_or(r, "open_time", "00:00"),
+                &str_or(r, "close_time", "00:00"),
+            )
+        })
+        .filter(|span| span.end > 1440)
+        .map(|span| Span {
+            start: span.start - 1440,
+            end: span.end - 1440,
+        })
+        .collect();
+
+    let today = of_day(at.dow);
+    // A row marked closed shuts the day — but last night's tail, if any, still holds.
+    if !today.iter().any(|r| bool_or(r, "is_closed", false)) {
+        for row in &today {
+            let Some(span) = span_of(
+                &str_or(row, "open_time", "00:00"),
+                &str_or(row, "close_time", "00:00"),
+            ) else {
+                continue;
+            };
+            let break_start = opt_str(row, "break_start").and_then(|t| wall_minutes(&t));
+            let break_end = opt_str(row, "break_end").and_then(|t| wall_minutes(&t));
+            spans.extend(without_break(span, break_start, break_end));
+        }
+    }
+
+    Ok(Some(if spans.is_empty() {
+        DayOpening::Closed
+    } else {
+        DayOpening::Open(spans)
+    }))
+}
+
+/// The business's opening hours, enforced (appointments#89) and read from their OWNER
+/// (appointments#102).
+///
+/// `queries/availability_check.sql` has computed `outside_schedule` since the beginning, but a
+/// query only INFORMS the screen. Every other door — the assistant, a flow, `whatsapp_inbox`, the
+/// public API — could book at three in the morning. This is the same rule, where the decision is
+/// actually taken, as an AUTHORITATIVE read (ADR-0069) and never from the payload.
+///
+/// **Who owns the hours.** `appointments` owns the appointment and the agenda block; the business
+/// opening hours belong to `schedules`, which ADR-0392 made the single answer of the product to
+/// «are we open?». appointments#89 shipped the door reading our OWN tables because the ownership
+/// matrix was read as «no such module»; it exists, published, and its `special_days` — the bank
+/// holidays — were invisible here. So the chain is now `schedules`': exact special day > yearly
+/// special day > override range > weekly hours, resolved for the booking's own date.
+///
+/// **One answer, never two.** The precedence is strict: the moment `schedules` carries any rule
+/// that reaches this date, our own timeslots are not consulted. They answer only while `schedules`
+/// is empty — a hub that has not moved its hours yet keeps exactly the gate appointments#89 gave
+/// it, which is why upgrading cannot silently switch a working guard off. Retiring those tables
+/// (and moving their rows) is appointments#105.
+///
+/// The rest of the semantics are unchanged:
+///
+///   * the hours are the hub's, not the professional's. Whether a given professional works that
+///     hour is a different rule, and it needs a read this module cannot express yet
+///     (appointments#98);
+///   * a hub with NO rule anywhere has not configured its opening hours, and then every calendar
+///     hour is bookable. Refusing there would turn «I have not set my hours yet» into «I cannot
+///     take bookings», which is an outage, not a guard — and it is what the market does: nobody
+///     lets the back office be locked out (Setmore ships an explicit off-hours toggle, Acuity and
+///     Square let the counter book anyway), they make «no hours» unreachable by seeding them
+///     instead. Note this is NOT a different answer from ADR-0392: `schedules.is_open` still says
+///     `no_hours` (not open), and decision 4 keeps that verdict for itself while leaving the
+///     consumer free to treat the code as «nothing configured» rather than «shut». Seeding a
+///     default week so the state stops being reachable is schedules#36;
+///   * the appointment must fit WHOLE inside one open stretch — `[start, end]`, both ends
+///     included, so a booking that runs past closing, or into the lunch break, is out.
+///
+/// Missing read = refusal, never an open door: the manifest declares them `required`, and a guard
+/// that shrugs when its input is absent is a guard that opens (appointments#10).
+fn schedule_refusal(input: &Value, tz: chrono_tz::Tz, start: &Dt, end: &Dt) -> Option<DomainError> {
+    let (Some(from), Some(to)) = (business_wall_stamp(start, tz), business_wall_stamp(end, tz))
+    else {
         return Some(DomainError::new(
             "appointments.availability_unavailable",
             "The appointment's time could not be read on the business clock.",
         ));
     };
+
+    let opening = match schedules_opening(input, &from) {
+        Ok(opening) => opening,
+        Err(refusal) => return Some(refusal),
+    };
+    let Some(opening) = opening else {
+        return legacy_timeslot_refusal(input, &from, &to);
+    };
+
+    // The booking measured from midnight of its OWN date: an appointment that runs into the next
+    // day keeps counting past 1440, which is what lets an overnight shift hold it. Longer than a
+    // calendar day never fits any stretch.
+    let Some(window_end) = day_offset(&from.date, &to.date).and_then(|days| match days {
+        0 => Some(to.minute),
+        1 => Some(to.minute + 1440),
+        _ => None,
+    }) else {
+        return Some(outside_schedule());
+    };
+
+    let fits = match &opening {
+        DayOpening::Closed => false,
+        DayOpening::Open(spans) => spans
+            .iter()
+            .any(|span| span.start <= from.minute && window_end <= span.end),
+    };
+    if fits {
+        None
+    } else {
+        Some(outside_schedule())
+    }
+}
+
+fn outside_schedule() -> DomainError {
+    DomainError::new(
+        "appointments.outside_schedule",
+        "That time is outside the business opening hours.",
+    )
+}
+
+/// Whole days from `from` to `to`, both `YYYY-MM-DD`. `None` when either is unreadable.
+fn day_offset(from: &str, to: &str) -> Option<i64> {
+    let civil = |date: &str| -> Option<i64> {
+        let mut parts = date.split('-');
+        let y: i64 = parts.next()?.parse().ok()?;
+        let m: i64 = parts.next()?.parse().ok()?;
+        let d: i64 = parts.next()?.parse().ok()?;
+        Some(days_from_civil(y, m, d))
+    };
+    Some(civil(to)? - civil(from)?)
+}
+
+/// The gate as appointments#89 left it, over the module's OWN timeslots. It answers only while
+/// `schedules` carries no rule that reaches the date, so a hub configured before appointments#102
+/// keeps the exact behaviour it has today — including «no timeslot at all = every hour counts».
+fn legacy_timeslot_refusal(input: &Value, from: &WallStamp, to: &WallStamp) -> Option<DomainError> {
+    let Some(rows) = read_rows(input, OWN_TIMESLOTS_READ) else {
+        return Some(DomainError::new(
+            "appointments.availability_unavailable",
+            "The business opening hours could not be read; the appointment was not booked.",
+        ));
+    };
+    // Not configured anywhere: every hour of the calendar is bookable (same as `availability_slots`).
+    if rows.is_empty() {
+        return None;
+    }
     // An appointment that runs past midnight leaves its weekday, and no single timeslot can hold
     // it. Treating it as outside is the honest answer, and it matches the SQL, which compares one
     // `day_of_week` only.
-    let end_min = if end_dow == dow { end_min } else { 24 * 60 + 1 };
+    let end_min = if to.dow == from.dow {
+        to.minute
+    } else {
+        24 * 60 + 1
+    };
 
     let open = rows.iter().any(|row| {
         if row.get("is_deleted").map(as_bool).unwrap_or(false) {
             return false;
         }
-        if row.get("day_of_week").map(|v| as_i64(v, -1)).unwrap_or(-1) != dow {
+        if row.get("day_of_week").map(|v| as_i64(v, -1)).unwrap_or(-1) != from.dow {
             return false;
         }
-        let (Some(from), Some(to)) = (
+        let (Some(open), Some(close)) = (
             wall_minutes(&as_str(row.get("start_time").unwrap_or(&Value::Null))),
             wall_minutes(&as_str(row.get("end_time").unwrap_or(&Value::Null))),
         ) else {
             return false;
         };
-        from <= start_min && end_min <= to
+        open <= from.minute && end_min <= close
     });
 
     if open {
         return None;
     }
-    Some(DomainError::new(
-        "appointments.outside_schedule",
-        "That time is outside the business opening hours.",
-    ))
+    Some(outside_schedule())
 }
 
 /// The live slot holds this booking has to respect (appointments#69).
@@ -2530,6 +2846,13 @@ mod tests {
             // different handler. Empty = a hub that has not configured its hours, which is the
             // state most of these cases are really about; the ones that DO care plant their own.
             "appointments.schedules.active_timeslots": [],
+            // appointments#102: and the four lists of `schedules`, the AUTHORITY, which the
+            // runtime pre-loads for the same four commands. All empty = a hub that has not moved
+            // its hours there, which is where the module's own timeslots still answer.
+            "schedules.business_hours.list": [],
+            "schedules.special_days.list": [],
+            "schedules.overrides.list": [],
+            "schedules.exception_intervals.list": [],
             "customers.get": [
                 { "id": "c1", "name": "Ada Lovelace", "phone": "+34600000001",
                   "email": "ada@example.com", "is_active": 1 }
@@ -5720,5 +6043,447 @@ mod tests {
             .filter(|op| op.command.ends_with("_insert_appointment"))
             .count();
         assert_eq!(booked, 2);
+    }
+
+    // ── appointments#102 · the opening hours belong to `schedules`, not to us ───────────────────
+    //
+    // appointments#89 closed the door reading OUR OWN tables (`appointments_schedule*`). The
+    // ownership matrix says the authority for «business opening hours» is the `schedules` module,
+    // and ADR-0392 made it the single answer of the product to «are we open?». Two places to
+    // configure the same thing is the very hub that is open for one module and shut for another.
+    //
+    // From here the door reads the four published lists of `schedules` and applies its precedence
+    // — exact special day > yearly special day > override range > weekly hours > nothing — over
+    // the WINDOW of the booking, not over an instant: a booking has to fit WHOLE inside one open
+    // interval. Our own timeslots stay as the transitional answer for a hub that has not moved
+    // its hours yet (see the fallback case below), never as a second opinion when `schedules`
+    // has any rule of its own.
+
+    /// One weekly opening interval as `schedules.business_hours.list` publishes it.
+    fn bh(dow: i64, open: &str, close: &str) -> Value {
+        json!({ "id": format!("bh-{dow}-{open}"), "day_of_week": dow, "position": 0,
+                "open_time": open, "close_time": close, "is_closed": 0,
+                "break_start": null, "break_end": null })
+    }
+
+    /// Monday–Friday 09:00–18:00, the same week as [`weekdays_nine_to_six`] but in the shape of
+    /// the authority, so both paths can be compared case by case.
+    fn sched_weekdays_nine_to_six() -> Value {
+        Value::Array((0..5).map(|d| bh(d, "09:00", "18:00")).collect())
+    }
+
+    /// The four reads of `schedules` the runtime pre-loads for the booking commands. Our own
+    /// timeslots travel EMPTY, which is the hub that keeps its hours in `schedules`.
+    fn with_schedules(
+        hours: Value,
+        special_days: Value,
+        overrides: Value,
+        intervals: Value,
+    ) -> Value {
+        let mut reads = lead_time(0, 0);
+        reads["appointments.schedules.active_timeslots"] = json!([]);
+        reads["schedules.business_hours.list"] = hours;
+        reads["schedules.special_days.list"] = special_days;
+        reads["schedules.overrides.list"] = overrides;
+        reads["schedules.exception_intervals.list"] = intervals;
+        reads
+    }
+
+    /// Only the weekly hours; no exception of any kind.
+    fn sched_hours(hours: Value) -> Value {
+        with_schedules(hours, json!([]), json!([]), json!([]))
+    }
+
+    /// 🔴 THE SYMPTOM OF THE ISSUE. The salon declared Christmas closed in `schedules` — the
+    /// authority every other module asks. The door read our own (empty) timeslots, decided the
+    /// hub had not configured anything, and booked a haircut on Christmas Day.
+    #[test]
+    fn create_refuses_a_booking_on_a_holiday_declared_in_schedules() {
+        let out = create_appointment_pure(input(
+            item("2026-12-25T11:00:00+01:00", 30, "s1"),
+            Some(with_schedules(
+                sched_weekdays_nine_to_six(),
+                json!([{ "id": "sd-xmas", "date": "2026-12-25", "name": "Navidad",
+                         "is_closed": 1, "recurring_yearly": 0 }]),
+                json!([]),
+                json!([]),
+            )),
+        ))
+        .unwrap();
+        assert_eq!(
+            domain_code(&out).as_deref(),
+            Some("appointments.outside_schedule")
+        );
+        assert!(out.operations.is_empty());
+    }
+
+    /// The control for the one above: the SAME Friday without the special day is open at 11:00,
+    /// so the refusal really comes from the holiday and not from the weekly hours.
+    #[test]
+    fn create_accepts_the_same_day_when_no_holiday_is_declared() {
+        let out = create_appointment_pure(input(
+            item("2026-12-25T11:00:00+01:00", 30, "s1"),
+            Some(sched_hours(sched_weekdays_nine_to_six())),
+        ))
+        .unwrap();
+        assert_eq!(domain_code(&out), None);
+        assert!(!out.operations.is_empty());
+    }
+
+    /// A yearly special day (Christmas is the same date every year) closes the date whatever the
+    /// year of the row — `recurring_yearly` matches on MM-DD, exactly as `schedules.is_open`.
+    #[test]
+    fn a_yearly_special_day_closes_the_same_date_in_another_year() {
+        let out = create_appointment_pure(input(
+            item("2026-12-25T11:00:00+01:00", 30, "s1"),
+            Some(with_schedules(
+                sched_weekdays_nine_to_six(),
+                json!([{ "id": "sd-xmas", "date": "2020-12-25", "name": "Navidad",
+                         "is_closed": 1, "recurring_yearly": 1 }]),
+                json!([]),
+                json!([]),
+            )),
+        ))
+        .unwrap();
+        assert_eq!(
+            domain_code(&out).as_deref(),
+            Some("appointments.outside_schedule")
+        );
+    }
+
+    /// An exact-date special day BEATS a yearly one, the precedence ADR-0392 fixed: the salon
+    /// opens a reduced shift on the 24th even though a yearly rule closes that date.
+    #[test]
+    fn an_exact_special_day_beats_the_yearly_one() {
+        let reads = with_schedules(
+            sched_weekdays_nine_to_six(),
+            json!([
+                { "id": "sd-year", "date": "2020-12-24", "name": "Nochebuena",
+                  "is_closed": 1, "recurring_yearly": 1 },
+                { "id": "sd-exact", "date": "2026-12-24", "name": "Nochebuena 2026",
+                  "is_closed": 0, "open_time": "09:00", "close_time": "14:00",
+                  "recurring_yearly": 0 }
+            ]),
+            json!([]),
+            json!([]),
+        );
+        // 2026-12-24 is a Thursday; the exact row opens 09:00–14:00.
+        let out = create_appointment_pure(input(
+            item("2026-12-24T10:00:00+01:00", 30, "s1"),
+            Some(reads.clone()),
+        ))
+        .unwrap();
+        assert_eq!(domain_code(&out), None, "the exact row opens the morning");
+
+        let out = create_appointment_pure(input(
+            item("2026-12-24T15:00:00+01:00", 30, "s1"),
+            Some(reads),
+        ))
+        .unwrap();
+        assert_eq!(
+            domain_code(&out).as_deref(),
+            Some("appointments.outside_schedule"),
+            "and it closes at 14:00, so the afternoon is out"
+        );
+    }
+
+    /// A special day that opens with SPLIT intervals (`schedules.exception_intervals.list`,
+    /// schedules#23): the gap between the two shifts is shut.
+    #[test]
+    fn a_special_day_with_split_intervals_shuts_the_gap_between_them() {
+        let reads = with_schedules(
+            sched_weekdays_nine_to_six(),
+            json!([{ "id": "sd-fair", "date": "2026-12-25", "name": "Feria",
+                     "is_closed": 0, "recurring_yearly": 0 }]),
+            json!([]),
+            json!([
+                { "id": "ei-1", "exception_kind": "special_day", "exception_id": "sd-fair",
+                  "position": 0, "open_time": "09:00", "close_time": "12:00" },
+                { "id": "ei-2", "exception_kind": "special_day", "exception_id": "sd-fair",
+                  "position": 1, "open_time": "17:00", "close_time": "20:00" }
+            ]),
+        );
+        let out = create_appointment_pure(input(
+            item("2026-12-25T17:30:00+01:00", 30, "s1"),
+            Some(reads.clone()),
+        ))
+        .unwrap();
+        assert_eq!(domain_code(&out), None, "the evening shift is open");
+
+        let out = create_appointment_pure(input(
+            item("2026-12-25T14:00:00+01:00", 30, "s1"),
+            Some(reads),
+        ))
+        .unwrap();
+        assert_eq!(
+            domain_code(&out).as_deref(),
+            Some("appointments.outside_schedule"),
+            "and the gap between the two shifts is not"
+        );
+    }
+
+    /// A closed override range (the salon shuts for the summer break) refuses every day inside it.
+    #[test]
+    fn a_closed_override_range_refuses_the_whole_range() {
+        let out = create_appointment_pure(input(
+            item("2026-08-12T11:00:00+02:00", 30, "s1"),
+            Some(with_schedules(
+                sched_weekdays_nine_to_six(),
+                json!([]),
+                json!([{ "id": "ov-1", "start_date": "2026-08-10", "end_date": "2026-08-20",
+                         "reason": "Vacaciones", "is_closed": 1 }]),
+                json!([]),
+            )),
+        ))
+        .unwrap();
+        assert_eq!(
+            domain_code(&out).as_deref(),
+            Some("appointments.outside_schedule")
+        );
+    }
+
+    /// The lunch break of a weekly interval is CLOSED time: a booking that lands on it, or that
+    /// runs into it, does not fit. `schedules.is_open` answers `on_break` for the same minutes.
+    #[test]
+    fn the_lunch_break_of_the_weekly_hours_is_closed_time() {
+        let with_break = json!([{ "id": "bh-fri", "day_of_week": 4, "position": 0,
+                                  "open_time": "09:00", "close_time": "18:00", "is_closed": 0,
+                                  "break_start": "14:00", "break_end": "16:00" }]);
+        let out = create_appointment_pure(input(
+            item("2026-07-31T14:30:00+02:00", 30, "s1"),
+            Some(sched_hours(with_break.clone())),
+        ))
+        .unwrap();
+        assert_eq!(
+            domain_code(&out).as_deref(),
+            Some("appointments.outside_schedule"),
+            "inside the break"
+        );
+
+        let out = create_appointment_pure(input(
+            item("2026-07-31T13:45:00+02:00", 30, "s1"),
+            Some(sched_hours(with_break.clone())),
+        ))
+        .unwrap();
+        assert_eq!(
+            domain_code(&out).as_deref(),
+            Some("appointments.outside_schedule"),
+            "and a booking that runs INTO the break does not fit either"
+        );
+
+        let out = create_appointment_pure(input(
+            item("2026-07-31T16:30:00+02:00", 30, "s1"),
+            Some(sched_hours(with_break)),
+        ))
+        .unwrap();
+        assert_eq!(domain_code(&out), None, "after the break it is open again");
+    }
+
+    /// A weekday with a row marked `is_closed` is shut, even though the row carries hours.
+    #[test]
+    fn a_weekday_marked_closed_in_schedules_is_shut() {
+        let out = create_appointment_pure(input(
+            item("2026-07-31T15:00:00+02:00", 30, "s1"),
+            Some(sched_hours(
+                json!([{ "id": "bh-fri", "day_of_week": 4, "position": 0,
+                         "open_time": "09:00", "close_time": "18:00", "is_closed": 1 }]),
+            )),
+        ))
+        .unwrap();
+        assert_eq!(
+            domain_code(&out).as_deref(),
+            Some("appointments.outside_schedule")
+        );
+    }
+
+    /// An overnight interval (`close_time < open_time`) is a real shift, not a typo: a bar open
+    /// Friday 20:00–02:00 can take a booking at 00:30 on SATURDAY, which belongs to Friday's
+    /// interval. Our own timeslots could never express it — a booking that left its weekday was
+    /// simply refused.
+    #[test]
+    fn an_overnight_interval_takes_a_booking_past_midnight() {
+        let overnight = json!([bh(4, "20:00", "02:00")]);
+        let out = create_appointment_pure(input(
+            item("2026-08-01T00:30:00+02:00", 30, "s1"),
+            Some(sched_hours(overnight.clone())),
+        ))
+        .unwrap();
+        assert_eq!(
+            domain_code(&out),
+            None,
+            "00:30 on Saturday is inside Friday's overnight shift"
+        );
+
+        let out = create_appointment_pure(input(
+            item("2026-08-01T03:00:00+02:00", 30, "s1"),
+            Some(sched_hours(overnight)),
+        ))
+        .unwrap();
+        assert_eq!(
+            domain_code(&out).as_deref(),
+            Some("appointments.outside_schedule"),
+            "03:00 is past closing and Saturday has no hours of its own"
+        );
+    }
+
+    /// `00:00–00:00` is «open 24 hours» (the representation of Google Business Profile that
+    /// schedules#8 adopted), not an empty interval.
+    #[test]
+    fn a_24_hour_interval_is_open_all_day() {
+        let out = create_appointment_pure(input(
+            item("2026-07-31T23:00:00+02:00", 30, "s1"),
+            Some(sched_hours(json!([bh(4, "00:00", "00:00")]))),
+        ))
+        .unwrap();
+        assert_eq!(domain_code(&out), None);
+    }
+
+    /// 🔴 THE DST CASES, on the authority's rules now. 2026-10-25 is the Sunday Madrid goes back
+    /// to +01:00. Read with the offset that was in force the day the hours were written (+02:00)
+    /// the same instant looks one hour off, and a correct booking gets refused twice a year.
+    #[test]
+    fn the_schedules_gate_is_judged_on_the_business_wall_clock_on_the_dst_day() {
+        let sunday = json!([bh(6, "09:00", "18:00")]);
+        let out = create_appointment_pure(input(
+            item("2026-10-25T17:30:00+01:00", 20, "s1"),
+            Some(sched_hours(sunday.clone())),
+        ))
+        .unwrap();
+        assert_eq!(domain_code(&out), None, "17:30 on the wall is inside");
+
+        let out = create_appointment_pure(input(
+            item("2026-10-25T08:30:00+01:00", 20, "s1"),
+            Some(sched_hours(sunday)),
+        ))
+        .unwrap();
+        assert_eq!(
+            domain_code(&out).as_deref(),
+            Some("appointments.outside_schedule"),
+            "and 08:30 is still before opening"
+        );
+    }
+
+    /// 🔴 ZERO REGRESSION. A hub that has not moved its hours to `schedules` keeps the gate it
+    /// has today: with NO rule at all in `schedules`, our own active timeslots decide, byte for
+    /// byte as appointments#89 left them. Without this, upgrading would silently switch off a
+    /// working guard for every salon already configured.
+    #[test]
+    fn the_modules_own_timeslots_still_decide_while_schedules_has_no_rules() {
+        let mut reads = with_schedules(json!([]), json!([]), json!([]), json!([]));
+        reads["appointments.schedules.active_timeslots"] = weekdays_nine_to_six();
+
+        let out = create_appointment_pure(input(
+            item("2026-07-31T23:00:00+02:00", 30, "s1"),
+            Some(reads.clone()),
+        ))
+        .unwrap();
+        assert_eq!(
+            domain_code(&out).as_deref(),
+            Some("appointments.outside_schedule"),
+            "the legacy timeslots still shut the night"
+        );
+
+        let out = create_appointment_pure(input(
+            item("2026-07-31T15:00:00+02:00", 30, "s1"),
+            Some(reads),
+        ))
+        .unwrap();
+        assert_eq!(domain_code(&out), None, "and still open the afternoon");
+    }
+
+    /// And the precedence is STRICT, so there is one answer and not two opinions: the moment
+    /// `schedules` carries a rule, our own timeslots stop being consulted. Here they say the
+    /// Friday afternoon is open and `schedules` says the salon is shut that day — the authority
+    /// wins.
+    #[test]
+    fn schedules_wins_over_the_modules_own_timeslots() {
+        let mut reads = sched_hours(json!([bh(0, "09:00", "18:00")]));
+        reads["appointments.schedules.active_timeslots"] = weekdays_nine_to_six();
+
+        let out = create_appointment_pure(input(
+            item("2026-07-31T15:00:00+02:00", 30, "s1"),
+            Some(reads),
+        ))
+        .unwrap();
+        assert_eq!(
+            domain_code(&out).as_deref(),
+            Some("appointments.outside_schedule"),
+            "schedules opens Mondays only; our own tables must not open the Friday"
+        );
+    }
+
+    /// The four reads are `required` in the manifest. If one does not arrive the answer is a
+    /// refusal, never an open door — the same rule as every other guard of this module.
+    #[test]
+    fn create_refuses_when_a_schedules_read_is_missing() {
+        for missing in [
+            "schedules.business_hours.list",
+            "schedules.special_days.list",
+            "schedules.overrides.list",
+            "schedules.exception_intervals.list",
+        ] {
+            let mut inp = input(
+                item("2026-07-31T15:00:00+02:00", 30, "s1"),
+                Some(sched_hours(sched_weekdays_nine_to_six())),
+            );
+            inp["context"]["reads"]
+                .as_object_mut()
+                .expect("reads is an object")
+                .remove(missing);
+            let out = create_appointment_pure(inp).unwrap();
+            assert_eq!(
+                domain_code(&out).as_deref(),
+                Some("appointments.availability_unavailable"),
+                "removing {missing} must fail closed"
+            );
+        }
+    }
+
+    /// Moving an appointment is booking it again: the same door, the same authority.
+    #[test]
+    fn reschedule_reads_the_schedules_authority_too() {
+        let out = reschedule_appointment_pure(reschedule_input(
+            move_to("2026-12-25T11:00:00+01:00", Some(30)),
+            booked_row("2026-07-31T11:00:00Z", 60, "confirmed"),
+            Some(with_schedules(
+                sched_weekdays_nine_to_six(),
+                json!([{ "id": "sd-xmas", "date": "2026-12-25", "name": "Navidad",
+                         "is_closed": 1, "recurring_yearly": 0 }]),
+                json!([]),
+                json!([]),
+            )),
+        ))
+        .unwrap();
+        assert_eq!(
+            domain_code(&out).as_deref(),
+            Some("appointments.outside_schedule")
+        );
+    }
+
+    /// A series skips the occurrences the authority shuts, exactly as it already skips the ones
+    /// outside our own timeslots — a year of appointments does not collapse because one date is
+    /// a bank holiday. The template runs DAILY from Monday 2026-08-03 and 2026-08-04 is closed.
+    #[test]
+    fn materialize_skips_an_occurrence_on_a_schedules_holiday() {
+        let all_week: Vec<Value> = (0..7).map(|d| bh(d, "09:00", "18:00")).collect();
+        let out = materialize_recurring_pure(series_input(
+            series_payload(),
+            json!([template(json!({ "frequency": "daily", "max_occurrences": 2 }))]),
+            Some(with_schedules(
+                Value::Array(all_week),
+                json!([{ "id": "sd-1", "date": "2026-08-04", "name": "Festivo local",
+                         "is_closed": 1, "recurring_yearly": 0 }]),
+                json!([]),
+                json!([]),
+            )),
+        ))
+        .unwrap();
+        assert_eq!(domain_code(&out), None, "the series must not be aborted");
+        let booked = out
+            .operations
+            .iter()
+            .filter(|op| op.command.ends_with("_insert_appointment"))
+            .count();
+        assert_eq!(booked, 1, "only the Monday occurrence survives the holiday");
     }
 }

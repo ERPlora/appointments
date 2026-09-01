@@ -103,6 +103,18 @@ BOOKING_COMMANDS = (
 # inbox can show, instead of a runtime abort that retries into the dead-letter and answers nobody.
 LISTENER_BOOKING_COMMANDS = ("appointments._book_from_request",)
 OPENING_HOURS_READ = "appointments.schedules.active_timeslots"
+# appointments#102 — the AUTHORITY. `appointments` owns the appointment and the agenda block; the
+# business opening hours belong to `schedules`, which ADR-0392 made the single answer of the
+# product to «are we open?». The gate resolves its precedence — exact special day > yearly special
+# day > override range > weekly hours — over the booking's own date, so all four lists have to be
+# there. They declare a `list` block and that is fine: `preload_reads` goes through
+# `queries::execute`, which returns the WHOLE set, paginating internally (hub#650).
+SCHEDULES_READS = (
+    "schedules.business_hours.list",
+    "schedules.special_days.list",
+    "schedules.overrides.list",
+    "schedules.exception_intervals.list",
+)
 
 failures: list[str] = []
 
@@ -281,10 +293,77 @@ def check_opening_hours_read() -> None:
             )
 
 
+def check_schedules_authority() -> None:
+    """appointments#102 — the opening hours belong to `schedules`, so the door has to READ it.
+
+    The handler tests inject the four lists straight into `context.reads`, so they stay green even
+    if the manifest stops declaring them — and then the gate fails closed in production with the
+    CI in green. That is literally appointments#100. This is the guard that cannot be fooled that
+    way: the wiring is asserted where the runtime reads it.
+
+    `schedules` must also be a HARD dependency: `preload_reads` only serves a `required` read whose
+    owner is in `depends_on` (`commands.rs::read_in_scope`) — otherwise it warns to stderr and
+    OMITS it, and an omitted read of a fail-closed gate refuses every booking.
+    """
+    deps = {
+        d["id"] if isinstance(d, dict) else d for d in MANIFEST.get("depends_on") or []
+    }
+    if "schedules" not in deps:
+        fail(
+            "depends_on: `schedules` missing — a `required` read of a module outside depends_on is "
+            "omitted (hub#610), and the opening-hours gate would refuse every booking"
+        )
+    floor = next(
+        (
+            d.get("min_version")
+            for d in MANIFEST.get("depends_on") or []
+            if isinstance(d, dict) and d.get("id") == "schedules"
+        ),
+        None,
+    )
+    if not floor:
+        fail(
+            "depends_on[schedules]: no `min_version` — `schedules.exception_intervals.list` was "
+            "born in 2.0.17 (schedules#23); against an older one the read fails and every booking "
+            "aborts instead of the install refusing (hub#681)"
+        )
+
+    for command in BOOKING_COMMANDS:
+        reads = reads_of(command)
+        for query in SCHEDULES_READS:
+            read = reads.get(query)
+            if read is None:
+                fail(
+                    f"{command}: declares no read of {query!r} — the hub's real opening hours, its "
+                    "bank holidays and its overrides would all be invisible to the gate"
+                )
+            elif read.get("required") is not True:
+                fail(
+                    f"{command}: the {query!r} read is not `required: true` — a read that may fail "
+                    "to resolve leaves the opening-hours gate deciding on a catalogue it cannot "
+                    "tell apart from an empty one"
+                )
+    for command in LISTENER_BOOKING_COMMANDS:
+        reads = reads_of(command)
+        for query in SCHEDULES_READS:
+            read = reads.get(query)
+            if read is None:
+                fail(
+                    f"{command}: declares no read of {query!r} — it books through the same gate, "
+                    "and the runtime resolves the reads THIS command declares (appointments#100)"
+                )
+            elif read.get("required") is True:
+                fail(
+                    f"{command}: the {query!r} read must stay GRACEFUL, like every read of this "
+                    "listener — an abort retries into the dead-letter and answers nobody"
+                )
+
+
 def main() -> int:
     check_writers()
     check_reschedule()
     check_opening_hours_read()
+    check_schedules_authority()
     check_i18n()
     if failures:
         print(f"FAIL ({len(failures)}):")
