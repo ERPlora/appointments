@@ -1,0 +1,495 @@
+import { LitElement, html, css, nothing } from 'lit';
+import { state } from 'lit/decorators.js';
+import { define } from '@erplora/outfitkit/define';
+import '@erplora/outfitkit/ok-inline-feedback';
+import '@erplora/outfitkit/ok-data-table';
+import type { DataTableColumn } from '@erplora/outfitkit';
+import esLocale from '../../../locales/es.json';
+import enLocale from '../../../locales/en.json';
+import { todayISO } from '../../lib/business-time';
+
+const CATALOG: Record<string, unknown> = { es: esLocale, en: enLocale };
+
+// erp-appointments-series — LAS SERIES RECURRENTES, vistas como lo que son (appointments#91).
+//
+// Antes de esta pantalla el único gesto que llegaba a una serie entraba por la agenda, encima de
+// una ocurrencia concreta. Tres consecuencias reales: una serie cuyas ocurrencias aún no se han
+// materializado (o cuya ventana ya pasó) no tenía NINGUNA fila desde la que abrirse; una serie
+// partida (`split_from_id`) no se podía ver como las dos mitades encadenadas que es; y desactivar,
+// borrar o materializar una serie no tenía puerta de entrada aunque los commands existieran.
+//
+// POR QUÉ NO ES UNA ENTRADA DE NAVEGACIÓN: ninguno de los productos del sector cuelga una «página
+// de series» del menú. Fresha pone la repetición EN la cita y materializa hasta 12 meses por
+// delante; Vagaro deja editar la serie entera desde la cita; Google Calendar la parte al cambiar
+// la regla. La serie se gestiona DONDE se vive la agenda, así que esto es una vista más del módulo
+// —al lado de «Lista» y «Por profesional»—, no una página huérfana con su propio icono.
+//
+// Y es AQUÍ donde vive el cambio de PAUTA (appointments#90): el panel de reprogramar mueve un
+// hueco, y meter un selector de frecuencia en él sería pedirle a la recepcionista que redefina la
+// serie mientras arrastra una cita.
+
+interface ErploraClientLike {
+  query<T = unknown>(name: string, params?: Record<string, unknown>): Promise<T>;
+  command<T = unknown>(name: string, payload?: Record<string, unknown>): Promise<T>;
+  on(event: string, cb: (payload: unknown) => void): () => void;
+  locale: string;
+  t(catalog: Record<string, unknown>, key: string, params?: Record<string, unknown>): string;
+  notify?(n: { type: string; message: string }): void;
+}
+
+function erplora(): ErploraClientLike {
+  const c = (globalThis as { erplora?: ErploraClientLike }).erplora;
+  if (!c) throw new Error('erplora SDK not initialised by the shell');
+  return c;
+}
+
+function rows<T>(r: unknown): T[] {
+  if (Array.isArray(r)) return r as T[];
+  if (r && typeof r === 'object' && Array.isArray((r as { rows?: T[] }).rows)) {
+    return (r as { rows: T[] }).rows;
+  }
+  return [];
+}
+
+/** Una plantilla como la pinta `appointments.recurring.list`. */
+interface Series {
+  id: string;
+  customer_name: string;
+  service_name: string;
+  staff_name: string;
+  frequency: string;
+  day_of_week: number | null;
+  time: string;
+  duration_minutes: number;
+  start_date: string;
+  end_date: string | null;
+  max_occurrences: number | null;
+  is_active: number;
+}
+
+/** …y como la devuelve `appointments.recurring.get`, que sí trae los tres ids. */
+interface SeriesTemplate extends Series {
+  customer_id: string | null;
+  service_id: string | null;
+  staff_id: string | null;
+  split_from_id?: string | null;
+}
+
+interface Occurrence {
+  id: string;
+  occurrence_date: string;
+  status: string;
+  converted_sale_id: string | null;
+}
+
+const FREQUENCIES = ['daily', 'weekly', 'biweekly', 'monthly'] as const;
+const FREQUENCY_KEYS: Record<string, string> = {
+  daily: 'ui.freqDaily',
+  weekly: 'ui.freqWeekly',
+  biweekly: 'ui.freqBiweekly',
+  monthly: 'ui.freqMonthly',
+};
+/** 0 = lunes … 6 = domingo, la convención del módulo en todas partes (docs/concepts.md). */
+const WEEKDAY_KEYS = [
+  'ui.dayMonday',
+  'ui.dayTuesday',
+  'ui.dayWednesday',
+  'ui.dayThursday',
+  'ui.dayFriday',
+  'ui.daySaturday',
+  'ui.daySunday',
+];
+/** El día de la semana solo alinea las pautas que avanzan por semanas. */
+const ALIGNS_TO_WEEKDAY = ['weekly', 'biweekly'];
+
+export class ErpAppointmentsSeries extends LitElement {
+  static styles = css`
+    :host { display:flex; flex-direction:column; min-height:0; flex:1 1 auto;
+            font-family: system-ui, sans-serif; color: var(--ion-text-color, #1c1b18); }
+    .page { display:flex; flex-direction:column; gap:.5rem; min-height:0; flex:1 1 auto; }
+    .page > ok-data-table { flex:1 1 auto; min-height:0; }
+    .form { display:flex; flex-direction:column; gap:.75rem; padding:.25rem 0; }
+    /* Dos columnas en cuanto hay sitio y una sola en móvil: el panel es el mismo en los tres
+       tamaños, lo que cambia es cuántos campos caben por fila. */
+    .grid { display:grid; grid-template-columns:1fr; gap:.75rem; }
+    @media (min-width: 540px) { .grid { grid-template-columns:1fr 1fr; } }
+    .ctx { margin:0; font-size:.9rem; color: var(--ion-color-medium, #8b897f); }
+    .ctx strong { color: var(--ion-text-color, #1c1b18); }
+    .loading, .empty { color: var(--ion-color-medium, #8b897f); font-size:.9rem; margin:.25rem 0; }
+  `;
+
+  @state() series: Series[] = [];
+  @state() loading = true;
+  @state() error = '';
+  @state() saving = false;
+
+  /** La serie abierta en el panel (vacío = el panel no está editando nada). */
+  @state() editingId = '';
+  @state() template: SeriesTemplate | null = null;
+  @state() occurrences: Occurrence[] = [];
+  /** El corte: la primera ocurrencia que aún no ha pasado. El servidor lo adelanta a hoy igual. */
+  @state() fromOccurrence = '';
+
+  @state() editFrequency = '';
+  /** `''` = sin día fijo. Se guarda como texto porque es lo que devuelve `ion-select`. */
+  @state() editDayOfWeek = '';
+  @state() editTime = '';
+  @state() editDuration = '';
+
+  private offLocale: (() => void) | null = null;
+
+  async connectedCallback(): Promise<void> {
+    super.connectedCallback();
+    // i18n (ADR-0055): al cambiar de idioma se repinta, como el resto de vistas del módulo.
+    this.offLocale = erplora().on('erplora:locale-changed', () => this.requestUpdate());
+    await this.refresh();
+  }
+
+  disconnectedCallback(): void {
+    this.offLocale?.();
+    this.offLocale = null;
+    super.disconnectedCallback();
+  }
+
+  async refresh(): Promise<void> {
+    this.loading = true;
+    this.error = '';
+    try {
+      this.series = rows<Series>(await erplora().query('appointments.recurring.list'));
+    } catch (e) {
+      // Un fallo que no se ve no existe: la pantalla vacía y la pantalla rota se parecen
+      // demasiado, y sin este aviso la recepcionista concluye que no tiene series.
+      this.series = [];
+      this.error = e instanceof Error && e.message ? e.message : erplora().t(CATALOG, 'ui.seriesLoadError');
+    } finally {
+      this.loading = false;
+    }
+  }
+
+  private dataTable(): (HTMLElement & { open(mode: string): void; close(): void }) | null {
+    return this.renderRoot.querySelector('ok-data-table') as
+      | (HTMLElement & { open(mode: string): void; close(): void })
+      | null;
+  }
+
+  /** Carga la plantilla AUTORITATIVA de la serie (la lista no trae los tres ids) y lo que ya está
+   *  reservado, que es lo que decide dónde cae el corte y lo que hay que avisar antes de guardar. */
+  private async loadTemplate(recurringId: string): Promise<SeriesTemplate | null> {
+    const tmpl = rows<SeriesTemplate>(
+      await erplora().query('appointments.recurring.get', { recurring_id: recurringId }),
+    )[0];
+    return tmpl ?? null;
+  }
+
+  async openSeries(row: Record<string, unknown>): Promise<void> {
+    const id = String(row.id ?? '');
+    if (!id) return;
+    this.error = '';
+    try {
+      const [tmpl, occ] = await Promise.all([
+        this.loadTemplate(id),
+        erplora().query('appointments.recurring.occurrences', { recurring_id: id }),
+      ]);
+      if (!tmpl) {
+        this.error = erplora().t(CATALOG, 'ui.seriesNotFound');
+        return;
+      }
+      this.template = tmpl;
+      this.occurrences = rows<Occurrence>(occ);
+      this.editingId = id;
+      this.editFrequency = tmpl.frequency ?? '';
+      this.editDayOfWeek = tmpl.day_of_week === null || tmpl.day_of_week === undefined ? '' : String(tmpl.day_of_week);
+      this.editTime = tmpl.time ?? '';
+      this.editDuration = String(tmpl.duration_minutes ?? '');
+      // EL PASADO ESTÁ CONGELADO: el corte nunca apunta a una ocurrencia ya servida. Si no queda
+      // ninguna futura reservada, se corta hoy — que es lo que el servidor haría de todos modos.
+      const today = todayISO();
+      this.fromOccurrence =
+        this.occurrences.map((o) => o.occurrence_date).find((d) => d >= today) ?? today;
+      await this.updateComplete;
+      this.dataTable()?.open('create');
+    } catch (e) {
+      this.error = e instanceof Error && e.message ? e.message : erplora().t(CATALOG, 'ui.seriesLoadError');
+    }
+  }
+
+  private closePanel(): void {
+    this.editingId = '';
+    this.template = null;
+    this.occurrences = [];
+    this.dataTable()?.close();
+  }
+
+  /** Lo que de verdad cambió. Se manda SOLO eso: `recurring.update` compara contra la plantilla
+   *  para decidir si la pauta cambió, y reenviar lo idéntico no aporta nada; mandar el payload
+   *  entero además haría que un campo que la pantalla no supo leer pisara el valor guardado. */
+  private changedFields(): Record<string, unknown> {
+    const tmpl = this.template;
+    if (!tmpl) return {};
+    const changed: Record<string, unknown> = {};
+    if (this.editTime && this.editTime !== tmpl.time) changed.time = this.editTime;
+    const minutes = Math.trunc(Number(this.editDuration));
+    if (Number.isFinite(minutes) && minutes >= 1 && minutes !== tmpl.duration_minutes) {
+      changed.duration_minutes = minutes;
+    }
+    if (this.editFrequency && this.editFrequency !== tmpl.frequency) {
+      changed.frequency = this.editFrequency;
+    }
+    // El día vacío es un valor, no una ausencia: viaja como `null` explícito y BORRA el día fijo.
+    const dow = this.editDayOfWeek === '' ? null : Math.trunc(Number(this.editDayOfWeek));
+    const current = tmpl.day_of_week === undefined ? null : tmpl.day_of_week;
+    if (dow !== current) changed.day_of_week = dow;
+    return changed;
+  }
+
+  /** Cuántas citas ya reservadas alcanza el cambio: las que quedan por delante del corte y siguen
+   *  siendo un plan. Las ya cobradas se nombran aparte porque NO se van a tocar. */
+  private get affected(): { upcoming: number; invoiced: number } {
+    const from = this.fromOccurrence;
+    let upcoming = 0;
+    let invoiced = 0;
+    for (const o of this.occurrences) {
+      if (!from || o.occurrence_date < from) continue;
+      if (o.status !== 'pending' && o.status !== 'confirmed') continue;
+      if (o.converted_sale_id) invoiced += 1;
+      else upcoming += 1;
+    }
+    return { upcoming, invoiced };
+  }
+
+  async submitEdit(ev: Event): Promise<void> {
+    ev.preventDefault?.();
+    const tmpl = this.template;
+    if (!tmpl || this.saving) return;
+    const changed = this.changedFields();
+    // Guardar sin tocar nada no escribe: el command lo rechazaría («nada que cambiar») y el panel
+    // habría prometido algo que no ocurrió.
+    if (Object.keys(changed).length === 0) {
+      this.closePanel();
+      return;
+    }
+    this.saving = true;
+    this.error = '';
+    try {
+      const result = (await erplora().command('appointments.recurring.update', {
+        recurring_id: this.editingId,
+        scope: 'this_and_following',
+        from_occurrence_date: this.fromOccurrence,
+        ...changed,
+      })) as Record<string, unknown> | undefined;
+
+      // CAMBIO DE PAUTA → hay que RESERVAR. El command mueve lo que sigue cabiendo y cancela lo
+      // que no, pero no reserva los días nuevos: eso es `materialize`, que es quien tiene las
+      // reads de catálogo y disponibilidad. Sin este paso la clienta se queda sin nada en el día
+      // nuevo, que es la mitad del gesto que ella pidió.
+      if (result?.pattern_changed === true) {
+        await this.bookWindow(String(result.recurring_id ?? this.editingId), tmpl);
+      }
+      this.notifyOutcome(result);
+      this.closePanel();
+      await this.refresh();
+    } catch (e) {
+      this.error = e instanceof Error && e.message ? e.message : erplora().t(CATALOG, 'ui.seriesSaveError');
+    } finally {
+      this.saving = false;
+    }
+  }
+
+  /** Lo que NO se movió se DICE. Callarlo es el fallo nº1 que reportan los foros de este gesto. */
+  private notifyOutcome(result: Record<string, unknown> | undefined): void {
+    if (!result) return;
+    const t = (k: string, p?: Record<string, unknown>): string => erplora().t(CATALOG, k, p);
+    const message = t('ui.seriesUpdateOutcome', {
+      moved: Number(result.moved ?? 0),
+      cancelled: Number(result.cancelled_pattern_change ?? 0),
+      locked: Number(result.locked_invoiced ?? 0),
+    });
+    erplora().notify?.({ type: 'success', message });
+  }
+
+  private async bookWindow(recurringId: string, tmpl: SeriesTemplate): Promise<void> {
+    // Los tres ids son SELECTOR, no fuente (appointments#54): el handler los contrasta con la
+    // plantilla que carga el runtime y rechaza si no coinciden.
+    await erplora().command('appointments.recurring.materialize', {
+      recurring_id: recurringId,
+      customer_id: tmpl.customer_id ?? '',
+      service_id: tmpl.service_id ?? '',
+      staff_id: tmpl.staff_id ?? '',
+    });
+  }
+
+  /** Materializar la ventana desde la lista: la serie ya existe, lo que falta son sus citas. */
+  async materializeSeries(row: Record<string, unknown>): Promise<void> {
+    const id = String(row.id ?? '');
+    if (!id) return;
+    this.error = '';
+    try {
+      const tmpl = await this.loadTemplate(id);
+      if (!tmpl) {
+        this.error = erplora().t(CATALOG, 'ui.seriesNotFound');
+        return;
+      }
+      await this.bookWindow(id, tmpl);
+      erplora().notify?.({ type: 'success', message: erplora().t(CATALOG, 'ui.seriesMaterialized') });
+    } catch (e) {
+      this.error = e instanceof Error && e.message ? e.message : erplora().t(CATALOG, 'ui.seriesMaterializeError');
+    }
+  }
+
+  async deleteSeries(row: Record<string, unknown>): Promise<void> {
+    const id = String(row.id ?? '');
+    if (!id) return;
+    this.error = '';
+    try {
+      await erplora().command('appointments.recurring.delete', { recurring_id: id });
+      await this.refresh();
+    } catch (e) {
+      this.error = e instanceof Error && e.message ? e.message : erplora().t(CATALOG, 'ui.seriesDeleteError');
+    }
+  }
+
+  private onRowAction(ev: CustomEvent): void {
+    const { action, row } = (ev.detail ?? {}) as { action?: string; row?: Record<string, unknown> };
+    if (!row) return;
+    if (action === 'edit') void this.openSeries(row);
+    else if (action === 'materialize') void this.materializeSeries(row);
+    else if (action === 'delete') void this.deleteSeries(row);
+  }
+
+  /** La pauta en una frase, que es como la lee una recepcionista («Cada semana · lunes · 11:00»). */
+  private patternLabel(row: Series): string {
+    const t = (k: string): string => erplora().t(CATALOG, k);
+    const parts = [t(FREQUENCY_KEYS[row.frequency] ?? row.frequency)];
+    if (ALIGNS_TO_WEEKDAY.includes(row.frequency) && row.day_of_week !== null && row.day_of_week !== undefined) {
+      parts.push(t(WEEKDAY_KEYS[row.day_of_week] ?? String(row.day_of_week)));
+    }
+    if (row.time) parts.push(row.time);
+    return parts.join(' · ');
+  }
+
+  private get columns(): DataTableColumn[] {
+    const t = (k: string): string => erplora().t(CATALOG, k);
+    return [
+      { key: 'customer_name', header: t('ui.colCustomer') },
+      { key: 'service_name', header: t('ui.colService') },
+      { key: 'staff_name', header: t('ui.colStaff'), format: (r) => (r.staff_name as string) || '—' },
+      { key: 'frequency', header: t('ui.colPattern'), format: (r) => this.patternLabel(r as unknown as Series) },
+      { key: 'start_date', header: t('ui.colStarts') },
+      { key: 'end_date', header: t('ui.colEnds'), format: (r) => (r.end_date as string) || t('ui.seriesNoEnd') },
+    ];
+  }
+
+  private get rowActions() {
+    const t = (k: string): string => erplora().t(CATALOG, k);
+    return [
+      { id: 'edit', label: t('ui.actionEditSeries'), icon: 'create-outline', color: 'primary' },
+      { id: 'materialize', label: t('ui.actionMaterialize'), icon: 'calendar-number-outline', color: 'success' },
+      { id: 'delete', label: t('ui.actionDelete'), icon: 'trash-outline', color: 'danger' },
+    ];
+  }
+
+  render() {
+    const t = (k: string, p?: Record<string, unknown>): string => erplora().t(CATALOG, k, p);
+    return html`<div class="page">
+      ${this.error
+        ? html`<ok-inline-feedback tone="danger" icon="alert-circle-outline">${this.error}</ok-inline-feedback>`
+        : nothing}
+      <ok-data-table
+        .fill=${true}
+        .views=${true}
+        .cardTitle=${(row: Record<string, unknown>) => String(row.customer_name ?? '')}
+        .columns=${this.columns}
+        .rows=${this.series as unknown as Record<string, unknown>[]}
+        .searchKeys=${['customer_name', 'service_name', 'staff_name']}
+        .searchPlaceholder=${t('ui.seriesSearchPlaceholder')}
+        .actions=${this.rowActions}
+        @rowAction=${(e: CustomEvent) => this.onRowAction(e)}
+        .labels=${{ newRecord: t('ui.seriesEditTitle') }}
+        .emptyMessage=${this.loading ? t('ui.loading') : t('ui.seriesEmpty')}
+      >
+        ${this.editingId ? this.renderEditForm(t) : nothing}
+      </ok-data-table>
+    </div>`;
+  }
+
+  private renderEditForm(t: (k: string, p?: Record<string, unknown>) => string) {
+    const tmpl = this.template;
+    if (!tmpl) return nothing;
+    const { upcoming, invoiced } = this.affected;
+    const booked = this.occurrences.length;
+    return html`<form slot="create" data-mode="series-edit" class="form" @submit=${(e: Event) => this.submitEdit(e)}>
+      <p class="ctx" data-role="series-context">
+        <strong>${tmpl.customer_name}</strong> · ${tmpl.service_name} · ${tmpl.staff_name || '—'}
+      </p>
+      <!-- Una serie PARTIDA son dos mitades encadenadas, y decirlo es la mitad de poder entenderla:
+           sin esto, la mitad nueva parece una serie que apareció de la nada. -->
+      ${tmpl.split_from_id
+        ? html`<ok-inline-feedback data-role="split-from" tone="info" icon="git-branch-outline"
+            >${t('ui.seriesSplitFrom', { id: tmpl.split_from_id })}</ok-inline-feedback
+          >`
+        : nothing}
+      <p class="ctx" data-role="series-counts">
+        ${t('ui.seriesBookedCount', { booked, from: this.fromOccurrence, upcoming })}
+      </p>
+      <!-- EL RECUENTO ANTES DE CONFIRMAR. Mover el día de una serie le cambia TODAS las citas a la
+           clienta; un aviso genérico no basta, y lo que ya está cobrado no se toca — se nombra. -->
+      ${invoiced > 0
+        ? html`<ok-inline-feedback data-role="series-locked" tone="warning" icon="lock-closed-outline"
+            >${t('ui.seriesLockedInvoiced', { invoiced })}</ok-inline-feedback
+          >`
+        : nothing}
+      <div class="grid">
+        <ion-select
+          data-role="series-frequency"
+          label=${t('ui.fieldFrequency')}
+          label-placement="floating"
+          .value=${this.editFrequency}
+          @ionChange=${(e: any) => (this.editFrequency = e.target.value)}
+        >
+          ${FREQUENCIES.map((f) => html`<ion-select-option .value=${f}>${t(FREQUENCY_KEYS[f])}</ion-select-option>`)}
+        </ion-select>
+        ${ALIGNS_TO_WEEKDAY.includes(this.editFrequency)
+          ? html`<ion-select
+              data-role="series-day"
+              label=${t('ui.fieldWeekday')}
+              label-placement="floating"
+              .value=${this.editDayOfWeek}
+              @ionChange=${(e: any) => (this.editDayOfWeek = e.target.value)}
+            >
+              <ion-select-option value="">${t('ui.weekdayAny')}</ion-select-option>
+              ${WEEKDAY_KEYS.map((k, i) => html`<ion-select-option .value=${String(i)}>${t(k)}</ion-select-option>`)}
+            </ion-select>`
+          : nothing}
+        <ion-input
+          data-role="series-time"
+          label=${t('ui.fieldTime')}
+          label-placement="floating"
+          type="time"
+          .value=${this.editTime}
+          @ionInput=${(e: any) => (this.editTime = e.target.value)}
+        ></ion-input>
+        <ion-input
+          data-role="series-duration"
+          label=${t('ui.fieldMinutes')}
+          label-placement="floating"
+          type="number"
+          min="1"
+          .value=${this.editDuration}
+          @ionInput=${(e: any) => (this.editDuration = e.target.value)}
+        ></ion-input>
+      </div>
+      <ok-inline-feedback tone="info" icon="information-circle-outline"
+        >${t('ui.seriesScopeHint', { from: this.fromOccurrence })}</ok-inline-feedback
+      >
+      <ion-button type="submit" expand="block" .disabled=${this.saving}>${t('ui.seriesSave')}</ion-button>
+    </form>`;
+  }
+}
+
+define('erp-appointments-series', ErpAppointmentsSeries);
+
+declare global {
+  interface HTMLElementTagNameMap {
+    'erp-appointments-series': ErpAppointmentsSeries;
+  }
+}

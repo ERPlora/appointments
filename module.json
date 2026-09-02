@@ -554,6 +554,12 @@
         "commands/_mark_converted.sql"
       ]
     },
+    "appointments._recurring_cancel_occurrence": {
+      "permission": "appointments.change_appointment",
+      "sql": [
+        "commands/_recurring_cancel_occurrence.sql"
+      ]
+    },
     "appointments._recurring_close": {
       "permission": "appointments.change_appointment",
       "sql": [
@@ -1151,7 +1157,7 @@
         "appointments.recurring.updated"
       ],
       "ai": {
-        "description": "Edits a recurring appointment from one of its occurrences onwards ('this and all following'), changing the time and/or the duration. The series is split in two: the original template stops the day before, a new one starts at that occurrence, and the appointments already booked from there on are moved to the new time. Appointments before today, cancelled ones and ones already turned into a sale are never touched."
+        "description": "Edits a recurring appointment from one of its occurrences onwards ('this and all following'), changing the time, the duration and/or the repetition pattern (how often it repeats and which weekday). The series is split in two: the original template stops the day before, a new one starts at that occurrence, and the appointments already booked from there on are moved to the new time. When the pattern changes, the bookings that no longer fall on a day of the new pattern are cancelled instead of moved, and the answer says how many. Appointments before today, cancelled ones, ones in progress and ones already turned into a sale are never touched. It does not book the appointments of the new pattern: that is 'materialize'."
       },
       "reads": [
         {

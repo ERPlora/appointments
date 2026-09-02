@@ -2253,9 +2253,45 @@ pub fn update_recurring_series_pure(input: Value) -> Result<Output, String> {
         .get("duration_minutes")
         .map(|v| as_i64(v, 0))
         .filter(|d| *d >= 1);
-    if new_time.is_none() && new_duration.is_none() {
+
+    // appointments#90 — LA PAUTA. `frequency` es una enum CERRADA aquí además de en el schema, por
+    // el mismo motivo que el alcance: un valor desconocido tiene que fallar, nunca caer en un
+    // defecto silencioso que convertiría la serie de una clienta en otra cosa.
+    let new_frequency = match payload.get("frequency") {
+        None => None,
+        Some(v) => {
+            let f = as_str(v);
+            if !matches!(f.as_str(), "daily" | "weekly" | "biweekly" | "monthly") {
+                return Err(format!(
+                    "invalid_payload: frequency `{f}` no soportada (daily|weekly|biweekly|monthly)"
+                ));
+            }
+            Some(f)
+        }
+    };
+    // Un `null` EXPLÍCITO no es lo mismo que la clave ausente: ausente conserva el día de la
+    // plantilla, `null` lo borra y la serie vuelve a alinearse con su fecha de inicio.
+    let new_day_of_week: Option<Option<i64>> = match payload.get("day_of_week") {
+        None => None,
+        Some(Value::Null) => Some(None),
+        Some(v) => {
+            let d = as_i64(v, -1);
+            if !(0..=6).contains(&d) {
+                return Err(format!(
+                    "invalid_payload: day_of_week `{d}` fuera de rango (0=lunes … 6=domingo)"
+                ));
+            }
+            Some(Some(d))
+        }
+    };
+
+    if new_time.is_none()
+        && new_duration.is_none()
+        && new_frequency.is_none()
+        && new_day_of_week.is_none()
+    {
         return Err(
-            "invalid_payload: nada que cambiar (se espera `time`, `duration_minutes` o ambos)"
+            "invalid_payload: nada que cambiar (se espera `time`, `duration_minutes`, `frequency` o `day_of_week`)"
                 .to_string(),
         );
     }
@@ -2298,6 +2334,23 @@ pub fn update_recurring_series_pure(input: Value) -> Result<Output, String> {
         .map(|d| days_from_civil(d.y, d.mo, d.d))
         .ok_or_else(|| "invalid_payload: la plantilla tiene un start_date inválido".to_string())?;
 
+    // La pauta que queda tras el cambio, y si de verdad cambió: lo que no se pide se hereda.
+    let tmpl_frequency = str_or(&tmpl, "frequency", "weekly");
+    let tmpl_day_of_week = tmpl
+        .get("day_of_week")
+        .map(|v| as_i64(v, -1))
+        .filter(|d| (0..=6).contains(d));
+    let frequency = new_frequency.unwrap_or_else(|| tmpl_frequency.clone());
+    let day_of_week = new_day_of_week.unwrap_or(tmpl_day_of_week);
+    let pattern_changed = frequency != tmpl_frequency || day_of_week != tmpl_day_of_week;
+    // La pauta se ancla donde arranca la serie que va a mandar: el corte si hay split, y la fecha
+    // de inicio de la plantilla si se edita en sitio.
+    let anchor_days = if cut_days > start_days {
+        cut_days
+    } else {
+        start_days
+    };
+
     let mut ops: Vec<Operation> = Vec::new();
     // The series the moved occurrences will belong to: the new half, or the template itself when
     // the cut is at (or before) its very first occurrence and there is nothing to split.
@@ -2309,6 +2362,13 @@ pub fn update_recurring_series_pure(input: Value) -> Result<Output, String> {
         p.insert("recurring_id".into(), json!(recurring_id));
         p.insert("time".into(), json!(time));
         p.insert("duration_minutes".into(), json!(duration));
+        // appointments#90: la pauta viaja también en la edición en sitio. Sin esto la plantilla se
+        // quedaría con la hora nueva y la frecuencia vieja, que es una serie que nadie pidió.
+        p.insert("frequency".into(), json!(frequency));
+        p.insert(
+            "day_of_week".into(),
+            day_of_week.map(Value::from).unwrap_or(Value::Null),
+        );
         ops.push(Operation::sql("appointments._recurring_edit", p));
         recurring_id.clone()
     } else {
@@ -2334,13 +2394,14 @@ pub fn update_recurring_series_pure(input: Value) -> Result<Output, String> {
             "service_name",
             "staff_id",
             "staff_name",
-            "frequency",
         ] {
             split.insert(key.into(), json!(str_or(&tmpl, key, "")));
         }
+        // appointments#90: la mitad nueva nace con la PAUTA nueva (heredada si no se pidió otra).
+        split.insert("frequency".into(), json!(frequency));
         split.insert(
             "day_of_week".into(),
-            tmpl.get("day_of_week").cloned().unwrap_or(Value::Null),
+            day_of_week.map(Value::from).unwrap_or(Value::Null),
         );
         split.insert("time".into(), json!(time));
         split.insert("duration_minutes".into(), json!(duration));
@@ -2373,6 +2434,7 @@ pub fn update_recurring_series_pure(input: Value) -> Result<Output, String> {
     let mut moved = 0i64;
     let mut locked_invoiced = 0i64;
     let mut kept_cancelled = 0i64;
+    let mut cancelled_pattern_change = 0i64;
     for row in occurrences.iter() {
         let date = as_str(row.get("occurrence_date").unwrap_or(&Value::Null));
         let Some(d) = parse_dt(&date) else { continue };
@@ -2396,8 +2458,38 @@ pub fn update_recurring_series_pure(input: Value) -> Result<Output, String> {
         if appointment_id.is_empty() {
             continue;
         }
-        if moved >= 50 {
+        if moved + cancelled_pattern_change >= 50 {
             break; // same per-invocation ceiling as `materialize` and `bulk_create`
+        }
+        // appointments#90 — CAMBIO DE PAUTA. Si la fecha ya no cae en la pauta nueva no hay hueco
+        // al que moverla: se CANCELA, que es lo que la recepcionista haría a mano y lo único que
+        // Fresha, Vagaro, Square y Booksy ofrecen (obligan a cancelar y volver a reservar). No se
+        // BORRA: borrar tira el número de cita, el historial y la ficha de la clienta.
+        //
+        // Lo cancelado se queda colgando de la mitad VIEJA de la serie, así que ni la read de
+        // ocurrencias de la mitad nueva lo ve ni el índice único parcial de la 005 choca con él.
+        if pattern_changed
+            && !pattern_contains(
+                &frequency,
+                day_of_week,
+                anchor_days,
+                days_from_civil(d.y, d.mo, d.d),
+            )
+        {
+            let mut cancel = Map::new();
+            cancel.insert("appointment_id".into(), json!(appointment_id));
+            // Clave estable, no prosa: la pantalla la traduce (`en` + `es`, ADR-0055/0199).
+            cancel.insert("reason".into(), json!("series_pattern_changed"));
+            ops.push(Operation::sql(
+                "appointments._recurring_cancel_occurrence",
+                cancel,
+            ));
+            let mut h = Map::new();
+            h.insert("appointment_id".into(), json!(appointment_id));
+            h.insert("channel".into(), json!("staff"));
+            ops.push(Operation::sql("appointments._history_cancel", h));
+            cancelled_pattern_change += 1;
+            continue;
         }
         // On the BUSINESS clock (appointments#12): the series keeps its wall time across a DST
         // change, so an occurrence either side of it lands at the same hour of the salon.
@@ -2434,10 +2526,48 @@ pub fn update_recurring_series_pure(input: Value) -> Result<Output, String> {
         "recurring_id": target_series,
         "split": target_series != recurring_id,
         "from_occurrence_date": cut,
+        "pattern_changed": pattern_changed,
         "moved": moved,
+        "cancelled_pattern_change": cancelled_pattern_change,
         "locked_invoiced": locked_invoiced,
         "kept_cancelled": kept_cancelled
     })))
+}
+
+/// ¿La fecha `day` (días desde epoch) sigue cayendo en la pauta `frequency`/`day_of_week` anclada
+/// en `anchor_days`?
+///
+/// Es la MISMA regla de expansión que aplica `materialize_recurring` —alineación al día de la
+/// semana en `weekly`/`biweekly`, mismo día del mes con clamp en `monthly`— preguntada como
+/// PERTENENCIA en vez de como enumeración. Que sean la misma regla no es cosmético: si se
+/// separaran, `update` cancelaría una cita que `materialize` volvería a crear en cuanto alguien
+/// avanzara la ventana, y la serie oscilaría sola.
+fn pattern_contains(
+    frequency: &str,
+    day_of_week: Option<i64>,
+    anchor_days: i64,
+    day: i64,
+) -> bool {
+    if day < anchor_days {
+        return false;
+    }
+    match frequency {
+        "daily" => true,
+        "weekly" | "biweekly" => {
+            let step = if frequency == "weekly" { 7 } else { 14 };
+            let first = match day_of_week {
+                Some(dow) => anchor_days + (dow - weekday_mon0(anchor_days)).rem_euclid(7),
+                None => anchor_days,
+            };
+            day >= first && (day - first) % step == 0
+        }
+        _ => {
+            // monthly: el mismo día del mes que el ancla, con clamp al último día del mes corto.
+            let (_, _, dom) = civil_from_days(anchor_days);
+            let (y, mo, d) = civil_from_days(day);
+            d == dom.min(days_in_month(y, mo))
+        }
+    }
 }
 
 /// How many occurrences of `tmpl` fall strictly BEFORE `cut_days`, counting from its `start_date`.
@@ -5011,6 +5141,361 @@ mod tests {
                 "scope `{scope}`: {err}"
             );
         }
+    }
+
+    // ── appointments#90 · cambiar la PAUTA de la serie, no solo su hueco ─────────────────────
+    //
+    // `recurring.update` movía la HORA y la DURACIÓN «de esta en adelante». Cambiar la PAUTA
+    // (`frequency`, `day_of_week`) es otra cosa: las ocurrencias caen en días DISTINTOS, así que
+    // no hay correspondencia 1:1 con las citas ya reservadas y el split no puede limitarse a
+    // reescribir el hueco de cada fila.
+    //
+    // DECISIÓN DE MERCADO. Google Calendar documenta el gesto exacto: `events.update` con `UNTIL`
+    // sobre la serie vieja + `events.insert` de una serie nueva («the original one retains
+    // instances without the change, and the new recurring event has instances where the change is
+    // applied»). Outlook y Odoo (`_stop_at()`) hacen lo mismo. En el vertical de salón NADIE deja
+    // cambiar la pauta desde una ocurrencia: Fresha, Vagaro, Square y Booksy obligan a CANCELAR y
+    // volver a reservar — y esa es la respuesta a qué pasa con lo ya reservado que se queda sin
+    // sitio: se CANCELA, no se borra. Borrar tira el nº de cita, el historial y la ficha de la
+    // clienta; cancelar es exactamente lo que la recepcionista haría a mano.
+    //
+    // La objeción de la issue («cancelar deja excepciones que la pauta nueva nunca resucitará»)
+    // muere con el split: lo cancelado se queda colgando de la mitad VIEJA, y la mitad nueva tiene
+    // otro `recurring_id`, así que ni su read de ocurrencias las ve ni el índice único parcial de
+    // la 005 choca con ellas.
+    //
+    // Y lo que SÍ sigue cabiendo en la pauta nueva no se cancela: se mueve, con su fila, su número
+    // y su historial. Cancelar una cita que sigue siendo válida sería perder una reserva por un
+    // detalle de implementación.
+
+    fn pattern_payload(from: &str, extra: Value) -> Value {
+        let mut p = json!({
+            "recurring_id": "r1",
+            "scope": "this_and_following",
+            "from_occurrence_date": from
+        });
+        if let Value::Object(fields) = extra {
+            for (k, v) in fields {
+                p[k] = v;
+            }
+        }
+        p
+    }
+
+    fn ids_of(out: &Output, suffix: &str) -> Vec<String> {
+        ops_named(out, suffix)
+            .iter()
+            .filter_map(|op| op.params.get("appointment_id").and_then(|v| v.as_str()))
+            .map(|s| s.to_string())
+            .collect()
+    }
+
+    /// El caso de la recepcionista: «a partir del 17 Ana viene los MIÉRCOLES». Las citas de los
+    /// lunes que quedan por delante ya no caben en la pauta nueva, así que se cancelan — con su
+    /// motivo y su fila de historial — y se CUENTAN en la respuesta.
+    #[test]
+    fn changing_the_day_of_the_week_cancels_the_bookings_that_no_longer_fit() {
+        let out = update_recurring_series_pure(series_edit_input(
+            pattern_payload("2026-08-17", json!({ "day_of_week": 2 })),
+            template(json!({ "max_occurrences": null })),
+            json!([
+                occurrence("2026-08-10", "confirmed", json!({})),
+                occurrence("2026-08-17", "confirmed", json!({})),
+                occurrence("2026-08-24", "pending", json!({}))
+            ]),
+        ))
+        .unwrap();
+        assert!(out.error.is_none(), "{:?}", out.error);
+
+        // La mitad nueva nace con la pauta NUEVA…
+        let split = ops_named(&out, "_recurring_split");
+        assert_eq!(split.len(), 1);
+        assert_eq!(
+            split[0].params.get("day_of_week").and_then(|v| v.as_i64()),
+            Some(2)
+        );
+        assert_eq!(
+            split[0].params.get("frequency").and_then(|v| v.as_str()),
+            Some("weekly"),
+            "lo que no se pide no cambia"
+        );
+
+        // …y ninguna cita se mueve: el 17 y el 24 son LUNES, y la pauta nueva son miércoles.
+        assert!(
+            ops_named(&out, "_recurring_move_occurrence").is_empty(),
+            "una cita de un lunes no se recoloca en una serie de miércoles"
+        );
+        assert_eq!(
+            ids_of(&out, "_recurring_cancel_occurrence"),
+            vec!["apt-2026-08-17", "apt-2026-08-24"]
+        );
+        // Cada cancelación deja su rastro, como cualquier otra transición del módulo.
+        assert_eq!(ops_named(&out, "_history_cancel").len(), 2);
+
+        let result = out.result.clone().expect("el command dice lo que hizo");
+        assert_eq!(
+            result.get("pattern_changed").and_then(|v| v.as_bool()),
+            Some(true)
+        );
+        assert_eq!(
+            result
+                .get("cancelled_pattern_change")
+                .and_then(|v| v.as_i64()),
+            Some(2)
+        );
+        assert_eq!(result.get("moved").and_then(|v| v.as_i64()), Some(0));
+    }
+
+    /// De semanal a quincenal: la mitad de lo reservado SIGUE cayendo en la pauta nueva. Esas
+    /// citas se mueven a la mitad nueva (conservan fila, nº e historial); las que se quedan sin
+    /// sitio se cancelan.
+    #[test]
+    fn switching_to_biweekly_keeps_the_dates_that_still_fit_and_cancels_the_rest() {
+        let out = update_recurring_series_pure(series_edit_input(
+            pattern_payload("2026-08-17", json!({ "frequency": "biweekly" })),
+            template(json!({ "max_occurrences": null })),
+            json!([
+                occurrence("2026-08-17", "confirmed", json!({})),
+                occurrence("2026-08-24", "confirmed", json!({})),
+                occurrence("2026-08-31", "pending", json!({})),
+                occurrence("2026-09-07", "pending", json!({}))
+            ]),
+        ))
+        .unwrap();
+        assert!(out.error.is_none(), "{:?}", out.error);
+        let new_series = ops_named(&out, "_recurring_split")[0]
+            .params
+            .get("new_id")
+            .and_then(|v| v.as_str())
+            .unwrap()
+            .to_string();
+
+        // Quincenal desde el corte (17/08): 17/08 y 31/08 siguen siendo la serie.
+        assert_eq!(
+            ids_of(&out, "_recurring_move_occurrence"),
+            vec!["apt-2026-08-17", "apt-2026-08-31"]
+        );
+        assert_eq!(
+            ops_named(&out, "_recurring_move_occurrence")[0]
+                .params
+                .get("recurring_id")
+                .and_then(|v| v.as_str()),
+            Some(new_series.as_str())
+        );
+        assert_eq!(
+            ids_of(&out, "_recurring_cancel_occurrence"),
+            vec!["apt-2026-08-24", "apt-2026-09-07"]
+        );
+        let result = out.result.clone().expect("el command dice lo que hizo");
+        assert_eq!(result.get("moved").and_then(|v| v.as_i64()), Some(2));
+        assert_eq!(
+            result
+                .get("cancelled_pattern_change")
+                .and_then(|v| v.as_i64()),
+            Some(2)
+        );
+    }
+
+    /// 🔴 La puerta es la MISMA que la de mover: una ocurrencia ya convertida en venta arrastra
+    /// registro fiscal (ADR-0331) y no se cancela ni aunque la pauta la deje sin sitio. Se cuenta.
+    #[test]
+    fn a_pattern_change_never_cancels_an_invoiced_booking() {
+        let out = update_recurring_series_pure(series_edit_input(
+            pattern_payload("2026-08-17", json!({ "day_of_week": 2 })),
+            template(json!({ "max_occurrences": null })),
+            json!([
+                occurrence(
+                    "2026-08-17",
+                    "confirmed",
+                    json!({ "converted_sale_id": "sale-1" })
+                ),
+                occurrence("2026-08-24", "confirmed", json!({}))
+            ]),
+        ))
+        .unwrap();
+        assert_eq!(
+            ids_of(&out, "_recurring_cancel_occurrence"),
+            vec!["apt-2026-08-24"]
+        );
+        let result = out.result.clone().expect("el command dice lo que hizo");
+        assert_eq!(
+            result.get("locked_invoiced").and_then(|v| v.as_i64()),
+            Some(1)
+        );
+    }
+
+    /// Ni una cita EN CURSO o ya servida: no es un plan, es historia. Y una ya cancelada se queda
+    /// como está — es la excepción de la serie, no algo que cancelar dos veces.
+    #[test]
+    fn a_pattern_change_never_touches_what_is_no_longer_a_plan() {
+        let out = update_recurring_series_pure(series_edit_input(
+            pattern_payload("2026-08-17", json!({ "day_of_week": 2 })),
+            template(json!({ "max_occurrences": null })),
+            json!([
+                occurrence("2026-08-17", "in_progress", json!({})),
+                occurrence("2026-08-24", "completed", json!({})),
+                occurrence("2026-08-31", "cancelled", json!({}))
+            ]),
+        ))
+        .unwrap();
+        assert!(
+            ops_named(&out, "_recurring_cancel_occurrence").is_empty(),
+            "solo se cancela lo que sigue siendo un plan"
+        );
+        let result = out.result.clone().expect("el command dice lo que hizo");
+        assert_eq!(
+            result.get("kept_cancelled").and_then(|v| v.as_i64()),
+            Some(1)
+        );
+        assert_eq!(
+            result
+                .get("cancelled_pattern_change")
+                .and_then(|v| v.as_i64()),
+            Some(0)
+        );
+    }
+
+    /// El pasado sigue congelado: una cita anterior al corte no se cancela por cambiar la pauta.
+    #[test]
+    fn a_pattern_change_leaves_the_past_alone() {
+        let out = update_recurring_series_pure(series_edit_input(
+            pattern_payload("2026-08-17", json!({ "day_of_week": 2 })),
+            template(json!({ "max_occurrences": null })),
+            json!([
+                occurrence("2026-08-03", "completed", json!({})),
+                occurrence("2026-08-10", "confirmed", json!({}))
+            ]),
+        ))
+        .unwrap();
+        assert!(ops_named(&out, "_recurring_cancel_occurrence").is_empty());
+        assert_eq!(
+            ops_named(&out, "_recurring_close")[0]
+                .params
+                .get("end_date")
+                .and_then(|v| v.as_str()),
+            Some("2026-08-16")
+        );
+    }
+
+    /// Cortar en la PRIMERA ocurrencia edita la plantilla en sitio, y la pauta nueva viaja en esa
+    /// edición: sin esto el `_recurring_edit` guardaría la hora nueva con la frecuencia vieja.
+    #[test]
+    fn cutting_at_the_first_occurrence_changes_the_pattern_in_place() {
+        let out = update_recurring_series_pure(series_edit_input(
+            pattern_payload("2026-08-03", json!({ "frequency": "monthly" })),
+            template(json!({ "max_occurrences": null })),
+            json!([
+                occurrence("2026-08-03", "confirmed", json!({})),
+                occurrence("2026-08-10", "confirmed", json!({}))
+            ]),
+        ))
+        .unwrap();
+        assert!(ops_named(&out, "_recurring_split").is_empty());
+        let edited = ops_named(&out, "_recurring_edit");
+        assert_eq!(edited.len(), 1);
+        assert_eq!(
+            edited[0].params.get("frequency").and_then(|v| v.as_str()),
+            Some("monthly")
+        );
+        // Mensual desde el 03/08: el 03 sigue cayendo en la pauta, el 10 no.
+        assert_eq!(
+            ids_of(&out, "_recurring_move_occurrence"),
+            vec!["apt-2026-08-03"]
+        );
+        assert_eq!(
+            ops_named(&out, "_recurring_move_occurrence")[0]
+                .params
+                .get("recurring_id")
+                .and_then(|v| v.as_str()),
+            Some("r1"),
+            "sin split la cita sigue colgando de la MISMA serie"
+        );
+        assert_eq!(
+            ids_of(&out, "_recurring_cancel_occurrence"),
+            vec!["apt-2026-08-10"]
+        );
+    }
+
+    /// Quitar el día de la semana (`null` explícito) es un cambio de pauta, y la mitad nueva se
+    /// guarda SIN día: vuelve a alinearse con su fecha de inicio.
+    #[test]
+    fn clearing_the_day_of_the_week_is_a_pattern_change() {
+        let out = update_recurring_series_pure(series_edit_input(
+            pattern_payload("2026-08-20", json!({ "day_of_week": null })),
+            template(json!({ "day_of_week": 3, "max_occurrences": null })),
+            json!([occurrence("2026-08-20", "confirmed", json!({}))]),
+        ))
+        .unwrap();
+        let split = ops_named(&out, "_recurring_split");
+        assert_eq!(split.len(), 1);
+        assert!(
+            split[0]
+                .params
+                .get("day_of_week")
+                .is_some_and(|v| v.is_null()),
+            "el día se guarda vacío, no se hereda el viejo"
+        );
+        let result = out.result.clone().expect("el command dice lo que hizo");
+        assert_eq!(
+            result.get("pattern_changed").and_then(|v| v.as_bool()),
+            Some(true)
+        );
+    }
+
+    /// La frecuencia es una enum CERRADA, igual que el alcance: un valor desconocido falla, nunca
+    /// cae en un defecto silencioso que convertiría la serie en otra cosa.
+    #[test]
+    fn an_unknown_frequency_is_refused_never_defaulted() {
+        // El `time` va a propósito: sin él el rechazo sería el de «nada que cambiar» y el test
+        // pasaría en verde sin haber mirado nunca la frecuencia.
+        for frequency in ["yearly", "WEEKLY", ""] {
+            let err = update_recurring_series_pure(series_edit_input(
+                pattern_payload("2026-08-17", json!({ "time": "12:00", "frequency": frequency })),
+                template(json!({})),
+                json!([]),
+            ))
+            .unwrap_err();
+            assert!(
+                err.contains("frequency"),
+                "frequency `{frequency}`: {err}"
+            );
+        }
+    }
+
+    /// Y un día de la semana fuera de 0..=6 tampoco pasa.
+    #[test]
+    fn a_day_of_the_week_out_of_range_is_refused() {
+        for dow in [-1, 7, 99] {
+            let err = update_recurring_series_pure(series_edit_input(
+                pattern_payload("2026-08-17", json!({ "time": "12:00", "day_of_week": dow })),
+                template(json!({})),
+                json!([]),
+            ))
+            .unwrap_err();
+            assert!(err.contains("day_of_week"), "day_of_week {dow}: {err}");
+        }
+    }
+
+    /// 🔒 CERO REGRESIONES: mover la HORA de la serie sigue sin cancelar absolutamente nada. La
+    /// cancelación es la respuesta a un cambio de PAUTA, no el nuevo camino por defecto.
+    #[test]
+    fn moving_only_the_time_still_cancels_nothing() {
+        let out = update_recurring_series_pure(series_edit_input(
+            edit_payload("2026-08-17", "12:00"),
+            template(json!({ "max_occurrences": null })),
+            json!([
+                occurrence("2026-08-17", "confirmed", json!({})),
+                occurrence("2026-08-24", "pending", json!({}))
+            ]),
+        ))
+        .unwrap();
+        assert!(ops_named(&out, "_recurring_cancel_occurrence").is_empty());
+        let result = out.result.clone().expect("el command dice lo que hizo");
+        assert_eq!(
+            result.get("pattern_changed").and_then(|v| v.as_bool()),
+            Some(false)
+        );
+        assert_eq!(result.get("moved").and_then(|v| v.as_i64()), Some(2));
     }
 
     #[test]

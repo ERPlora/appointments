@@ -110,7 +110,9 @@ describe('appointments#93 · the scope bar is ONE row, not three', () => {
   it('the view segment gives each button an icon and an accessible name', async () => {
     const el = await mount();
     const buttons = [...el.shadowRoot.querySelectorAll('.filters ion-segment ion-segment-button')];
-    expect(buttons.length).toBe(2);
+    // Tres desde appointments#91 (lista · por profesional · periódicas): la barra sigue siendo UNA
+    // fila, y lo que la mantiene así es que cada botón viaja con su icono en vez de con su texto.
+    expect(buttons.length).toBe(3);
     for (const b of buttons) {
       expect(b.querySelector('ion-icon'), 'the label is hidden on a phone: the icon carries it').toBeTruthy();
       expect(b.getAttribute('aria-label')).toBeTruthy();
