@@ -16,11 +16,13 @@ import enLocale from '../../../locales/en.json';
 // el core), nunca el del aparato. Ver `ui/lib/business-time.ts`.
 import {
   todayISO,
+  addDaysISO,
   dayBounds,
   wallClock,
   formatWallTime,
   toInputValue,
   wallToBusinessIso,
+  toInstantMs,
   deviceZoneDiffers,
   businessTimezone,
   InvalidLocalTimeError,
@@ -95,6 +97,9 @@ interface AppointmentSettings {
   calendar_start_hour?: number;
   calendar_end_hour?: number;
   default_duration?: number;
+  /** Whether this hub lets two appointments share a slot. `appointments.settings.get` publishes
+   *  the flags as JSON booleans (appointments#79); older rows may still answer 0/1. */
+  allow_overlapping?: boolean | number;
 }
 
 const STATUS_KEYS: Record<string, string> = {
@@ -204,10 +209,42 @@ export class ErpAppointmentsList extends LitElement {
     /* La vista llena el alto: el data-table ocupa el resto (scroll interno, pie fijo). */
     .page { display:flex; flex-direction:column; min-height:0; flex:1 1 auto; }
     .page > ok-data-table, .page > ok-scheduler { flex:1 1 auto; min-height:0; }
-    /* ALCANCE de la consulta (día + estado) y modo de vista: no son filtros de columna. */
-    .filters { display:flex; gap:.75rem; align-items:end; margin:0 0 .75rem; flex-wrap:wrap; }
-    .filters ion-input, .filters ion-select { flex:1 1 11rem; min-width:9rem; }
-    .filters ion-segment { flex:0 0 auto; width:auto; }
+    /* ALCANCE de la consulta (día + estado) y modo de vista: no son filtros de columna.
+       appointments#93 · UNA fila, no tres. Medido a 390 px, este bloque ocupaba ~300 px: era
+       flex-wrap:wrap con tres controles a tamaño completo (el input de fecha con etiqueta
+       flotante, el select de estado y el segment), y en un móvil cada uno caía a su propia línea,
+       así que la primera cita empezaba por debajo del 55 % de la pantalla. nowrap + controles
+       que ENCOGEN es lo que hacen Fresha, Vagaro, Square Appointments y Google Calendar: el día
+       manda y ocupa el hueco libre, lo secundario se estrecha. Mismo movimiento que tables#64 y
+       kitchen#60. */
+    .filters { display:flex; gap:.5rem; align-items:center; margin:0 0 .5rem; flex-wrap:nowrap; }
+    /* El día: paso atrás · fecha · paso adelante, como una sola pieza. Se queda con el ancho que
+       sobre (min-width:0 para que de verdad pueda encoger dentro de un flex). */
+    .filters .daynav { display:flex; align-items:center; gap:.15rem; flex:1 1 auto; min-width:0; }
+    /* 6.5rem es lo que mide una fecha completa (17/08/2026) en el input nativo: por debajo, el
+       navegador la CORTA y la agenda deja de decir qué día está enseñando. El tope de 11rem es lo
+       contrario: en un escritorio ancho, un input elástico separaba el paso adelante media
+       pantalla del día que iba a cambiar, y dejaban de leerse como un solo mando. */
+    .filters .daynav ion-input { flex:1 1 auto; min-width:6.5rem; max-width:11rem; }
+    /* 44×44 es el suelo táctil (Ionic lo aplica a sus propios controles y es lo que exige el QA de
+       las tres ventanas): un paso de día de 28 px se falla con el pulgar en una tablet de barra. */
+    .filters .daynav ion-button { flex:0 0 auto; height:44px; width:44px; --padding-start:.25rem; --padding-end:.25rem; margin:0; }
+    .filters ion-select { flex:0 1 9rem; min-width:5.5rem; }
+    /* Ionic le da al host de ion-segment un width:100%: a solas, ES una fila entera. */
+    .filters ion-segment { flex:0 0 auto; width:auto; margin-left:auto; }
+    .filters ion-segment-button { min-height:44px; --padding-start:.5rem; --padding-end:.5rem; text-transform:none; }
+    .filters ion-segment-button ion-icon { font-size:1.15rem; }
+    /* En un teléfono el texto de la vista lo dice el icono: «Por profesional» son 120 px que
+       empujan el día fuera de la fila. El nombre accesible sigue en el aria-label. */
+    @media (max-width: 640px) {
+      .filters { gap:.25rem; }
+      .filters ion-segment-button ion-label { display:none; }
+      .filters ion-segment-button { --padding-start:.2rem; --padding-end:.2rem; min-width:2.3rem; }
+      /* 40 px de ancho (44 de alto, el suelo táctil se mantiene): son los 8 px que le faltan al
+         estado para escribir «Todos» entero en 390 px. */
+      .filters .daynav ion-button { width:40px; }
+      .filters ion-select { flex:0 1 5.5rem; min-width:4.5rem; }
+    }
     /* Formulario del panel de alta (drawer estrecho) → una columna, no en fila. */
     .form { display:flex; flex-direction:column; gap:.7rem; }
     .form ion-button { align-self:flex-end; }
@@ -266,6 +303,9 @@ export class ErpAppointmentsList extends LitElement {
 
   /** Solo para enseñarlo: `reschedule` mueve la hora, no cambia de profesional (ver render). */
   @state() rescheduleStaffName = '';
+
+  /** Su profesional, para preguntar el solape contra la agenda correcta (appointments#86). */
+  @state() rescheduleStaffId = '';
   /** appointments#15 — la serie de la cita que se está moviendo (`''` = ninguna) y su ocurrencia.
    *  Se copian de la fila al abrir el panel: la agenda ya las tiene, y volver a preguntárselas al
    *  servidor sería una segunda verdad. */
@@ -278,6 +318,13 @@ export class ErpAppointmentsList extends LitElement {
   /** El alcance elegido. `this_only` viene preseleccionado: es el menos destructivo y el default
    *  de Google, Odoo y Apple. `all` NO EXISTE — reescribiría un pasado ya cobrado y sellado. */
   @state() seriesScope: 'this_only' | 'this_and_following' = 'this_only';
+
+  // ── Aviso de SOLAPE (appointments#86) ───────────────────────────────────────────────────────
+  /** La frase que dice CON QUÉ choca el hueco; `''` = no hay aviso en pantalla. */
+  @state() overlapPrompt = '';
+
+  /** Quien está esperando la respuesta del aviso. `null` = nadie pregunta ahora mismo. */
+  private overlapDecision: ((accepted: boolean) => void) | null = null;
 
   private unsub?: () => void;
 
@@ -422,6 +469,9 @@ export class ErpAppointmentsList extends LitElement {
     window.removeEventListener('erplora:locale-changed', this.onLocaleChange);
     super.disconnectedCallback();
     this.unsub?.();
+    // Una pregunta sin pantalla no se contesta sola: se resuelve como CANCELADA, que es la salida
+    // que no escribe nada. Dejarla colgada filtraría la promesa y el `saving` del panel.
+    this.settleOverlap(false);
   }
 
   /** Catálogos ligados + ajustes. Se cargan una vez: el alta reserva contra registros reales
@@ -442,6 +492,13 @@ export class ErpAppointmentsList extends LitElement {
     } catch (e) {
       this.error = e instanceof Error ? e.message : erplora().t(CATALOG, 'ui.errLoadCatalogs');
     }
+  }
+
+  /** Un día atrás o adelante (appointments#93). Aritmética de CALENDARIO: el día del salón dura
+   *  23, 24 o 25 horas, así que «mañana» es la fecha siguiente, nunca `+24 h`. */
+  private stepDay(delta: number): void {
+    this.day = addDaysISO(this.day, delta);
+    void this.refresh();
   }
 
   private async refresh() {
@@ -486,6 +543,9 @@ export class ErpAppointmentsList extends LitElement {
       // su offset (appointments#76): el instante es el elegido y el texto guardado dice la hora
       // que el salón ve en la pared, que es el reloj del motor de disponibilidad.
       const startIso = wallToBusinessIso(this.newStart);
+      // appointments#86 — con el solape PERMITIDO, se avisa antes de escribir; cancelar deja el
+      // panel como estaba (el `finally` suelta `saving`, así que el botón vuelve a responder).
+      if (!(await this.overlapAccepted(startIso, this.effectiveDuration, staff.id))) return;
       await erplora().command('appointments.appointments.create', {
         // Vínculos + su snapshot denormalizado (lo que se reservó, aunque la ficha cambie).
         customer_id: customer.id,
@@ -512,6 +572,113 @@ export class ErpAppointmentsList extends LitElement {
     } finally {
       this.saving = false;
     }
+  }
+
+  // ── Aviso de SOLAPE (appointments#86) ───────────────────────────────────────────────────────
+  //
+  // Lo que decidió el mercado, y es unánime en las cinco referencias del sector (Phorest, Square
+  // Appointments, DaySmart/Salon Iris, Fresha, Vagaro): **el solape se CONFIRMA, no se asume**. Con
+  // el toggle apagado el rechazo duro ya existía (`_appointment_overlap_assert.sql`); lo que
+  // faltaba era el paso intermedio del caso PERMITIDO, donde hoy la cita se creaba en silencio.
+  // ADR-0383 lo dejó fuera del componente a propósito: `ok-scheduler` pinta el solape bien, pero
+  // no sabe —ni debe— de reglas de negocio. El aviso es del módulo.
+  //
+  // 🔴 Lo que NO pregunta, y por qué:
+  //  · `appointments._book_from_request` (el listener de `whatsapp_inbox.request.approved`) corre
+  //    en el servidor y no tiene a quién preguntar. Su confirmación humana YA ocurrió —alguien
+  //    aprobó la petición en la bandeja, sobre huecos que `availability.slots` había ofrecido— así
+  //    que reserva directamente, con el mismo gate de servidor que el resto. Un aviso ahí sería
+  //    una pregunta sin interlocutor que dejaría la petición aprobada sin cita.
+  //  · Mover una SERIE entera (`recurring.update`, alcance «esta y las siguientes») no es un hueco:
+  //    son N ocurrencias que el servidor recoloca. Queda fuera con su issue.
+
+  /** ¿Permite este hub dos citas a la vez? El flag viaja como booleano JSON (appointments#79),
+   *  pero una fila vieja puede seguir contestando 0/1: las dos formas se leen igual. */
+  private get allowsOverlapping(): boolean {
+    const flag = this.settings.allow_overlapping;
+    return flag === true || Number(flag) === 1;
+  }
+
+  /** Citas vivas del mismo profesional que pisan `[start, start+minutes)`.
+   *
+   *  Se lee la query PÚBLICA del módulo (`appointments.appointments.conflicting`, la misma que el
+   *  runtime precarga para el handler de `create`) y no `this.items`: el hueco elegido puede caer
+   *  en otro día del que la agenda tiene cargado, y avisar solo de lo que está en pantalla sería
+   *  un aviso que falla justo cuando hace falta. El filtrado fino por ventana es de aquí, igual
+   *  que en el handler: la query trae el día entero porque `reads.params` solo admite literales. */
+  private async overlappingWith(
+    startIso: string,
+    minutes: number,
+    staffId: string,
+    excludeId = '',
+  ): Promise<Appointment[]> {
+    const from = toInstantMs(startIso);
+    if (from === null || !Number.isFinite(minutes) || minutes < 1) return [];
+    const to = from + minutes * 60_000;
+    const found = await erplora().query('appointments.appointments.conflicting', {
+      staff_id: staffId,
+      start_datetime: startIso,
+    });
+    return rows<Appointment>(found).filter((a) => {
+      if (a.id === excludeId) return false; // una cita no se solapa consigo misma
+      const s = toInstantMs(a.start_datetime);
+      const e = toInstantMs(a.end_datetime);
+      // Bordes que se tocan no solapan: `[start, end)`, la misma convención que el gate.
+      return s !== null && e !== null && s < to && e > from;
+    });
+  }
+
+  /** Pinta el aviso y espera. La promesa la resuelven los botones del `ion-alert`. */
+  private askOverlap(conflicts: Appointment[]): Promise<boolean> {
+    const t = (k: string, p?: Record<string, unknown>): string => erplora().t(CATALOG, k, p);
+    const list = conflicts
+      .map((a) => `${a.customer_name || t('ui.colCustomer')} · ${fmtTime(a.start_datetime)}`)
+      .join(', ');
+    return new Promise<boolean>((resolve) => {
+      this.overlapPrompt = t('ui.overlapMessage', { conflicts: list });
+      this.overlapDecision = resolve;
+    });
+  }
+
+  /** «Reservar igual». */
+  confirmOverlap(): void {
+    this.settleOverlap(true);
+  }
+
+  /** «Elegir otra hora»: no se escribe nada y lo tecleado sigue en el panel. */
+  cancelOverlap(): void {
+    this.settleOverlap(false);
+  }
+
+  private settleOverlap(accepted: boolean): void {
+    const decide = this.overlapDecision;
+    this.overlapDecision = null;
+    this.overlapPrompt = '';
+    decide?.(accepted);
+  }
+
+  /** La puerta que cruzan `create`, `reschedule` y el arrastre. `true` = se puede escribir.
+   *
+   *  Con el toggle APAGADO no pregunta nada: el servidor rechaza, y ofrecer un «reservar igual»
+   *  que siempre va a fallar es peor que no ofrecerlo. Si la lectura de la agenda falla, la reserva
+   *  NO se pierde —el aviso es consejo, no cerradura— pero el fallo se DICE: una comprobación que
+   *  se cae en silencio es la que hace creer que no había solape. */
+  private async overlapAccepted(
+    startIso: string,
+    minutes: number,
+    staffId: string,
+    excludeId = '',
+  ): Promise<boolean> {
+    if (!this.allowsOverlapping) return true;
+    let conflicts: Appointment[];
+    try {
+      conflicts = await this.overlappingWith(startIso, minutes, staffId, excludeId);
+    } catch {
+      erplora().notify?.({ type: 'warning', message: erplora().t(CATALOG, 'ui.errOverlapCheck') });
+      return true;
+    }
+    if (conflicts.length === 0) return true;
+    return this.askOverlap(conflicts);
   }
 
   /** Manda al shell a la pantalla de venta con la cita cargada.
@@ -581,6 +748,7 @@ export class ErpAppointmentsList extends LitElement {
     this.rescheduleStart = '';
     this.rescheduleDuration = '';
     this.rescheduleStaffName = '';
+    this.rescheduleStaffId = '';
     this.rescheduleSeriesId = '';
     this.rescheduleOccurrence = '';
     this.askingSeriesScope = false;
@@ -596,6 +764,7 @@ export class ErpAppointmentsList extends LitElement {
     this.rescheduleStart = toInputValue(String(row.start_datetime ?? ''));
     this.rescheduleDuration = String(row.duration_minutes ?? '');
     this.rescheduleStaffName = String(row.staff_name ?? '');
+    this.rescheduleStaffId = String(row.staff_id ?? '');
     this.rescheduleSeriesId = String(row.recurring_id ?? '');
     this.rescheduleOccurrence = String(row.occurrence_date ?? '');
     this.error = '';
@@ -655,9 +824,24 @@ export class ErpAppointmentsList extends LitElement {
       // Se escribe en el reloj del salón (pared + offset, appointments#76): mismo instante, y el
       // texto guardado es el que el motor de disponibilidad compara PARED contra PARED — una
       // pared UTC en una cita movida volvería a tachar la ventana desplazada por el offset.
+      const startIso = wallToBusinessIso(`${this.day}T${start}`);
+      // appointments#86 — soltar el bloque encima de otra cita pregunta antes de escribir. Si la
+      // recepcionista elige otra hora, el bloque vuelve a su sitio: dejarlo donde nadie lo guardó
+      // sería una agenda que miente hasta el siguiente refresco.
+      if (
+        !(await this.overlapAccepted(
+          startIso,
+          appointment.duration_minutes,
+          appointment.staff_id || '',
+          id,
+        ))
+      ) {
+        revert();
+        return;
+      }
       await erplora().command('appointments.appointments.reschedule', {
         appointment_id: id,
-        start_datetime: wallToBusinessIso(`${this.day}T${start}`),
+        start_datetime: startIso,
         duration_minutes: appointment.duration_minutes,
       });
       await this.refresh(); // la posición optimista se descarta: manda la fila del servidor
@@ -735,11 +919,19 @@ export class ErpAppointmentsList extends LitElement {
           duration_minutes: minutes,
         });
       } else {
+        // Pared del salón + su offset (appointments#76/#12): mismo instante, y el texto dice la
+        // hora que el salón ve en la pared.
+        const startIso = wallToBusinessIso(this.rescheduleStart);
+        // appointments#86 — mover una cita ENCIMA de otra avisa igual que crearla ahí. La propia
+        // cita se excluye: si no, moverla dentro de su hueco preguntaría por sí misma.
+        if (
+          !(await this.overlapAccepted(startIso, minutes, this.rescheduleStaffId, this.rescheduleId))
+        ) {
+          return;
+        }
         await erplora().command('appointments.appointments.reschedule', {
           appointment_id: this.rescheduleId,
-          // Pared del salón + su offset (appointments#76/#12): mismo instante, y el texto dice la
-          // hora que el salón ve en la pared.
-          start_datetime: wallToBusinessIso(this.rescheduleStart),
+          start_datetime: startIso,
           duration_minutes: minutes,
         });
       }
@@ -781,11 +973,24 @@ export class ErpAppointmentsList extends LitElement {
              El conmutador de vista (lista | por profesional) vive aquí por lo mismo: decide
              CÓMO se pinta lo cargado, no filtra columnas. -->
         <div class="filters">
-          <ion-input fill="outline" label-placement="floating" label=${t('ui.fieldDate')} type="date" .value=${this.day} @ionInput=${(e: any) => {
+          <!-- appointments#93 · el día se PASA, no solo se teclea. Es el gesto de toda agenda de
+               salón (Fresha, Vagaro, Square, Google Calendar) y además cierra una asimetría que ya
+               había: la vista por profesional podía cambiar de día con las flechas de ok-scheduler
+               y la lista no. Sin etiqueta flotante: en un móvil son ~20 px de alto para decir
+               «Día» encima de una fecha, y el nombre accesible viaja en aria-label. -->
+          <div class="daynav">
+            <ion-button data-role="prev-day" fill="clear" aria-label=${t('ui.prevDay')} @click=${() => this.stepDay(-1)}>
+              <ion-icon slot="icon-only" name="chevron-back-outline"></ion-icon>
+            </ion-button>
+            <ion-input data-role="day" aria-label=${t('ui.fieldDate')} type="date" .value=${this.day} @ionInput=${(e: any) => {
               this.day = e.target.value;
               this.refresh();
             }}></ion-input>
-          <ion-select fill="outline" label-placement="floating" label=${t('ui.colStatus')} placeholder=${t('ui.allStatuses')} .value=${this.statusFilter} @ionChange=${(e: any) => {
+            <ion-button data-role="next-day" fill="clear" aria-label=${t('ui.nextDay')} @click=${() => this.stepDay(1)}>
+              <ion-icon slot="icon-only" name="chevron-forward-outline"></ion-icon>
+            </ion-button>
+          </div>
+          <ion-select data-role="status" aria-label=${t('ui.filterStatus')} placeholder=${t('ui.allStatuses')} .value=${this.statusFilter} @ionChange=${(e: any) => {
               this.statusFilter = e.target.value;
               this.refresh();
             }}>
@@ -793,10 +998,12 @@ export class ErpAppointmentsList extends LitElement {
             ${Object.keys(STATUS_KEYS).map((k) => html`<ion-select-option .value=${k}>${this.statusLabel(k)}</ion-select-option>`)}
           </ion-select>
           <ion-segment .value=${this.view} @ionChange=${(e: any) => (this.view = e.target.value)}>
-            <ion-segment-button value="list">
+            <ion-segment-button value="list" aria-label=${t('ui.viewList')}>
+              <ion-icon name="list-outline"></ion-icon>
               <ion-label>${t('ui.viewList')}</ion-label>
             </ion-segment-button>
-            <ion-segment-button value="staff">
+            <ion-segment-button value="staff" aria-label=${t('ui.viewStaff')}>
+              <ion-icon name="people-outline"></ion-icon>
               <ion-label>${t('ui.viewStaff')}</ion-label>
             </ion-segment-button>
           </ion-segment>
@@ -842,6 +1049,23 @@ export class ErpAppointmentsList extends LitElement {
                 { text: t('ui.seriesScopeConfirm'), handler: () => this.confirmSeriesScope() },
               ]}
               @ionAlertDidDismiss=${() => this.cancelSeriesScope()}
+            ></ion-alert>`
+          : nothing}
+        <!-- appointments#86 — el aviso de SOLAPE. Alert y no toast: un toast se va solo, y esto es
+             una decisión que hay que tomar antes de escribir. El botón primario NOMBRA lo que va a
+             pasar («Reservar igual»), y el de salida ofrece la alternativa real («Elegir otra
+             hora») en vez de un «Cancelar» que no dice qué queda después. -->
+        ${this.overlapPrompt
+          ? html`<ion-alert
+              data-role="overlap-confirm"
+              .isOpen=${true}
+              .header=${t('ui.overlapTitle')}
+              .message=${this.overlapPrompt}
+              .buttons=${[
+                { text: t('ui.overlapCancel'), role: 'cancel', handler: () => this.cancelOverlap() },
+                { text: t('ui.overlapConfirm'), handler: () => this.confirmOverlap() },
+              ]}
+              @ionAlertDidDismiss=${() => this.cancelOverlap()}
             ></ion-alert>`
           : nothing}
         ${this.view === 'staff'

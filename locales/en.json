@@ -129,7 +129,13 @@
     "seriesScopeFollowing": "This and all following appointments",
     "seriesScopeConfirm": "Save changes",
     "seriesScopeMoved": "Appointments in this series that were edited separately will go back to the series schedule. Appointments before today are never changed.",
-    "seriesScopeCancelledKept": "Appointments you cancelled by hand stay cancelled."
+    "seriesScopeCancelledKept": "Appointments you cancelled by hand stay cancelled.",
+    "overlapTitle": "Overlapping appointment",
+    "overlapMessage": "This slot overlaps with: {conflicts}. Book it anyway?",
+    "overlapConfirm": "Book anyway",
+    "overlapCancel": "Pick another time",
+    "errOverlapCheck": "The agenda could not be checked for overlaps, so the appointment was saved without that warning.",
+    "filterStatus": "Filter by status"
   },
   "setup": {
     "title": "Your working hours",

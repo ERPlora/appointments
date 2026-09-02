@@ -135,10 +135,14 @@ describe('el alta vive DENTRO de la tabla (paridad con /employees e inventory)',
       (n) => !n.closest('ok-data-table'),
     );
     expect(sueltos.every((n) => n.closest('.filters')), 'hay controles de alta sueltos fuera de la tabla').toBe(true);
-    expect(sueltos.map((n) => n.tagName.toLowerCase()), 'el alcance de la consulta es día + estado').toEqual([
-      'ion-input',
-      'ion-select',
-    ]);
+    // appointments#93 — el alcance sigue siendo día + estado, pero el DÍA se pasa además con dos
+    // flechas (es el gesto de toda agenda de salón, y la vista por profesional ya lo tenía). La
+    // lista de tags era un proxy del contrato; lo que de verdad se exige es que ahí fuera no haya
+    // NADA del alta, así que se comprueba por su papel, que es más fuerte que contar etiquetas.
+    expect(
+      sueltos.map((n) => n.getAttribute('data-role') ?? n.tagName.toLowerCase()).sort(),
+      'el alcance de la consulta es día (con sus dos pasos) + estado',
+    ).toEqual(['day', 'next-day', 'prev-day', 'status']);
   });
 
   it('la vista no pinta su propio título (lo pone el topbar del shell)', async () => {

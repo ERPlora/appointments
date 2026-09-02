@@ -58,6 +58,10 @@ QUERIES = {
 # The fixed `now` the runtime would inject. 2026-09-01 is a Tuesday: tomorrow 11:00 is ~26 h
 # ahead, comfortably past a 60-minute notice and inside the default 8–20 calendar.
 NOW = "2026-09-01T09:00:00+02:00"
+# The business zone the runtime binds as `:timezone` (hub#1022). `NOW` is a Madrid instant, so the
+# salon is in Madrid: since appointments#88 the minimum notice is measured on THIS clock, and a
+# fixture that leaves the bind out would be measuring on the session's (UTC).
+TZ = "Europe/Madrid"
 TOMORROW = "2026-09-02"
 PLUS_100_DAYS = "2026-12-10"  # +100 days, same wall clock
 
@@ -155,10 +159,18 @@ def shim(sql: str) -> str:
     forms = {
         "erp_dt": lambda a: f"(({a[0]})::timestamptz)",
         "erp_date": lambda a: f"(({a[0]})::date)",
-        "erp_dateadd": lambda a: f"(({a[0]})::timestamptz + (({a[1]}) || ' ' || {a[2]})::interval)",
-        "erp_dow_mon0": lambda a: f"((EXTRACT(ISODOW FROM ({a[0]})::timestamptz)::int) - 1)",
-        "erp_extract": lambda a: f"(EXTRACT({a[0].strip().strip(chr(39)).lower()} FROM ({a[1]})::timestamptz)::bigint)",
-        "erp_timefmt": lambda a: f"(lpad(({a[0]})::text, 2, '0') || ':' || lpad(({a[1]})::text, 2, '0'))",
+        "erp_dateadd": lambda a: (
+            f"(({a[0]})::timestamptz + (({a[1]}) || ' ' || {a[2]})::interval)"
+        ),
+        "erp_dow_mon0": lambda a: (
+            f"((EXTRACT(ISODOW FROM ({a[0]})::timestamptz)::int) - 1)"
+        ),
+        "erp_extract": lambda a: (
+            f"(EXTRACT({a[0].strip().strip(chr(39)).lower()} FROM ({a[1]})::timestamptz)::bigint)"
+        ),
+        "erp_timefmt": lambda a: (
+            f"(lpad(({a[0]})::text, 2, '0') || ':' || lpad(({a[1]})::text, 2, '0'))"
+        ),
     }
     for name, render in forms.items():
         while True:
@@ -194,14 +206,37 @@ def seed_settings(max_advance: int, notice: int) -> None:
 
 
 def slots(date: str) -> list[dict]:
-    params = {"hub_id": HUB, "now": NOW, "date": date, "duration_minutes": 30}
-    sql = shim(bind((MODULE_DIR / QUERIES["appointments.availability.slots"]).read_text(), params))
+    params = {
+        "hub_id": HUB,
+        "now": NOW,
+        "date": date,
+        "duration_minutes": 30,
+        # El runtime bindea SIEMPRE la zona del negocio (hub#1022, appointments#88).
+        "timezone": TZ,
+    }
+    sql = shim(
+        bind(
+            (MODULE_DIR / QUERIES["appointments.availability.slots"]).read_text(),
+            params,
+        )
+    )
     return rows(sql)
 
 
 def check(start: str) -> dict:
-    params = {"hub_id": HUB, "now": NOW, "start_datetime": start, "duration_minutes": 30}
-    sql = shim(bind((MODULE_DIR / QUERIES["appointments.availability.check"]).read_text(), params))
+    params = {
+        "hub_id": HUB,
+        "now": NOW,
+        "start_datetime": start,
+        "duration_minutes": 30,
+        "timezone": TZ,
+    }
+    sql = shim(
+        bind(
+            (MODULE_DIR / QUERIES["appointments.availability.check"]).read_text(),
+            params,
+        )
+    )
     got = rows(sql)
     return got[0] if got else {"available": None, "reason": "no row"}
 
@@ -214,7 +249,9 @@ def scenario_disabled_cap_opens_the_agenda() -> None:
     seed_settings(0, 0)
     free = slots(TOMORROW)
     if not free:
-        fail("max_advance_booking=0: slots of tomorrow returns NO slots — «0» must mean no cap")
+        fail(
+            "max_advance_booking=0: slots of tomorrow returns NO slots — «0» must mean no cap"
+        )
     verdict = check(f"{TOMORROW}T11:00:00+02:00")
     if verdict.get("available") != 1:
         fail(
@@ -257,16 +294,22 @@ def scenario_coherence_with_create() -> None:
             far = check(f"{PLUS_100_DAYS}T11:00:00+02:00")
             if max_advance == 0:
                 if far.get("available") != 1:
-                    fail(f"{where}: +100 days must be available with the cap disabled, got {far!r}")
+                    fail(
+                        f"{where}: +100 days must be available with the cap disabled, got {far!r}"
+                    )
             elif far.get("reason") != "too_far":
                 fail(f"{where}: +100 days must be too_far with a real cap, got {far!r}")
 
             soon = check("2026-09-01T09:30:00+02:00")  # 30 minutes ahead
             if notice == 0:
                 if soon.get("available") != 1:
-                    fail(f"{where}: 30 minutes ahead must be fine with no notice, got {soon!r}")
+                    fail(
+                        f"{where}: 30 minutes ahead must be fine with no notice, got {soon!r}"
+                    )
             elif soon.get("reason") != "too_soon":
-                fail(f"{where}: 30 minutes ahead must be too_soon with a 60-minute notice, got {soon!r}")
+                fail(
+                    f"{where}: 30 minutes ahead must be too_soon with a 60-minute notice, got {soon!r}"
+                )
 
 
 def scenario_boundary_is_inclusive() -> None:
@@ -275,7 +318,9 @@ def scenario_boundary_is_inclusive() -> None:
     seed_settings(30, 0)
     verdict = check("2026-10-01T09:00:00+02:00")
     if verdict.get("reason") == "too_far":
-        fail("max_advance_booking=30: exactly +30 days is ON the boundary, not beyond it")
+        fail(
+            "max_advance_booking=30: exactly +30 days is ON the boundary, not beyond it"
+        )
     if not slots("2026-10-01"):
         fail("max_advance_booking=30: the boundary day +30 must still offer slots")
 
@@ -310,7 +355,9 @@ def main() -> int:
         for f in failures:
             print(f"  - {f}")
         return 1
-    print("OK: a zero max-advance cap opens the agenda in slots and check, and the real caps hold")
+    print(
+        "OK: a zero max-advance cap opens the agenda in slots and check, and the real caps hold"
+    )
     return 0
 
 

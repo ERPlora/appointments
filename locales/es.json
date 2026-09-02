@@ -130,7 +130,13 @@
     "seriesScopeFollowing": "Esta y todas las siguientes",
     "seriesScopeConfirm": "Guardar cambios",
     "seriesScopeMoved": "Las citas de esta serie que se modificaron por separado volverán al horario de la serie. Las citas anteriores a hoy nunca se modifican.",
-    "seriesScopeCancelledKept": "Las citas que anulaste a mano siguen anuladas."
+    "seriesScopeCancelledKept": "Las citas que anulaste a mano siguen anuladas.",
+    "overlapTitle": "Cita solapada",
+    "overlapMessage": "Este hueco se solapa con: {conflicts}. ¿La reservas igual?",
+    "overlapConfirm": "Reservar igual",
+    "overlapCancel": "Elegir otra hora",
+    "errOverlapCheck": "No se pudo comprobar si el hueco se solapa, así que la cita se guardó sin ese aviso.",
+    "filterStatus": "Filtrar por estado"
   },
   "setup": {
     "title": "Tu horario de trabajo",

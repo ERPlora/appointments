@@ -27,6 +27,7 @@ import {
   wallToInstant,
   deviceZoneDiffers,
   wallToBusinessIso,
+  toInstantMs,
   InvalidLocalTimeError,
 } from './business-time';
 
@@ -262,6 +263,35 @@ describe('wallToBusinessIso — the stored text says the SALON wall clock', () =
 
   it('refuses a wall time the salon clock never shows', () => {
     expect(() => wallToBusinessIso('2026-03-29T02:30', MADRID)).toThrow(InvalidLocalTimeError);
+  });
+});
+
+// appointments#86 — the overlap notice compares a slot against the rows it may collide with, and
+// those rows come in TWO shapes: the ones this module writes (wall + offset, appointments#76) and
+// the naive leftovers of `materialize` from before PR #87. `Date.parse` reads a naive text in the
+// DEVICE's zone, which with the device in Auckland is the salon's clock plus twelve hours — an
+// overlap warning that fires on the wrong rows and stays quiet on the right ones.
+describe('toInstantMs — one instant for both storage shapes, never the device clock', () => {
+  it('reads an instant that carries its offset', () => {
+    expect(toInstantMs('2026-08-17T11:00:00+02:00', MADRID)).toBe(
+      Date.parse('2026-08-17T09:00:00Z'),
+    );
+  });
+
+  it('reads an instant written in UTC with Z', () => {
+    expect(toInstantMs('2026-08-17T09:00:00Z', MADRID)).toBe(Date.parse('2026-08-17T09:00:00Z'));
+  });
+
+  it('reads a NAIVE row on the business clock, not on the device one', () => {
+    // 11:00 in Madrid is 09:00Z. The device (Auckland, UTC+12) would answer 23:00Z the day before.
+    expect(toInstantMs('2026-08-17T11:00:00', MADRID)).toBe(Date.parse('2026-08-17T09:00:00Z'));
+  });
+
+  it('answers null for text no clock can read, instead of a plausible number', () => {
+    expect(toInstantMs('', MADRID)).toBeNull();
+    expect(toInstantMs('not a date', MADRID)).toBeNull();
+    // A wall time the salon clock never shows is not an instant either.
+    expect(toInstantMs('2026-03-29T02:30:00', MADRID)).toBeNull();
   });
 });
 

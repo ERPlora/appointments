@@ -9,7 +9,10 @@
 --
 -- Mismas reglas que el handler `candidates_from`: se excluyen cancelled/no_show y borradas.
 -- :staff_id opcional (vacío/null = agenda global). erp_date = función-puente portable (ADR-0007 §4a).
-SELECT id, appointment_number, staff_id, start_datetime, end_datetime, status
+-- `customer_name` viaja desde appointments#86: el aviso de solape de la agenda tiene que decir CON
+-- QUIÉN choca («Ana López · 11:00»), no un genérico. Es aditivo — el handler WASM lee por nombre de
+-- campo (`candidates_from`), así que una columna de más no le cambia nada.
+SELECT id, appointment_number, customer_name, staff_id, start_datetime, end_datetime, status
 FROM appointments_appointment
 WHERE hub_id = :hub_id
   AND is_deleted = 0

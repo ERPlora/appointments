@@ -159,6 +159,22 @@ export function todayISO(timezone: string = businessTimezone(), now: Date = new 
   return `${p.y}-${pad(p.mo)}-${pad(p.d)}`;
 }
 
+/** `day` ± `delta` CALENDAR days (`YYYY-MM-DD`), for the agenda's day stepper (appointments#93).
+ *
+ * Calendar arithmetic, deliberately: a business day lasts 23, 24 or 25 hours, so «tomorrow» is the
+ * next DATE, never `+86 400 000 ms` — that lands twice on the same date the night the clocks fall
+ * back and skips one when they spring forward. Done in UTC on a date-only value, so no zone,
+ * business or device, can tilt it.
+ *
+ * A day the calendar cannot read comes back unchanged: the stepper must not invent a date. */
+export function addDaysISO(day: string, delta: number): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec((day ?? '').trim());
+  if (!m) return day;
+  const t = Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])) + delta * DAY_MS;
+  const d = new Date(t);
+  return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
+}
+
 /** The `[day_start, day_end)` window of the business day `day`, as instants.
  *
  * ⚠️ Never `day_start + 24 h`: on a transition day the business day lasts 23 or 25 hours, and the
@@ -264,6 +280,34 @@ export function wallToBusinessIso(wall: string, timezone: string = businessTimez
     `${p.y}-${pad(p.mo)}-${pad(p.d)}T${pad(p.h)}:${pad(p.mi)}:${pad(p.s)}` +
     `${sign}${pad(Math.floor(abs / 60))}:${pad(abs % 60)}`
   );
+}
+
+/** The instant of a STORED value, in milliseconds — or `null` when no clock can read it.
+ *
+ * The column holds two shapes at once and both have to answer the same instant (appointments#88
+ * is the issue that normalises them; until it lands, this is how a reader survives the mix):
+ *   - an **instant** (`…+02:00`, `…Z`) — read as written;
+ *   - a **naive** leftover (`2026-08-17T11:00:00`, what `materialize` wrote before PR #87) — read
+ *     as the BUSINESS wall clock.
+ *
+ * 🔴 The naive branch is the whole reason this exists. `Date.parse` reads a naive ISO text in the
+ * DEVICE's zone (ES2015+), so on a tablet in another country every legacy row lands hours away
+ * from where the salon put it. Nothing here may ever fall back to the device.
+ *
+ * A wall time the salon clock never shows (the spring-forward gap) is not an instant either, and
+ * says so with `null` rather than with a plausible neighbouring hour. */
+export function toInstantMs(iso: string, timezone: string = businessTimezone()): number | null {
+  const text = (iso ?? '').trim();
+  if (!text) return null;
+  if (/(?:Z|[+-]\d{2}:?\d{2})$/.test(text)) {
+    const t = Date.parse(text);
+    return Number.isNaN(t) ? null : t;
+  }
+  try {
+    return Date.parse(wallToInstant(text.slice(0, 19), timezone));
+  } catch {
+    return null;
+  }
 }
 
 /** Whether the device is on a different clock than the business right now.
