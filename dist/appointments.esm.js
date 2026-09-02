@@ -2019,7 +2019,45 @@ var es_default = {
     overlapConfirm: "Reservar igual",
     overlapCancel: "Elegir otra hora",
     errOverlapCheck: "No se pudo comprobar si el hueco se solapa, as\xED que la cita se guard\xF3 sin ese aviso.",
-    filterStatus: "Filtrar por estado"
+    filterStatus: "Filtrar por estado",
+    viewSeries: "Peri\xF3dicas",
+    seriesEmpty: "Todav\xEDa no hay citas peri\xF3dicas.",
+    seriesSearchPlaceholder: "Buscar por clienta, servicio o profesional",
+    seriesEditTitle: "Editar cita peri\xF3dica",
+    seriesSave: "Guardar de esta cita en adelante",
+    seriesNoEnd: "Sin fin",
+    seriesNotFound: "Esa cita peri\xF3dica ya no est\xE1 en este negocio.",
+    seriesLoadError: "No se han podido cargar las citas peri\xF3dicas.",
+    seriesSaveError: "No se ha podido guardar la cita peri\xF3dica.",
+    seriesMaterializeError: "No se han podido reservar las citas de esta serie.",
+    seriesDeleteError: "No se ha podido borrar la cita peri\xF3dica.",
+    seriesMaterialized: "Citas reservadas para esta serie.",
+    seriesSplitFrom: "Esta serie contin\xFAa a otra anterior ({id}): se parti\xF3 cuando alguien la edit\xF3 de una cita en adelante.",
+    seriesBookedCount: "{booked} citas reservadas \xB7 el cambio se aplica desde el {from} ({upcoming} por delante)",
+    seriesLockedInvoiced: "{invoiced} de las citas por delante ya est\xE1n cobradas y no se van a tocar.",
+    seriesScopeHint: "El cambio se aplica a esta cita ({from}) y a todas las siguientes. Lo ya pasado se queda tal cual.",
+    seriesUpdateOutcome: "{moved} citas movidas \xB7 {cancelled} canceladas porque ya no caben en la pauta \xB7 {locked} intactas porque ya est\xE1n cobradas",
+    colPattern: "Repetici\xF3n",
+    colStarts: "Empieza",
+    colEnds: "Termina",
+    actionEditSeries: "Editar serie",
+    actionMaterialize: "Reservar citas",
+    fieldFrequency: "Repetici\xF3n",
+    fieldWeekday: "D\xEDa de la semana",
+    fieldTime: "Hora",
+    weekdayAny: "Cualquier d\xEDa",
+    freqDaily: "Cada d\xEDa",
+    freqWeekly: "Cada semana",
+    freqBiweekly: "Cada dos semanas",
+    freqMonthly: "Cada mes",
+    dayMonday: "Lunes",
+    dayTuesday: "Martes",
+    dayWednesday: "Mi\xE9rcoles",
+    dayThursday: "Jueves",
+    dayFriday: "Viernes",
+    daySaturday: "S\xE1bado",
+    daySunday: "Domingo",
+    reasonSeriesPatternChanged: "La cita peri\xF3dica cambi\xF3 de pauta"
   },
   setup: {
     title: "Tu horario de trabajo",
@@ -2200,7 +2238,45 @@ var en_default = {
     overlapConfirm: "Book anyway",
     overlapCancel: "Pick another time",
     errOverlapCheck: "The agenda could not be checked for overlaps, so the appointment was saved without that warning.",
-    filterStatus: "Filter by status"
+    filterStatus: "Filter by status",
+    viewSeries: "Repeating",
+    seriesEmpty: "No repeating appointments yet.",
+    seriesSearchPlaceholder: "Search by customer, service or professional",
+    seriesEditTitle: "Edit repeating appointment",
+    seriesSave: "Save from this occurrence on",
+    seriesNoEnd: "No end",
+    seriesNotFound: "That repeating appointment is no longer in this business.",
+    seriesLoadError: "Repeating appointments could not be loaded.",
+    seriesSaveError: "The repeating appointment could not be saved.",
+    seriesMaterializeError: "The appointments of this series could not be booked.",
+    seriesDeleteError: "The repeating appointment could not be deleted.",
+    seriesMaterialized: "Appointments booked for this series.",
+    seriesSplitFrom: "This series continues an earlier one ({id}): it was split when someone edited it from one occurrence onwards.",
+    seriesBookedCount: "{booked} appointments booked \xB7 the change applies from {from} ({upcoming} upcoming)",
+    seriesLockedInvoiced: "{invoiced} of the upcoming appointments are already charged and will not be touched.",
+    seriesScopeHint: "The change applies to this occurrence ({from}) and all the following ones. What is already past stays exactly as it is.",
+    seriesUpdateOutcome: "{moved} appointments moved \xB7 {cancelled} cancelled because they no longer fit the pattern \xB7 {locked} left alone because they are already charged",
+    colPattern: "Repeats",
+    colStarts: "Starts",
+    colEnds: "Ends",
+    actionEditSeries: "Edit series",
+    actionMaterialize: "Book appointments",
+    fieldFrequency: "Repeats",
+    fieldWeekday: "Day of the week",
+    fieldTime: "Time",
+    weekdayAny: "Any day",
+    freqDaily: "Every day",
+    freqWeekly: "Every week",
+    freqBiweekly: "Every two weeks",
+    freqMonthly: "Every month",
+    dayMonday: "Monday",
+    dayTuesday: "Tuesday",
+    dayWednesday: "Wednesday",
+    dayThursday: "Thursday",
+    dayFriday: "Friday",
+    daySaturday: "Saturday",
+    daySunday: "Sunday",
+    reasonSeriesPatternChanged: "The repeating appointment changed its pattern"
   },
   setup: {
     title: "Your working hours",
@@ -2845,6 +2921,7 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
     this.page = 0;
     this.searchable = false;
     this.sortDir = "asc";
+    this.filterValues = {};
     this.title = "";
     this.views = false;
     this.exportable = false;
@@ -2862,6 +2939,7 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
     this.clientSortDir = "asc";
     this.clientFilters = {};
     this.filterDraft = {};
+    this.serverFilters = {};
     this.panel = "none";
     this.viewMode = "table";
     this.viewChosenByUser = false;
@@ -3390,17 +3468,17 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
       out.push(row);
     }
     const headers = out.shift() ?? [];
-    const rows4 = out.map((r6) => Object.fromEntries(headers.map((h4, i7) => [h4, r6[i7] ?? ""])));
-    return { headers, rows: rows4 };
+    const rows5 = out.map((r6) => Object.fromEntries(headers.map((h4, i7) => [h4, r6[i7] ?? ""])));
+    return { headers, rows: rows5 };
   }
   async onImportFile(ev) {
     const input = ev.target;
     const file = input.files?.[0];
     if (!file) return;
     const text = decodeCsvBuffer(await file.arrayBuffer());
-    const { headers, rows: rows4 } = this.parseCsv(text);
-    this.emit("csvImport", { headers, rows: rows4 });
-    this.emit("import", { headers, rows: rows4 });
+    const { headers, rows: rows5 } = this.parseCsv(text);
+    this.emit("csvImport", { headers, rows: rows5 });
+    this.emit("import", { headers, rows: rows5 });
     input.value = "";
   }
   toggle(p4) {
@@ -3474,11 +3552,54 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
   get hasFilterRow() {
     return this.filterColumns.length > 0;
   }
-  /** Nº de filtros activos (modo cliente) → badge del botón Filtros. */
+  /** Nº de filtros activos → badge del botón Filtros. En servidor cuenta `filterValues` (#106): sin
+   *  esto el embudo no daba NINGUNA señal de que la lista venía acotada. */
   get activeFilterCount() {
+    if (this.serverSide) {
+      return Object.keys(this.serverFilters).filter((k2) => this.serverFilterState(k2) !== void 0).length;
+    }
     return Object.values(this.clientFilters).filter(
       (f3) => f3.values && f3.values.size > 0 || f3.from || f3.to
     ).length;
+  }
+  // ── Estado de filtro VISIBLE (#106) ──────────────────────────────────────────────────────────
+  /** Traduce un valor de `filterValues` (la forma que emite `filterChange`) a la forma interna que
+   *  usan los `render*Filter`. `undefined` = ese filtro no está puesto. */
+  serverFilterState(key) {
+    const raw = this.serverFilters[key];
+    if (raw === void 0 || raw === null || raw === "") return void 0;
+    if (Array.isArray(raw)) {
+      const values = raw.filter((v3) => v3 !== null && v3 !== void 0 && v3 !== "").map((v3) => String(v3));
+      return values.length ? { values: new Set(values) } : void 0;
+    }
+    if (typeof raw === "object") {
+      const range = raw;
+      const from = range.from === null || range.from === void 0 || range.from === "" ? void 0 : String(range.from);
+      const to = range.to === null || range.to === void 0 || range.to === "" ? void 0 : String(range.to);
+      return from !== void 0 || to !== void 0 ? { from, to } : void 0;
+    }
+    return { values: /* @__PURE__ */ new Set([String(raw)]) };
+  }
+  /** Estado de filtro efectivo de una columna: servidor → `filterValues`/espejo; cliente → memoria. */
+  filterStateOf(key) {
+    return this.serverSide ? this.serverFilterState(key) : this.clientFilters[key];
+  }
+  /** Fija (o borra) el valor visible de un filtro en el espejo de servidor. */
+  setServerFilter(key, value) {
+    const next = { ...this.serverFilters };
+    const empty = value === void 0 || value === null || value === "" || Array.isArray(value) && value.length === 0;
+    if (empty) delete next[key];
+    else next[key] = value;
+    this.serverFilters = next;
+  }
+  /** Fija UN extremo de un rango en el espejo. Los dos extremos viajan en eventos SEPARADOS
+   *  (`{from}` y luego `{to}`), así que aquí se MEZCLA: reemplazar borraría el otro extremo. */
+  setServerRangeEdge(key, edge, value) {
+    const prev = this.serverFilters[key];
+    const base = prev && typeof prev === "object" && !Array.isArray(prev) ? { ...prev } : {};
+    base[edge] = value;
+    const alive = (v3) => v3 !== void 0 && v3 !== null && v3 !== "";
+    this.setServerFilter(key, alive(base.from) || alive(base.to) ? base : void 0);
   }
   /** Valor crudo de una columna para ordenar/filtrar (usa format si lo hay, si no row[key]). */
   rawValue(col, row) {
@@ -3568,15 +3689,18 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
   }
   onFilterInput(col, ev) {
     const value = ev.target.value ?? "";
+    this.setServerFilter(col.key, value);
     this.emit("filterChange", { col: col.key, value });
   }
   onRangeInput(col, edge, ev) {
     const raw = ev.target.value ?? "";
     const v3 = raw === "" ? "" : Number(raw);
+    this.setServerRangeEdge(col.key, edge, v3);
     this.emit("filterChange", { col: col.key, value: { [edge]: v3 } });
   }
   onDateRangeInput(col, edge, ev) {
     const v3 = ev.target.value ?? "";
+    this.setServerRangeEdge(col.key, edge, v3);
     this.emit("filterChange", { col: col.key, value: { [edge]: v3 } });
   }
   // ── Filtros EN LÍNEA (toolbar) ────────────────────────────────────────────────────────────
@@ -3596,7 +3720,9 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
   // `filterChange`; en cliente escribe `clientFilters` (multiselect ⇒ filtra por inclusión).
   onFilterSelect(col, value, multi) {
     if (this.serverSide) {
-      this.emit("filterChange", { col: col.key, value: value ?? (multi ? [] : "") });
+      const next = value ?? (multi ? [] : "");
+      this.setServerFilter(col.key, next);
+      this.emit("filterChange", { col: col.key, value: next });
       return;
     }
     if (multi) {
@@ -3610,6 +3736,7 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
   onInlineRange(col, edge, ev) {
     const v3 = ev.target.value ?? "";
     if (this.serverSide) {
+      this.setServerRangeEdge(col.key, edge, v3);
       this.emit("filterChange", { col: col.key, value: { [edge]: v3 } });
       return;
     }
@@ -3640,6 +3767,7 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
    */
   willUpdate(changed) {
     this.applyInitialView();
+    if (changed.has("filterValues")) this.serverFilters = { ...this.filterValues ?? {} };
     if (!this.serverSide && changed.has("rows") && this.mobileShown !== 0) this.mobileShown = 0;
   }
   applyInitialView() {
@@ -3662,9 +3790,11 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
   renderFilterControl(col) {
     if (!col.filterable) return A;
     const type = col.filterType ?? "text";
+    const f3 = this.filterStateOf(col.key);
     if (type === "select" || type === "multiselect") {
       const multi = type === "multiselect";
       const opts = col.options ?? this.distinctValues(col).map((v3) => ({ value: v3, label: v3 }));
+      const current = this.selectValue(f3, multi);
       return b2`
         <ion-select
           label=${col.header}
@@ -3674,6 +3804,7 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
           interface="modal"
           .interfaceOptions=${{ cssClass: "ok-overlay" }}
           placeholder=${this.t.select}
+          .value=${current}
           @ionChange=${(e5) => this.onFilterSelect(col, e5.detail.value, multi)}
         >
           ${multi ? A : b2`<ion-select-option value="">${this.t.select}</ion-select-option>`}
@@ -3689,8 +3820,10 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
           <span class="flabel">${col.header}</span>
           <div class="frange">
             <ion-input type=${t5} fill="outline" mode="md" placeholder=${type === "daterange" ? this.t.from : this.t.gte}
+              .value=${f3?.from ?? ""}
               @ionInput=${(e5) => onEdge(col, "from", e5)}></ion-input>
             <ion-input type=${t5} fill="outline" mode="md" placeholder=${type === "daterange" ? this.t.to : this.t.lte}
+              .value=${f3?.to ?? ""}
               @ionInput=${(e5) => onEdge(col, "to", e5)}></ion-input>
           </div>
         </div>
@@ -3704,9 +3837,17 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
         label=${col.header}
         label-placement="stacked"
         placeholder=${this.t.filterPlaceholder}
+        .value=${this.selectValue(f3, false)}
         @ionInput=${(e5) => this.onFilterInput(col, e5)}
       ></ion-input>
     `;
+  }
+  /** Valor para un control de un solo valor (`ion-select`/`ion-input`) o multi (`ion-select
+   *  multiple`) a partir del estado de filtro interno. '' / [] = sin filtro. */
+  selectValue(f3, multi) {
+    const values = [...f3?.values ?? /* @__PURE__ */ new Set()];
+    if (multi) return values;
+    return values.length ? values[0] : "";
   }
   // Controles de filtro COMPACTOS para la toolbar (modo `inlineFilters`). Solo select y rango de
   // fechas (los del screenshot); el resto de tipos siguen disponibles vía el drawer si no se activa
@@ -3721,11 +3862,11 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
   }
   renderInlineFilter(col) {
     const type = col.filterType ?? "text";
-    const f3 = this.clientFilters[col.key];
+    const f3 = this.filterStateOf(col.key);
     if (type === "select" || type === "multiselect") {
       const multi = type === "multiselect";
       const opts = col.options ?? this.distinctValues(col).map((v3) => ({ value: v3, label: v3 }));
-      const current = multi ? [...f3?.values ?? /* @__PURE__ */ new Set()] : f3?.values && f3.values.size ? [...f3.values][0] : "";
+      const current = this.selectValue(f3, multi);
       return b2`
         <ion-select
           class="tk-filter"
@@ -3923,7 +4064,7 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
                             ${this.toolButton("grid-outline", this.viewMode === "cards", () => this.setViewMode("cards"), this.t.viewCards)}
                           </span>
                         ` : A}
-                    ${this.hasFilterRow && !this.inlineFilters ? this.toolButton("funnel-outline", this.panel === "filters" || this.activeFilterCount > 0, () => this.toggle("filters"), this.t.filters, this.serverSide ? void 0 : this.activeFilterCount) : A}
+                    ${this.hasFilterRow && !this.inlineFilters ? this.toolButton("funnel-outline", this.panel === "filters" || this.activeFilterCount > 0, () => this.toggle("filters"), this.t.filters, this.activeFilterCount) : A}
                     ${this.effImport ? b2`
                           ${this.toolButton("cloud-upload-outline", false, () => this.renderRoot.querySelector(".tk-file")?.click(), this.t.importCsv)}
                           <input class="tk-file" type="file" accept=".csv,text/csv" hidden @change=${(e5) => this.onImportFile(e5)} />
@@ -4235,6 +4376,9 @@ __decorateClass4([
   n4({ attribute: "sort-dir" })
 ], _OkDataTable.prototype, "sortDir");
 __decorateClass4([
+  n4({ attribute: false })
+], _OkDataTable.prototype, "filterValues");
+__decorateClass4([
   n4()
 ], _OkDataTable.prototype, "title");
 __decorateClass4([
@@ -4306,6 +4450,9 @@ __decorateClass4([
 __decorateClass4([
   r5()
 ], _OkDataTable.prototype, "filterDraft");
+__decorateClass4([
+  r5()
+], _OkDataTable.prototype, "serverFilters");
 __decorateClass4([
   r5()
 ], _OkDataTable.prototype, "panel");
@@ -5354,8 +5501,412 @@ __decorateClass5([
 ], OkScheduler.prototype, "heldId");
 define("ok-scheduler", OkScheduler);
 
-// ui/components/erp-appointments-list/erp-appointments-list.ts
+// ui/components/erp-appointments-series/erp-appointments-series.ts
 var CATALOG2 = { es: es_default, en: en_default };
+function erplora2() {
+  const c5 = globalThis.erplora;
+  if (!c5) throw new Error("erplora SDK not initialised by the shell");
+  return c5;
+}
+function rows2(r6) {
+  if (Array.isArray(r6)) return r6;
+  if (r6 && typeof r6 === "object" && Array.isArray(r6.rows)) {
+    return r6.rows;
+  }
+  return [];
+}
+var FREQUENCIES = ["daily", "weekly", "biweekly", "monthly"];
+var FREQUENCY_KEYS = {
+  daily: "ui.freqDaily",
+  weekly: "ui.freqWeekly",
+  biweekly: "ui.freqBiweekly",
+  monthly: "ui.freqMonthly"
+};
+var WEEKDAY_KEYS = [
+  "ui.dayMonday",
+  "ui.dayTuesday",
+  "ui.dayWednesday",
+  "ui.dayThursday",
+  "ui.dayFriday",
+  "ui.daySaturday",
+  "ui.daySunday"
+];
+var ALIGNS_TO_WEEKDAY = ["weekly", "biweekly"];
+var ErpAppointmentsSeries = class extends i3 {
+  constructor() {
+    super(...arguments);
+    this.series = [];
+    this.loading = true;
+    this.error = "";
+    this.saving = false;
+    this.editingId = "";
+    this.template = null;
+    this.occurrences = [];
+    this.fromOccurrence = "";
+    this.editFrequency = "";
+    this.editDayOfWeek = "";
+    this.editTime = "";
+    this.editDuration = "";
+    this.offLocale = null;
+  }
+  static {
+    this.styles = i`
+    :host { display:flex; flex-direction:column; min-height:0; flex:1 1 auto;
+            font-family: system-ui, sans-serif; color: var(--ion-text-color, #1c1b18); }
+    .page { display:flex; flex-direction:column; gap:.5rem; min-height:0; flex:1 1 auto; }
+    .page > ok-data-table { flex:1 1 auto; min-height:0; }
+    .form { display:flex; flex-direction:column; gap:.75rem; padding:.25rem 0; }
+    /* Dos columnas en cuanto hay sitio y una sola en móvil: el panel es el mismo en los tres
+       tamaños, lo que cambia es cuántos campos caben por fila. */
+    .grid { display:grid; grid-template-columns:1fr; gap:.75rem; }
+    @media (min-width: 540px) { .grid { grid-template-columns:1fr 1fr; } }
+    .ctx { margin:0; font-size:.9rem; color: var(--ion-color-medium, #8b897f); }
+    .ctx strong { color: var(--ion-text-color, #1c1b18); }
+    .loading, .empty { color: var(--ion-color-medium, #8b897f); font-size:.9rem; margin:.25rem 0; }
+  `;
+  }
+  async connectedCallback() {
+    super.connectedCallback();
+    this.offLocale = erplora2().on("erplora:locale-changed", () => this.requestUpdate());
+    await this.refresh();
+  }
+  disconnectedCallback() {
+    this.offLocale?.();
+    this.offLocale = null;
+    super.disconnectedCallback();
+  }
+  async refresh() {
+    this.loading = true;
+    this.error = "";
+    try {
+      this.series = rows2(await erplora2().query("appointments.recurring.list"));
+    } catch (e5) {
+      this.series = [];
+      this.error = e5 instanceof Error && e5.message ? e5.message : erplora2().t(CATALOG2, "ui.seriesLoadError");
+    } finally {
+      this.loading = false;
+    }
+  }
+  dataTable() {
+    return this.renderRoot.querySelector("ok-data-table");
+  }
+  /** Carga la plantilla AUTORITATIVA de la serie (la lista no trae los tres ids) y lo que ya está
+   *  reservado, que es lo que decide dónde cae el corte y lo que hay que avisar antes de guardar. */
+  async loadTemplate(recurringId) {
+    const tmpl = rows2(
+      await erplora2().query("appointments.recurring.get", { recurring_id: recurringId })
+    )[0];
+    return tmpl ?? null;
+  }
+  async openSeries(row) {
+    const id = String(row.id ?? "");
+    if (!id) return;
+    this.error = "";
+    try {
+      const [tmpl, occ] = await Promise.all([
+        this.loadTemplate(id),
+        erplora2().query("appointments.recurring.occurrences", { recurring_id: id })
+      ]);
+      if (!tmpl) {
+        this.error = erplora2().t(CATALOG2, "ui.seriesNotFound");
+        return;
+      }
+      this.template = tmpl;
+      this.occurrences = rows2(occ);
+      this.editingId = id;
+      this.editFrequency = tmpl.frequency ?? "";
+      this.editDayOfWeek = tmpl.day_of_week === null || tmpl.day_of_week === void 0 ? "" : String(tmpl.day_of_week);
+      this.editTime = tmpl.time ?? "";
+      this.editDuration = String(tmpl.duration_minutes ?? "");
+      const today2 = todayISO();
+      this.fromOccurrence = this.occurrences.map((o7) => o7.occurrence_date).find((d3) => d3 >= today2) ?? today2;
+      await this.updateComplete;
+      this.dataTable()?.open("create");
+    } catch (e5) {
+      this.error = e5 instanceof Error && e5.message ? e5.message : erplora2().t(CATALOG2, "ui.seriesLoadError");
+    }
+  }
+  closePanel() {
+    this.editingId = "";
+    this.template = null;
+    this.occurrences = [];
+    this.dataTable()?.close();
+  }
+  /** Lo que de verdad cambió. Se manda SOLO eso: `recurring.update` compara contra la plantilla
+   *  para decidir si la pauta cambió, y reenviar lo idéntico no aporta nada; mandar el payload
+   *  entero además haría que un campo que la pantalla no supo leer pisara el valor guardado. */
+  changedFields() {
+    const tmpl = this.template;
+    if (!tmpl) return {};
+    const changed = {};
+    if (this.editTime && this.editTime !== tmpl.time) changed.time = this.editTime;
+    const minutes = Math.trunc(Number(this.editDuration));
+    if (Number.isFinite(minutes) && minutes >= 1 && minutes !== tmpl.duration_minutes) {
+      changed.duration_minutes = minutes;
+    }
+    if (this.editFrequency && this.editFrequency !== tmpl.frequency) {
+      changed.frequency = this.editFrequency;
+    }
+    const dow = this.editDayOfWeek === "" ? null : Math.trunc(Number(this.editDayOfWeek));
+    const current = tmpl.day_of_week === void 0 ? null : tmpl.day_of_week;
+    if (dow !== current) changed.day_of_week = dow;
+    return changed;
+  }
+  /** Cuántas citas ya reservadas alcanza el cambio: las que quedan por delante del corte y siguen
+   *  siendo un plan. Las ya cobradas se nombran aparte porque NO se van a tocar. */
+  get affected() {
+    const from = this.fromOccurrence;
+    let upcoming = 0;
+    let invoiced = 0;
+    for (const o7 of this.occurrences) {
+      if (!from || o7.occurrence_date < from) continue;
+      if (o7.status !== "pending" && o7.status !== "confirmed") continue;
+      if (o7.converted_sale_id) invoiced += 1;
+      else upcoming += 1;
+    }
+    return { upcoming, invoiced };
+  }
+  async submitEdit(ev) {
+    ev.preventDefault?.();
+    const tmpl = this.template;
+    if (!tmpl || this.saving) return;
+    const changed = this.changedFields();
+    if (Object.keys(changed).length === 0) {
+      this.closePanel();
+      return;
+    }
+    this.saving = true;
+    this.error = "";
+    try {
+      const result = await erplora2().command("appointments.recurring.update", {
+        recurring_id: this.editingId,
+        scope: "this_and_following",
+        from_occurrence_date: this.fromOccurrence,
+        ...changed
+      });
+      if (result?.pattern_changed === true) {
+        await this.bookWindow(String(result.recurring_id ?? this.editingId), tmpl);
+      }
+      this.notifyOutcome(result);
+      this.closePanel();
+      await this.refresh();
+    } catch (e5) {
+      this.error = e5 instanceof Error && e5.message ? e5.message : erplora2().t(CATALOG2, "ui.seriesSaveError");
+    } finally {
+      this.saving = false;
+    }
+  }
+  /** Lo que NO se movió se DICE. Callarlo es el fallo nº1 que reportan los foros de este gesto. */
+  notifyOutcome(result) {
+    if (!result) return;
+    const t5 = (k2, p4) => erplora2().t(CATALOG2, k2, p4);
+    const message = t5("ui.seriesUpdateOutcome", {
+      moved: Number(result.moved ?? 0),
+      cancelled: Number(result.cancelled_pattern_change ?? 0),
+      locked: Number(result.locked_invoiced ?? 0)
+    });
+    erplora2().notify?.({ type: "success", message });
+  }
+  async bookWindow(recurringId, tmpl) {
+    await erplora2().command("appointments.recurring.materialize", {
+      recurring_id: recurringId,
+      customer_id: tmpl.customer_id ?? "",
+      service_id: tmpl.service_id ?? "",
+      staff_id: tmpl.staff_id ?? ""
+    });
+  }
+  /** Materializar la ventana desde la lista: la serie ya existe, lo que falta son sus citas. */
+  async materializeSeries(row) {
+    const id = String(row.id ?? "");
+    if (!id) return;
+    this.error = "";
+    try {
+      const tmpl = await this.loadTemplate(id);
+      if (!tmpl) {
+        this.error = erplora2().t(CATALOG2, "ui.seriesNotFound");
+        return;
+      }
+      await this.bookWindow(id, tmpl);
+      erplora2().notify?.({ type: "success", message: erplora2().t(CATALOG2, "ui.seriesMaterialized") });
+    } catch (e5) {
+      this.error = e5 instanceof Error && e5.message ? e5.message : erplora2().t(CATALOG2, "ui.seriesMaterializeError");
+    }
+  }
+  async deleteSeries(row) {
+    const id = String(row.id ?? "");
+    if (!id) return;
+    this.error = "";
+    try {
+      await erplora2().command("appointments.recurring.delete", { recurring_id: id });
+      await this.refresh();
+    } catch (e5) {
+      this.error = e5 instanceof Error && e5.message ? e5.message : erplora2().t(CATALOG2, "ui.seriesDeleteError");
+    }
+  }
+  onRowAction(ev) {
+    const { action, row } = ev.detail ?? {};
+    if (!row) return;
+    if (action === "edit") void this.openSeries(row);
+    else if (action === "materialize") void this.materializeSeries(row);
+    else if (action === "delete") void this.deleteSeries(row);
+  }
+  /** La pauta en una frase, que es como la lee una recepcionista («Cada semana · lunes · 11:00»). */
+  patternLabel(row) {
+    const t5 = (k2) => erplora2().t(CATALOG2, k2);
+    const parts = [t5(FREQUENCY_KEYS[row.frequency] ?? row.frequency)];
+    if (ALIGNS_TO_WEEKDAY.includes(row.frequency) && row.day_of_week !== null && row.day_of_week !== void 0) {
+      parts.push(t5(WEEKDAY_KEYS[row.day_of_week] ?? String(row.day_of_week)));
+    }
+    if (row.time) parts.push(row.time);
+    return parts.join(" \xB7 ");
+  }
+  get columns() {
+    const t5 = (k2) => erplora2().t(CATALOG2, k2);
+    return [
+      { key: "customer_name", header: t5("ui.colCustomer") },
+      { key: "service_name", header: t5("ui.colService") },
+      { key: "staff_name", header: t5("ui.colStaff"), format: (r6) => r6.staff_name || "\u2014" },
+      { key: "frequency", header: t5("ui.colPattern"), format: (r6) => this.patternLabel(r6) },
+      { key: "start_date", header: t5("ui.colStarts") },
+      { key: "end_date", header: t5("ui.colEnds"), format: (r6) => r6.end_date || t5("ui.seriesNoEnd") }
+    ];
+  }
+  get rowActions() {
+    const t5 = (k2) => erplora2().t(CATALOG2, k2);
+    return [
+      { id: "edit", label: t5("ui.actionEditSeries"), icon: "create-outline", color: "primary" },
+      { id: "materialize", label: t5("ui.actionMaterialize"), icon: "calendar-number-outline", color: "success" },
+      { id: "delete", label: t5("ui.actionDelete"), icon: "trash-outline", color: "danger" }
+    ];
+  }
+  render() {
+    const t5 = (k2, p4) => erplora2().t(CATALOG2, k2, p4);
+    return b2`<div class="page">
+      ${this.error ? b2`<ok-inline-feedback tone="danger" icon="alert-circle-outline">${this.error}</ok-inline-feedback>` : A}
+      <ok-data-table
+        .fill=${true}
+        .views=${true}
+        .cardTitle=${(row) => String(row.customer_name ?? "")}
+        .columns=${this.columns}
+        .rows=${this.series}
+        .searchKeys=${["customer_name", "service_name", "staff_name"]}
+        .searchPlaceholder=${t5("ui.seriesSearchPlaceholder")}
+        .actions=${this.rowActions}
+        @rowAction=${(e5) => this.onRowAction(e5)}
+        .labels=${{ newRecord: t5("ui.seriesEditTitle") }}
+        .emptyMessage=${this.loading ? t5("ui.loading") : t5("ui.seriesEmpty")}
+      >
+        ${this.editingId ? this.renderEditForm(t5) : A}
+      </ok-data-table>
+    </div>`;
+  }
+  renderEditForm(t5) {
+    const tmpl = this.template;
+    if (!tmpl) return A;
+    const { upcoming, invoiced } = this.affected;
+    const booked = this.occurrences.length;
+    return b2`<form slot="create" data-mode="series-edit" class="form" @submit=${(e5) => this.submitEdit(e5)}>
+      <p class="ctx" data-role="series-context">
+        <strong>${tmpl.customer_name}</strong> · ${tmpl.service_name} · ${tmpl.staff_name || "\u2014"}
+      </p>
+      <!-- Una serie PARTIDA son dos mitades encadenadas, y decirlo es la mitad de poder entenderla:
+           sin esto, la mitad nueva parece una serie que apareció de la nada. -->
+      ${tmpl.split_from_id ? b2`<ok-inline-feedback data-role="split-from" tone="info" icon="git-branch-outline"
+            >${t5("ui.seriesSplitFrom", { id: tmpl.split_from_id })}</ok-inline-feedback
+          >` : A}
+      <p class="ctx" data-role="series-counts">
+        ${t5("ui.seriesBookedCount", { booked, from: this.fromOccurrence, upcoming })}
+      </p>
+      <!-- EL RECUENTO ANTES DE CONFIRMAR. Mover el día de una serie le cambia TODAS las citas a la
+           clienta; un aviso genérico no basta, y lo que ya está cobrado no se toca — se nombra. -->
+      ${invoiced > 0 ? b2`<ok-inline-feedback data-role="series-locked" tone="warning" icon="lock-closed-outline"
+            >${t5("ui.seriesLockedInvoiced", { invoiced })}</ok-inline-feedback
+          >` : A}
+      <div class="grid">
+        <ion-select
+          data-role="series-frequency"
+          label=${t5("ui.fieldFrequency")}
+          label-placement="floating"
+          .value=${this.editFrequency}
+          @ionChange=${(e5) => this.editFrequency = e5.target.value}
+        >
+          ${FREQUENCIES.map((f3) => b2`<ion-select-option .value=${f3}>${t5(FREQUENCY_KEYS[f3])}</ion-select-option>`)}
+        </ion-select>
+        ${ALIGNS_TO_WEEKDAY.includes(this.editFrequency) ? b2`<ion-select
+              data-role="series-day"
+              label=${t5("ui.fieldWeekday")}
+              label-placement="floating"
+              .value=${this.editDayOfWeek}
+              @ionChange=${(e5) => this.editDayOfWeek = e5.target.value}
+            >
+              <ion-select-option value="">${t5("ui.weekdayAny")}</ion-select-option>
+              ${WEEKDAY_KEYS.map((k2, i7) => b2`<ion-select-option .value=${String(i7)}>${t5(k2)}</ion-select-option>`)}
+            </ion-select>` : A}
+        <ion-input
+          data-role="series-time"
+          label=${t5("ui.fieldTime")}
+          label-placement="floating"
+          type="time"
+          .value=${this.editTime}
+          @ionInput=${(e5) => this.editTime = e5.target.value}
+        ></ion-input>
+        <ion-input
+          data-role="series-duration"
+          label=${t5("ui.fieldMinutes")}
+          label-placement="floating"
+          type="number"
+          min="1"
+          .value=${this.editDuration}
+          @ionInput=${(e5) => this.editDuration = e5.target.value}
+        ></ion-input>
+      </div>
+      <ok-inline-feedback tone="info" icon="information-circle-outline"
+        >${t5("ui.seriesScopeHint", { from: this.fromOccurrence })}</ok-inline-feedback
+      >
+      <ion-button type="submit" expand="block" .disabled=${this.saving}>${t5("ui.seriesSave")}</ion-button>
+    </form>`;
+  }
+};
+__decorateClass([
+  r5()
+], ErpAppointmentsSeries.prototype, "series", 2);
+__decorateClass([
+  r5()
+], ErpAppointmentsSeries.prototype, "loading", 2);
+__decorateClass([
+  r5()
+], ErpAppointmentsSeries.prototype, "error", 2);
+__decorateClass([
+  r5()
+], ErpAppointmentsSeries.prototype, "saving", 2);
+__decorateClass([
+  r5()
+], ErpAppointmentsSeries.prototype, "editingId", 2);
+__decorateClass([
+  r5()
+], ErpAppointmentsSeries.prototype, "template", 2);
+__decorateClass([
+  r5()
+], ErpAppointmentsSeries.prototype, "occurrences", 2);
+__decorateClass([
+  r5()
+], ErpAppointmentsSeries.prototype, "fromOccurrence", 2);
+__decorateClass([
+  r5()
+], ErpAppointmentsSeries.prototype, "editFrequency", 2);
+__decorateClass([
+  r5()
+], ErpAppointmentsSeries.prototype, "editDayOfWeek", 2);
+__decorateClass([
+  r5()
+], ErpAppointmentsSeries.prototype, "editTime", 2);
+__decorateClass([
+  r5()
+], ErpAppointmentsSeries.prototype, "editDuration", 2);
+define("erp-appointments-series", ErpAppointmentsSeries);
+
+// ui/components/erp-appointments-list/erp-appointments-list.ts
+var CATALOG3 = { es: es_default, en: en_default };
 var STATUS_KEYS2 = {
   pending: "ui.statusPending",
   confirmed: "ui.statusConfirmed",
@@ -5374,14 +5925,14 @@ var STATUS_COLORS = {
 };
 var UNASSIGNED = "unassigned";
 var RESCHEDULABLE = ["pending", "confirmed"];
-function erplora2() {
+function erplora3() {
   const c5 = globalThis.erplora;
   if (!c5) throw new Error("erplora SDK no inicializado por el shell");
   return c5;
 }
 function catalogError(code) {
-  for (const lang of [erplora2().locale, "en"]) {
-    const dict = CATALOG2[lang]?.errors;
+  for (const lang of [erplora3().locale, "en"]) {
+    const dict = CATALOG3[lang]?.errors;
     const text = dict?.[code];
     if (typeof text === "string" && text) return text;
   }
@@ -5394,16 +5945,16 @@ function domainErrorText(e5, fallbackKey) {
     const text = catalogError(code);
     if (text) return text;
   }
-  return message || erplora2().t(CATALOG2, fallbackKey);
+  return message || erplora3().t(CATALOG3, fallbackKey);
 }
-function rows2(r6) {
+function rows3(r6) {
   if (Array.isArray(r6)) return r6;
   if (r6 && typeof r6 === "object" && Array.isArray(r6.rows)) {
     return r6.rows;
   }
   return [];
 }
-var fmtTime = (iso) => formatWallTime(iso, businessTimezone(), erplora2().locale);
+var fmtTime = (iso) => formatWallTime(iso, businessTimezone(), erplora3().locale);
 var ErpAppointmentsList = class extends i3 {
   constructor() {
     super(...arguments);
@@ -5492,7 +6043,7 @@ var ErpAppointmentsList = class extends i3 {
   }
   statusLabel(status) {
     const key = STATUS_KEYS2[status];
-    return key ? erplora2().t(CATALOG2, key) : status;
+    return key ? erplora3().t(CATALOG3, key) : status;
   }
   /** Profesionales que pueden recibir citas: los que el módulo `staff` marca reservables. */
   get bookableStaff() {
@@ -5523,7 +6074,7 @@ var ErpAppointmentsList = class extends i3 {
   }
   // Getters (no campos): se re-evalúan en cada render para seguir el idioma activo.
   get columns() {
-    const t5 = (k2) => erplora2().t(CATALOG2, k2);
+    const t5 = (k2) => erplora3().t(CATALOG3, k2);
     return [
       { key: "start_datetime", header: t5("ui.colTime"), format: (r6) => fmtTime(r6.start_datetime) },
       { key: "appointment_number", header: t5("ui.colNumber") },
@@ -5538,7 +6089,7 @@ var ErpAppointmentsList = class extends i3 {
     ];
   }
   get rowActions() {
-    const t5 = (k2) => erplora2().t(CATALOG2, k2);
+    const t5 = (k2) => erplora3().t(CATALOG3, k2);
     return [
       // COBRAR (sales#89): el eslabón que faltaba. La agenda sabía completar una cita y ahí se
       // acababa el camino; en un salón el servicio ES la venta.
@@ -5580,7 +6131,7 @@ var ErpAppointmentsList = class extends i3 {
   get schedulerResources() {
     return [
       ...this.bookableStaff.map((m4) => ({ id: m4.id, label: m4.full_name })),
-      { id: UNASSIGNED, label: erplora2().t(CATALOG2, "ui.unassigned") }
+      { id: UNASSIGNED, label: erplora3().t(CATALOG3, "ui.unassigned") }
     ];
   }
   get schedulerEvents() {
@@ -5603,15 +6154,15 @@ var ErpAppointmentsList = class extends i3 {
     await this.loadCatalogs();
     try {
       const offs = [
-        erplora2().on("appointments.appointment.created", () => this.refresh()),
-        erplora2().on("appointments.appointment.updated", () => this.refresh()),
-        erplora2().on("appointments.appointment.confirmed", () => this.refresh()),
-        erplora2().on("appointments.appointment.started", () => this.refresh()),
-        erplora2().on("appointments.appointment.completed", () => this.refresh()),
-        erplora2().on("appointments.appointment.cancelled", () => this.refresh()),
-        erplora2().on("appointments.appointment.no_show", () => this.refresh()),
-        erplora2().on("appointments.appointment.rescheduled", () => this.refresh()),
-        erplora2().on("appointments.appointment.deleted", () => this.refresh())
+        erplora3().on("appointments.appointment.created", () => this.refresh()),
+        erplora3().on("appointments.appointment.updated", () => this.refresh()),
+        erplora3().on("appointments.appointment.confirmed", () => this.refresh()),
+        erplora3().on("appointments.appointment.started", () => this.refresh()),
+        erplora3().on("appointments.appointment.completed", () => this.refresh()),
+        erplora3().on("appointments.appointment.cancelled", () => this.refresh()),
+        erplora3().on("appointments.appointment.no_show", () => this.refresh()),
+        erplora3().on("appointments.appointment.rescheduled", () => this.refresh()),
+        erplora3().on("appointments.appointment.deleted", () => this.refresh())
       ];
       this.unsub = () => offs.forEach((off) => off());
     } catch {
@@ -5628,17 +6179,17 @@ var ErpAppointmentsList = class extends i3 {
   async loadCatalogs() {
     try {
       const [customers, services, staffMembers, settings] = await Promise.all([
-        erplora2().query("customers.list", { limit: 500, sort: "name", dir: "asc" }).catch(() => []),
-        erplora2().query("services.services.list", { limit: 500 }).catch(() => []),
-        erplora2().query("staff.members.list", { limit: 500 }).catch(() => []),
-        erplora2().query("appointments.settings.get").catch(() => [])
+        erplora3().query("customers.list", { limit: 500, sort: "name", dir: "asc" }).catch(() => []),
+        erplora3().query("services.services.list", { limit: 500 }).catch(() => []),
+        erplora3().query("staff.members.list", { limit: 500 }).catch(() => []),
+        erplora3().query("appointments.settings.get").catch(() => [])
       ]);
-      this.customers = rows2(customers);
-      this.services = rows2(services).filter((s5) => s5.is_bookable === void 0 || Number(s5.is_bookable) === 1);
-      this.staffMembers = rows2(staffMembers);
-      this.settings = rows2(settings)[0] ?? {};
+      this.customers = rows3(customers);
+      this.services = rows3(services).filter((s5) => s5.is_bookable === void 0 || Number(s5.is_bookable) === 1);
+      this.staffMembers = rows3(staffMembers);
+      this.settings = rows3(settings)[0] ?? {};
     } catch (e5) {
-      this.error = e5 instanceof Error ? e5.message : erplora2().t(CATALOG2, "ui.errLoadCatalogs");
+      this.error = e5 instanceof Error ? e5.message : erplora3().t(CATALOG3, "ui.errLoadCatalogs");
     }
   }
   /** Un día atrás o adelante (appointments#93). Aritmética de CALENDARIO: el día del salón dura
@@ -5652,16 +6203,16 @@ var ErpAppointmentsList = class extends i3 {
     this.error = "";
     try {
       const { day_start, day_end } = dayBounds(this.day);
-      const result = await erplora2().query("appointments.appointments.list", {
+      const result = await erplora3().query("appointments.appointments.list", {
         day_start,
         day_end,
         status: this.statusFilter,
         staff_id: "",
         limit: 100
       });
-      this.items = rows2(result);
+      this.items = rows3(result);
     } catch (e5) {
-      this.error = e5 instanceof Error ? e5.message : erplora2().t(CATALOG2, "ui.errLoad");
+      this.error = e5 instanceof Error ? e5.message : erplora3().t(CATALOG3, "ui.errLoad");
     } finally {
       this.loading = false;
     }
@@ -5681,7 +6232,7 @@ var ErpAppointmentsList = class extends i3 {
     try {
       const startIso = wallToBusinessIso(this.newStart);
       if (!await this.overlapAccepted(startIso, this.effectiveDuration, staff.id)) return;
-      await erplora2().command("appointments.appointments.create", {
+      await erplora3().command("appointments.appointments.create", {
         // Vínculos + su snapshot denormalizado (lo que se reservó, aunque la ficha cambie).
         customer_id: customer.id,
         customer_name: customer.name,
@@ -5742,11 +6293,11 @@ var ErpAppointmentsList = class extends i3 {
     const from = toInstantMs(startIso);
     if (from === null || !Number.isFinite(minutes) || minutes < 1) return [];
     const to = from + minutes * 6e4;
-    const found = await erplora2().query("appointments.appointments.conflicting", {
+    const found = await erplora3().query("appointments.appointments.conflicting", {
       staff_id: staffId,
       start_datetime: startIso
     });
-    return rows2(found).filter((a3) => {
+    return rows3(found).filter((a3) => {
       if (a3.id === excludeId) return false;
       const s5 = toInstantMs(a3.start_datetime);
       const e5 = toInstantMs(a3.end_datetime);
@@ -5755,7 +6306,7 @@ var ErpAppointmentsList = class extends i3 {
   }
   /** Pinta el aviso y espera. La promesa la resuelven los botones del `ion-alert`. */
   askOverlap(conflicts) {
-    const t5 = (k2, p4) => erplora2().t(CATALOG2, k2, p4);
+    const t5 = (k2, p4) => erplora3().t(CATALOG3, k2, p4);
     const list = conflicts.map((a3) => `${a3.customer_name || t5("ui.colCustomer")} \xB7 ${fmtTime(a3.start_datetime)}`).join(", ");
     return new Promise((resolve) => {
       this.overlapPrompt = t5("ui.overlapMessage", { conflicts: list });
@@ -5788,7 +6339,7 @@ var ErpAppointmentsList = class extends i3 {
     try {
       conflicts = await this.overlappingWith(startIso, minutes, staffId, excludeId);
     } catch {
-      erplora2().notify?.({ type: "warning", message: erplora2().t(CATALOG2, "ui.errOverlapCheck") });
+      erplora3().notify?.({ type: "warning", message: erplora3().t(CATALOG3, "ui.errOverlapCheck") });
       return true;
     }
     if (conflicts.length === 0) return true;
@@ -5821,22 +6372,22 @@ var ErpAppointmentsList = class extends i3 {
           return;
         // abre el panel; no hay nada que refrescar todavía
         case "confirm":
-          await erplora2().command("appointments.appointments.confirm", { appointment_id: id });
+          await erplora3().command("appointments.appointments.confirm", { appointment_id: id });
           break;
         case "start":
-          await erplora2().command("appointments.appointments.start", { appointment_id: id });
+          await erplora3().command("appointments.appointments.start", { appointment_id: id });
           break;
         case "complete":
-          await erplora2().command("appointments.appointments.complete", { appointment_id: id });
+          await erplora3().command("appointments.appointments.complete", { appointment_id: id });
           break;
         case "no_show":
-          await erplora2().command("appointments.appointments.no_show", { appointment_id: id });
+          await erplora3().command("appointments.appointments.no_show", { appointment_id: id });
           break;
         case "cancel":
-          await erplora2().command("appointments.appointments.cancel", { appointment_id: id, reason: "" });
+          await erplora3().command("appointments.appointments.cancel", { appointment_id: id, reason: "" });
           break;
         case "delete":
-          await erplora2().command("appointments.appointments.delete", { appointment_id: id });
+          await erplora3().command("appointments.appointments.delete", { appointment_id: id });
           break;
       }
       await this.refresh();
@@ -5939,7 +6490,7 @@ var ErpAppointmentsList = class extends i3 {
         revert();
         return;
       }
-      await erplora2().command("appointments.appointments.reschedule", {
+      await erplora3().command("appointments.appointments.reschedule", {
         appointment_id: id,
         start_datetime: startIso,
         duration_minutes: appointment.duration_minutes
@@ -5948,13 +6499,13 @@ var ErpAppointmentsList = class extends i3 {
     } catch (e5) {
       revert();
       this.error = domainErrorText(e5, "ui.errReschedule");
-      erplora2().notify?.({ type: "error", message: this.error });
+      erplora3().notify?.({ type: "error", message: this.error });
     }
   }
   /** Rechazo local del arrastre: el bloque ya ha vuelto (`revert()`), queda DECIR por qué. */
   refuseDrag(key) {
-    this.error = erplora2().t(CATALOG2, key);
-    erplora2().notify?.({ type: "error", message: this.error });
+    this.error = erplora3().t(CATALOG3, key);
+    erplora3().notify?.({ type: "error", message: this.error });
   }
   /** Mueve la cita. Solo viajan las TRES claves del esquema
    *  (`schemas/appointment_reschedule.json` es `additionalProperties: false`: una clave de más
@@ -6001,7 +6552,7 @@ var ErpAppointmentsList = class extends i3 {
     this.error = "";
     try {
       if (scope === "this_and_following") {
-        await erplora2().command("appointments.recurring.update", {
+        await erplora3().command("appointments.recurring.update", {
           recurring_id: this.rescheduleSeriesId,
           scope,
           from_occurrence_date: this.rescheduleOccurrence,
@@ -6016,7 +6567,7 @@ var ErpAppointmentsList = class extends i3 {
         if (!await this.overlapAccepted(startIso, minutes, this.rescheduleStaffId, this.rescheduleId)) {
           return;
         }
-        await erplora2().command("appointments.appointments.reschedule", {
+        await erplora3().command("appointments.appointments.reschedule", {
           appointment_id: this.rescheduleId,
           start_datetime: startIso,
           duration_minutes: minutes
@@ -6045,7 +6596,7 @@ var ErpAppointmentsList = class extends i3 {
   }
   // El título de la vista lo pinta el topbar del shell: repetirlo aquí lo duplicaba en pantalla.
   render() {
-    const t5 = (k2) => erplora2().t(CATALOG2, k2);
+    const t5 = (k2) => erplora3().t(CATALOG3, k2);
     const startHour = Number(this.settings.calendar_start_hour ?? 8);
     const endHour = Number(this.settings.calendar_end_hour ?? 20);
     return b2`<div class="page">
@@ -6055,7 +6606,7 @@ var ErpAppointmentsList = class extends i3 {
              El conmutador de vista (lista | por profesional) vive aquí por lo mismo: decide
              CÓMO se pinta lo cargado, no filtra columnas. -->
         <div class="filters">
-          <!-- appointments#93 · el día se PASA, no solo se teclea. Es el gesto de toda agenda de
+          ${this.view === "series" ? A : b2`<!-- appointments#93 · el día se PASA, no solo se teclea. Es el gesto de toda agenda de
                salón (Fresha, Vagaro, Square, Google Calendar) y además cierra una asimetría que ya
                había: la vista por profesional podía cambiar de día con las flechas de ok-scheduler
                y la lista no. Sin etiqueta flotante: en un móvil son ~20 px de alto para decir
@@ -6078,7 +6629,10 @@ var ErpAppointmentsList = class extends i3 {
     }}>
             <ion-select-option value="">${t5("ui.statusAll")}</ion-select-option>
             ${Object.keys(STATUS_KEYS2).map((k2) => b2`<ion-select-option .value=${k2}>${this.statusLabel(k2)}</ion-select-option>`)}
-          </ion-select>
+          </ion-select>`}
+          <!-- El día y el estado son el ALCANCE de la consulta de la agenda; en la vista de series
+               no filtran nada, así que se retiran en vez de quedarse prometiendo un filtro que no
+               existe. El conmutador se queda: es lo único que sigue significando lo mismo. -->
           <ion-segment .value=${this.view} @ionChange=${(e5) => this.view = e5.target.value}>
             <ion-segment-button value="list" aria-label=${t5("ui.viewList")}>
               <ion-icon name="list-outline"></ion-icon>
@@ -6087,6 +6641,12 @@ var ErpAppointmentsList = class extends i3 {
             <ion-segment-button value="staff" aria-label=${t5("ui.viewStaff")}>
               <ion-icon name="people-outline"></ion-icon>
               <ion-label>${t5("ui.viewStaff")}</ion-label>
+            </ion-segment-button>
+            <!-- appointments#91: la tercera puerta. Sin ella una serie sin ocurrencias
+                 materializadas no tiene NINGUNA fila desde la que abrirse. -->
+            <ion-segment-button value="series" aria-label=${t5("ui.viewSeries")}>
+              <ion-icon name="repeat-outline"></ion-icon>
+              <ion-label>${t5("ui.viewSeries")}</ion-label>
             </ion-segment-button>
           </ion-segment>
         </div>
@@ -6144,11 +6704,11 @@ var ErpAppointmentsList = class extends i3 {
     ]}
               @ionAlertDidDismiss=${() => this.cancelOverlap()}
             ></ion-alert>` : A}
-        ${this.view === "staff" ? b2`<ok-scheduler
+        ${this.view === "series" ? b2`<erp-appointments-series></erp-appointments-series>` : this.view === "staff" ? b2`<ok-scheduler
               .date=${this.day}
               .startHour=${startHour}
               .endHour=${endHour}
-              .locale=${erplora2().locale || "es"}
+              .locale=${erplora3().locale || "es"}
               .resources=${this.schedulerResources}
               .events=${this.schedulerEvents}
               movable
@@ -6290,17 +6850,17 @@ __decorateClass([
 define("erp-appointments-list", ErpAppointmentsList);
 
 // ui/components/erp-appointments-request-booking/erp-appointments-request-booking.ts
-var CATALOG3 = { es: es_default, en: en_default };
-function erplora3() {
+var CATALOG4 = { es: es_default, en: en_default };
+function erplora4() {
   const c5 = globalThis.erplora;
   if (!c5) throw new Error("erplora SDK not initialised by the shell");
   return c5;
 }
 function can(permission) {
-  const client = erplora3();
+  const client = erplora4();
   return typeof client.hasPermission === "function" ? client.hasPermission(permission) : true;
 }
-function rows3(r6) {
+function rows4(r6) {
   if (Array.isArray(r6)) return r6;
   if (r6 && typeof r6 === "object" && Array.isArray(r6.rows)) return r6.rows;
   return [];
@@ -6401,22 +6961,22 @@ var ErpAppointmentsRequestBooking = class extends i3 {
     this.catalogsLoaded = true;
     try {
       const [services, staffMembers, settings] = await Promise.all([
-        erplora3().query("services.services.list", { limit: 500 }).catch(() => []),
-        erplora3().query("staff.members.list", { limit: 500 }).catch(() => []),
-        erplora3().query("appointments.settings.get").catch(() => [])
+        erplora4().query("services.services.list", { limit: 500 }).catch(() => []),
+        erplora4().query("staff.members.list", { limit: 500 }).catch(() => []),
+        erplora4().query("appointments.settings.get").catch(() => [])
       ]);
-      const cfg = rows3(settings)[0];
+      const cfg = rows4(settings)[0];
       if (cfg && cfg.hold_minutes !== void 0 && cfg.hold_minutes !== null) {
         this.holdMinutes = Number(cfg.hold_minutes) || 0;
       }
-      this.services = rows3(services).filter(
+      this.services = rows4(services).filter(
         (s5) => s5.is_bookable === void 0 || Number(s5.is_bookable) === 1
       );
-      this.staffMembers = rows3(staffMembers).filter(
+      this.staffMembers = rows4(staffMembers).filter(
         (s5) => (s5.status ?? "active") === "active" && (s5.is_bookable === void 0 || Number(s5.is_bookable) === 1)
       );
     } catch (e5) {
-      this.error = e5 instanceof Error ? e5.message : erplora3().t(CATALOG3, "ui.errLoadCatalogs");
+      this.error = e5 instanceof Error ? e5.message : erplora4().t(CATALOG4, "ui.errLoadCatalogs");
     }
   }
   async searchCustomers() {
@@ -6426,8 +6986,8 @@ var ErpAppointmentsRequestBooking = class extends i3 {
       return;
     }
     try {
-      const result = await erplora3().query("customers.list", { search: term, limit: 8 });
-      this.matches = rows3(result);
+      const result = await erplora4().query("customers.list", { search: term, limit: 8 });
+      this.matches = rows4(result);
     } catch {
       this.matches = [];
     }
@@ -6439,13 +6999,13 @@ var ErpAppointmentsRequestBooking = class extends i3 {
     this.error = "";
     try {
       const name = this.open.contact_name || this.open.contact_phone;
-      await erplora3().command("customers.create", { name, phone: this.open.contact_phone });
+      await erplora4().command("customers.create", { name, phone: this.open.contact_phone });
       this.search = this.open.contact_phone || name;
       await this.searchCustomers();
       const created = this.matches.find((c5) => c5.name === name);
       if (created) this.pickCustomer(created);
     } catch (e5) {
-      this.error = e5 instanceof Error ? e5.message : erplora3().t(CATALOG3, "ui.errCreateCustomer");
+      this.error = e5 instanceof Error ? e5.message : erplora4().t(CATALOG4, "ui.errCreateCustomer");
     } finally {
       this.busy = false;
     }
@@ -6464,7 +7024,7 @@ var ErpAppointmentsRequestBooking = class extends i3 {
     }
     const service = this.services.find((s5) => s5.id === this.serviceId);
     try {
-      const result = await erplora3().query("appointments.availability.slots", {
+      const result = await erplora4().query("appointments.availability.slots", {
         date: this.date,
         staff_id: this.staffId,
         duration_minutes: service?.duration_minutes,
@@ -6473,10 +7033,10 @@ var ErpAppointmentsRequestBooking = class extends i3 {
         // `exclude_appointment_id` when moving an appointment off its own slot.
         exclude_hold_ref: this.open?.request_id
       });
-      this.slots = rows3(result);
+      this.slots = rows4(result);
     } catch (e5) {
       this.slots = [];
-      this.error = e5 instanceof Error ? e5.message : erplora3().t(CATALOG3, "ui.errLoadSlots");
+      this.error = e5 instanceof Error ? e5.message : erplora4().t(CATALOG4, "ui.errLoadSlots");
     }
   }
   /** Picking a time SETS IT ASIDE (appointments#69).
@@ -6503,7 +7063,7 @@ var ErpAppointmentsRequestBooking = class extends i3 {
     this.holdExpired = false;
     if (!this.open || this.holdMinutes <= 0) return;
     try {
-      await erplora3().command("appointments.slots.hold", {
+      await erplora4().command("appointments.slots.hold", {
         // Opaque both ways: we say who is asking and over which of THEIR rows. `appointments`
         // stores it without knowing what a WhatsApp request is, and a hub with no inbox never
         // learns this table exists.
@@ -6517,7 +7077,7 @@ var ErpAppointmentsRequestBooking = class extends i3 {
       this.startHoldClock();
     } catch {
       this.holdUntil = 0;
-      this.error = erplora3().t(CATALOG3, "ui.holdFailed");
+      this.error = erplora4().t(CATALOG4, "ui.holdFailed");
     }
   }
   /** Gives the slot back. Only on an EXPLICIT walk-away: an unmount is not one (a host re-render
@@ -6528,7 +7088,7 @@ var ErpAppointmentsRequestBooking = class extends i3 {
     if (!this.open || !this.holdUntil) return;
     this.holdUntil = 0;
     try {
-      await erplora3().command("appointments.slots.release_hold", {
+      await erplora4().command("appointments.slots.release_hold", {
         source: "whatsapp_inbox",
         source_ref: this.open.request_id
       });
@@ -6585,7 +7145,7 @@ var ErpAppointmentsRequestBooking = class extends i3 {
     this.dispatchEvent(new CustomEvent("erp:booking-cancelled", { bubbles: true, composed: true }));
   }
   renderCustomer() {
-    const t5 = (k2) => erplora3().t(CATALOG3, k2);
+    const t5 = (k2) => erplora4().t(CATALOG4, k2);
     if (this.customerId) {
       return b2`<div>
         <label>${t5("ui.bookingCustomer")}</label>
@@ -6619,7 +7179,7 @@ var ErpAppointmentsRequestBooking = class extends i3 {
     </div>`;
   }
   render() {
-    const t5 = (k2) => erplora3().t(CATALOG3, k2);
+    const t5 = (k2) => erplora4().t(CATALOG4, k2);
     if (!this.open) return A;
     return b2`<div class="panel">
       ${this.open.raw_summary ? b2`<p class="said">“${this.open.raw_summary}”</p>` : A}

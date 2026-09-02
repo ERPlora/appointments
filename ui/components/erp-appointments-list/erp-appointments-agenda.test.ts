@@ -230,14 +230,16 @@ describe('linked booking: the create panel books against real records', () => {
 });
 
 describe('per-professional day view (ok-scheduler timeline)', () => {
-  it('a view toggle offers list | by-professional', async () => {
+  // appointments#91 added the third one: the repeating series, which until then had no door of
+  // its own — a series with nothing materialized yet had no row anywhere to open it from.
+  it('a view toggle offers list | by-professional | repeating', async () => {
     const el = await mount();
     const segment = el.shadowRoot.querySelector('.filters ion-segment');
     expect(segment, 'the view toggle must live with the query-scope controls').toBeTruthy();
     const values = [...segment!.querySelectorAll('ion-segment-button')].map(
       (b) => (b as HTMLElement & { value?: string }).value ?? b.getAttribute('value'),
     );
-    expect(values).toEqual(['list', 'staff']);
+    expect(values).toEqual(['list', 'staff', 'series']);
   });
 
   it('the professional view renders ok-scheduler: one row per bookable professional + unassigned lane', async () => {

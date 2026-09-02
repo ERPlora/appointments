@@ -15,7 +15,18 @@
       "description": "The occurrence the change starts at. Pulled forward to today if it points at the past: the past is frozen."
     },
     "time": { "type": "string", "pattern": "^[0-9]{2}:[0-9]{2}$" },
-    "duration_minutes": { "type": "integer", "minimum": 1, "maximum": 1440 }
+    "duration_minutes": { "type": "integer", "minimum": 1, "maximum": 1440 },
+    "frequency": {
+      "type": "string",
+      "enum": ["daily", "weekly", "biweekly", "monthly"],
+      "description": "New repetition rule from the cut onwards. Absent leaves the pattern alone — and it declares NO default on purpose (ADR-0073: the binder applies schema defaults before the handler, so a default here would make 'do not touch the pattern' unreachable). Changing it moves the occurrences to DIFFERENT days, so what is already booked and no longer fits is cancelled, never deleted, and never touched when it is in progress or already turned into a sale."
+    },
+    "day_of_week": {
+      "type": ["integer", "null"],
+      "minimum": 0,
+      "maximum": 6,
+      "description": "New weekday the series aligns to (0 = Monday … 6 = Sunday), for weekly/biweekly. An explicit null CLEARS it and the series realigns with its own start date; the key absent leaves it as it is."
+    }
   },
   "required": ["recurring_id", "scope", "from_occurrence_date"],
   "additionalProperties": false

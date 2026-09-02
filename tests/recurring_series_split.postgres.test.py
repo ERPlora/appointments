@@ -63,14 +63,18 @@ def fail(msg: str) -> None:
 
 def check_manifest() -> None:
     if MIGRATION not in MANIFEST.get("migrations", {}).get("postgres", []):
-        fail(f"migrations.postgres: {MIGRATION!r} is not shipped — split_from_id would not exist")
+        fail(
+            f"migrations.postgres: {MIGRATION!r} is not shipped — split_from_id would not exist"
+        )
 
     cmd = MANIFEST.get("commands", {}).get(COMMAND)
     if not isinstance(cmd, dict):
         fail(f"{COMMAND}: not declared in module.json")
         return
     if cmd.get("transaction") is not True:
-        fail(f"{COMMAND}: must be transactional — a half-split series is two truths at once")
+        fail(
+            f"{COMMAND}: must be transactional — a half-split series is two truths at once"
+        )
 
     schema_rel = cmd.get("schema")
     if not schema_rel or not (MODULE_DIR / schema_rel).exists():
@@ -81,17 +85,25 @@ def check_manifest() -> None:
         # A CLOSED set. «all» arriving as a typo and rewriting a past that is already invoiced is
         # exactly what must fail validation instead of falling into a default.
         if scope.get("enum") != ["this_and_following"]:
-            fail(f"{schema_rel}: scope must be a closed enum, got {scope.get('enum')!r}")
+            fail(
+                f"{schema_rel}: scope must be a closed enum, got {scope.get('enum')!r}"
+            )
         if schema.get("additionalProperties") is not False:
             fail(f"{schema_rel}: additionalProperties must be false")
-        if set(schema.get("required") or []) != {"recurring_id", "scope", "from_occurrence_date"}:
+        if set(schema.get("required") or []) != {
+            "recurring_id",
+            "scope",
+            "from_occurrence_date",
+        }:
             fail(f"{schema_rel}: required must name the series, the scope and the cut")
 
     reads = {r.get("query"): r for r in cmd.get("reads") or [] if isinstance(r, dict)}
     for needed in ("appointments.recurring.get", "appointments.recurring.occurrences"):
         read = reads.get(needed)
         if read is None:
-            fail(f"{COMMAND}.reads: missing {needed!r} — the split would be decided from the payload")
+            fail(
+                f"{COMMAND}.reads: missing {needed!r} — the split would be decided from the payload"
+            )
         elif read.get("required") is not True:
             fail(
                 f"{COMMAND}.reads[{needed}]: must be `required`. Moving «the following ones» "
@@ -99,15 +111,108 @@ def check_manifest() -> None:
             )
 
     # The read has to hand back what the move needs, or the handler cannot address a row.
-    occ_sql = (MODULE_DIR / MANIFEST["queries"]["appointments.recurring.occurrences"]["sql"]).read_text()
+    occ_sql = (
+        MODULE_DIR / MANIFEST["queries"]["appointments.recurring.occurrences"]["sql"]
+    ).read_text()
     for column in ("id", "converted_sale_id", "start_datetime"):
         if not re.search(rf"\b{column}\b", occ_sql.split("FROM")[0]):
-            fail(f"recurring_occurrences.sql: does not select {column} — the split cannot use it")
+            fail(
+                f"recurring_occurrences.sql: does not select {column} — the split cannot use it"
+            )
 
     move = (MODULE_DIR / "commands/_recurring_move_occurrence.sql").read_text()
     if "updated_at = :now" not in move:
-        fail("_recurring_move_occurrence.sql: must pin the run with updated_at = :now, or the "
-             "history statement would record a move that did not happen")
+        fail(
+            "_recurring_move_occurrence.sql: must pin the run with updated_at = :now, or the "
+            "history statement would record a move that did not happen"
+        )
+
+    check_pattern_manifest(move)
+
+
+def check_pattern_manifest(move_sql: str) -> None:
+    """appointments#90 — changing the PATTERN (frequency / day_of_week).
+
+    Occurrences land on DIFFERENT days, so there is no 1:1 with what is already booked: what no
+    longer fits is cancelled. The whole point of the issue is that the cancel must go through the
+    SAME door as the move, not a new laxer one — `_cancel_row` would have let an `in_progress` or
+    an already invoiced appointment through, because its WHERE only knows `cancelled`/`completed`.
+    """
+    schema_rel = (MANIFEST.get("commands", {}).get(COMMAND) or {}).get("schema")
+    if schema_rel and (MODULE_DIR / schema_rel).exists():
+        props = (
+            json.loads((MODULE_DIR / schema_rel).read_text()).get("properties") or {}
+        )
+        frequency = props.get("frequency") or {}
+        if frequency.get("enum") != ["daily", "weekly", "biweekly", "monthly"]:
+            fail(
+                f"{schema_rel}: frequency must be the same closed enum as recurring_create, "
+                f"got {frequency.get('enum')!r}"
+            )
+        dow = props.get("day_of_week") or {}
+        if dow.get("minimum") != 0 or dow.get("maximum") != 6:
+            fail(f"{schema_rel}: day_of_week must be bounded to 0..6, got {dow!r}")
+        # ADR-0073: the binder applies JSON Schema defaults BEFORE the handler, so a default here
+        # would make the key never arrive absent — and «leave the pattern alone» would be dead code.
+        for key in ("frequency", "day_of_week"):
+            if "default" in (props.get(key) or {}):
+                fail(
+                    f"{schema_rel}: {key} must NOT declare a default (ADR-0073) — absent means "
+                    "«do not touch the pattern», and a default would erase that state"
+                )
+
+    cancel_rel = "commands/_recurring_cancel_occurrence.sql"
+    cancel_cmd = MANIFEST.get("commands", {}).get(
+        "appointments._recurring_cancel_occurrence"
+    )
+    if not isinstance(cancel_cmd, dict):
+        fail(
+            "appointments._recurring_cancel_occurrence: not declared in module.json — a pattern "
+            "change would leave the bookings that no longer fit sitting on the old days"
+        )
+        return
+    if cancel_cmd.get("permission") != "appointments.change_appointment":
+        fail(
+            "_recurring_cancel_occurrence: must need change_appointment, like every other "
+            "sub-step of the split"
+        )
+    if cancel_cmd.get("sql") != [cancel_rel]:
+        fail(
+            f"_recurring_cancel_occurrence: must run {cancel_rel!r}, got {cancel_cmd.get('sql')!r}"
+        )
+    if not (MODULE_DIR / cancel_rel).exists():
+        fail(f"{cancel_rel}: not in the package")
+        return
+
+    cancel = (MODULE_DIR / cancel_rel).read_text()
+    if "updated_at = :now" not in cancel:
+        fail(
+            f"{cancel_rel}: must pin the run with updated_at = :now, or _history_cancel would "
+            "record a cancellation that did not happen"
+        )
+    # THE SAME DOOR, literally: the two guards that decide what a split may touch have to be the
+    # same clause in both statements, or one of them is a second, laxer entrance.
+    for clause in (
+        "status IN ('pending', 'confirmed')",
+        "converted_sale_id IS NULL OR converted_sale_id = ''",
+    ):
+        if clause not in move_sql:
+            fail(
+                f"_recurring_move_occurrence.sql: expected guard {clause!r} is gone — this test "
+                "compares the two doors and can no longer see the reference one"
+            )
+        if clause not in cancel:
+            fail(f"{cancel_rel}: does not carry the guard {clause!r} of the move door")
+
+    # And the edit-in-place branch has to write the pattern, or a cut at the first occurrence would
+    # save the new time with the OLD frequency.
+    edit = (MODULE_DIR / "commands/_recurring_edit.sql").read_text()
+    for column in ("frequency", "day_of_week"):
+        if not re.search(rf"{column}\s*=\s*:{column}", edit):
+            fail(
+                f"_recurring_edit.sql: does not write {column} — cutting at the first occurrence "
+                "would keep the old pattern"
+            )
 
 
 # ── Layer 2: real Postgres ───────────────────────────────────────────────────────────────
@@ -126,7 +231,17 @@ def docker_available() -> bool:
 
 
 def psql(args: list[str], db: str | None = None, stdin: str | None = None) -> str:
-    cmd = ["docker", "exec", "-i", CONTAINER, "psql", "-v", "ON_ERROR_STOP=1", "-U", "postgres"]
+    cmd = [
+        "docker",
+        "exec",
+        "-i",
+        CONTAINER,
+        "psql",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-U",
+        "postgres",
+    ]
     if db:
         cmd += ["-d", db]
     cmd += args
@@ -162,28 +277,49 @@ def seed_series(series_id: str, hub: str = HUB) -> None:
     run_command(
         "commands/recurring_create.sql",
         {
-            "new_id": series_id, "hub_id": hub, "customer_id": "c1", "customer_name": "Ada",
-            "service_id": "s-corte", "service_name": "Corte", "staff_id": "s1",
-            "staff_name": "Bea", "frequency": "weekly", "day_of_week": None, "time": "11:00",
-            "duration_minutes": 30, "start_date": "2026-08-03", "end_date": None,
-            "max_occurrences": None, "current_user_id": "u1", "now": NOW,
+            "new_id": series_id,
+            "hub_id": hub,
+            "customer_id": "c1",
+            "customer_name": "Ada",
+            "service_id": "s-corte",
+            "service_name": "Corte",
+            "staff_id": "s1",
+            "staff_name": "Bea",
+            "frequency": "weekly",
+            "day_of_week": None,
+            "time": "11:00",
+            "duration_minutes": 30,
+            "start_date": "2026-08-03",
+            "end_date": None,
+            "max_occurrences": None,
+            "current_user_id": "u1",
+            "now": NOW,
         },
     )
 
 
-def seed_occurrence(id_: str, hub: str, series: str, day: str, status: str = "confirmed",
-                    sale: str | None = None, deleted: int = 0) -> None:
+def seed_occurrence(
+    id_: str,
+    hub: str,
+    series: str,
+    day: str,
+    status: str = "confirmed",
+    sale: str | None = None,
+    deleted: int = 0,
+) -> None:
     psql(
-        ["-c",
-         "INSERT INTO appointments_appointment (id, hub_id, appointment_number, customer_id, "
-         "customer_name, customer_phone, customer_email, staff_id, staff_name, service_id, "
-         "service_name, service_price, start_datetime, end_datetime, duration_minutes, status, "
-         "notes, internal_notes, reminder_sent, booked_online, cancellation_reason, "
-         "converted_sale_id, recurring_id, occurrence_date, is_deleted, created_at) VALUES "
-         f"({literal(id_)}, {literal(hub)}, {literal(id_)}, 'c1', 'Ada', '', '', 's1', 'Bea', "
-         f"'s-corte', 'Corte', 2000, '{day}T11:00:00+02:00', '{day}T11:30:00+02:00', 30, "
-         f"{literal(status)}, '', '', 0, 0, '', {literal(sale)}, {literal(series)}, "
-         f"{literal(day)}, {deleted}, '2026-08-01T00:00:00+02:00')"],
+        [
+            "-c",
+            "INSERT INTO appointments_appointment (id, hub_id, appointment_number, customer_id, "
+            "customer_name, customer_phone, customer_email, staff_id, staff_name, service_id, "
+            "service_name, service_price, start_datetime, end_datetime, duration_minutes, status, "
+            "notes, internal_notes, reminder_sent, booked_online, cancellation_reason, "
+            "converted_sale_id, recurring_id, occurrence_date, is_deleted, created_at) VALUES "
+            f"({literal(id_)}, {literal(hub)}, {literal(id_)}, 'c1', 'Ada', '', '', 's1', 'Bea', "
+            f"'s-corte', 'Corte', 2000, '{day}T11:00:00+02:00', '{day}T11:30:00+02:00', 30, "
+            f"{literal(status)}, '', '', 0, 0, '', {literal(sale)}, {literal(series)}, "
+            f"{literal(day)}, {deleted}, '2026-08-01T00:00:00+02:00')",
+        ],
         db=DB,
     )
 
@@ -192,10 +328,14 @@ def move(appointment_id: str, hub: str = HUB) -> None:
     run_command(
         "commands/_recurring_move_occurrence.sql",
         {
-            "hub_id": hub, "appointment_id": appointment_id, "recurring_id": "r2",
+            "hub_id": hub,
+            "appointment_id": appointment_id,
+            "recurring_id": "r2",
             "start_datetime": "2026-08-24T12:00:00+02:00",
             "end_datetime": "2026-08-24T12:30:00+02:00",
-            "duration_minutes": 30, "current_user_id": "u1", "now": NOW,
+            "duration_minutes": 30,
+            "current_user_id": "u1",
+            "now": NOW,
         },
     )
 
@@ -204,6 +344,82 @@ def moved(appointment_id: str) -> bool:
     return scalar(
         f"SELECT start_datetime FROM appointments_appointment WHERE id = {literal(appointment_id)}"
     ).startswith("2026-08-24T12:00")
+
+
+def cancel_for_pattern(appointment_id: str, hub: str = HUB) -> None:
+    """appointments#90 — the statement a pattern change emits for what no longer fits."""
+    run_command(
+        "commands/_recurring_cancel_occurrence.sql",
+        {
+            "hub_id": hub,
+            "appointment_id": appointment_id,
+            "reason": "series_pattern_changed",
+            "current_user_id": "u1",
+            "now": NOW,
+        },
+    )
+
+
+def cancelled(appointment_id: str) -> bool:
+    return (
+        scalar(
+            "SELECT status || '/' || cancellation_reason FROM appointments_appointment "
+            f"WHERE id = {literal(appointment_id)}"
+        )
+        == "cancelled/series_pattern_changed"
+    )
+
+
+def check_cancel_door() -> None:
+    """The cancel side of the split (appointments#90) — the SAME door as the move.
+
+    Reusing `_cancel_row` would have been the easy way and the wrong one: its WHERE only knows
+    `cancelled`/`completed`, so a pattern change would have cancelled an appointment that is
+    already IN PROGRESS or already turned into a sale. Each case is checked on its own, because a
+    WHERE that is too loose and one that is too tight fail in opposite directions.
+    """
+    for day, status in (("2026-10-05", "pending"), ("2026-10-06", "confirmed")):
+        oid = f"o-cancel-{status}"
+        seed_occurrence(oid, HUB, "r1", day, status=status)
+        cancel_for_pattern(oid)
+        if not cancelled(oid):
+            fail(
+                f"_recurring_cancel_occurrence.sql: a {status} occurrence was NOT cancelled — "
+                "the bookings the new pattern leaves behind would stay on the old days"
+            )
+        # The history statement of the module hangs off this exact stamp; without it the audit
+        # trail would show a cancellation that never happened (or miss one that did).
+        if (
+            scalar(
+                f"SELECT updated_at FROM appointments_appointment WHERE id = {literal(oid)}"
+            )
+            != NOW
+        ):
+            fail(f"_recurring_cancel_occurrence.sql: did not pin the run on {oid}")
+
+    blocked = [
+        ("completed", dict(status="completed")),
+        ("cancelled", dict(status="cancelled")),
+        ("no_show", dict(status="no_show")),
+        ("in_progress", dict(status="in_progress")),
+        ("already a sale", dict(sale="sale-1")),
+        ("soft-deleted", dict(deleted=1)),
+    ]
+    for index, (label, kwargs) in enumerate(blocked):
+        oid = f"o-nocancel-{label.replace(' ', '-')}"
+        seed_occurrence(oid, HUB, "r1", f"2026-10-{10 + index:02d}", **kwargs)
+        cancel_for_pattern(oid)
+        if cancelled(oid):
+            fail(
+                f"_recurring_cancel_occurrence.sql: it CANCELLED an occurrence that is {label} — "
+                "the door is wider than the one the move goes through"
+            )
+
+    # …and never a neighbour's. Same shape as the move: our hub_id against their row.
+    seed_occurrence("o-cancel-neighbour", OTHER_HUB, "r1", "2026-10-20")
+    cancel_for_pattern("o-cancel-neighbour")
+    if cancelled("o-cancel-neighbour"):
+        fail("_recurring_cancel_occurrence.sql: it reached another hub's appointment")
 
 
 def check_against_postgres() -> None:
@@ -224,25 +440,60 @@ def check_against_postgres() -> None:
         # ── the split itself ────────────────────────────────────────────────────────────
         run_command(
             "commands/_recurring_close.sql",
-            {"hub_id": HUB, "recurring_id": "r1", "end_date": "2026-08-23",
-             "current_user_id": "u1", "now": NOW},
+            {
+                "hub_id": HUB,
+                "recurring_id": "r1",
+                "end_date": "2026-08-23",
+                "current_user_id": "u1",
+                "now": NOW,
+            },
         )
-        if scalar("SELECT end_date FROM appointments_recurring WHERE id = 'r1'") != "2026-08-23":
+        if (
+            scalar("SELECT end_date FROM appointments_recurring WHERE id = 'r1'")
+            != "2026-08-23"
+        ):
             fail("_recurring_close.sql: the UNTIL was not written")
         # The old half keeps its appointments: it is history, not rubbish.
-        if scalar("SELECT is_active || '/' || is_deleted FROM appointments_recurring WHERE id = 'r1'") != "1/0":
-            fail("_recurring_close.sql: it deactivated or deleted the old half — it must only stop looking forward")
+        if (
+            scalar(
+                "SELECT is_active || '/' || is_deleted FROM appointments_recurring WHERE id = 'r1'"
+            )
+            != "1/0"
+        ):
+            fail(
+                "_recurring_close.sql: it deactivated or deleted the old half — it must only stop looking forward"
+            )
 
         run_command(
             "commands/_recurring_split.sql",
-            {"new_id": "r2", "hub_id": HUB, "customer_id": "c1", "customer_name": "Ada",
-             "service_id": "s-corte", "service_name": "Corte", "staff_id": "s1",
-             "staff_name": "Bea", "frequency": "weekly", "day_of_week": None, "time": "12:00",
-             "duration_minutes": 30, "start_date": "2026-08-24", "end_date": None,
-             "max_occurrences": None, "split_from_id": "r1", "current_user_id": "u1", "now": NOW},
+            {
+                "new_id": "r2",
+                "hub_id": HUB,
+                "customer_id": "c1",
+                "customer_name": "Ada",
+                "service_id": "s-corte",
+                "service_name": "Corte",
+                "staff_id": "s1",
+                "staff_name": "Bea",
+                "frequency": "weekly",
+                "day_of_week": None,
+                "time": "12:00",
+                "duration_minutes": 30,
+                "start_date": "2026-08-24",
+                "end_date": None,
+                "max_occurrences": None,
+                "split_from_id": "r1",
+                "current_user_id": "u1",
+                "now": NOW,
+            },
         )
-        if scalar("SELECT split_from_id FROM appointments_recurring WHERE id = 'r2'") != "r1":
-            fail("_recurring_split.sql: the new half does not say where it came from (migration 007)")
+        if (
+            scalar("SELECT split_from_id FROM appointments_recurring WHERE id = 'r2'")
+            != "r1"
+        ):
+            fail(
+                "_recurring_split.sql: the new half does not say where it came from (migration 007)"
+            )
         if scalar("SELECT time FROM appointments_recurring WHERE id = 'r2'") != "12:00":
             fail("_recurring_split.sql: the new half did not take the new time")
 
@@ -254,9 +505,18 @@ def check_against_postgres() -> None:
             seed_occurrence(f"o-{status}", HUB, "r1", day, status=status)
             move(f"o-{status}")
             if not moved(f"o-{status}"):
-                fail(f"_recurring_move_occurrence.sql: a {status} occurrence did NOT move — the WHERE is too tight")
-            if scalar(f"SELECT recurring_id FROM appointments_appointment WHERE id = 'o-{status}'") != "r2":
-                fail(f"_recurring_move_occurrence.sql: the {status} occurrence stayed on the old half")
+                fail(
+                    f"_recurring_move_occurrence.sql: a {status} occurrence did NOT move — the WHERE is too tight"
+                )
+            if (
+                scalar(
+                    f"SELECT recurring_id FROM appointments_appointment WHERE id = 'o-{status}'"
+                )
+                != "r2"
+            ):
+                fail(
+                    f"_recurring_move_occurrence.sql: the {status} occurrence stayed on the old half"
+                )
 
         # ── the door: what must NOT move ────────────────────────────────────────────────
         # Each one on its own: a WHERE that is too loose and one that is too tight fail in
@@ -271,16 +531,28 @@ def check_against_postgres() -> None:
         ]
         for label, kwargs in blocked:
             oid = f"o-blocked-{label.replace(' ', '-')}"
-            seed_occurrence(oid, HUB, "r1", f"2026-09-{7 + blocked.index((label, kwargs)):02d}", **kwargs)
+            seed_occurrence(
+                oid,
+                HUB,
+                "r1",
+                f"2026-09-{7 + blocked.index((label, kwargs)):02d}",
+                **kwargs,
+            )
             move(oid)
             if moved(oid):
-                fail(f"_recurring_move_occurrence.sql: it MOVED an occurrence that is {label} — the door is open")
+                fail(
+                    f"_recurring_move_occurrence.sql: it MOVED an occurrence that is {label} — the door is open"
+                )
 
         # …and never a neighbour's, whatever its state.
-        seed_occurrence("o-neighbour", OTHER_HUB, "r1", "2026-08-24")  # same day, other hub
+        seed_occurrence(
+            "o-neighbour", OTHER_HUB, "r1", "2026-08-24"
+        )  # same day, other hub
         move("o-neighbour")  # with OUR hub_id, which is how a tenancy leak would look
         if moved("o-neighbour"):
             fail("_recurring_move_occurrence.sql: it reached another hub's appointment")
+
+        check_cancel_door()
     finally:
         psql(["-c", f'DROP DATABASE IF EXISTS "{DB}"'])
 
@@ -294,7 +566,9 @@ def main() -> int:
         for f in failures:
             print(f"FAIL: {f}")
         return 1
-    print(f"ok: {COMMAND} — manifest wiring + migration 007 + the move door against real Postgres")
+    print(
+        f"ok: {COMMAND} — manifest wiring + migration 007 + the move door against real Postgres"
+    )
     return 0
 
 

@@ -7,6 +7,10 @@ import '@erplora/outfitkit/ok-data-table';
 // (appointments#21) en vez de inventar una rejilla propia — una fila por profesional,
 // bloques posicionados por hora, navegación de día incluida.
 import '@erplora/outfitkit/ok-scheduler';
+// appointments#91 — la vista de SERIES vive aquí dentro, no en una entrada de navegación propia:
+// una página de series colgada del menú sería huérfana (ningún producto del sector la tiene), y
+// desde la agenda es donde la recepcionista ya está mirando cuando se acuerda de la serie.
+import '../erp-appointments-series/erp-appointments-series';
 import type { DataTableColumn } from '@erplora/outfitkit';
 // i18n (ADR-0055): catálogo `ui` inlineado por esbuild; los textos internos se resuelven
 // con `erplora.t(CATALOG, 'ui.clave')` (idioma activo, fallback locale→en→clave).
@@ -268,7 +272,7 @@ export class ErpAppointmentsList extends LitElement {
   @state() statusFilter = '';
 
   /** `list` = tabla del día · `staff` = timeline por profesional (appointments#21). */
-  @state() view: 'list' | 'staff' = 'list';
+  @state() view: 'list' | 'staff' | 'series' = 'list';
 
   // Catálogos ligados: la cita se reserva contra registros reales, no contra texto libre.
   @state() customers: Customer[] = [];
@@ -973,7 +977,9 @@ export class ErpAppointmentsList extends LitElement {
              El conmutador de vista (lista | por profesional) vive aquí por lo mismo: decide
              CÓMO se pinta lo cargado, no filtra columnas. -->
         <div class="filters">
-          <!-- appointments#93 · el día se PASA, no solo se teclea. Es el gesto de toda agenda de
+          ${this.view === 'series'
+            ? nothing
+            : html`<!-- appointments#93 · el día se PASA, no solo se teclea. Es el gesto de toda agenda de
                salón (Fresha, Vagaro, Square, Google Calendar) y además cierra una asimetría que ya
                había: la vista por profesional podía cambiar de día con las flechas de ok-scheduler
                y la lista no. Sin etiqueta flotante: en un móvil son ~20 px de alto para decir
@@ -996,7 +1002,10 @@ export class ErpAppointmentsList extends LitElement {
             }}>
             <ion-select-option value="">${t('ui.statusAll')}</ion-select-option>
             ${Object.keys(STATUS_KEYS).map((k) => html`<ion-select-option .value=${k}>${this.statusLabel(k)}</ion-select-option>`)}
-          </ion-select>
+          </ion-select>`}
+          <!-- El día y el estado son el ALCANCE de la consulta de la agenda; en la vista de series
+               no filtran nada, así que se retiran en vez de quedarse prometiendo un filtro que no
+               existe. El conmutador se queda: es lo único que sigue significando lo mismo. -->
           <ion-segment .value=${this.view} @ionChange=${(e: any) => (this.view = e.target.value)}>
             <ion-segment-button value="list" aria-label=${t('ui.viewList')}>
               <ion-icon name="list-outline"></ion-icon>
@@ -1005,6 +1014,12 @@ export class ErpAppointmentsList extends LitElement {
             <ion-segment-button value="staff" aria-label=${t('ui.viewStaff')}>
               <ion-icon name="people-outline"></ion-icon>
               <ion-label>${t('ui.viewStaff')}</ion-label>
+            </ion-segment-button>
+            <!-- appointments#91: la tercera puerta. Sin ella una serie sin ocurrencias
+                 materializadas no tiene NINGUNA fila desde la que abrirse. -->
+            <ion-segment-button value="series" aria-label=${t('ui.viewSeries')}>
+              <ion-icon name="repeat-outline"></ion-icon>
+              <ion-label>${t('ui.viewSeries')}</ion-label>
             </ion-segment-button>
           </ion-segment>
         </div>
@@ -1068,7 +1083,9 @@ export class ErpAppointmentsList extends LitElement {
               @ionAlertDidDismiss=${() => this.cancelOverlap()}
             ></ion-alert>`
           : nothing}
-        ${this.view === 'staff'
+        ${this.view === 'series'
+          ? html`<erp-appointments-series></erp-appointments-series>`
+          : this.view === 'staff'
           ? html`<ok-scheduler
               .date=${this.day}
               .startHour=${startHour}

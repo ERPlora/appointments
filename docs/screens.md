@@ -12,13 +12,17 @@ appointment book does (Fresha, Vagaro, Square Appointments, Google Calendar). Me
 the bar went from 168 px on three stacked rows to 48 px, and the first appointment moved from 54 %
 of the screen to 39 %.
 
-Two ways of looking at the same day, with a switch between them:
+Three ways of looking at the agenda, with a switch between them:
 
 - **List** — the appointments of the scope you chose (day, status), with the customer, the service
   and the state of each.
 - **Per professional** — a timeline with **one row per bookable professional**, plus an
   **"unassigned"** lane for older bookings that have no professional. Tapping an empty gap
   pre-fills a new booking with that professional and that time.
+- **Repeating** — the repeating appointments themselves, not their occurrences
+  (see [Repeating appointments](#repeating-appointments) below). The day stepper and the status
+  filter are the scope of the *day's* query, so they are hidden here rather than left promising a
+  filter that does not apply.
 
 Requires `appointments.view_appointment`.
 
@@ -106,7 +110,7 @@ Holidays, vacations, breaks, maintenance — time when nothing can be booked.
 
 Needs `appointments.manage_schedule` to create or delete, `appointments.view_schedule` to list.
 
-## Recurring appointments
+## Repeating appointments
 
 A template that says "this customer, this service, every week at this time".
 
@@ -118,6 +122,46 @@ A template that says "this customer, this service, every week at this time".
 Materialising skips slots in the past and slots that clash, and creates at most **50** appointments
 per run. Creating a template needs `appointments.add_appointment`; deleting one needs
 `appointments.change_appointment`.
+
+### The Repeating view (appointments#91)
+
+Until it existed, the only way into a series was through one of its occurrences in the agenda — so a
+series whose occurrences had not been materialised yet, or whose window had already passed, had no
+row anywhere to open it from. It is a **view of the agenda**, not a menu entry of its own: no
+product in the sector hangs a "series page" off the menu, because the series is managed where the
+agenda is.
+
+The list shows, per series: customer, service, professional, the pattern in words ("Every week ·
+Monday · 11:00"), when it starts and when it ends. Each row offers three actions:
+
+- **Edit series** — opens the panel below.
+- **Book appointments** — materialises the window for that series.
+- **Delete** — destructive, as before.
+
+Opening a series shows how many appointments it already has on the books, from which date the change
+will apply, how many are still ahead, and — when the series came out of a split — that it continues
+an earlier one. Appointments that are **already charged** are named before you save, because they
+are the ones that will *not* move.
+
+### Changing the pattern (appointments#90)
+
+The panel edits the **time**, the **duration**, the **frequency** and the **day of the week**, and
+the change always applies to that occurrence **and all the following ones**. The series is split in
+two: the old half stops the day before, a new one starts at the cut.
+
+Changing the frequency or the weekday moves the series to **different days**, so there is no
+one-to-one match with what is already booked:
+
+- an appointment whose date still falls on the new pattern is **moved**, keeping its number and its
+  history;
+- one that no longer fits is **cancelled** — never deleted, so the customer's record survives, and
+  never if it is already in progress or already turned into a sale;
+- the appointments of the new pattern are then **booked** (the same "Book appointments" step, run
+  for you), because a day change that leaves the new day empty is only half the job.
+
+After saving you are told what happened: how many moved, how many were cancelled because they no
+longer fit, and how many were left alone because they are already charged. Anything before today is
+never touched.
 
 ## Settings
 
