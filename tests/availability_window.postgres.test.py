@@ -23,10 +23,12 @@ El contrato que fija (todo contra un Postgres real, con la sesión en UTC como e
      23:45+02:00 → 08:15+02:00 quita las 08:00 del día 28 y deja libres las 08:15.
   5. El tiempo bloqueado tacha en el mismo reloj que las citas (mismo primitivo).
 
-Lo que este test NO puede fijar (y se documenta en la PR): las comprobaciones contra `:now`
-(antelación mínima/máxima) comparan el hueco naive contra un instante UTC — sin la zona horaria
-del NEGOCIO (hub#1022, todavía no disponible para los módulos) no hay forma sana de convertir la
-hora de pared en instante. Esa parte sigue en el reloj de la sesión y es el resto documentado.
+Lo que este test NO fija, y ya no hace falta que fije: la ANTELACIÓN MÍNIMA contra `:now`. Cuando
+se escribió esto no había forma sana de convertir la pared en instante porque la zona del NEGOCIO
+no llegaba al SQL; con `:timezone` (hub#1022) sí, y appointments#88 la cerró — su contrato vive en
+`availability_business_notice.postgres.test.py`. Del resto de #88 siguen abiertos el FORMATO en
+reposo (normalizar a UTC `Z` con su migración) y el tope MÁXIMO, que cuenta días de calendario
+sobre la fecha UTC de `:now`.
 
 Uso: tests/availability_window.postgres.test.py   (exit 0 = verde)
   Usa el contenedor `erplora-test-pg-5433` (override: ERPLORA_TEST_PG_CONTAINER). Crea una BD de
@@ -141,8 +143,12 @@ def shim(sql: str) -> str:
         "erp_dateadd": lambda a: (
             f"(({a[0]})::timestamptz + (({a[1]}) || ' ' || {a[2]})::interval)"
         ),
-        "erp_dow_mon0": lambda a: f"((EXTRACT(ISODOW FROM ({a[0]})::timestamptz)::int) - 1)",
-        "erp_extract": lambda a: f"(EXTRACT({a[0]} FROM ({a[1]})::timestamptz)::bigint)",
+        "erp_dow_mon0": lambda a: (
+            f"((EXTRACT(ISODOW FROM ({a[0]})::timestamptz)::int) - 1)"
+        ),
+        "erp_extract": lambda a: (
+            f"(EXTRACT({a[0]} FROM ({a[1]})::timestamptz)::bigint)"
+        ),
         "erp_timefmt": lambda a: (
             f"(lpad(({a[0]})::text, 2, '0') || ':' || lpad(({a[1]})::text, 2, '0'))"
         ),
@@ -197,7 +203,16 @@ def seed_blocked(block_id: str, staff: str, start: str, end: str) -> None:
 def slots_of(staff: str, date: str = DAY, duration: int = 30) -> list[str]:
     rows = run_query(
         SLOTS,
-        {"date": date, "staff_id": staff, "duration_minutes": duration, "hub_id": HUB, "now": NOW},
+        {
+            "date": date,
+            "staff_id": staff,
+            "duration_minutes": duration,
+            "hub_id": HUB,
+            "now": NOW,
+            # El runtime bindea SIEMPRE la zona del negocio (hub#1022); estas filas son de
+            # un salón de Madrid, así que aquí también (appointments#88).
+            "timezone": "Europe/Madrid",
+        },
     )
     return [r["start_time"] for r in rows]
 
@@ -213,6 +228,9 @@ def check_at(staff: str, start: str, duration: int = 30) -> dict:
             "exclude_hold_ref": None,
             "hub_id": HUB,
             "now": NOW,
+            # El runtime bindea SIEMPRE la zona del negocio (hub#1022); estas filas son de
+            # un salón de Madrid, así que aquí también (appointments#88).
+            "timezone": "Europe/Madrid",
         },
     )
     return rows[0] if rows else {"available": None, "reason": "no-row"}
@@ -232,14 +250,20 @@ def main() -> int:
         seed_settings()
 
         # ── 1+2 · the issue's exact repro: one 12:00+02:00 appointment of 30 min ─────────────
-        seed_appointment("apt-a", "s1", "2026-08-28T12:00:00+02:00", "2026-08-28T12:30:00+02:00", 30)
+        seed_appointment(
+            "apt-a", "s1", "2026-08-28T12:00:00+02:00", "2026-08-28T12:30:00+02:00", 30
+        )
         offered = slots_of("s1")
         for gone in ("12:00", "12:15"):
             if gone in offered:
-                fail(f"the 12:00+02:00 appointment is booked and slots STILL offers {gone} (wall)")
+                fail(
+                    f"the 12:00+02:00 appointment is booked and slots STILL offers {gone} (wall)"
+                )
         for free in ("10:00", "10:15", "13:00"):
             if free not in offered:
-                fail(f"{free} is free wall time and slots hides it (window shifted by the offset)")
+                fail(
+                    f"{free} is free wall time and slots hides it (window shifted by the offset)"
+                )
 
         # Equivalence with the authoritative engine, slot by slot: every hueco offered must be
         # available for check() at the same instant, and the hidden 12:00 must be an overlap.
@@ -247,23 +271,35 @@ def main() -> int:
             start_dt = f"{DAY}T{start_time}:00+02:00"
             verdict = check_at("s1", start_dt)
             if verdict.get("available") != 1:
-                fail(f"slots offers {start_time} but check says {verdict} for {start_dt}")
+                fail(
+                    f"slots offers {start_time} but check says {verdict} for {start_dt}"
+                )
         hidden = check_at("s1", f"{DAY}T12:00:00+02:00")
         if hidden.get("available") != 0 or hidden.get("reason") != "overlap":
-            fail(f"the booked 12:00 must be available=0/overlap for check, got {hidden}")
+            fail(
+                f"the booked 12:00 must be available=0/overlap for check, got {hidden}"
+            )
 
         # ── 3 · negative offset: the same shift, the other sign ─────────────────────────────
-        seed_appointment("apt-b", "s2", "2026-08-28T15:00:00-05:00", "2026-08-28T15:30:00-05:00", 30)
+        seed_appointment(
+            "apt-b", "s2", "2026-08-28T15:00:00-05:00", "2026-08-28T15:30:00-05:00", 30
+        )
         offered_b = slots_of("s2")
         for gone in ("15:00", "15:15"):
             if gone in offered_b:
-                fail(f"the 15:00-05:00 appointment is booked and slots STILL offers {gone} (wall)")
+                fail(
+                    f"the 15:00-05:00 appointment is booked and slots STILL offers {gone} (wall)"
+                )
         for free in ("17:00", "09:00"):
             if free not in offered_b:
-                fail(f"{free} is free wall time and slots hides it (negative-offset shift)")
+                fail(
+                    f"{free} is free wall time and slots hides it (negative-offset shift)"
+                )
         hidden_b = check_at("s2", f"{DAY}T15:00:00-05:00")
         if hidden_b.get("available") != 0 or hidden_b.get("reason") != "overlap":
-            fail(f"the booked 15:00-05:00 must be available=0/overlap for check, got {hidden_b}")
+            fail(
+                f"the booked 15:00-05:00 must be available=0/overlap for check, got {hidden_b}"
+            )
 
         # ── 4 · crossing midnight: the tail of an overnight appointment taches the next morning
         seed_appointment(
@@ -271,12 +307,18 @@ def main() -> int:
         )
         offered_c = slots_of("s3")
         if "08:00" in offered_c:
-            fail("the overnight appointment reaches 08:15 wall and slots still offers 08:00")
+            fail(
+                "the overnight appointment reaches 08:15 wall and slots still offers 08:00"
+            )
         if "08:15" not in offered_c:
-            fail("08:15 wall is past the overnight appointment's end and slots hides it")
+            fail(
+                "08:15 wall is past the overnight appointment's end and slots hides it"
+            )
 
         # ── 5 · blocked time taches on the SAME clock as the appointments ────────────────────
-        seed_blocked("blk-1", "s4", "2026-08-28T12:00:00+02:00", "2026-08-28T13:00:00+02:00")
+        seed_blocked(
+            "blk-1", "s4", "2026-08-28T12:00:00+02:00", "2026-08-28T13:00:00+02:00"
+        )
         offered_d = slots_of("s4")
         for gone in ("12:00", "12:15", "12:30"):
             if gone in offered_d:

@@ -34,9 +34,14 @@
 -- TEXTO — mismo formato, ancho fijo, cero-padded: lexicográfico = cronológico, sin zona horaria
 -- de por medio y a prueba del reloj de la sesión. Cada fila se compara en el reloj en que fue
 -- escrita; una fila con offset del hub (todas las que escribe la UI del módulo desde #76) es
--- exactamente la pared del salón. Las comprobaciones contra `:now` (antelación mínima/máxima)
--- siguen en el reloj de la sesión: convertir la pared a instante exige la zona horaria del
--- NEGOCIO (hub#1022), que los módulos todavía no pueden leer — es el resto documentado.
+-- exactamente la pared del salón.
+--
+-- ✅ appointments#88 CERRÓ el resto que este comentario dejaba abierto: la ANTELACIÓN MÍNIMA ya
+-- no se mide en el reloj de la sesión. `:timezone` (hub#1022) llega a todo el SQL, así que el
+-- hueco naive se resuelve al instante del salón antes de compararlo con `:now` — ver la cláusula
+-- marcada abajo. Sigue pendiente en la propia #88 el FORMATO en reposo (normalizar las filas a
+-- UTC `Z` con su migración) y el tope MÁXIMO, que cuenta días de calendario sobre la fecha UTC de
+-- `:now` y se desvía una sola vez al día, en la franja de medianoche del salón.
 WITH RECURSIVE
 cfg AS (
     SELECT COALESCE(MAX(calendar_start_hour), 8)   AS start_hour,
@@ -74,7 +79,24 @@ WHERE
     -- aplica el máximo `if max_days > 0`) y que el doc del módulo — sin este caso, un hub con
     -- «antelación máxima = 0» se quedaba con CERO huecos y `check` decía too_far mientras
     -- `create` seguía reservando ese mismo instante.
-    erp_dt(c.slot_start) >= erp_dateadd(:now, cfg.notice_min, 'minutes')
+    --
+    -- 🔴 appointments#88 — LA ANTELACIÓN SE MIDE EN EL RELOJ DEL NEGOCIO. `c.slot_start` es texto
+    -- NAIVE (hora de pared del salón) y `erp_dt` es `::timestamptz`, que interpreta un naive en la
+    -- zona de la SESIÓN del runtime (UTC): en un hub de Madrid la ventana se corría el offset
+    -- entero y `slots` ofrecía huecos que ya habían pasado, mientras `availability.check` decía
+    -- `too_soon` para ESE MISMO instante — el motor contradiciéndose a sí mismo, y `create`
+    -- rechazando un segundo después lo que la pantalla acababa de ofrecer.
+    -- `:timezone` es la zona IANA del negocio que el runtime bindea en todo el SQL declarativo (hub#1022,
+    -- `dispatch.rs`), así que el naive por fin se puede resolver a instante: `::timestamp AT TIME
+    -- ZONE :timezone` es «esta lectura de reloj, en el salón», que es exactamente lo que el hueco
+    -- significa. Postgres-only a propósito (ADR-0154): no hay función-puente para esto, y el
+    -- mismo idioma ya lo usa `cash_register/commands/_auto_close_sessions.sql`. El CAST del bind
+    -- no es estilo: sin él Postgres no puede fijar el tipo de `:timezone` y el PREPARE muere.
+    -- El COALESCE degrada a `UTC` igual que el runtime (`timezone_name()`) y NO es defensivo por
+    -- gusto: `AT TIME ZONE NULL` devuelve NULL, la comparación se vuelve NULL y la query saldría
+    -- SIN NINGÚN HUECO — una agenda vacía y muda, que es peor que una agenda desplazada.
+    (c.slot_start::timestamp AT TIME ZONE COALESCE(NULLIF(TRIM(CAST(:timezone AS TEXT)), ''), 'UTC'))
+        >= erp_dateadd(:now, cfg.notice_min, 'minutes')
     AND (cfg.advance_days = 0
          OR erp_date(:date) <= erp_date(erp_dateadd(:now, cfg.advance_days, 'days')))
     -- dentro de un tramo activo del horario (si el hub tiene horarios configurados)

@@ -9,7 +9,7 @@ var __decorateClass = (decorators, target, key, kind) => {
   return result;
 };
 
-// ../module-toolkit/node_modules/@lit-labs/ssr-dom-shim/lib/element-internals.js
+// @lit-labs/ssr-dom-shim/lib/element-internals.js
 var ElementInternalsShim = class ElementInternals {
   get shadowRoot() {
     return this.__host.__shadowRoot;
@@ -88,7 +88,7 @@ var ElementInternalsShim = class ElementInternals {
   }
 };
 
-// ../module-toolkit/node_modules/@lit-labs/ssr-dom-shim/lib/events.js
+// @lit-labs/ssr-dom-shim/lib/events.js
 var __classPrivateFieldSet = function(receiver, state, value, kind, f3) {
   if (kind === "m") throw new TypeError("Private method is not writable");
   if (kind === "a" && !f3) throw new TypeError("Private accessor was defined without a setter");
@@ -246,7 +246,7 @@ Object.defineProperties(CustomEventShim.prototype, {
 var EventShimWithRealType = EventShim;
 var CustomEventShimWithRealType = CustomEventShim;
 
-// ../module-toolkit/node_modules/@lit-labs/ssr-dom-shim/lib/css.js
+// @lit-labs/ssr-dom-shim/lib/css.js
 var _a2;
 var CSSRuleShim = (_a2 = class CSSRule {
   constructor() {
@@ -277,7 +277,7 @@ var CSSRuleShim = (_a2 = class CSSRule {
   }
 }, _a2.STYLE_RULE = 1, _a2.CHARSET_RULE = 2, _a2.IMPORT_RULE = 3, _a2.MEDIA_RULE = 4, _a2.FONT_FACE_RULE = 5, _a2.PAGE_RULE = 6, _a2.NAMESPACE_RULE = 10, _a2.KEYFRAMES_RULE = 7, _a2.KEYFRAME_RULE = 8, _a2.SUPPORTS_RULE = 12, _a2.COUNTER_STYLE_RULE = 11, _a2.FONT_FEATURE_VALUES_RULE = 14, _a2.MARGIN_RULE = 9, _a2);
 
-// ../module-toolkit/node_modules/@lit-labs/ssr-dom-shim/index.js
+// @lit-labs/ssr-dom-shim/index.js
 globalThis.Event ??= EventShimWithRealType;
 globalThis.CustomEvent ??= CustomEventShimWithRealType;
 var constructionToken = Symbol();
@@ -462,7 +462,7 @@ var attributesForElement = (element) => {
   }
   return attrs;
 };
-var NodeShim = class Node extends EventTarget {
+var NodeShim = class Node2 extends EventTarget {
   getRootNode(options) {
     if (options?.composed) {
       return document2;
@@ -674,7 +674,7 @@ var CustomElementRegistryShimWithRealType = CustomElementRegistry;
 var customElements2 = new CustomElementRegistryShimWithRealType();
 var windowShim = new WindowShim(constructionToken);
 
-// ../module-toolkit/node_modules/@lit/reactive-element/node/css-tag.js
+// @lit/reactive-element/node/css-tag.js
 var t = globalThis;
 var e = t.ShadowRoot && (void 0 === t.ShadyCSS || t.ShadyCSS.nativeShadow) && "adoptedStyleSheets" in Document.prototype && "replace" in CSSStyleSheet.prototype;
 var s = Symbol();
@@ -719,7 +719,7 @@ var c = e || void 0 === t.CSSStyleSheet ? (t5) => t5 : (t5) => t5 instanceof CSS
   return r(e5);
 })(t5) : t5;
 
-// ../module-toolkit/node_modules/@lit/reactive-element/node/reactive-element.js
+// @lit/reactive-element/node/reactive-element.js
 var { is: h, defineProperty: r2, getOwnPropertyDescriptor: o2, getOwnPropertyNames: n2, getOwnPropertySymbols: a, getPrototypeOf: c2 } = Object;
 var l = globalThis;
 l.customElements ??= customElements2;
@@ -942,7 +942,7 @@ var g = class extends (globalThis.HTMLElement ?? HTMLElementShimWithRealType) {
 };
 g.elementStyles = [], g.shadowRootOptions = { mode: "open" }, g[f("elementProperties")] = /* @__PURE__ */ new Map(), g[f("finalized")] = /* @__PURE__ */ new Map(), u?.({ ReactiveElement: g }), (l.reactiveElementVersions ??= []).push("2.1.2");
 
-// node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/lit-html.js
+// lit-html/lit-html.js
 var t2 = globalThis;
 var i2 = (t5) => t5;
 var s2 = t2.trustedTypes;
@@ -1197,7 +1197,7 @@ var D = (t5, i7, s5) => {
   return h4._$AI(t5), h4;
 };
 
-// node_modules/.pnpm/lit-element@4.2.2/node_modules/lit-element/lit-element.js
+// lit-element/lit-element.js
 var s3 = globalThis;
 var i3 = class extends g {
   constructor() {
@@ -1226,7 +1226,7 @@ var o4 = s3.litElementPolyfillSupport;
 o4?.({ LitElement: i3 });
 (s3.litElementVersions ??= []).push("4.2.2");
 
-// ../module-toolkit/node_modules/@lit/reactive-element/node/decorators/property.js
+// @lit/reactive-element/node/decorators/property.js
 var o5 = { attribute: true, type: String, converter: b, reflect: false, hasChanged: m };
 var r4 = (t5 = o5, e5, r6) => {
   const { kind: n6, metadata: i7 } = r6;
@@ -1256,19 +1256,19 @@ function n4(t5) {
   })(t5, e5, o7);
 }
 
-// ../module-toolkit/node_modules/@lit/reactive-element/node/decorators/state.js
+// @lit/reactive-element/node/decorators/state.js
 function r5(r6) {
   return n4({ ...r6, state: true, attribute: false });
 }
 
-// ../outfitkit/dist/define.js
+// @erplora/outfitkit/dist/define.js
 function define(tag, ctor) {
   if (typeof customElements !== "undefined" && !customElements.get(tag)) {
     customElements.define(tag, ctor);
   }
 }
 
-// ../outfitkit/dist/shared/icons.js
+// @erplora/outfitkit/dist/shared/icons.js
 var rawAdd = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="M256 112v288m144-144H112"/></svg>';
 var rawAlertCircle = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="currentColor" d="M256 48C141.31 48 48 141.31 48 256s93.31 208 208 208s208-93.31 208-208S370.69 48 256 48m0 319.91a20 20 0 1 1 20-20a20 20 0 0 1-20 20m21.72-201.15l-5.74 122a16 16 0 0 1-32 0l-5.74-121.94v-.05a21.74 21.74 0 1 1 43.44 0Z"/></svg>';
 var rawAlertCircleOutline = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-miterlimit="10" stroke-width="32" d="M448 256c0-106-86-192-192-192S64 150 64 256s86 192 192 192s192-86 192-192Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="M250.26 166.05L256 288l5.73-121.95a5.74 5.74 0 0 0-5.79-6h0a5.74 5.74 0 0 0-5.68 6"/><path fill="currentColor" d="M256 367.91a20 20 0 1 1 20-20a20 20 0 0 1-20 20"/></svg>';
@@ -1416,7 +1416,7 @@ function okIcon(value) {
   return BY_NAME[value] ?? value;
 }
 
-// ../outfitkit/dist/ok-inline-feedback.js
+// @erplora/outfitkit/dist/ok-inline-feedback.js
 var __defProp2 = Object.defineProperty;
 var __decorateClass2 = (decorators, target, key, kind) => {
   var result = void 0;
@@ -1633,7 +1633,7 @@ __decorateClass2([
 ], OkInlineFeedback.prototype, "hasActions");
 define("ok-inline-feedback", OkInlineFeedback);
 
-// ../outfitkit/dist/ok-timeline.js
+// @erplora/outfitkit/dist/ok-timeline.js
 var __defProp3 = Object.defineProperty;
 var __decorateClass3 = (decorators, target, key, kind) => {
   var result = void 0;
@@ -1880,13 +1880,55 @@ __decorateClass3([
 ], OkTimeline.prototype, "align");
 define("ok-timeline", OkTimeline);
 
-// modules/appointments/locales/es.json
+// locales/es.json
 var es_default = {
   name: "Citas",
   description: "Agenda las citas de tus clientes con sus servicios y profesionales, y s\xEDguelas desde que se reservan hasta que se completan.",
   navigation: {
     appointments: {
       label: "Citas"
+    }
+  },
+  settings: {
+    title: "Citas",
+    fields: {
+      default_duration: {
+        label: "Duraci\xF3n por defecto (minutos)"
+      },
+      min_booking_notice: {
+        label: "Antelaci\xF3n m\xEDnima para reservar (minutos)"
+      },
+      max_advance_booking: {
+        label: "Reservar como m\xE1ximo con esta antelaci\xF3n (d\xEDas)"
+      },
+      allow_overlapping: {
+        label: "Permitir citas solapadas"
+      },
+      send_reminders: {
+        label: "Enviar recordatorios"
+      },
+      reminder_hours_before: {
+        label: "Enviar el recordatorio con estas horas de antelaci\xF3n"
+      },
+      allow_customer_cancellation: {
+        label: "Permitir que el cliente cancele su cita"
+      },
+      cancellation_notice_hours: {
+        label: "Antelaci\xF3n m\xEDnima para cancelar (horas)"
+      },
+      calendar_start_hour: {
+        label: "El calendario empieza a las (hora)"
+      },
+      calendar_end_hour: {
+        label: "El calendario termina a las (hora)"
+      },
+      slot_interval: {
+        label: "Intervalo entre huecos (minutos)"
+      },
+      hold_minutes: {
+        label: "Apartar el hueco durante (minutos)",
+        description: "Minutos que un hueco queda apartado mientras alguien decide sobre una solicitud de cita pendiente. 0 desactiva la reserva temporal."
+      }
     }
   },
   ui: {
@@ -1971,7 +2013,13 @@ var es_default = {
     seriesScopeFollowing: "Esta y todas las siguientes",
     seriesScopeConfirm: "Guardar cambios",
     seriesScopeMoved: "Las citas de esta serie que se modificaron por separado volver\xE1n al horario de la serie. Las citas anteriores a hoy nunca se modifican.",
-    seriesScopeCancelledKept: "Las citas que anulaste a mano siguen anuladas."
+    seriesScopeCancelledKept: "Las citas que anulaste a mano siguen anuladas.",
+    overlapTitle: "Cita solapada",
+    overlapMessage: "Este hueco se solapa con: {conflicts}. \xBFLa reservas igual?",
+    overlapConfirm: "Reservar igual",
+    overlapCancel: "Elegir otra hora",
+    errOverlapCheck: "No se pudo comprobar si el hueco se solapa, as\xED que la cita se guard\xF3 sin ese aviso.",
+    filterStatus: "Filtrar por estado"
   },
   setup: {
     title: "Tu horario de trabajo",
@@ -1983,6 +2031,7 @@ var es_default = {
     "appointments.customer_cancellation_disabled": "La cancelaci\xF3n online no est\xE1 disponible. Contacta con el negocio.",
     "appointments.catalog_unavailable": "No se pudo leer el cat\xE1logo de clientes, servicios o profesionales; la cita no se ha reservado.",
     "appointments.customer_not_found": "Ese cliente no existe en este negocio.",
+    "appointments.invalid_start": "Esa fecha y hora de inicio no es v\xE1lida, o ya ha pasado.",
     "appointments.service_not_found": "Ese servicio no existe en este negocio.",
     "appointments.service_not_bookable": "Ese servicio no se puede reservar: est\xE1 inactivo o no es reservable.",
     "appointments.staff_not_found": "Ese profesional no existe en este negocio.",
@@ -1999,20 +2048,68 @@ var es_default = {
     "appointments.recurring_mismatch": "La cita recurrente no coincide con el cliente, el servicio o el profesional enviados; no se ha reservado nada.",
     "appointments.cannot_reschedule": "Esta cita ya no se puede mover en su estado actual.",
     "appointments.request_not_bound": "La petici\xF3n se aprob\xF3 sin elegir cliente, servicio, profesional y hora, as\xED que no hab\xEDa nada que reservar. \xC1brela otra vez, el\xEDgelos y apru\xE9bala.",
+    "appointments.outside_schedule": "Esa hora est\xE1 fuera del horario de apertura del negocio.",
     "appointments.overlapping_appointment": "Ese profesional ya tiene una cita en esa franja. Elige otra hora u otro profesional.",
     "appointments.booking_refused": "No se ha podido reservar la cita a partir de esa petici\xF3n.",
     "appointments.slot_on_hold": "Esa franja est\xE1 apartada para una petici\xF3n pendiente. Se libera sola en unos minutos, o elige otra hora.",
     "appointments.invalid_local_time": "Esa hora no existe en el reloj del negocio: el cambio de hora la salta. Elige otra.",
-    "appointments.series_locked": "Algunas citas de esta serie no se han podido cambiar: ya est\xE1n facturadas."
+    "appointments.series_locked": "Algunas citas de esta serie no se han podido cambiar: ya est\xE1n facturadas.",
+    "appointments.cannot_complete": "Esta cita no se puede completar: no se ha iniciado.",
+    "appointments.cannot_confirm": "Esta cita ya no se puede confirmar: ya no est\xE1 pendiente.",
+    "appointments.cannot_mark_no_show": "Esta cita no se puede marcar como no presentada en su estado actual.",
+    "appointments.cannot_start": "Esta cita no se puede iniciar: no est\xE1 confirmada.",
+    "appointments.schedule_unavailable": "Ese horario no est\xE1 disponible: no existe en este negocio o se ha eliminado."
   }
 };
 
-// modules/appointments/locales/en.json
+// locales/en.json
 var en_default = {
   name: "Appointments",
   navigation: {
     appointments: {
       label: "Appointments"
+    }
+  },
+  settings: {
+    title: "Appointments",
+    fields: {
+      default_duration: {
+        label: "Default duration (minutes)"
+      },
+      min_booking_notice: {
+        label: "Minimum booking notice (minutes)"
+      },
+      max_advance_booking: {
+        label: "Book at most this far ahead (days)"
+      },
+      allow_overlapping: {
+        label: "Allow overlapping appointments"
+      },
+      send_reminders: {
+        label: "Send reminders"
+      },
+      reminder_hours_before: {
+        label: "Send the reminder this many hours before"
+      },
+      allow_customer_cancellation: {
+        label: "Let customers cancel their appointment"
+      },
+      cancellation_notice_hours: {
+        label: "Minimum cancellation notice (hours)"
+      },
+      calendar_start_hour: {
+        label: "Calendar starts at (hour)"
+      },
+      calendar_end_hour: {
+        label: "Calendar ends at (hour)"
+      },
+      slot_interval: {
+        label: "Slot interval (minutes)"
+      },
+      hold_minutes: {
+        label: "Hold a slot for (minutes)",
+        description: "Minutes a slot stays set aside while somebody decides on a pending booking request. 0 switches holds off."
+      }
     }
   },
   ui: {
@@ -2097,7 +2194,13 @@ var en_default = {
     seriesScopeFollowing: "This and all following appointments",
     seriesScopeConfirm: "Save changes",
     seriesScopeMoved: "Appointments in this series that were edited separately will go back to the series schedule. Appointments before today are never changed.",
-    seriesScopeCancelledKept: "Appointments you cancelled by hand stay cancelled."
+    seriesScopeCancelledKept: "Appointments you cancelled by hand stay cancelled.",
+    overlapTitle: "Overlapping appointment",
+    overlapMessage: "This slot overlaps with: {conflicts}. Book it anyway?",
+    overlapConfirm: "Book anyway",
+    overlapCancel: "Pick another time",
+    errOverlapCheck: "The agenda could not be checked for overlaps, so the appointment was saved without that warning.",
+    filterStatus: "Filter by status"
   },
   setup: {
     title: "Your working hours",
@@ -2109,6 +2212,7 @@ var en_default = {
     "appointments.customer_cancellation_disabled": "Online cancellation is not available. Please contact the business.",
     "appointments.catalog_unavailable": "The customer, service or staff catalogue could not be read; the appointment was not booked.",
     "appointments.customer_not_found": "That customer does not exist in this business.",
+    "appointments.invalid_start": "That start date and time is not valid, or it is already in the past.",
     "appointments.service_not_found": "That service does not exist in this business.",
     "appointments.service_not_bookable": "That service cannot be booked: it is inactive or not bookable.",
     "appointments.staff_not_found": "That professional does not exist in this business.",
@@ -2125,15 +2229,21 @@ var en_default = {
     "appointments.recurring_mismatch": "The recurring appointment does not match the customer, service or professional sent; nothing was booked.",
     "appointments.cannot_reschedule": "This appointment can no longer be moved in its current state.",
     "appointments.request_not_bound": "The request was approved without choosing a customer, a service, a professional and a time, so there was nothing to book. Open it again, pick them, and approve.",
+    "appointments.outside_schedule": "That time is outside the business opening hours.",
     "appointments.overlapping_appointment": "That professional already has an appointment in that slot. Pick another time or another professional.",
     "appointments.booking_refused": "The appointment could not be booked from that request.",
     "appointments.slot_on_hold": "That slot is being held for a pending request. It frees itself in a few minutes, or pick another time.",
     "appointments.invalid_local_time": "That time does not exist on the business clock: the daylight saving change skips it. Pick another one.",
-    "appointments.series_locked": "Some appointments of this series could not be changed: they are already invoiced."
+    "appointments.series_locked": "Some appointments of this series could not be changed: they are already invoiced.",
+    "appointments.cannot_complete": "This appointment cannot be completed: it has not been started.",
+    "appointments.cannot_confirm": "This appointment can no longer be confirmed: it is not pending any more.",
+    "appointments.cannot_mark_no_show": "This appointment cannot be marked as a no-show in its current state.",
+    "appointments.cannot_start": "This appointment cannot be started: it is not confirmed.",
+    "appointments.schedule_unavailable": "That schedule is not available: it does not exist in this business or it has been deleted."
   }
 };
 
-// modules/appointments/ui/lib/business-time.ts
+// ui/lib/business-time.ts
 var InvalidLocalTimeError = class extends Error {
   constructor(wall, timezone) {
     super(`invalid_local_time: ${wall} does not exist in ${timezone}`);
@@ -2218,6 +2328,13 @@ function todayISO(timezone = businessTimezone(), now = /* @__PURE__ */ new Date(
   const p4 = partsAt(now.getTime(), timezone);
   return `${p4.y}-${pad(p4.mo)}-${pad(p4.d)}`;
 }
+function addDaysISO(day, delta) {
+  const m4 = /^(\d{4})-(\d{2})-(\d{2})$/.exec((day ?? "").trim());
+  if (!m4) return day;
+  const t5 = Date.UTC(Number(m4[1]), Number(m4[2]) - 1, Number(m4[3])) + delta * DAY_MS;
+  const d3 = new Date(t5);
+  return `${d3.getUTCFullYear()}-${pad(d3.getUTCMonth() + 1)}-${pad(d3.getUTCDate())}`;
+}
 function dayBounds(day, timezone = businessTimezone()) {
   const startOf = (isoDay) => {
     const p4 = parseWall(`${isoDay}T00:00:00`);
@@ -2273,6 +2390,19 @@ function wallToBusinessIso(wall, timezone = businessTimezone()) {
   const abs = Math.abs(off);
   return `${p4.y}-${pad(p4.mo)}-${pad(p4.d)}T${pad(p4.h)}:${pad(p4.mi)}:${pad(p4.s)}${sign}${pad(Math.floor(abs / 60))}:${pad(abs % 60)}`;
 }
+function toInstantMs(iso, timezone = businessTimezone()) {
+  const text = (iso ?? "").trim();
+  if (!text) return null;
+  if (/(?:Z|[+-]\d{2}:?\d{2})$/.test(text)) {
+    const t5 = Date.parse(text);
+    return Number.isNaN(t5) ? null : t5;
+  }
+  try {
+    return Date.parse(wallToInstant(text.slice(0, 19), timezone));
+  } catch {
+    return null;
+  }
+}
 function deviceZoneDiffers(timezone = businessTimezone()) {
   const device = Intl.DateTimeFormat().resolvedOptions().timeZone;
   if (device === timezone) return false;
@@ -2280,7 +2410,7 @@ function deviceZoneDiffers(timezone = businessTimezone()) {
   return offsetMinutesAt(now, timezone) !== -new Date(now).getTimezoneOffset();
 }
 
-// modules/appointments/ui/components/erp-appointments-customer-history/erp-appointments-customer-history.ts
+// ui/components/erp-appointments-customer-history/erp-appointments-customer-history.ts
 var CATALOG = { es: es_default, en: en_default };
 function erplora() {
   const c5 = globalThis.erplora;
@@ -2424,7 +2554,7 @@ __decorateClass([
 ], ErpAppointmentsCustomerHistory.prototype, "error", 2);
 define("erp-appointments-customer-history", ErpAppointmentsCustomerHistory);
 
-// node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directive.js
+// lit-html/directive.js
 var t3 = { ATTRIBUTE: 1, CHILD: 2, PROPERTY: 3, BOOLEAN_ATTRIBUTE: 4, EVENT: 5, ELEMENT: 6 };
 var e4 = (t5) => (...e5) => ({ _$litDirective$: t5, values: e5 });
 var i4 = class {
@@ -2444,7 +2574,7 @@ var i4 = class {
   }
 };
 
-// node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directive-helpers.js
+// lit-html/directive-helpers.js
 var { I: t4 } = j;
 var i5 = (o7) => o7;
 var s4 = () => document.createComment("");
@@ -2477,7 +2607,7 @@ var h3 = (o7) => {
   o7._$AR(), o7._$AA.remove();
 };
 
-// node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directives/repeat.js
+// lit-html/directives/repeat.js
 var u4 = (e5, s5, t5) => {
   const r6 = /* @__PURE__ */ new Map();
   for (let l3 = s5; l3 <= t5; l3++) r6.set(e5[l3], l3);
@@ -2530,7 +2660,7 @@ var c4 = e4(class extends i4 {
   }
 });
 
-// node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directives/style-map.js
+// lit-html/directives/style-map.js
 var n5 = "important";
 var i6 = " !" + n5;
 var o6 = e4(class extends i4 {
@@ -2559,7 +2689,7 @@ var o6 = e4(class extends i4 {
   }
 });
 
-// ../outfitkit/dist/ok-data-table.js
+// @erplora/outfitkit/dist/ok-data-table.js
 var CSV_BOM = "\uFEFF";
 var WINDOWS_1252_C1 = [
   8364,
@@ -2654,7 +2784,8 @@ var DEFAULT_LABELS2 = {
   select: "Select",
   showing: "Showing {from}\u2013{to} of",
   recordSingular: "record",
-  recordPlural: "records"
+  recordPlural: "records",
+  loadMore: "Load more"
 };
 var ES_LABELS = {
   search: "Buscar\u2026",
@@ -2690,7 +2821,8 @@ var ES_LABELS = {
   select: "Seleccionar",
   showing: "Mostrando {from}\u2013{to} de",
   recordSingular: "registro",
-  recordPlural: "registros"
+  recordPlural: "registros",
+  loadMore: "Cargar m\xE1s"
 };
 var _OkDataTable = class _OkDataTable2 extends i3 {
   constructor() {
@@ -2725,6 +2857,7 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
     this.q = "";
     this.clientPage = 0;
     this.clientPageSize = 0;
+    this.mobileShown = 0;
     this.clientSort = "";
     this.clientSortDir = "asc";
     this.clientFilters = {};
@@ -2746,6 +2879,7 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
       } else {
         this.q = value;
         this.clientPage = 0;
+        this.mobileShown = 0;
       }
     };
   }
@@ -2786,13 +2920,37 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
       box-shadow: none;
     }
 
-    /* Panel lateral derecho (drawer) DENTRO de la tabla: filtros / alta-edición. No empuja contenido. */
+    /* Panel lateral derecho (drawer) DENTRO de la tabla: filtros / alta-edición. Base (sin media):
+       overlay absoluto — es lo que había hasta #75 y lo que ve un navegador sin media queries. */
     .tk-scrim { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.18); z-index: 19; }
     .drawer { position: absolute; top: 0; right: 0; height: 100%; width: 340px; max-width: 88%;
       background: var(--background); border-left: 1px solid var(--border-color);
       display: flex; flex-direction: column; z-index: 20;
       animation: tk-slide-in 0.18s ease; }
     @keyframes tk-slide-in { from { transform: translateX(100%); } to { transform: translateX(0); } }
+    /* #75 — El panel EMPUJA en escritorio y es HOJA COMPLETA en móvil; nunca tapa a medias.
+       Medido en el hub (Servicios/Citas): a 1440 el overlay de 340px se pintaba ENCIMA de
+       «Duración», «Acciones» y el selector de columnas, con el 90% de la tabla vacío a la
+       izquierda; a 390 dejaba una tira de 45px de tabla (media lupa, medio «Co…») que hacía
+       parecer el formulario un pop-up mal puesto. Square Dashboard reduce la tabla con un panel
+       fijo; Fresha/Shopify/Odoo abren una hoja a pantalla completa en móvil.
+       ≥ 834px: mientras hay panel, .card pasa a rejilla de DOS columnas (tabla | panel 360px):
+       la tabla se estrecha (ya sabe hacer scroll-x, #67) y nada queda tapado. */
+    @media (min-width: 834px) {
+      .card.has-panel { display: grid; grid-template-columns: minmax(0, 1fr) 360px; grid-template-rows: auto minmax(0, 1fr) auto; }
+      .card.has-panel > .bar { grid-column: 1; grid-row: 1; }
+      .card.has-panel > .scroll, .card.has-panel > .cards-grid, .card.has-panel > .empty { grid-column: 1; grid-row: 2; min-height: 0; overflow: auto; }
+      .card.has-panel > .pager { grid-column: 1; grid-row: 3; }
+      .card.has-panel > .drawer { position: static; grid-column: 2; grid-row: 1 / -1; width: auto; max-width: none; height: auto; min-height: 0; animation: none; }
+      .card.has-panel > .tk-scrim { display: none; }
+    }
+    /* < 834px: hoja a pantalla completa con su cabecera (título + Cerrar); sin tira residual.
+       position:fixed dentro de ion-content se ancla al área de contenido (contain), que es justo el hueco
+       bajo la cabecera de la app: el usuario conserva el título de la página. */
+    @media (max-width: 833.98px) {
+      .drawer { position: fixed; inset: 0; top: var(--ok-sheet-top, 0px); width: 100%; max-width: none; height: auto; border-left: 0; z-index: 1000; }
+      .tk-scrim { display: none; }
+    }
     .drawer .dh { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between;
       padding: 0.6rem 0.5rem 0.6rem 1rem; border-bottom: 1px solid var(--border-color); font-size: 1rem; }
     .drawer .db { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 1rem; display: flex; flex-direction: column; gap: 0.85rem; }
@@ -2859,6 +3017,11 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
 
     /* Botón primario (primaryAction) */
     .primary-btn { --background: var(--primary); --color: var(--primary-contrast); }
+    /* #76 — El alta en MÓVIL: botón primario CON etiqueta y área táctil de 44px, en vez del «+»
+       icónico de 36px al final de la barra. Fresha/Square/Shopify POS ponen la acción primaria
+       de la lista como botón visible con texto (o FAB), nunca como icono anónimo. */
+    .add-btn { min-height: 44px; --border-radius: 10px; --padding-start: 0.9rem; --padding-end: 1rem; margin: 0; font-weight: 600; }
+    .add-btn ion-icon { margin-inline-end: 0.35rem; }
 
     /* Selects de la toolbar: fondo + borde visibles (como el buscador y la pastilla de fechas) para
      * que se distingan como controles en claro y oscuro (sin fondo eran invisibles en dark). */
@@ -2955,12 +3118,21 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
        que Ionic no trae (cabecera en fila, filas clave-valor, barra de acciones, resalte de selección). */
     ion-card.rcard { margin: 0; } /* la rejilla aporta el gap → sin esto el margin por defecto de ion-card lo duplica */
     ion-card.rcard.selected { outline: 2px solid var(--primary); outline-offset: -2px; }
+    /* #74 — Tarjeta clicable (opt-in row-clickable): la mitad de #67 que faltaba. La vista de
+       tarjetas es la que la tabla elige SOLA en móvil, así que sin esto el registro no se podía
+       abrir desde un teléfono (medido con combos 0.1.4: 0 rowClick a 390px). */
+    ion-card.rcard.clickable { cursor: pointer; }
+    ion-card.rcard.clickable:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
     @media (prefers-reduced-motion: reduce) {
       .gh.sortable:hover, .gh.sortable:active,
       .grow-data:hover, .grow-data:active { transform: none; }
     }
-    /* Cabecera: ion-card-header en fila (icono + título + checkbox); se conserva su padding Ionic. */
-    ion-card-header.rcard-head { display: flex; align-items: center; gap: 0.5rem; }
+    /* Header: ion-card-header as a single row (icon + title + checkbox), keeping Ionic's padding.
+       #79 — flex-direction/flex-wrap are SPELLED OUT on purpose: in ios mode (the mode the Hub
+       shell pins, ADR-0143) Ionic's own host CSS gives ion-card-header a column direction, so a
+       rule that only sets display:flex inherits it and the three children stack on three lines.
+       Under md the same rule looked right, which is why it shipped. */
+    ion-card-header.rcard-head { display: flex; flex-direction: row; flex-wrap: nowrap; align-items: center; gap: 0.5rem; }
     .rcard-head .rc-icon { display: inline-flex; color: var(--primary); }
     .rcard-head .rc-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
     /* Cuerpo: ion-card-content (padding Ionic por defecto) con las filas clave-valor apiladas. */
@@ -2994,9 +3166,16 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
     .pager .strong { font-weight: 600; color: var(--color); }
     .psize { font: inherit; font-size: 12.5px; padding: 0.2rem 0.35rem; border: 1px solid var(--border-color); border-radius: 6px; background: var(--background); color: var(--color); }
     .pager .nav { display: flex; align-items: center; gap: 0.2rem; }
+    /* #78 — Pie en MÓVIL: un solo control «Cargar más» en lugar del pager numerado (Shopify
+       IndexTable, Fresha, Square y Material hacen lo mismo: nadie pinta botones de página en un
+       teléfono). Sin atributo fill: el sólido por defecto de Ionic es el único que pinta caja en
+       modo ios (outfitkit#82 / ADR-0143). Los 44px son el área táctil mínima. */
+    .pager .load-more { min-height: 44px; margin: 0; --padding-start: 1rem; --padding-end: 1rem; font-size: 13px; }
     .pager .nav .pp { font-weight: 600; color: var(--color); padding: 0 0.25rem; }
     /* Pager numerado: botón por página + «…» en los saltos (look del Hub). */
-    .pnum { min-width: 1.75rem; height: 1.75rem; padding: 0 0.4rem; border: 1px solid transparent; border-radius: 8px; background: none; font: inherit; font-size: 12.5px; font-weight: 600; color: var(--color); cursor: pointer; transition: background 0.12s, border-color 0.12s; }
+    /* #92 — min-width/height at 44px so a numbered page button matches the prev/next ion-button's
+       own 44px tap target (line above): before this they were visibly smaller than their neighbors. */
+    .pnum { min-width: var(--ok-tap-min, 44px); height: var(--ok-tap-min, 44px); padding: 0 0.4rem; border: 1px solid transparent; border-radius: 8px; background: none; font: inherit; font-size: 12.5px; font-weight: 600; color: var(--color); cursor: pointer; transition: background 0.12s, border-color 0.12s; }
     .pnum:hover { background: var(--row-hover); }
     .pnum.on { background: color-mix(in srgb, var(--primary) 14%, transparent); color: var(--primary); border-color: color-mix(in srgb, var(--primary) 40%, transparent); }
     .pgap { padding: 0 0.15rem; color: var(--color-muted); }
@@ -3046,9 +3225,31 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
     const grid = scroll.querySelector(".grid");
     if (grid) this.xObserver.observe(grid);
   }
-  updated() {
+  updated(changed) {
     this.observeXOverflow();
     this.measureXOverflow();
+    if (changed.has("panel")) this.syncSheetTop();
+  }
+  /** #75 — Where the mobile sheet starts. `position: fixed; inset: 0` painted it from y=0 and the
+   *  app's `ion-header` (its own stacking context, above the content) covered the sheet's title and
+   *  its only Close button — measured at 390×844 in the Appointments parity page. CSS inside a
+   *  shadow root cannot know where the content area begins, so on open the table measures the
+   *  closest `ion-content` (walking through shadow hosts) and hands the offset over as a custom
+   *  property; on close it is removed. Without an `ion-content` around, the sheet keeps y=0. */
+  syncSheetTop() {
+    if (this.panel === "none") {
+      this.style.removeProperty("--ok-sheet-top");
+      return;
+    }
+    let node = this;
+    let content = null;
+    while (node && !content) {
+      const parent = node.parentNode ?? node.getRootNode?.()?.host ?? null;
+      if (parent && parent.nodeType === Node.ELEMENT_NODE && parent.tagName === "ION-CONTENT") content = parent;
+      node = parent === node ? null : parent;
+    }
+    const top = content ? Math.max(0, Math.round(content.getBoundingClientRect().top)) : 0;
+    this.style.setProperty("--ok-sheet-top", `${top}px`);
   }
   disconnectedCallback() {
     if (typeof window !== "undefined") {
@@ -3236,6 +3437,7 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
     }
     this.clientFilters = clean;
     this.clientPage = 0;
+    this.mobileShown = 0;
     this.panel = "none";
     this.emit("filterChange", { filters: this.serializeFilters(clean) });
   }
@@ -3356,6 +3558,7 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
       this.emit("sortChange", { sort: col.key, dir });
       return;
     }
+    this.mobileShown = 0;
     if (this.clientSort === col.key) {
       this.clientSortDir = this.clientSortDir === "asc" ? "desc" : "asc";
     } else {
@@ -3387,6 +3590,7 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
     else next[key] = merged;
     this.clientFilters = next;
     this.clientPage = 0;
+    this.mobileShown = 0;
   }
   // ion-select (select/multiselect) del panel de filtros (renderFilterControl). En servidor emite
   // `filterChange`; en cliente escribe `clientFilters` (multiselect ⇒ filtra por inclusión).
@@ -3434,8 +3638,9 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
    *   `views` antes de insertar  → tarjetas
    *   `views` después de insertar → tabla   ← lo que hace la página
    */
-  willUpdate() {
+  willUpdate(changed) {
     this.applyInitialView();
+    if (!this.serverSide && changed.has("rows") && this.mobileShown !== 0) this.mobileShown = 0;
   }
   applyInitialView() {
     if (this.viewChosenByUser) return;
@@ -3464,7 +3669,7 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
         <ion-select
           label=${col.header}
           label-placement="stacked"
-          fill="outline"
+          fill="outline" mode="md"
           ?multiple=${multi}
           interface="modal"
           .interfaceOptions=${{ cssClass: "ok-overlay" }}
@@ -3483,9 +3688,9 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
         <div class="fblock">
           <span class="flabel">${col.header}</span>
           <div class="frange">
-            <ion-input type=${t5} fill="outline" placeholder=${type === "daterange" ? this.t.from : this.t.gte}
+            <ion-input type=${t5} fill="outline" mode="md" placeholder=${type === "daterange" ? this.t.from : this.t.gte}
               @ionInput=${(e5) => onEdge(col, "from", e5)}></ion-input>
-            <ion-input type=${t5} fill="outline" placeholder=${type === "daterange" ? this.t.to : this.t.lte}
+            <ion-input type=${t5} fill="outline" mode="md" placeholder=${type === "daterange" ? this.t.to : this.t.lte}
               @ionInput=${(e5) => onEdge(col, "to", e5)}></ion-input>
           </div>
         </div>
@@ -3495,7 +3700,7 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
     return b2`
       <ion-input
         type=${inputType}
-        fill="outline"
+        fill="outline" mode="md"
         label=${col.header}
         label-placement="stacked"
         placeholder=${this.t.filterPlaceholder}
@@ -3656,8 +3861,14 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
       count = filtered.length;
       pages = Math.max(1, Math.ceil(filtered.length / ps));
       current = Math.min(this.clientPage, pages - 1);
-      visible = filtered.slice(current * ps, current * ps + ps);
+      visible = this.isMobile ? filtered.slice(0, Math.min(this.mobileShown || ps, count)) : filtered.slice(current * ps, current * ps + ps);
     }
+    const served = this.serverSide ? (current + 1) * ps : Math.min(this.mobileShown || ps, count);
+    const canLoadMore = this.isMobile && served < count;
+    const loadMore = () => {
+      if (this.serverSide) this.emit("pageChange", current + 1);
+      else this.mobileShown = Math.min((this.mobileShown || ps) + ps, count);
+    };
     const goTo = (p4) => {
       if (this.serverSide) this.emit("pageChange", p4);
       else this.clientPage = p4;
@@ -3667,13 +3878,14 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
       else {
         this.clientPageSize = n6;
         this.clientPage = 0;
+        this.mobileShown = 0;
       }
     };
     const searchbar = this.serverSide ? b2`<ion-searchbar class="ion-no-border" placeholder=${this.effSearchPlaceholder} debounce="250" @ionInput=${this.onSearch}></ion-searchbar>` : b2`<ion-searchbar class="ion-no-border" .value=${this.q} placeholder=${this.effSearchPlaceholder} debounce="250" @ionInput=${this.onSearch}></ion-searchbar>`;
     const selCount = this.selection.size;
     const showTopbar = !!this.title || this.hasSearch || this.viewToggle || this.effColumnPicker || this.effExport || this.effImport || this.hasFilterRow || this.addable || !!this.primaryAction;
     return b2`
-      <div class="card">
+      <div class=${`card${this.panel !== "none" ? " has-panel" : ""}`}>
         ${showTopbar ? b2`
               <div class="bar">
                 <div class="bar-main">
@@ -3681,7 +3893,7 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
                   ${this.hasSearch ? b2`<div class="search">${searchbar}</div>` : A}
                   ${this.inlineFilters ? this.renderInlineFilters() : A}
                   <span class="tk-spacer"></span>
-                    ${this.effColumnPicker ? b2`
+                    ${this.effColumnPicker && !this.isMobile ? b2`
                           <ion-select
                             class="tk-cols"
                             multiple
@@ -3694,7 +3906,7 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
                             ${this.columns.map((c5) => b2`<ion-select-option value=${c5.key}>${c5.header}</ion-select-option>`)}
                           </ion-select>
                         ` : A}
-                    ${this.effPageSizes.length ? b2`
+                    ${this.effPageSizes.length && !this.isMobile ? b2`
                           <ion-select
                             class="tk-psize"
                             interface="popover"
@@ -3717,9 +3929,17 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
                           <input class="tk-file" type="file" accept=".csv,text/csv" hidden @change=${(e5) => this.onImportFile(e5)} />
                         ` : A}
                     ${this.effExport ? this.toolButton("download-outline", false, () => this.exportCsv(), this.t.exportCsv) : A}
-                    ${this.addable ? this.toolButton("add", this.panel === "create", () => this.toggle("create"), this.t.add) : A}
+                    ${this.addable ? this.isMobile ? b2`
+                            <ion-button class="primary-btn add-btn" size="small" @click=${() => this.toggle("create")}>
+                              <ion-icon slot="start" .icon=${okIcon("add")}></ion-icon>${this.t.add}
+                            </ion-button>
+                          ` : this.toolButton("add", this.panel === "create", () => this.toggle("create"), this.t.add) : A}
                     ${this.renderOverflowMenu()}
-                    ${this.primaryAction ? b2`
+                    ${this.primaryAction ? this.isMobile ? b2`
+                            <ion-button class="primary-btn add-btn" size="small" @click=${() => this.emit("primaryAction", {})}>
+                              <ion-icon slot="start" .icon=${okIcon(this.primaryAction.icon ?? "add")}></ion-icon>${this.primaryAction.label}
+                            </ion-button>
+                          ` : b2`
                           <ion-button
                             class="primary-btn"
                             size="small"
@@ -3748,7 +3968,7 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
               <div class="pager">
                 <div class="left">
                   <span>
-                    ${pages > 1 ? b2`${this.t.showing.replace("{from}", String(current * ps + 1)).replace("{to}", String(Math.min((current + 1) * ps, count)))} ` : A}
+                    ${pages > 1 ? b2`${this.t.showing.replace("{from}", String(this.isMobile && !this.serverSide ? 1 : current * ps + 1)).replace("{to}", String(Math.min(served, count)))} ` : A}
                     <span class="strong">${count}</span> ${count === 1 ? this.t.recordSingular : this.t.recordPlural}
                   </span>
                   ${!showTopbar && this.effPageSizes.length ? b2`
@@ -3757,7 +3977,7 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
                         </select>
                       ` : A}
                 </div>
-                ${pages > 1 ? b2`
+                ${this.isMobile ? canLoadMore ? b2`<ion-button class="load-more" size="small" @click=${loadMore}>${this.t.loadMore}</ion-button>` : A : pages > 1 ? b2`
                       <div class="nav">
                         <ion-button size="small" fill="clear" ?disabled=${current === 0} @click=${() => goTo(current - 1)}><ion-icon slot="icon-only" .icon=${iconChevronBack}></ion-icon></ion-button>
                         ${this.pageList(current + 1, pages).map(
@@ -3805,8 +4025,8 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
         <div class="fblock">
           <span class="flabel">${label}</span>
           <div class="daterange">
-            <ion-input type="date" label=${this.t.from} label-placement="stacked" fill="outline" .value=${f3.from ?? ""} @ionChange=${(e5) => this.setFilterRange(col.key, "from", e5.detail.value ?? "")}></ion-input>
-            <ion-input type="date" label=${this.t.to} label-placement="stacked" fill="outline" .value=${f3.to ?? ""} @ionChange=${(e5) => this.setFilterRange(col.key, "to", e5.detail.value ?? "")}></ion-input>
+            <ion-input type="date" label=${this.t.from} label-placement="stacked" fill="outline" mode="md" .value=${f3.from ?? ""} @ionChange=${(e5) => this.setFilterRange(col.key, "from", e5.detail.value ?? "")}></ion-input>
+            <ion-input type="date" label=${this.t.to} label-placement="stacked" fill="outline" mode="md" .value=${f3.to ?? ""} @ionChange=${(e5) => this.setFilterRange(col.key, "to", e5.detail.value ?? "")}></ion-input>
           </div>
         </div>
       `;
@@ -3818,7 +4038,7 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
         <ion-select
           label=${label}
           label-placement="stacked"
-          fill="outline"
+          fill="outline" mode="md"
           multiple
           interface="modal"
           .interfaceOptions=${{ cssClass: "ok-overlay" }}
@@ -3831,8 +4051,8 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
       </div>
     `;
   }
-  /** #67 — Enter/Espacio activan la fila clicable: si se llega con el tabulador, el ratón no puede
-   *  ser el único camino. Espacio además NO debe desplazar la página. */
+  /** #67 — Enter/Espacio activan la fila clicable (y, desde #74, la tarjeta): si se llega con el
+   *  tabulador, el ratón no puede ser el único camino. Espacio además NO debe desplazar la página. */
   onRowKeydown(e5, row) {
     if (e5.key !== "Enter" && e5.key !== " " && e5.key !== "Spacebar") return;
     e5.preventDefault();
@@ -3866,7 +4086,7 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
       const caretIcon = !active ? iconSwapVerticalOutline : dir === "asc" ? iconChevronUpOutline : iconChevronDownOutline;
       return b2`
                 <div
-                  class=${`gcell gh ${alignCls(c5.align)}${sortable ? " sortable" : ""}`}
+                  class=${`gcell gh ${alignCls(c5.align)}${sortable ? " sortable" : ""}${c5.pinned === "end" ? " actions-col" : ""}`}
                   role="columnheader"
                   @click=${() => this.onHeaderClick(c5)}
                 >
@@ -3896,7 +4116,7 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
                 >
                   ${this.selectable ? b2`<span class="selcb" @click=${(e5) => e5.stopPropagation()}><ion-checkbox .checked=${selected} aria-label=${this.t.selectRow} @ionChange=${() => this.toggleRow(key)}></ion-checkbox></span>` : A}
                   ${cols.map(
-          (c5) => b2`<div class=${`gcell ${alignCls(c5.align)}`} role="cell">${c5.render ? c5.render(row) : b2`<span>${this.cell(c5, row)}</span>`}</div>`
+          (c5) => b2`<div class=${`gcell ${alignCls(c5.align)}${c5.pinned === "end" ? " actions-col" : ""}`} role="cell">${c5.render ? c5.render(row) : b2`<span>${this.cell(c5, row)}</span>`}</div>`
         )}
                   ${this.actions.length ? b2`<div class="gcell right actions-col" role="cell" @click=${(e5) => e5.stopPropagation()}>${this.actionButtons(row)}</div>` : A}
                 </div>
@@ -3920,12 +4140,18 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
         const selected = this.selectable && this.selection.has(key);
         const icon = this.cardIcon?.(row);
         return b2`
-              <ion-card class=${`rcard${selected ? " selected" : ""}`}>
+              <ion-card
+                class=${`rcard${selected ? " selected" : ""}${this.rowClickable ? " clickable" : ""}`}
+                role=${this.rowClickable ? "button" : A}
+                tabindex=${this.rowClickable ? "0" : A}
+                @click=${this.rowClickable ? () => this.emit("rowClick", { row }) : A}
+                @keydown=${this.rowClickable ? (e5) => this.onRowKeydown(e5, row) : A}
+              >
                 ${hasHead ? b2`
                       <ion-card-header class="rcard-head">
                         ${icon != null && icon !== "" ? b2`<span class="rc-icon">${typeof icon === "string" ? b2`<ion-icon .icon=${okIcon(icon)}></ion-icon>` : icon}</span>` : A}
                         <span class="rc-title">${this.cardTitle ? this.cardTitle(row) : A}</span>
-                        ${this.selectable ? b2`<ion-checkbox .checked=${selected} aria-label=${this.t.select} @ionChange=${() => this.toggleRow(key)}></ion-checkbox>` : A}
+                        ${this.selectable ? b2`<ion-checkbox .checked=${selected} aria-label=${this.t.select} @click=${(e5) => e5.stopPropagation()} @ionChange=${() => this.toggleRow(key)}></ion-checkbox>` : A}
                       </ion-card-header>
                     ` : A}
                 <ion-card-content class="rcard-body">
@@ -3933,7 +4159,7 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
           (c5) => b2`<div class="rrow"><span class="rk">${c5.header}</span><span class="rv">${c5.render ? c5.render(row) : this.cell(c5, row)}</span></div>`
         )}
                 </ion-card-content>
-                ${this.actions.length ? b2`<div class="ractions">${this.actionButtons(row)}</div>` : A}
+                ${this.actions.length ? b2`<div class="ractions" @click=${(e5) => e5.stopPropagation()}>${this.actionButtons(row)}</div>` : A}
               </ion-card>
             `;
       }
@@ -4067,6 +4293,9 @@ __decorateClass4([
 ], _OkDataTable.prototype, "clientPageSize");
 __decorateClass4([
   r5()
+], _OkDataTable.prototype, "mobileShown");
+__decorateClass4([
+  r5()
 ], _OkDataTable.prototype, "clientSort");
 __decorateClass4([
   r5()
@@ -4101,7 +4330,7 @@ __decorateClass4([
 var OkDataTable = _OkDataTable;
 define("ok-data-table", OkDataTable);
 
-// ../outfitkit/dist/ok-scheduler.js
+// @erplora/outfitkit/dist/ok-scheduler.js
 var __defProp5 = Object.defineProperty;
 var __decorateClass5 = (decorators, target, key, kind) => {
   var result = void 0;
@@ -5125,7 +5354,7 @@ __decorateClass5([
 ], OkScheduler.prototype, "heldId");
 define("ok-scheduler", OkScheduler);
 
-// modules/appointments/ui/components/erp-appointments-list/erp-appointments-list.ts
+// ui/components/erp-appointments-list/erp-appointments-list.ts
 var CATALOG2 = { es: es_default, en: en_default };
 var STATUS_KEYS2 = {
   pending: "ui.statusPending",
@@ -5198,10 +5427,14 @@ var ErpAppointmentsList = class extends i3 {
     this.rescheduleStart = "";
     this.rescheduleDuration = "";
     this.rescheduleStaffName = "";
+    this.rescheduleStaffId = "";
     this.rescheduleSeriesId = "";
     this.rescheduleOccurrence = "";
     this.askingSeriesScope = false;
     this.seriesScope = "this_only";
+    this.overlapPrompt = "";
+    /** Quien está esperando la respuesta del aviso. `null` = nadie pregunta ahora mismo. */
+    this.overlapDecision = null;
     // i18n (ADR-0055): re-renderiza al recibir `erplora:locale-changed`.
     this.onLocaleChange = () => this.requestUpdate();
   }
@@ -5211,10 +5444,42 @@ var ErpAppointmentsList = class extends i3 {
     /* La vista llena el alto: el data-table ocupa el resto (scroll interno, pie fijo). */
     .page { display:flex; flex-direction:column; min-height:0; flex:1 1 auto; }
     .page > ok-data-table, .page > ok-scheduler { flex:1 1 auto; min-height:0; }
-    /* ALCANCE de la consulta (día + estado) y modo de vista: no son filtros de columna. */
-    .filters { display:flex; gap:.75rem; align-items:end; margin:0 0 .75rem; flex-wrap:wrap; }
-    .filters ion-input, .filters ion-select { flex:1 1 11rem; min-width:9rem; }
-    .filters ion-segment { flex:0 0 auto; width:auto; }
+    /* ALCANCE de la consulta (día + estado) y modo de vista: no son filtros de columna.
+       appointments#93 · UNA fila, no tres. Medido a 390 px, este bloque ocupaba ~300 px: era
+       flex-wrap:wrap con tres controles a tamaño completo (el input de fecha con etiqueta
+       flotante, el select de estado y el segment), y en un móvil cada uno caía a su propia línea,
+       así que la primera cita empezaba por debajo del 55 % de la pantalla. nowrap + controles
+       que ENCOGEN es lo que hacen Fresha, Vagaro, Square Appointments y Google Calendar: el día
+       manda y ocupa el hueco libre, lo secundario se estrecha. Mismo movimiento que tables#64 y
+       kitchen#60. */
+    .filters { display:flex; gap:.5rem; align-items:center; margin:0 0 .5rem; flex-wrap:nowrap; }
+    /* El día: paso atrás · fecha · paso adelante, como una sola pieza. Se queda con el ancho que
+       sobre (min-width:0 para que de verdad pueda encoger dentro de un flex). */
+    .filters .daynav { display:flex; align-items:center; gap:.15rem; flex:1 1 auto; min-width:0; }
+    /* 6.5rem es lo que mide una fecha completa (17/08/2026) en el input nativo: por debajo, el
+       navegador la CORTA y la agenda deja de decir qué día está enseñando. El tope de 11rem es lo
+       contrario: en un escritorio ancho, un input elástico separaba el paso adelante media
+       pantalla del día que iba a cambiar, y dejaban de leerse como un solo mando. */
+    .filters .daynav ion-input { flex:1 1 auto; min-width:6.5rem; max-width:11rem; }
+    /* 44×44 es el suelo táctil (Ionic lo aplica a sus propios controles y es lo que exige el QA de
+       las tres ventanas): un paso de día de 28 px se falla con el pulgar en una tablet de barra. */
+    .filters .daynav ion-button { flex:0 0 auto; height:44px; width:44px; --padding-start:.25rem; --padding-end:.25rem; margin:0; }
+    .filters ion-select { flex:0 1 9rem; min-width:5.5rem; }
+    /* Ionic le da al host de ion-segment un width:100%: a solas, ES una fila entera. */
+    .filters ion-segment { flex:0 0 auto; width:auto; margin-left:auto; }
+    .filters ion-segment-button { min-height:44px; --padding-start:.5rem; --padding-end:.5rem; text-transform:none; }
+    .filters ion-segment-button ion-icon { font-size:1.15rem; }
+    /* En un teléfono el texto de la vista lo dice el icono: «Por profesional» son 120 px que
+       empujan el día fuera de la fila. El nombre accesible sigue en el aria-label. */
+    @media (max-width: 640px) {
+      .filters { gap:.25rem; }
+      .filters ion-segment-button ion-label { display:none; }
+      .filters ion-segment-button { --padding-start:.2rem; --padding-end:.2rem; min-width:2.3rem; }
+      /* 40 px de ancho (44 de alto, el suelo táctil se mantiene): son los 8 px que le faltan al
+         estado para escribir «Todos» entero en 390 px. */
+      .filters .daynav ion-button { width:40px; }
+      .filters ion-select { flex:0 1 5.5rem; min-width:4.5rem; }
+    }
     /* Formulario del panel de alta (drawer estrecho) → una columna, no en fila. */
     .form { display:flex; flex-direction:column; gap:.7rem; }
     .form ion-button { align-self:flex-end; }
@@ -5356,6 +5621,7 @@ var ErpAppointmentsList = class extends i3 {
     window.removeEventListener("erplora:locale-changed", this.onLocaleChange);
     super.disconnectedCallback();
     this.unsub?.();
+    this.settleOverlap(false);
   }
   /** Catálogos ligados + ajustes. Se cargan una vez: el alta reserva contra registros reales
    *  (`customers` / `services` / `staff`) vía sus queries PÚBLICAS — nunca sus tablas. */
@@ -5374,6 +5640,12 @@ var ErpAppointmentsList = class extends i3 {
     } catch (e5) {
       this.error = e5 instanceof Error ? e5.message : erplora2().t(CATALOG2, "ui.errLoadCatalogs");
     }
+  }
+  /** Un día atrás o adelante (appointments#93). Aritmética de CALENDARIO: el día del salón dura
+   *  23, 24 o 25 horas, así que «mañana» es la fecha siguiente, nunca `+24 h`. */
+  stepDay(delta) {
+    this.day = addDaysISO(this.day, delta);
+    void this.refresh();
   }
   async refresh() {
     this.loading = true;
@@ -5408,6 +5680,7 @@ var ErpAppointmentsList = class extends i3 {
     this.error = "";
     try {
       const startIso = wallToBusinessIso(this.newStart);
+      if (!await this.overlapAccepted(startIso, this.effectiveDuration, staff.id)) return;
       await erplora2().command("appointments.appointments.create", {
         // Vínculos + su snapshot denormalizado (lo que se reservó, aunque la ficha cambie).
         customer_id: customer.id,
@@ -5434,6 +5707,92 @@ var ErpAppointmentsList = class extends i3 {
     } finally {
       this.saving = false;
     }
+  }
+  // ── Aviso de SOLAPE (appointments#86) ───────────────────────────────────────────────────────
+  //
+  // Lo que decidió el mercado, y es unánime en las cinco referencias del sector (Phorest, Square
+  // Appointments, DaySmart/Salon Iris, Fresha, Vagaro): **el solape se CONFIRMA, no se asume**. Con
+  // el toggle apagado el rechazo duro ya existía (`_appointment_overlap_assert.sql`); lo que
+  // faltaba era el paso intermedio del caso PERMITIDO, donde hoy la cita se creaba en silencio.
+  // ADR-0383 lo dejó fuera del componente a propósito: `ok-scheduler` pinta el solape bien, pero
+  // no sabe —ni debe— de reglas de negocio. El aviso es del módulo.
+  //
+  // 🔴 Lo que NO pregunta, y por qué:
+  //  · `appointments._book_from_request` (el listener de `whatsapp_inbox.request.approved`) corre
+  //    en el servidor y no tiene a quién preguntar. Su confirmación humana YA ocurrió —alguien
+  //    aprobó la petición en la bandeja, sobre huecos que `availability.slots` había ofrecido— así
+  //    que reserva directamente, con el mismo gate de servidor que el resto. Un aviso ahí sería
+  //    una pregunta sin interlocutor que dejaría la petición aprobada sin cita.
+  //  · Mover una SERIE entera (`recurring.update`, alcance «esta y las siguientes») no es un hueco:
+  //    son N ocurrencias que el servidor recoloca. Queda fuera con su issue.
+  /** ¿Permite este hub dos citas a la vez? El flag viaja como booleano JSON (appointments#79),
+   *  pero una fila vieja puede seguir contestando 0/1: las dos formas se leen igual. */
+  get allowsOverlapping() {
+    const flag = this.settings.allow_overlapping;
+    return flag === true || Number(flag) === 1;
+  }
+  /** Citas vivas del mismo profesional que pisan `[start, start+minutes)`.
+   *
+   *  Se lee la query PÚBLICA del módulo (`appointments.appointments.conflicting`, la misma que el
+   *  runtime precarga para el handler de `create`) y no `this.items`: el hueco elegido puede caer
+   *  en otro día del que la agenda tiene cargado, y avisar solo de lo que está en pantalla sería
+   *  un aviso que falla justo cuando hace falta. El filtrado fino por ventana es de aquí, igual
+   *  que en el handler: la query trae el día entero porque `reads.params` solo admite literales. */
+  async overlappingWith(startIso, minutes, staffId, excludeId = "") {
+    const from = toInstantMs(startIso);
+    if (from === null || !Number.isFinite(minutes) || minutes < 1) return [];
+    const to = from + minutes * 6e4;
+    const found = await erplora2().query("appointments.appointments.conflicting", {
+      staff_id: staffId,
+      start_datetime: startIso
+    });
+    return rows2(found).filter((a3) => {
+      if (a3.id === excludeId) return false;
+      const s5 = toInstantMs(a3.start_datetime);
+      const e5 = toInstantMs(a3.end_datetime);
+      return s5 !== null && e5 !== null && s5 < to && e5 > from;
+    });
+  }
+  /** Pinta el aviso y espera. La promesa la resuelven los botones del `ion-alert`. */
+  askOverlap(conflicts) {
+    const t5 = (k2, p4) => erplora2().t(CATALOG2, k2, p4);
+    const list = conflicts.map((a3) => `${a3.customer_name || t5("ui.colCustomer")} \xB7 ${fmtTime(a3.start_datetime)}`).join(", ");
+    return new Promise((resolve) => {
+      this.overlapPrompt = t5("ui.overlapMessage", { conflicts: list });
+      this.overlapDecision = resolve;
+    });
+  }
+  /** «Reservar igual». */
+  confirmOverlap() {
+    this.settleOverlap(true);
+  }
+  /** «Elegir otra hora»: no se escribe nada y lo tecleado sigue en el panel. */
+  cancelOverlap() {
+    this.settleOverlap(false);
+  }
+  settleOverlap(accepted) {
+    const decide = this.overlapDecision;
+    this.overlapDecision = null;
+    this.overlapPrompt = "";
+    decide?.(accepted);
+  }
+  /** La puerta que cruzan `create`, `reschedule` y el arrastre. `true` = se puede escribir.
+   *
+   *  Con el toggle APAGADO no pregunta nada: el servidor rechaza, y ofrecer un «reservar igual»
+   *  que siempre va a fallar es peor que no ofrecerlo. Si la lectura de la agenda falla, la reserva
+   *  NO se pierde —el aviso es consejo, no cerradura— pero el fallo se DICE: una comprobación que
+   *  se cae en silencio es la que hace creer que no había solape. */
+  async overlapAccepted(startIso, minutes, staffId, excludeId = "") {
+    if (!this.allowsOverlapping) return true;
+    let conflicts;
+    try {
+      conflicts = await this.overlappingWith(startIso, minutes, staffId, excludeId);
+    } catch {
+      erplora2().notify?.({ type: "warning", message: erplora2().t(CATALOG2, "ui.errOverlapCheck") });
+      return true;
+    }
+    if (conflicts.length === 0) return true;
+    return this.askOverlap(conflicts);
   }
   /** Manda al shell a la pantalla de venta con la cita cargada.
    *
@@ -5501,6 +5860,7 @@ var ErpAppointmentsList = class extends i3 {
     this.rescheduleStart = "";
     this.rescheduleDuration = "";
     this.rescheduleStaffName = "";
+    this.rescheduleStaffId = "";
     this.rescheduleSeriesId = "";
     this.rescheduleOccurrence = "";
     this.askingSeriesScope = false;
@@ -5515,6 +5875,7 @@ var ErpAppointmentsList = class extends i3 {
     this.rescheduleStart = toInputValue(String(row.start_datetime ?? ""));
     this.rescheduleDuration = String(row.duration_minutes ?? "");
     this.rescheduleStaffName = String(row.staff_name ?? "");
+    this.rescheduleStaffId = String(row.staff_id ?? "");
     this.rescheduleSeriesId = String(row.recurring_id ?? "");
     this.rescheduleOccurrence = String(row.occurrence_date ?? "");
     this.error = "";
@@ -5568,9 +5929,19 @@ var ErpAppointmentsList = class extends i3 {
       return;
     }
     try {
+      const startIso = wallToBusinessIso(`${this.day}T${start}`);
+      if (!await this.overlapAccepted(
+        startIso,
+        appointment.duration_minutes,
+        appointment.staff_id || "",
+        id
+      )) {
+        revert();
+        return;
+      }
       await erplora2().command("appointments.appointments.reschedule", {
         appointment_id: id,
-        start_datetime: wallToBusinessIso(`${this.day}T${start}`),
+        start_datetime: startIso,
         duration_minutes: appointment.duration_minutes
       });
       await this.refresh();
@@ -5641,11 +6012,13 @@ var ErpAppointmentsList = class extends i3 {
           duration_minutes: minutes
         });
       } else {
+        const startIso = wallToBusinessIso(this.rescheduleStart);
+        if (!await this.overlapAccepted(startIso, minutes, this.rescheduleStaffId, this.rescheduleId)) {
+          return;
+        }
         await erplora2().command("appointments.appointments.reschedule", {
           appointment_id: this.rescheduleId,
-          // Pared del salón + su offset (appointments#76/#12): mismo instante, y el texto dice la
-          // hora que el salón ve en la pared.
-          start_datetime: wallToBusinessIso(this.rescheduleStart),
+          start_datetime: startIso,
           duration_minutes: minutes
         });
       }
@@ -5682,11 +6055,24 @@ var ErpAppointmentsList = class extends i3 {
              El conmutador de vista (lista | por profesional) vive aquí por lo mismo: decide
              CÓMO se pinta lo cargado, no filtra columnas. -->
         <div class="filters">
-          <ion-input fill="outline" label-placement="floating" label=${t5("ui.fieldDate")} type="date" .value=${this.day} @ionInput=${(e5) => {
+          <!-- appointments#93 · el día se PASA, no solo se teclea. Es el gesto de toda agenda de
+               salón (Fresha, Vagaro, Square, Google Calendar) y además cierra una asimetría que ya
+               había: la vista por profesional podía cambiar de día con las flechas de ok-scheduler
+               y la lista no. Sin etiqueta flotante: en un móvil son ~20 px de alto para decir
+               «Día» encima de una fecha, y el nombre accesible viaja en aria-label. -->
+          <div class="daynav">
+            <ion-button data-role="prev-day" fill="clear" aria-label=${t5("ui.prevDay")} @click=${() => this.stepDay(-1)}>
+              <ion-icon slot="icon-only" name="chevron-back-outline"></ion-icon>
+            </ion-button>
+            <ion-input data-role="day" aria-label=${t5("ui.fieldDate")} type="date" .value=${this.day} @ionInput=${(e5) => {
       this.day = e5.target.value;
       this.refresh();
     }}></ion-input>
-          <ion-select fill="outline" label-placement="floating" label=${t5("ui.colStatus")} placeholder=${t5("ui.allStatuses")} .value=${this.statusFilter} @ionChange=${(e5) => {
+            <ion-button data-role="next-day" fill="clear" aria-label=${t5("ui.nextDay")} @click=${() => this.stepDay(1)}>
+              <ion-icon slot="icon-only" name="chevron-forward-outline"></ion-icon>
+            </ion-button>
+          </div>
+          <ion-select data-role="status" aria-label=${t5("ui.filterStatus")} placeholder=${t5("ui.allStatuses")} .value=${this.statusFilter} @ionChange=${(e5) => {
       this.statusFilter = e5.target.value;
       this.refresh();
     }}>
@@ -5694,10 +6080,12 @@ var ErpAppointmentsList = class extends i3 {
             ${Object.keys(STATUS_KEYS2).map((k2) => b2`<ion-select-option .value=${k2}>${this.statusLabel(k2)}</ion-select-option>`)}
           </ion-select>
           <ion-segment .value=${this.view} @ionChange=${(e5) => this.view = e5.target.value}>
-            <ion-segment-button value="list">
+            <ion-segment-button value="list" aria-label=${t5("ui.viewList")}>
+              <ion-icon name="list-outline"></ion-icon>
               <ion-label>${t5("ui.viewList")}</ion-label>
             </ion-segment-button>
-            <ion-segment-button value="staff">
+            <ion-segment-button value="staff" aria-label=${t5("ui.viewStaff")}>
+              <ion-icon name="people-outline"></ion-icon>
               <ion-label>${t5("ui.viewStaff")}</ion-label>
             </ion-segment-button>
           </ion-segment>
@@ -5740,6 +6128,21 @@ var ErpAppointmentsList = class extends i3 {
       { text: t5("ui.seriesScopeConfirm"), handler: () => this.confirmSeriesScope() }
     ]}
               @ionAlertDidDismiss=${() => this.cancelSeriesScope()}
+            ></ion-alert>` : A}
+        <!-- appointments#86 — el aviso de SOLAPE. Alert y no toast: un toast se va solo, y esto es
+             una decisión que hay que tomar antes de escribir. El botón primario NOMBRA lo que va a
+             pasar («Reservar igual»), y el de salida ofrece la alternativa real («Elegir otra
+             hora») en vez de un «Cancelar» que no dice qué queda después. -->
+        ${this.overlapPrompt ? b2`<ion-alert
+              data-role="overlap-confirm"
+              .isOpen=${true}
+              .header=${t5("ui.overlapTitle")}
+              .message=${this.overlapPrompt}
+              .buttons=${[
+      { text: t5("ui.overlapCancel"), role: "cancel", handler: () => this.cancelOverlap() },
+      { text: t5("ui.overlapConfirm"), handler: () => this.confirmOverlap() }
+    ]}
+              @ionAlertDidDismiss=${() => this.cancelOverlap()}
             ></ion-alert>` : A}
         ${this.view === "staff" ? b2`<ok-scheduler
               .date=${this.day}
@@ -5868,6 +6271,9 @@ __decorateClass([
 ], ErpAppointmentsList.prototype, "rescheduleStaffName", 2);
 __decorateClass([
   r5()
+], ErpAppointmentsList.prototype, "rescheduleStaffId", 2);
+__decorateClass([
+  r5()
 ], ErpAppointmentsList.prototype, "rescheduleSeriesId", 2);
 __decorateClass([
   r5()
@@ -5878,9 +6284,12 @@ __decorateClass([
 __decorateClass([
   r5()
 ], ErpAppointmentsList.prototype, "seriesScope", 2);
+__decorateClass([
+  r5()
+], ErpAppointmentsList.prototype, "overlapPrompt", 2);
 define("erp-appointments-list", ErpAppointmentsList);
 
-// modules/appointments/ui/components/erp-appointments-request-booking/erp-appointments-request-booking.ts
+// ui/components/erp-appointments-request-booking/erp-appointments-request-booking.ts
 var CATALOG3 = { es: es_default, en: en_default };
 function erplora3() {
   const c5 = globalThis.erplora;

@@ -5,6 +5,13 @@ The module contributes one tab to the hub navigation: **Appointments** — the a
 
 ## Appointments — the agenda
 
+One compact bar above the list holds the whole scope of the query, on a **single row** at every
+width (appointments#93): a day stepper — **‹ date ›** — the status filter, and the view switch. On a
+phone the view switch keeps only its icons; the day is what stays readable, which is what every
+appointment book does (Fresha, Vagaro, Square Appointments, Google Calendar). Measured at 390 px,
+the bar went from 168 px on three stacked rows to 48 px, and the first appointment moved from 54 %
+of the screen to 39 %.
+
 Two ways of looking at the same day, with a switch between them:
 
 - **List** — the appointments of the scope you chose (day, status), with the customer, the service
@@ -27,6 +34,13 @@ Requires `appointments.view_appointment`.
 Before writing, the hub checks the slot is really free **for that professional**. If it is not, you
 get a plain explanation — not a database error. The booking is created `pending` with its number
 `APT-YYYYMMDD-NNNN`, and its creation is written to the history.
+
+If the hub has **Allow overlapping** on, the agenda asks before double-booking: a Confirm/Cancel
+prompt naming who the slot clashes with and at what time ("Ana López · 11:00"). *Book anyway*
+creates it; *Pick another time* writes nothing and leaves the panel as you left it. The same
+question guards **moving** an appointment and **dragging** it in the per-professional view — there,
+cancelling puts the block back where it was. With the toggle off nothing changed: the booking is
+refused, as it always was.
 
 Requires `appointments.add_appointment` — an employee has this.
 
@@ -112,16 +126,17 @@ The module keeps a per-hub settings row read with `appointments.settings.get` an
 
 | Setting | What it controls |
 |---|---|
-| **Allow overlapping** | Off by default. Turning it **on disables the overlap check entirely** |
+| **Allow overlapping** | Off by default. Turning it **on disables the overlap check entirely** — the agenda still asks for confirmation before booking on top of somebody (appointments#86) |
 | Default duration | Used when the service does not decide |
-| Minimum booking notice | How soon before the slot a booking is still allowed |
+| Minimum booking notice | How soon before the slot a booking is still allowed. Measured on the **business clock** (appointments#88): a hub in Madrid counts from the salon's wall time, not from the server's UTC |
 | Maximum advance booking | How far ahead you may book |
 | Calendar start and end hour | The window the agenda paints |
 | Slot interval | The step between offered slots |
 | Reminders and cancellation rules | Recorded as policy; nothing sends messages |
 
-> The manifest declares **no settings tab today**, so these are reached through the agenda screen and
-> the API rather than a shell-generated form. <!-- TODO: verify where the UI exposes them -->
+> The manifest **does** declare a `settings` block (`schemas/settings_upsert.json`, read with
+> `appointments.settings.get`, written with `appointments.settings.upsert`), so the shell renders
+> the form itself; `tests/settings.contract.test.py` pins that wiring.
 
 ## First-run setup
 

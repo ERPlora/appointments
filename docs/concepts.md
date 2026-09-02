@@ -10,11 +10,31 @@ existing appointment's window is refused.
 
 That single rule is what makes the agenda behave like a real diary.
 
-## `allow_overlapping` switches the check off completely
+## `allow_overlapping` switches the check off completely — but the agenda still WARNS
 
 It is off by default, and it is not a subtle knob: turning it **on disables the overlap check
 entirely**, so anyone can be booked any number of times at once. Use it only for a business that
 genuinely works that way (a class, a walk-in queue).
+
+What "on" does **not** mean is "book on top of somebody in silence". Since appointments#86 the
+agenda asks first: creating, moving or dragging an appointment onto a live one raises a
+Confirm/Cancel prompt naming **who** it clashes with and **at what time**, and nothing is written
+until you accept. It is the shape the whole sector uses — Phorest prompts, Square warns before
+double-booking from the staff calendar, DaySmart ships it as *Warn* / *Don't Allow*, Fresha allows
+it in-store only and Vagaro behind an explicit *Double Book* action.
+
+Two places deliberately do **not** ask:
+
+- **`appointments._book_from_request`**, the listener behind `whatsapp_inbox.request.approved`. It
+  runs on the server with nobody to ask, and its human confirmation already happened — somebody
+  approved that request in the inbox, over slots the availability engine offered. A prompt there
+  would leave an approved request with no appointment.
+- **Moving a whole series** (`appointments.recurring.update`, scope *this and following*). That is
+  N occurrences the server relocates, not one slot.
+
+With the toggle **off** nothing changed: no prompt, and the server refuses the booking
+(`_appointment_overlap_assert.sql`). Offering a "book anyway" that always fails would be worse than
+not offering it.
 
 ## A booking must name a customer, a service and a professional
 

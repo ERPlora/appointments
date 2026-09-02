@@ -3,6 +3,7 @@
   "module": "appointments",
   "consumes": {
     "queries": [
+      "appointments.appointments.conflicting",
       "appointments.appointments.list",
       "appointments.appointments.list_for_customer",
       "appointments.availability.slots",
