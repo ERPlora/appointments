@@ -463,7 +463,8 @@ def check_query_against_postgres(setup: dict, spec: dict) -> None:
     psql(["-c", f'DROP DATABASE IF EXISTS "{DB}"'])
     psql(["-c", f'CREATE DATABASE "{DB}"'])
     try:
-        for rel in MANIFEST.get("migrations", {}).get("postgres", []):
+        for entry in MANIFEST.get("migrations", {}).get("postgres", []):
+            rel = entry if isinstance(entry, str) else entry["file"]
             psql([], db=DB, stdin=(MODULE_DIR / rel).read_text())
 
         # 1. A hub that just installed the module. The query has to ANSWER (one row), carry every

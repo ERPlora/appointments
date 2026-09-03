@@ -249,7 +249,8 @@ def check_against_postgres(
     psql(["-c", f'DROP DATABASE IF EXISTS "{DB}"'])
     psql(["-c", f'CREATE DATABASE "{DB}"'])
     try:
-        for rel in MANIFEST.get("migrations", {}).get("postgres", []):
+        for entry in MANIFEST.get("migrations", {}).get("postgres", []):
+            rel = entry if isinstance(entry, str) else entry["file"]
             psql([], db=DB, stdin=(MODULE_DIR / rel).read_text())
 
         seed_series("r1", HUB)
@@ -263,7 +264,9 @@ def check_against_postgres(
             {"recurring_id": "r1", "hub_id": HUB, "current_user_id": "u1", "now": NOW},
         )
         if touched != 1:
-            fail(f"deactivate: touched {touched} rows for an existing active series, expected 1")
+            fail(
+                f"deactivate: touched {touched} rows for an existing active series, expected 1"
+            )
 
         row = scalar(f"SELECT is_active FROM appointments_recurring WHERE id = 'r1'")
         if row != "0":
@@ -287,7 +290,12 @@ def check_against_postgres(
         # `r1` proves nothing — any UPDATE by id would leave it alone (appointments#16).
         touched = run_command(
             deactivate_sql,
-            {"recurring_id": "r-neighbour", "hub_id": HUB, "current_user_id": "u1", "now": NOW},
+            {
+                "recurring_id": "r-neighbour",
+                "hub_id": HUB,
+                "current_user_id": "u1",
+                "now": NOW,
+            },
         )
         neighbour = scalar(
             "SELECT is_active FROM appointments_recurring WHERE id = 'r-neighbour'"
@@ -299,7 +307,12 @@ def check_against_postgres(
             )
         touched = run_command(
             activate_sql,
-            {"recurring_id": "r-neighbour-off", "hub_id": HUB, "current_user_id": "u1", "now": NOW},
+            {
+                "recurring_id": "r-neighbour-off",
+                "hub_id": HUB,
+                "current_user_id": "u1",
+                "now": NOW,
+            },
         )
         neighbour_off = scalar(
             "SELECT is_active FROM appointments_recurring WHERE id = 'r-neighbour-off'"
@@ -313,10 +326,18 @@ def check_against_postgres(
         # SOFT-DELETE: a deleted series is neither resurrected by activate nor «paused» by
         # deactivate — both must refuse it (0 rows), exactly like `recurring_delete.sql` refuses
         # a second delete. Its flags stay as the delete left them.
-        for name, sql_rel in (("activate", activate_sql), ("deactivate", deactivate_sql)):
+        for name, sql_rel in (
+            ("activate", activate_sql),
+            ("deactivate", deactivate_sql),
+        ):
             touched = run_command(
                 sql_rel,
-                {"recurring_id": "r-gone", "hub_id": HUB, "current_user_id": "u1", "now": NOW},
+                {
+                    "recurring_id": "r-gone",
+                    "hub_id": HUB,
+                    "current_user_id": "u1",
+                    "now": NOW,
+                },
             )
             if touched != 0:
                 fail(
@@ -344,7 +365,9 @@ def check_against_postgres(
             {"recurring_id": "r1", "hub_id": HUB, "current_user_id": "u1", "now": NOW},
         )
         if touched != 1:
-            fail(f"activate: touched {touched} rows for an existing deactivated series, expected 1")
+            fail(
+                f"activate: touched {touched} rows for an existing deactivated series, expected 1"
+            )
         reactivated = scalar(
             "SELECT is_active FROM appointments_recurring WHERE id = 'r1'"
         )

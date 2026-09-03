@@ -120,7 +120,12 @@
       "migrations/postgres/004_converted_sale.sql",
       "migrations/postgres/005_recurring_occurrence.sql",
       "migrations/postgres/006_slot_hold.sql",
-      "migrations/postgres/007_recurring_split.sql"
+      "migrations/postgres/007_recurring_split.sql",
+      {
+        "file": "migrations/postgres/008_named_gate_constraints.sql",
+        "kind": "contract",
+        "since": "1.1.63"
+      }
     ]
   },
   "queries": {

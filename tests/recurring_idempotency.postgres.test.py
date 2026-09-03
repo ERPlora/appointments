@@ -91,7 +91,9 @@ def check_manifest() -> dict | None:
         sql = (MODULE_DIR / rel).read_text()
         for column in ("recurring_id", "occurrence_date"):
             if re.search(rf"\b{column}\s*=", sql):
-                fail(f"{rel}: writes {column} — cancelling or moving an occurrence would lose its series")
+                fail(
+                    f"{rel}: writes {column} — cancelling or moving an occurrence would lose its series"
+                )
 
     read = reads.get(QUERY)
     if read is None:
@@ -211,7 +213,8 @@ def check_against_postgres(q: dict) -> None:
     psql(["-c", f'DROP DATABASE IF EXISTS "{DB}"'])
     psql(["-c", f'CREATE DATABASE "{DB}"'])
     try:
-        for rel in MANIFEST.get("migrations", {}).get("postgres", []):
+        for entry in MANIFEST.get("migrations", {}).get("postgres", []):
+            rel = entry if isinstance(entry, str) else entry["file"]
             psql([], db=DB, stdin=(MODULE_DIR / rel).read_text())
 
         # The read: this series, cancelled included, deleted out, neighbours invisible.
