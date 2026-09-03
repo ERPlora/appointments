@@ -93,6 +93,7 @@ beforeEach(() => {
     },
     command: async (name: string, payload: Record<string, unknown>) => {
       commands.push({ name, payload });
+      if (failing === name) throw new Error('boom');
       return name === 'appointments.recurring.update' ? updateResult : { ok: true };
     },
     on: () => () => {},
@@ -124,6 +125,12 @@ type Wc = HTMLElement & {
   submitEdit: (e: Event) => Promise<void>;
   materializeSeries: (row: Record<string, unknown>) => Promise<void>;
   deleteSeries: (row: Record<string, unknown>) => Promise<void>;
+  busySeriesId: string;
+  toggleSeriesActive: (
+    row: Record<string, unknown>,
+    nextActive: boolean,
+    toggle?: { checked: boolean },
+  ) => Promise<void>;
 };
 
 const mount = async (): Promise<Wc> => {
@@ -264,5 +271,72 @@ describe('las otras dos puertas que faltaban', () => {
     expect(commands.find((c) => c.name === 'appointments.recurring.delete')?.payload).toEqual({
       recurring_id: 'r1',
     });
+  });
+});
+
+// appointments#110 — desactivar una serie sin borrarla, resto declarado de #91 (PR #109). El
+// command estaba ausente y `recurring_list.sql` filtraba `is_active = 1` en duro: un botón
+// «desactivar» sin arreglar eso habría hecho invisible a la serie, sin forma de reactivarla.
+describe('desactivar/reactivar una serie sin borrarla (appointments#110)', () => {
+  it('desactiva una serie activa por su id', async () => {
+    const el = await mount();
+    await el.toggleSeriesActive(SERIES_ROW, false);
+    expect(commands.find((c) => c.name === 'appointments.recurring.deactivate')?.payload).toEqual({
+      recurring_id: 'r1',
+    });
+  });
+
+  it('reactiva una serie desactivada por su id', async () => {
+    const el = await mount();
+    await el.toggleSeriesActive({ ...SERIES_ROW, is_active: 0 }, true);
+    expect(commands.find((c) => c.name === 'appointments.recurring.activate')?.payload).toEqual({
+      recurring_id: 'r1',
+    });
+  });
+
+  it('una serie desactivada SIGUE en la lista — la trampa que #91 rechazó', async () => {
+    listResult = { rows: [{ ...SERIES_ROW, is_active: 0 }], total: 1 };
+    const el = await mount();
+    expect(el.series).toEqual([{ ...SERIES_ROW, is_active: 0 }]);
+  });
+
+  it('si el toggle falla lo DICE, en vez de fingir que se desactivó', async () => {
+    const el = await mount();
+    failing = 'appointments.recurring.deactivate';
+    await el.toggleSeriesActive(SERIES_ROW, false);
+    expect(el.error).toBeTruthy();
+  });
+
+  // Review of #114: the `ion-toggle` had already flipped itself when the command fails, and the
+  // list row does not change (still `is_active: 1`), so Lit does not touch `?checked` again: the
+  // switch stayed «off» over a series that is still active. A visible error is not enough if the
+  // control lies underneath.
+  it('when the toggle fails, the switch goes BACK to where it was', async () => {
+    const el = await mount();
+    failing = 'appointments.recurring.deactivate';
+    const toggle = { checked: false };
+    await el.toggleSeriesActive(SERIES_ROW, false, toggle);
+    expect(el.error).toBeTruthy();
+    expect(toggle.checked).toBe(true);
+  });
+
+  it('while the command is in flight the row is BUSY and a second tap fires nothing', async () => {
+    const el = await mount();
+    let release: () => void = () => {};
+    const gate = new Promise<void>((r) => (release = r));
+    const sdk = (globalThis as Record<string, unknown>).erplora as { command: unknown };
+    sdk.command = async (name: string, payload: Record<string, unknown>) => {
+      commands.push({ name, payload });
+      await gate;
+      return { ok: true };
+    };
+    const first = el.toggleSeriesActive(SERIES_ROW, false);
+    await Promise.resolve();
+    expect(el.busySeriesId).toBe('r1');
+    await el.toggleSeriesActive(SERIES_ROW, true);
+    expect(commands.filter((c) => c.name.startsWith('appointments.recurring.'))).toHaveLength(1);
+    release();
+    await first;
+    expect(el.busySeriesId).toBe('');
   });
 });

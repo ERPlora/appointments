@@ -147,6 +147,8 @@
     "seriesSaveError": "The repeating appointment could not be saved.",
     "seriesMaterializeError": "The appointments of this series could not be booked.",
     "seriesDeleteError": "The repeating appointment could not be deleted.",
+    "seriesActive": "Active",
+    "seriesToggleActiveError": "The repeating appointment's status could not be changed.",
     "seriesMaterialized": "Appointments booked for this series.",
     "seriesSplitFrom": "This series continues an earlier one ({id}): it was split when someone edited it from one occurrence onwards.",
     "seriesBookedCount": "{booked} appointments booked · the change applies from {from} ({upcoming} upcoming)",

@@ -148,6 +148,8 @@
     "seriesSaveError": "No se ha podido guardar la cita periódica.",
     "seriesMaterializeError": "No se han podido reservar las citas de esta serie.",
     "seriesDeleteError": "No se ha podido borrar la cita periódica.",
+    "seriesActive": "Activa",
+    "seriesToggleActiveError": "No se ha podido cambiar el estado de la cita periódica.",
     "seriesMaterialized": "Citas reservadas para esta serie.",
     "seriesSplitFrom": "Esta serie continúa a otra anterior ({id}): se partió cuando alguien la editó de una cita en adelante.",
     "seriesBookedCount": "{booked} citas reservadas · el cambio se aplica desde el {from} ({upcoming} por delante)",

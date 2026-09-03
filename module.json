@@ -1037,6 +1037,46 @@
         "risk": "destructive"
       }
     },
+    "appointments.recurring.deactivate": {
+      "permission": "appointments.change_appointment",
+      "transaction": true,
+      "sql": [
+        "commands/recurring_deactivate.sql"
+      ],
+      "expect_rows": {
+        "op": "min",
+        "n": 1,
+        "error": "appointments.recurring_not_found",
+        "message": "That recurring series does not exist in this business or it has already been deleted."
+      },
+      "schema": "schemas/recurring_id.json",
+      "emit": [
+        "appointments.recurring.updated"
+      ],
+      "ai": {
+        "description": "Deactivates a recurring appointment template without deleting it. Its already booked occurrences are kept; it just stops being offered for new bookings — `materialize` refuses an inactive template — until it is reactivated."
+      }
+    },
+    "appointments.recurring.activate": {
+      "permission": "appointments.change_appointment",
+      "transaction": true,
+      "sql": [
+        "commands/recurring_activate.sql"
+      ],
+      "expect_rows": {
+        "op": "min",
+        "n": 1,
+        "error": "appointments.recurring_not_found",
+        "message": "That recurring series does not exist in this business or it has already been deleted."
+      },
+      "schema": "schemas/recurring_id.json",
+      "emit": [
+        "appointments.recurring.updated"
+      ],
+      "ai": {
+        "description": "Reactivates a previously deactivated recurring appointment template. It does not book any occurrence by itself — that is `materialize`."
+      }
+    },
     "appointments.recurring.materialize": {
       "permission": "appointments.add_appointment",
       "schema": "schemas/recurring_materialize.json",
