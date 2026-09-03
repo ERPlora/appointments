@@ -112,15 +112,6 @@
     "get": "appointments.settings.get",
     "set": "appointments.settings.upsert"
   },
-  "ai_context": {
-    "summary": "Schedule and manage client appointments and availability. Books appointments against services and customers, tracks status (pending → confirmed → in_progress → completed / cancelled / no_show), manages staff schedules with weekly time slots, blocked time (holidays/vacations) and recurring appointment templates.",
-    "depends_on": [
-      "customers",
-      "schedules",
-      "services",
-      "staff"
-    ]
-  },
   "migrations": {
     "postgres": [
       "migrations/postgres/001_init.sql",
