@@ -182,6 +182,31 @@ def test_a_passing_gate_still_inserts() -> None:
     psql([], db=DB, stdin="DELETE FROM appointments__gate;")
 
 
+def test_the_anonymous_check_is_gone() -> None:
+    """The DROP is the half of the swap the messages alone cannot prove. While the anonymous
+    `appointments__gate_ok_check` coexists with the named constraints, an `ok = 0` row violates two
+    of them and Postgres picks which one to report - today by constraint name, which happens to
+    put the named ones first, so every message-based assertion above would still pass with the
+    DROP missing. Pin the catalogue instead: the anonymous check is gone and exactly the declared
+    constraints remain."""
+    print("\ngate table: the anonymous check is gone and only the named constraints remain")
+    rows = psql(
+        [
+            "-tAc",
+            "SELECT conname FROM pg_constraint"
+            " WHERE conrelid = 'appointments__gate'::regclass AND contype = 'c'"
+            " ORDER BY conname",
+        ],
+        db=DB,
+    ).split()
+    expected = sorted([*GATES, "appointments__gate_is_declared"])
+    if rows == expected:
+        print(f"  ok: the CHECK constraints are exactly {expected}")
+    else:
+        fail(f"the CHECK constraints on appointments__gate are {rows}, expected {expected}")
+        print(f"  FAIL: the CHECK constraints on appointments__gate are {rows}, expected {expected}")
+
+
 def main() -> int:
     if not docker_available():
         print(f"SKIPPED: no Postgres in container {CONTAINER!r}")
@@ -191,6 +216,7 @@ def main() -> int:
     psql(["-c", f'CREATE DATABASE "{DB}"'])
     try:
         load_migrations()
+        test_the_anonymous_check_is_gone()
         test_every_gate_names_itself_and_not_the_other()
         test_undeclared_gate_fails_closed()
         test_a_passing_gate_still_inserts()
