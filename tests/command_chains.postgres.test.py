@@ -160,10 +160,23 @@ def _call_args(sql: str, start: int) -> tuple[list[str], int]:
     raise ValueError("unbalanced call")
 
 
-def shim(sql: str) -> str:
+def pad_min_width(a: list[str]) -> str:
+    """What the runtime emits TODAY (hub#1378): the width is a floor, so a value longer than it
+    survives WHOLE — mirror of `hub/crates/db/src/lib.rs::pad_to_min_width`."""
+    return f"lpad(({a[0]})::text, greatest({a[1]}, length(({a[0]})::text)), '0')"
+
+
+def pad_truncating(a: list[str]) -> str:
+    """What the runtime emitted BEFORE hub#1378 — a bare `lpad`, an EXACT width. Exists ONLY so
+    `check_control_still_sees_the_bug` below can prove this harness still sees the bug
+    (`lpad('10000', 4, '0')` = `'1000'`); nothing else in this file should use it."""
+    return f"lpad(({a[0]})::text, {a[1]}, '0')"
+
+
+def shim(sql: str, pad=pad_min_width) -> str:
     """Bridge functions (ADR-0007 §4a) — mirror of `hub/crates/db/src/lib.rs::shim_functions`."""
     forms = {
-        "erp_pad": lambda a: f"lpad(({a[0]})::text, {a[1]}, '0')",
+        "erp_pad": pad,
         "erp_dt": lambda a: f"(({a[0]})::timestamptz)",
         "erp_date": lambda a: f"(({a[0]})::date)",
     }
@@ -177,13 +190,13 @@ def shim(sql: str) -> str:
     return sql
 
 
-def run_chain(commands: list[str], params: dict) -> str | None:
+def run_chain(commands: list[str], params: dict, pad=pad_min_width) -> str | None:
     """Runs a whole intention chain in ONE transaction, like the runtime does.
 
     Returns None when it committed, or the Postgres error when the transaction aborted — which is
     how a gate with `CHECK (ok = 1)` refuses.
     """
-    body = "\n".join(shim(bind(sql_of(c), params)) for c in commands)
+    body = "\n".join(shim(bind(sql_of(c), params), pad) for c in commands)
     try:
         psql([], db=DB, stdin=f"BEGIN;\n{body}\nCOMMIT;\n")
         return None
@@ -432,6 +445,71 @@ def check_reschedule_chain() -> None:
         fail(f"with allow_overlapping = 1 the move must be accepted, got: {err}")
 
 
+def check_number_survives_the_ten_thousandth_of_the_day() -> None:
+    """The width `erp_pad` takes is a MINIMUM, never a ceiling (appointments#111). Postgres' bare
+    `lpad` imposes an EXACT width and CUTS what does not fit; the kernel fixed that (hub#1378,
+    `lpad(v, greatest(width, length(v)), fill)`) so a real create never truncates. This is the
+    harness's own mirror of that lowering (`shim`, above) staying true to it: with the counter
+    parked at 9999 the 10.000th appointment of the day must come back as `APT-<day>-10000`
+    WHOLE, not cut down to the four digits `_insert_appointment.sql` asks for."""
+    day = "20260901"
+    psql(
+        [
+            "-c",
+            "INSERT INTO appointments_appointment_counter (id, hub_id, day, last_number) "
+            f"VALUES ('cnt-{day}', '{HUB}', '{day}', 9999)",
+        ],
+        db=DB,
+    )
+    params = booking(HUB, "a-10000", day, "2026-09-01T09:00:00+02:00", 30)
+    err = run_chain(CREATE_CHAIN, params)
+    if err:
+        fail(f"the ten-thousandth appointment of the day was refused: {err}")
+        return
+    number = scalar(
+        "SELECT appointment_number FROM appointments_appointment WHERE id = 'a-10000'"
+    )
+    want = f"APT-{day}-10000"
+    if number != want:
+        fail(
+            f"the ten-thousandth appointment number came back {number!r}, expected {want!r}"
+        )
+
+
+def check_control_still_sees_the_bug() -> None:
+    """THE CONTROL (appointments#111): put the pre-hub#1378 lowering back and demand the SAME
+    border break the SAME way. The two checks above are green because `shim` mirrors the kernel's
+    CURRENT lowering — that mirror had drifted before (this issue), and if it drifts again every
+    green above goes silently worthless. `pad_truncating` is that old mirror; run through it, the
+    ten-thousandth appointment of a day must still come back cut to `APT-<day>-1000`, exactly the
+    symptom appointments#111 reported."""
+    day = "20260902"
+    psql(
+        [
+            "-c",
+            "INSERT INTO appointments_appointment_counter (id, hub_id, day, last_number) "
+            f"VALUES ('cnt-{day}', '{HUB}', '{day}', 9999)",
+        ],
+        db=DB,
+    )
+    params = booking(HUB, "a-control-10000", day, "2026-09-02T09:00:00+02:00", 30)
+    err = run_chain(CREATE_CHAIN, params, pad=pad_truncating)
+    if err:
+        fail(
+            f"the control scenario aborted instead of writing a truncated number: {err}"
+        )
+        return
+    number = scalar(
+        "SELECT appointment_number FROM appointments_appointment WHERE id = 'a-control-10000'"
+    )
+    want = f"APT-{day}-1000"
+    if number != want:
+        fail(
+            "the control lowering did not truncate — this harness can no longer see the erp_pad "
+            f"bug: got {number!r}, expected the truncated {want!r}"
+        )
+
+
 def check_against_postgres() -> None:
     if failures:
         return
@@ -447,6 +525,10 @@ def check_against_postgres() -> None:
         check_create_chain()
         if not failures:
             check_reschedule_chain()
+        if not failures:
+            check_number_survives_the_ten_thousandth_of_the_day()
+        if not failures:
+            check_control_still_sees_the_bug()
     finally:
         psql(["-c", f'DROP DATABASE IF EXISTS "{DB}"'])
 
