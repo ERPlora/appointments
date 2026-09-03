@@ -5543,6 +5543,7 @@ var ErpAppointmentsSeries = class extends i3 {
     this.loading = true;
     this.error = "";
     this.saving = false;
+    this.busySeriesId = "";
     this.editingId = "";
     this.template = null;
     this.occurrences = [];
@@ -5750,9 +5751,10 @@ var ErpAppointmentsSeries = class extends i3 {
   /** Desactiva/reactiva una serie sin borrarla (appointments#110). Una desactivada SIGUE en la
    *  lista (`recurring_list.sql` ya no la filtra) — solo deja de ofrecerse para materializar
    *  citas nuevas hasta que se reactiva. */
-  async toggleSeriesActive(row, nextActive) {
+  async toggleSeriesActive(row, nextActive, toggle) {
     const id = String(row.id ?? "");
-    if (!id) return;
+    if (!id || this.busySeriesId) return;
+    this.busySeriesId = id;
     this.error = "";
     try {
       if (nextActive) {
@@ -5763,6 +5765,9 @@ var ErpAppointmentsSeries = class extends i3 {
       await this.refresh();
     } catch (e5) {
       this.error = e5 instanceof Error && e5.message ? e5.message : erplora2().t(CATALOG2, "ui.seriesToggleActiveError");
+      if (toggle) toggle.checked = !nextActive;
+    } finally {
+      this.busySeriesId = "";
     }
   }
   onRowAction(ev) {
@@ -5794,13 +5799,15 @@ var ErpAppointmentsSeries = class extends i3 {
       {
         key: "is_active",
         header: t5("ui.colStatus"),
-        // Toggle en línea (patrón de inventory#… para un flag `is_active`): la lista ya trae
-        // activas E inactivas, así que la fila se pinta y se cambia de estado sin abrir nada.
+        // Inline toggle (the `erp-inventory-products` pattern for an `is_active` flag): the list
+        // already brings active AND inactive rows, so the row is painted and switched without
+        // opening anything. Disabled while a change is in flight: that is its loading state.
         render: (r6) => b2`
           <ion-toggle
             aria-label=${t5("ui.seriesActive")}
             ?checked=${!!r6.is_active}
-            @ionChange=${(e5) => this.toggleSeriesActive(r6, e5.target.checked)}
+            ?disabled=${!!this.busySeriesId}
+            @ionChange=${(e5) => this.toggleSeriesActive(r6, e5.target.checked, e5.target)}
           ></ion-toggle>
         `
       }
@@ -5914,6 +5921,9 @@ __decorateClass([
 __decorateClass([
   r5()
 ], ErpAppointmentsSeries.prototype, "saving", 2);
+__decorateClass([
+  r5()
+], ErpAppointmentsSeries.prototype, "busySeriesId", 2);
 __decorateClass([
   r5()
 ], ErpAppointmentsSeries.prototype, "editingId", 2);

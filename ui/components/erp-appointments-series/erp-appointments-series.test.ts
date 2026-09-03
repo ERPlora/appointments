@@ -125,7 +125,12 @@ type Wc = HTMLElement & {
   submitEdit: (e: Event) => Promise<void>;
   materializeSeries: (row: Record<string, unknown>) => Promise<void>;
   deleteSeries: (row: Record<string, unknown>) => Promise<void>;
-  toggleSeriesActive: (row: Record<string, unknown>, nextActive: boolean) => Promise<void>;
+  busySeriesId: string;
+  toggleSeriesActive: (
+    row: Record<string, unknown>,
+    nextActive: boolean,
+    toggle?: { checked: boolean },
+  ) => Promise<void>;
 };
 
 const mount = async (): Promise<Wc> => {
@@ -300,5 +305,38 @@ describe('desactivar/reactivar una serie sin borrarla (appointments#110)', () =>
     failing = 'appointments.recurring.deactivate';
     await el.toggleSeriesActive(SERIES_ROW, false);
     expect(el.error).toBeTruthy();
+  });
+
+  // Review of #114: the `ion-toggle` had already flipped itself when the command fails, and the
+  // list row does not change (still `is_active: 1`), so Lit does not touch `?checked` again: the
+  // switch stayed «off» over a series that is still active. A visible error is not enough if the
+  // control lies underneath.
+  it('when the toggle fails, the switch goes BACK to where it was', async () => {
+    const el = await mount();
+    failing = 'appointments.recurring.deactivate';
+    const toggle = { checked: false };
+    await el.toggleSeriesActive(SERIES_ROW, false, toggle);
+    expect(el.error).toBeTruthy();
+    expect(toggle.checked).toBe(true);
+  });
+
+  it('while the command is in flight the row is BUSY and a second tap fires nothing', async () => {
+    const el = await mount();
+    let release: () => void = () => {};
+    const gate = new Promise<void>((r) => (release = r));
+    const sdk = (globalThis as Record<string, unknown>).erplora as { command: unknown };
+    sdk.command = async (name: string, payload: Record<string, unknown>) => {
+      commands.push({ name, payload });
+      await gate;
+      return { ok: true };
+    };
+    const first = el.toggleSeriesActive(SERIES_ROW, false);
+    await Promise.resolve();
+    expect(el.busySeriesId).toBe('r1');
+    await el.toggleSeriesActive(SERIES_ROW, true);
+    expect(commands.filter((c) => c.name.startsWith('appointments.recurring.'))).toHaveLength(1);
+    release();
+    await first;
+    expect(el.busySeriesId).toBe('');
   });
 });

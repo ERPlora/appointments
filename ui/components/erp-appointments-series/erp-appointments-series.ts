@@ -122,6 +122,9 @@ export class ErpAppointmentsSeries extends LitElement {
   @state() loading = true;
   @state() error = '';
   @state() saving = false;
+  /** Series whose status toggle has a command in flight ('' = none). While it lasts the toggles
+   *  render disabled and a second tap fires nothing — that is the toggle's loading state. */
+  @state() busySeriesId = '';
 
   /** La serie abierta en el panel (vacío = el panel no está editando nada). */
   @state() editingId = '';
@@ -351,9 +354,14 @@ export class ErpAppointmentsSeries extends LitElement {
   /** Desactiva/reactiva una serie sin borrarla (appointments#110). Una desactivada SIGUE en la
    *  lista (`recurring_list.sql` ya no la filtra) — solo deja de ofrecerse para materializar
    *  citas nuevas hasta que se reactiva. */
-  async toggleSeriesActive(row: Record<string, unknown>, nextActive: boolean): Promise<void> {
+  async toggleSeriesActive(
+    row: Record<string, unknown>,
+    nextActive: boolean,
+    toggle?: { checked: boolean },
+  ): Promise<void> {
     const id = String(row.id ?? '');
-    if (!id) return;
+    if (!id || this.busySeriesId) return;
+    this.busySeriesId = id;
     this.error = '';
     try {
       // El nombre del command tiene que ser un LITERAL en la llamada (ADR-0127: el contrato de
@@ -366,6 +374,12 @@ export class ErpAppointmentsSeries extends LitElement {
       await this.refresh();
     } catch (e) {
       this.error = e instanceof Error && e.message ? e.message : erplora().t(CATALOG, 'ui.seriesToggleActiveError');
+      // The `ion-toggle` already flipped itself on tap and the row did not change (Lit does not
+      // touch `?checked` again when the value is the same): without this the switch stays «off»
+      // over a series that is still active. A visible error is not enough if the control lies.
+      if (toggle) toggle.checked = !nextActive;
+    } finally {
+      this.busySeriesId = '';
     }
   }
 
@@ -400,13 +414,16 @@ export class ErpAppointmentsSeries extends LitElement {
       {
         key: 'is_active',
         header: t('ui.colStatus'),
-        // Toggle en línea (patrón de inventory#… para un flag `is_active`): la lista ya trae
-        // activas E inactivas, así que la fila se pinta y se cambia de estado sin abrir nada.
+        // Inline toggle (the `erp-inventory-products` pattern for an `is_active` flag): the list
+        // already brings active AND inactive rows, so the row is painted and switched without
+        // opening anything. Disabled while a change is in flight: that is its loading state.
         render: (r) => html`
           <ion-toggle
             aria-label=${t('ui.seriesActive')}
             ?checked=${!!r.is_active}
-            @ionChange=${(e: Event) => this.toggleSeriesActive(r, (e.target as HTMLInputElement).checked)}
+            ?disabled=${!!this.busySeriesId}
+            @ionChange=${(e: Event) =>
+              this.toggleSeriesActive(r, (e.target as HTMLInputElement).checked, e.target as HTMLInputElement)}
           ></ion-toggle>
         `,
       },

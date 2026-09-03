@@ -21,9 +21,11 @@ WHAT IS CHECKED, in two layers:
      - deactivating an active series flips `is_active` to 0 and leaves it reachable in
        `appointments.recurring.list` (it used to disappear);
      - reactivating flips it back, and does not touch `is_deleted` either way;
-     - a neighbour series (another hub) and a soft-deleted series are never touched — the `WHERE`
-       is the last line of defence, and a guard nobody proved rejects anything is a guard that
-       opens (appointments#16).
+     - a neighbour series (another hub) and a soft-deleted series are REFUSED by both transitions
+       — 0 rows touched, which is what `expect_rows` turns into `recurring_not_found`. Proven by
+       aiming each command AT those rows, not by checking them after touching another one: the
+       `WHERE` is the last line of defence, and a guard nobody proved rejects anything is a guard
+       that opens (appointments#16).
 
 Usage: tests/recurring_activation.postgres.test.py   (exit 0 = green)
   Uses the `erplora-test-pg-5433` container (override: ERPLORA_TEST_PG_CONTAINER). Creates a
@@ -170,8 +172,16 @@ def bind(sql: str, params: dict) -> str:
     )
 
 
-def run_command(sql_rel: str, params: dict) -> None:
-    psql([], db=DB, stdin=bind((MODULE_DIR / sql_rel).read_text(), params))
+def run_command(sql_rel: str, params: dict) -> int:
+    """Runs a command's SQL and returns the rows it touched — the number `expect_rows` judges.
+
+    A guard is only proven by the row it REFUSES: `UPDATE 0` is what makes the dispatcher raise
+    `recurring_not_found`, so the count is the observable, not the flag's value afterwards (a row
+    that already had the target value would look untouched whether the WHERE held or not).
+    """
+    out = psql([], db=DB, stdin=bind((MODULE_DIR / sql_rel).read_text(), params))
+    m = re.search(r"^(?:UPDATE|INSERT \d+) (\d+)$", out, re.M)
+    return int(m.group(1)) if m else 0
 
 
 def run_query(sql_rel: str, params: dict) -> list[dict]:
@@ -244,12 +254,16 @@ def check_against_postgres(
 
         seed_series("r1", HUB)
         seed_series("r-neighbour", OTHER_HUB)
-        seed_series("r-gone", HUB, deleted=1)
+        seed_series("r-neighbour-off", OTHER_HUB, active=0)
+        # As `recurring_delete.sql` leaves a row: is_deleted = 1 AND is_active = 0.
+        seed_series("r-gone", HUB, deleted=1, active=0)
 
-        run_command(
+        touched = run_command(
             deactivate_sql,
             {"recurring_id": "r1", "hub_id": HUB, "current_user_id": "u1", "now": NOW},
         )
+        if touched != 1:
+            fail(f"deactivate: touched {touched} rows for an existing active series, expected 1")
 
         row = scalar(f"SELECT is_active FROM appointments_recurring WHERE id = 'r1'")
         if row != "0":
@@ -267,31 +281,55 @@ def check_against_postgres(
         if "r1" not in listed:
             fail("recurring_list.sql: a deactivated series disappeared from the list")
 
-        # Neighbours are never touched.
+        # TENANCY, proven by the row the WHERE refuses: another hub's series, named by its id but
+        # under THIS hub, must be 0 rows for both transitions (that 0 is what raises
+        # `recurring_not_found` in the dispatcher). Checking the neighbour's flag after touching
+        # `r1` proves nothing — any UPDATE by id would leave it alone (appointments#16).
+        touched = run_command(
+            deactivate_sql,
+            {"recurring_id": "r-neighbour", "hub_id": HUB, "current_user_id": "u1", "now": NOW},
+        )
         neighbour = scalar(
             "SELECT is_active FROM appointments_recurring WHERE id = 'r-neighbour'"
         )
-        if neighbour != "1":
-            fail(f"deactivate: touched another hub's series (is_active={neighbour!r})")
-
-        # A soft-deleted series is not resurrected by activate — the WHERE must exclude it.
-        run_command(
+        if touched != 0 or neighbour != "1":
+            fail(
+                f"deactivate: reached another hub's series through this hub (rows={touched}, "
+                f"is_active={neighbour!r}) — the WHERE must pin hub_id"
+            )
+        touched = run_command(
             activate_sql,
-            {
-                "recurring_id": "r-gone",
-                "hub_id": HUB,
-                "current_user_id": "u1",
-                "now": NOW,
-            },
+            {"recurring_id": "r-neighbour-off", "hub_id": HUB, "current_user_id": "u1", "now": NOW},
         )
+        neighbour_off = scalar(
+            "SELECT is_active FROM appointments_recurring WHERE id = 'r-neighbour-off'"
+        )
+        if touched != 0 or neighbour_off != "0":
+            fail(
+                f"activate: reached another hub's series through this hub (rows={touched}, "
+                f"is_active={neighbour_off!r}) — the WHERE must pin hub_id"
+            )
+
+        # SOFT-DELETE: a deleted series is neither resurrected by activate nor «paused» by
+        # deactivate — both must refuse it (0 rows), exactly like `recurring_delete.sql` refuses
+        # a second delete. Its flags stay as the delete left them.
+        for name, sql_rel in (("activate", activate_sql), ("deactivate", deactivate_sql)):
+            touched = run_command(
+                sql_rel,
+                {"recurring_id": "r-gone", "hub_id": HUB, "current_user_id": "u1", "now": NOW},
+            )
+            if touched != 0:
+                fail(
+                    f"{name}: touched {touched} row(s) of a soft-deleted series — the WHERE must "
+                    "keep is_deleted = 0, or a deleted series could be brought back"
+                )
         gone_active = scalar(
             "SELECT is_active FROM appointments_recurring WHERE id = 'r-gone'"
         )
-        if gone_active != "1":
+        if gone_active != "0":
             fail(
-                f"activate: a soft-deleted series' is_active is {gone_active!r} — the delete "
-                "already set it to 1 alongside is_deleted, and activate must leave a deleted row "
-                "alone either way (it must not be reachable from the list to begin with)"
+                f"activate: a soft-deleted series' is_active is {gone_active!r} — the delete had "
+                "set it to 0 alongside is_deleted, and activate must leave a deleted row alone"
             )
         gone_deleted = scalar(
             "SELECT is_deleted FROM appointments_recurring WHERE id = 'r-gone'"
@@ -301,10 +339,12 @@ def check_against_postgres(
                 f"activate: is_deleted moved to {gone_deleted!r} on a soft-deleted row it must not touch"
             )
 
-        run_command(
+        touched = run_command(
             activate_sql,
             {"recurring_id": "r1", "hub_id": HUB, "current_user_id": "u1", "now": NOW},
         )
+        if touched != 1:
+            fail(f"activate: touched {touched} rows for an existing deactivated series, expected 1")
         reactivated = scalar(
             "SELECT is_active FROM appointments_recurring WHERE id = 'r1'"
         )
