@@ -212,7 +212,8 @@ def main() -> int:
         ["docker", "exec", CONTAINER, "createdb", "-U", "postgres", DB], check=True
     )
     try:
-        for rel in MANIFEST["migrations"]["postgres"]:
+        for entry in MANIFEST["migrations"]["postgres"]:
+            rel = entry if isinstance(entry, str) else entry["file"]
             psql((MODULE_DIR / rel).read_text())
 
         # ── 1+2 · Madrid (+02:00): now = 11:00 de pared, 60 min de antelación ────────────────

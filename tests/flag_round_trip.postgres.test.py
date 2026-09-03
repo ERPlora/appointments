@@ -423,7 +423,8 @@ def check_against_postgres() -> None:
     psql(["-c", f'DROP DATABASE IF EXISTS "{DB}"'])
     psql(["-c", f'CREATE DATABASE "{DB}"'])
     try:
-        for rel in MANIFEST["migrations"]["postgres"]:
+        for entry in MANIFEST["migrations"]["postgres"]:
+            rel = entry if isinstance(entry, str) else entry["file"]
             psql([], db=DB, stdin=(MODULE_DIR / rel).read_text())
         notes.append(
             f"scratch database {DB} built from {len(MANIFEST['migrations']['postgres'])} migrations"

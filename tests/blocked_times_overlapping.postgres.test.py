@@ -197,7 +197,8 @@ def check_against_postgres(q: dict) -> None:
     psql(["-c", f'DROP DATABASE IF EXISTS "{DB}"'])
     psql(["-c", f'CREATE DATABASE "{DB}"'])
     try:
-        for rel in MANIFEST.get("migrations", {}).get("postgres", []):
+        for entry in MANIFEST.get("migrations", {}).get("postgres", []):
+            rel = entry if isinstance(entry, str) else entry["file"]
             psql([], db=DB, stdin=(MODULE_DIR / rel).read_text())
 
         # Must come back for a booking of s1 on 2026-08-20.

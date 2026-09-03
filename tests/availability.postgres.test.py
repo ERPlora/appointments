@@ -270,7 +270,8 @@ def main():
         ["docker", "exec", CONTAINER, "createdb", "-U", "postgres", db], check=True
     )
     try:
-        for rel in MANIFEST["migrations"]["postgres"]:
+        for entry in MANIFEST["migrations"]["postgres"]:
+            rel = entry if isinstance(entry, str) else entry["file"]
             r = psql(db, (MODULE_DIR / rel).read_text())
             if r.returncode != 0:
                 print(f"FAIL: migration {rel} does not apply\n{r.stderr}")
