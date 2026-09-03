@@ -348,6 +348,27 @@ export class ErpAppointmentsSeries extends LitElement {
     }
   }
 
+  /** Desactiva/reactiva una serie sin borrarla (appointments#110). Una desactivada SIGUE en la
+   *  lista (`recurring_list.sql` ya no la filtra) — solo deja de ofrecerse para materializar
+   *  citas nuevas hasta que se reactiva. */
+  async toggleSeriesActive(row: Record<string, unknown>, nextActive: boolean): Promise<void> {
+    const id = String(row.id ?? '');
+    if (!id) return;
+    this.error = '';
+    try {
+      // El nombre del command tiene que ser un LITERAL en la llamada (ADR-0127: el contrato de
+      // interoperabilidad lo descubre por análisis estático, no en runtime).
+      if (nextActive) {
+        await erplora().command('appointments.recurring.activate', { recurring_id: id });
+      } else {
+        await erplora().command('appointments.recurring.deactivate', { recurring_id: id });
+      }
+      await this.refresh();
+    } catch (e) {
+      this.error = e instanceof Error && e.message ? e.message : erplora().t(CATALOG, 'ui.seriesToggleActiveError');
+    }
+  }
+
   private onRowAction(ev: CustomEvent): void {
     const { action, row } = (ev.detail ?? {}) as { action?: string; row?: Record<string, unknown> };
     if (!row) return;
@@ -376,6 +397,19 @@ export class ErpAppointmentsSeries extends LitElement {
       { key: 'frequency', header: t('ui.colPattern'), format: (r) => this.patternLabel(r as unknown as Series) },
       { key: 'start_date', header: t('ui.colStarts') },
       { key: 'end_date', header: t('ui.colEnds'), format: (r) => (r.end_date as string) || t('ui.seriesNoEnd') },
+      {
+        key: 'is_active',
+        header: t('ui.colStatus'),
+        // Toggle en línea (patrón de inventory#… para un flag `is_active`): la lista ya trae
+        // activas E inactivas, así que la fila se pinta y se cambia de estado sin abrir nada.
+        render: (r) => html`
+          <ion-toggle
+            aria-label=${t('ui.seriesActive')}
+            ?checked=${!!r.is_active}
+            @ionChange=${(e: Event) => this.toggleSeriesActive(r, (e.target as HTMLInputElement).checked)}
+          ></ion-toggle>
+        `,
+      },
     ];
   }
 

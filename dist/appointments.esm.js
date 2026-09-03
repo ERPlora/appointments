@@ -2031,6 +2031,8 @@ var es_default = {
     seriesSaveError: "No se ha podido guardar la cita peri\xF3dica.",
     seriesMaterializeError: "No se han podido reservar las citas de esta serie.",
     seriesDeleteError: "No se ha podido borrar la cita peri\xF3dica.",
+    seriesActive: "Activa",
+    seriesToggleActiveError: "No se ha podido cambiar el estado de la cita peri\xF3dica.",
     seriesMaterialized: "Citas reservadas para esta serie.",
     seriesSplitFrom: "Esta serie contin\xFAa a otra anterior ({id}): se parti\xF3 cuando alguien la edit\xF3 de una cita en adelante.",
     seriesBookedCount: "{booked} citas reservadas \xB7 el cambio se aplica desde el {from} ({upcoming} por delante)",
@@ -2250,6 +2252,8 @@ var en_default = {
     seriesSaveError: "The repeating appointment could not be saved.",
     seriesMaterializeError: "The appointments of this series could not be booked.",
     seriesDeleteError: "The repeating appointment could not be deleted.",
+    seriesActive: "Active",
+    seriesToggleActiveError: "The repeating appointment's status could not be changed.",
     seriesMaterialized: "Appointments booked for this series.",
     seriesSplitFrom: "This series continues an earlier one ({id}): it was split when someone edited it from one occurrence onwards.",
     seriesBookedCount: "{booked} appointments booked \xB7 the change applies from {from} ({upcoming} upcoming)",
@@ -5743,6 +5747,24 @@ var ErpAppointmentsSeries = class extends i3 {
       this.error = e5 instanceof Error && e5.message ? e5.message : erplora2().t(CATALOG2, "ui.seriesDeleteError");
     }
   }
+  /** Desactiva/reactiva una serie sin borrarla (appointments#110). Una desactivada SIGUE en la
+   *  lista (`recurring_list.sql` ya no la filtra) — solo deja de ofrecerse para materializar
+   *  citas nuevas hasta que se reactiva. */
+  async toggleSeriesActive(row, nextActive) {
+    const id = String(row.id ?? "");
+    if (!id) return;
+    this.error = "";
+    try {
+      if (nextActive) {
+        await erplora2().command("appointments.recurring.activate", { recurring_id: id });
+      } else {
+        await erplora2().command("appointments.recurring.deactivate", { recurring_id: id });
+      }
+      await this.refresh();
+    } catch (e5) {
+      this.error = e5 instanceof Error && e5.message ? e5.message : erplora2().t(CATALOG2, "ui.seriesToggleActiveError");
+    }
+  }
   onRowAction(ev) {
     const { action, row } = ev.detail ?? {};
     if (!row) return;
@@ -5768,7 +5790,20 @@ var ErpAppointmentsSeries = class extends i3 {
       { key: "staff_name", header: t5("ui.colStaff"), format: (r6) => r6.staff_name || "\u2014" },
       { key: "frequency", header: t5("ui.colPattern"), format: (r6) => this.patternLabel(r6) },
       { key: "start_date", header: t5("ui.colStarts") },
-      { key: "end_date", header: t5("ui.colEnds"), format: (r6) => r6.end_date || t5("ui.seriesNoEnd") }
+      { key: "end_date", header: t5("ui.colEnds"), format: (r6) => r6.end_date || t5("ui.seriesNoEnd") },
+      {
+        key: "is_active",
+        header: t5("ui.colStatus"),
+        // Toggle en línea (patrón de inventory#… para un flag `is_active`): la lista ya trae
+        // activas E inactivas, así que la fila se pinta y se cambia de estado sin abrir nada.
+        render: (r6) => b2`
+          <ion-toggle
+            aria-label=${t5("ui.seriesActive")}
+            ?checked=${!!r6.is_active}
+            @ionChange=${(e5) => this.toggleSeriesActive(r6, e5.target.checked)}
+          ></ion-toggle>
+        `
+      }
     ];
   }
   get rowActions() {

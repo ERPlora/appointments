@@ -93,6 +93,7 @@ beforeEach(() => {
     },
     command: async (name: string, payload: Record<string, unknown>) => {
       commands.push({ name, payload });
+      if (failing === name) throw new Error('boom');
       return name === 'appointments.recurring.update' ? updateResult : { ok: true };
     },
     on: () => () => {},
@@ -124,6 +125,7 @@ type Wc = HTMLElement & {
   submitEdit: (e: Event) => Promise<void>;
   materializeSeries: (row: Record<string, unknown>) => Promise<void>;
   deleteSeries: (row: Record<string, unknown>) => Promise<void>;
+  toggleSeriesActive: (row: Record<string, unknown>, nextActive: boolean) => Promise<void>;
 };
 
 const mount = async (): Promise<Wc> => {
@@ -264,5 +266,39 @@ describe('las otras dos puertas que faltaban', () => {
     expect(commands.find((c) => c.name === 'appointments.recurring.delete')?.payload).toEqual({
       recurring_id: 'r1',
     });
+  });
+});
+
+// appointments#110 — desactivar una serie sin borrarla, resto declarado de #91 (PR #109). El
+// command estaba ausente y `recurring_list.sql` filtraba `is_active = 1` en duro: un botón
+// «desactivar» sin arreglar eso habría hecho invisible a la serie, sin forma de reactivarla.
+describe('desactivar/reactivar una serie sin borrarla (appointments#110)', () => {
+  it('desactiva una serie activa por su id', async () => {
+    const el = await mount();
+    await el.toggleSeriesActive(SERIES_ROW, false);
+    expect(commands.find((c) => c.name === 'appointments.recurring.deactivate')?.payload).toEqual({
+      recurring_id: 'r1',
+    });
+  });
+
+  it('reactiva una serie desactivada por su id', async () => {
+    const el = await mount();
+    await el.toggleSeriesActive({ ...SERIES_ROW, is_active: 0 }, true);
+    expect(commands.find((c) => c.name === 'appointments.recurring.activate')?.payload).toEqual({
+      recurring_id: 'r1',
+    });
+  });
+
+  it('una serie desactivada SIGUE en la lista — la trampa que #91 rechazó', async () => {
+    listResult = { rows: [{ ...SERIES_ROW, is_active: 0 }], total: 1 };
+    const el = await mount();
+    expect(el.series).toEqual([{ ...SERIES_ROW, is_active: 0 }]);
+  });
+
+  it('si el toggle falla lo DICE, en vez de fingir que se desactivó', async () => {
+    const el = await mount();
+    failing = 'appointments.recurring.deactivate';
+    await el.toggleSeriesActive(SERIES_ROW, false);
+    expect(el.error).toBeTruthy();
   });
 });
