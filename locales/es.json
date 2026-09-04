@@ -116,6 +116,8 @@
     "bookingSlot": "Hora",
     "bookingPick": "Elige…",
     "bookingNoSlots": "No hay hueco libre ese día. Prueba otro día u otro profesional.",
+    "bookingDayClosed": "El negocio está cerrado ese día. Elige otra fecha.",
+    "openingUnknown": "No se ha podido comprobar el horario de apertura, así que puede que alguna de estas horas se rechace.",
     "bookingConfirm": "Aprobar y reservar",
     "bookingCancel": "Cancelar",
     "errLoadSlots": "No se han podido leer los huecos libres",

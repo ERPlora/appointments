@@ -19,13 +19,24 @@ import { beforeEach, describe, expect, it } from 'vitest';
 
 const queries: { name: string; params: Record<string, unknown> }[] = [];
 const commands: { name: string; payload: Record<string, unknown> }[] = [];
+/** What a command answers in THIS test. The SDK hands the caller the command's `result` unwrapped
+ *  (`unwrap(env)` returns `env.data`), so a mock returns the payload itself, not an envelope. */
+const commandAnswers: Record<string, unknown> = {};
+/** What a command REFUSES with in this test, so degradation can be pinned as well as the happy path. */
+const commandFailures: Record<string, Error> = {};
+/** What a query answers in THIS test, when the default fixture is not the case under test. */
+const queryAnswers: Record<string, unknown> = {};
 
 beforeEach(() => {
   queries.length = 0;
   commands.length = 0;
+  for (const k of Object.keys(commandAnswers)) delete commandAnswers[k];
+  for (const k of Object.keys(commandFailures)) delete commandFailures[k];
+  for (const k of Object.keys(queryAnswers)) delete queryAnswers[k];
   (globalThis as Record<string, unknown>).erplora = {
     query: async (name: string, params: Record<string, unknown>) => {
       queries.push({ name, params });
+      if (name in queryAnswers) return queryAnswers[name];
       switch (name) {
         case 'customers.list':
           return { rows: [{ id: 'c1', name: 'Marta', phone: '+34600111222' }], total: 1 };
@@ -44,7 +55,9 @@ beforeEach(() => {
     },
     command: async (name: string, payload: Record<string, unknown>) => {
       commands.push({ name, payload });
-      return {};
+      const refusal = commandFailures[name];
+      if (refusal) throw refusal;
+      return commandAnswers[name] ?? {};
     },
     hasPermission: () => true,
     locale: 'en',
@@ -250,5 +263,159 @@ describe('erp-appointments-request-booking', () => {
     await bindUpTo(el);
     const asked = queries.filter((q) => q.name === 'appointments.availability.slots');
     expect(asked[asked.length - 1].params.exclude_hold_ref).toBe('req-1');
+  });
+
+  // ── appointments#105 · la pantalla mira LO MISMO que la puerta ───────────────────────────────
+  //
+  // Desde appointments#102 la autoridad del horario del negocio es `schedules`, y la puerta
+  // (`appointments.appointments.create`) resuelve la fecha con su precedencia (ADR-0392). El SQL
+  // de `availability.slots` no puede seguirla —una query de un módulo solo puede nombrar tablas de
+  // ese módulo, así que `schedules_*` le está vedado por contrato—, de modo que para el hub que ya
+  // movió sus horas la lista quedó OPTIMISTA: ofrecía las 10:00 a un salón que abre a las 11:00 y
+  // `create` lo rechazaba un clic después con `appointments.outside_schedule`. La pantalla
+  // contradiciendo a la puerta es exactamente el defecto que nombra appointments#105.
+  //
+  // El arreglo NO reimplementa la precedencia en TypeScript —eso sería una segunda autoridad, que
+  // es la enfermedad, no la cura—: pregunta a `appointments.availability.day_opening`, que corre
+  // la MISMA función que la puerta, y ofrece solo lo que quepa en lo que responde.
+  async function pickService(el: Element) {
+    const svc = shadow(el).querySelector('#svc') as HTMLSelectElement;
+    svc.value = 'sv1';
+    svc.dispatchEvent(new Event('change'));
+    await settle(el);
+  }
+
+  function offeredTimes(el: Element): string[] {
+    return [...shadow(el).querySelectorAll('.slot')].map((b) => (b.textContent ?? '').trim());
+  }
+
+  function lastSlotsQuery() {
+    const asked = queries.filter((q) => q.name === 'appointments.availability.slots');
+    return asked[asked.length - 1];
+  }
+
+  it('offers only the hours the door will accept, asking the door itself', async () => {
+    // La autoridad abre de 11:00 a 13:00 ese día. El motor propone 10:00 y 11:00.
+    commandAnswers['appointments.availability.day_opening'] = {
+      source: 'schedules',
+      spans: [{ start_minute: 660, end_minute: 780 }],
+    };
+    const el = await mount();
+    await pickService(el);
+
+    expect(
+      commands.filter((c) => c.name === 'appointments.availability.day_opening').length,
+      'la pantalla pregunta por la fecha que está mostrando, no adivina el horario',
+    ).toBeGreaterThan(0);
+    expect(
+      commands.find((c) => c.name === 'appointments.availability.day_opening')?.payload.date,
+      'y pregunta por LA fecha del selector',
+    ).toBe(lastSlotsQuery().params.date);
+    expect(
+      lastSlotsQuery().params.schedules_answers,
+      'con la autoridad respondiendo, el filtro por las tablas propias del módulo se APAGA',
+    ).toBe(1);
+    expect(
+      offeredTimes(el),
+      'las 10:00 caen fuera del tramo que la puerta resolvió para esa fecha: ofrecerlas es mentir',
+    ).toEqual(['11:00']);
+  });
+
+  it('does not offer a single hour on a day the authority says the business is shut', async () => {
+    commandAnswers['appointments.availability.day_opening'] = { source: 'schedules', spans: [] };
+    const el = await mount();
+    await pickService(el);
+
+    expect(offeredTimes(el), 'un día cerrado no tiene huecos, los proponga quien los proponga').toEqual([]);
+    expect(
+      shadow(el).textContent,
+      'y se dice que está CERRADO, no que se hayan agotado los huecos: son cosas distintas para quien atiende',
+    ).toContain('ui.bookingDayClosed');
+  });
+
+  it('keeps today’s behaviour when the authority carries no rule for the date', async () => {
+    // `source: "own"` = la autoridad calla y el SQL YA filtró con los tramos propios del módulo.
+    // Volver a filtrar aquí borraría el día entero al hub que todavía no ha movido sus horas.
+    commandAnswers['appointments.availability.day_opening'] = { source: 'own', spans: [] };
+    const el = await mount();
+    await pickService(el);
+
+    expect(offeredTimes(el), 'el hub que aún guarda sus horas aquí no puede quedarse sin agenda').toEqual(['10:00', '11:00']);
+    expect(
+      lastSlotsQuery().params.schedules_answers,
+      'sin autoridad que responda, el bind no se manda y la query filtra como siempre',
+    ).toBeUndefined();
+  });
+
+  it('drops the last slot of the day when it would run PAST closing time', async () => {
+    // El caso que rompe de verdad en un salón: el motor propone 12:45 porque su hora de calendario
+    // llega hasta las 20:00, pero el servicio dura 30 min y la puerta cierra a las 13:00. `create`
+    // exige que la cita TERMINE dentro del tramo, así que media franja no es franja.
+    queryAnswers['appointments.availability.slots'] = [
+      { slot_start: '2026-08-20T12:30:00', slot_end: '2026-08-20T13:00:00', start_time: '12:30', end_time: '13:00' },
+      { slot_start: '2026-08-20T12:45:00', slot_end: '2026-08-20T13:15:00', start_time: '12:45', end_time: '13:15' },
+    ];
+    commandAnswers['appointments.availability.day_opening'] = {
+      source: 'schedules',
+      spans: [{ start_minute: 660, end_minute: 780 }],
+    };
+    const el = await mount();
+    await pickService(el);
+
+    expect(
+      offeredTimes(el),
+      'las 12:45 acaban a las 13:15, con el negocio ya cerrado: la puerta la rechazaría',
+    ).toEqual(['12:30']);
+  });
+
+  function refusal(code: string): Error {
+    return Object.assign(new Error(code), { code });
+  }
+
+  it('degrades instead of blocking when the role may not read the schedule', async () => {
+    commandFailures['appointments.availability.day_opening'] = refusal('permission_denied');
+    const el = await mount();
+    await pickService(el);
+
+    expect(
+      offeredTimes(el),
+      'no poder preguntar es peor lista, no LA LISTA VACÍA: reservar no puede depender de este permiso',
+    ).toEqual(['10:00', '11:00']);
+    expect(lastSlotsQuery().params.schedules_answers).toBeUndefined();
+    expect(
+      shadow(el).textContent,
+      'un rol sin `view_schedule` es un ROL, no una avería: no se le grita al operador por ello',
+    ).not.toContain('ui.openingUnknown');
+  });
+
+  it('says so out loud when the hours could not be checked for any other reason', async () => {
+    // La avería SÍ se ve. Volver a la lista optimista en silencio es el defecto de #105 otra vez,
+    // ahora con el arreglo puesto — y sin decirlo nadie se enteraría hasta que `create` rechazara.
+    commandFailures['appointments.availability.day_opening'] = refusal('internal_error');
+    const el = await mount();
+    await pickService(el);
+
+    expect(
+      offeredTimes(el),
+      'avisar no es bloquear: con el horario en duda se sigue pudiendo reservar',
+    ).toEqual(['10:00', '11:00']);
+    expect(
+      shadow(el).textContent,
+      'un fallo que no se ve no existe: la lista ha dejado de estar comprobada y hay que decirlo',
+    ).toContain('ui.openingUnknown');
+  });
+
+  it('never asks a role that cannot read the schedule, and books all the same', async () => {
+    ((globalThis as Record<string, unknown>).erplora as { hasPermission: (p: string) => boolean })
+      .hasPermission = (p: string) => p !== 'appointments.view_schedule';
+    const el = await mount();
+    await pickService(el);
+
+    expect(
+      commands.filter((c) => c.name === 'appointments.availability.day_opening'),
+      'una llamada que va a ser rechazada por contrato no se hace',
+    ).toEqual([]);
+    expect(offeredTimes(el)).toEqual(['10:00', '11:00']);
+    expect(shadow(el).textContent).not.toContain('ui.openingUnknown');
   });
 });

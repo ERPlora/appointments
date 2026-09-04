@@ -61,6 +61,10 @@ interface Service { id: string; name: string; duration_minutes?: number; is_book
 interface StaffMember { id: string; full_name: string; status?: string; is_bookable?: number }
 interface Slot { slot_start: string; slot_end: string; start_time: string; end_time: string }
 
+/** One stretch the business is open on a date, in minutes from THAT date's own midnight — the unit
+ *  `appointments.availability.day_opening` answers in, breaks already carved out. */
+interface OpenSpan { start_minute: number; end_minute: number }
+
 function erplora(): ErploraLike {
   const c = (globalThis as { erplora?: ErploraLike }).erplora;
   if (!c) throw new Error('erplora SDK not initialised by the shell');
@@ -70,6 +74,26 @@ function erplora(): ErploraLike {
 function can(permission: string): boolean {
   const client = erplora();
   return typeof client.hasPermission === 'function' ? client.hasPermission(permission) : true;
+}
+
+/** `HH:MM` — the shape `availability.slots` returns — as minutes from midnight. `null` when it
+ *  cannot be read: a time we are unable to place must not quietly count as 00:00. Slot candidates
+ *  are always generated INSIDE the requested date (`availability_slots.sql` walks the hub's
+ *  calendar hours), so there is no day to cross and this number is directly comparable. */
+function minuteOfDay(hhmm: unknown): number | null {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(typeof hhmm === 'string' ? hhmm : '');
+  if (!m) return null;
+  return Number(m[1]) * 60 + Number(m[2]);
+}
+
+/** Does the WHOLE slot fit inside one open stretch? Straddling an edge is out, and that is the
+ *  door's own rule, not a stricter one invented here: `create` needs the appointment to end before
+ *  closing time, so half a slot is no slot. */
+function insideOpening(slot: Slot, spans: OpenSpan[]): boolean {
+  const start = minuteOfDay(slot.start_time);
+  const end = minuteOfDay(slot.end_time);
+  if (start === null || end === null) return false;
+  return spans.some((s) => Number(s.start_minute) <= start && end <= Number(s.end_minute));
 }
 
 function rows<T>(r: unknown): T[] {
@@ -128,6 +152,16 @@ export class ErpAppointmentsRequestBooking extends LitElement {
   @state() private date = today();
 
   @state() private slots: Slot[] = [];
+
+  /** The AUTHORITY says the business is shut on `this.date`. Not the same statement as «no free
+   *  time»: a diary that filled up is fixed by another professional, a Sunday is not, and telling
+   *  somebody to keep hunting on a closed day wastes their afternoon. */
+  @state() private dayClosed = false;
+
+  /** The opening hours could not be read at all, so the list below may be offering hours the door
+   *  will turn down. Said out loud: a screen that goes back to being optimistic in silence is the
+   *  exact defect appointments#105 is about. */
+  @state() private openingUnknown = false;
 
   @state() private startDatetime = '';
 
@@ -265,12 +299,57 @@ export class ErpAppointmentsRequestBooking extends LitElement {
     this.customerLabel = c.name;
   }
 
-  /** Free slots RIGHT NOW, from the hub's own availability engine. The market's hard rule: what a
-   *  person can pick has to be free at the moment they pick it, not when the message arrived. */
+  /**
+   * The stretches the business is open on `this.date`, asked of THE DOOR ITSELF (appointments#105).
+   *
+   * Since appointments#102 the authority over the business's hours is `schedules`, and the gate
+   * (`appointments.appointments.create`) resolves the date through its precedence (ADR-0392).
+   * `availability_slots.sql` cannot follow: a module's query may only name that module's tables,
+   * so `schedules_*` is closed to it by contract. For the hub that has already moved its hours the
+   * list was therefore OPTIMISTIC — it offered 10:00 to a salon that opens at 11:00 and `create`
+   * refused it one click later with `appointments.outside_schedule`.
+   *
+   * This does NOT re-implement that precedence in TypeScript. A second authority is the disease,
+   * not the cure: it asks `appointments.availability.day_opening`, which runs the very function
+   * the gate runs, and filters by what comes back. Read-only, so it writes nothing.
+   *
+   * Returns the spans to filter by, or `null` for «do not filter»:
+   *   * `[]` — the authority resolved the date and the business is SHUT. Zero slots, on purpose;
+   *   * `null` — either the authority carries no rule reaching the date (`source: "own"`, and the
+   *     SQL has already applied the module's own timetable, so filtering again would erase the
+   *     whole day for a hub that has not migrated), or it could not be asked at all.
+   */
+  private async askDayOpening(): Promise<OpenSpan[] | null> {
+    this.openingUnknown = false;
+    // A role that cannot read the schedule books exactly as it did before. Asking first is not
+    // security — the runtime re-checks — it just keeps a legitimate role from generating a refusal.
+    if (!can('appointments.view_schedule')) return null;
+    try {
+      const answer = await erplora().command<{ source?: string; spans?: OpenSpan[] } | null>(
+        'appointments.availability.day_opening',
+        { date: this.date },
+      );
+      if (!answer || answer.source !== 'schedules') return null;
+      return Array.isArray(answer.spans) ? answer.spans : [];
+    } catch (e) {
+      // `permission_denied` is a ROLE, not a fault (an API key, a custom role): degrade quietly.
+      // Anything else IS a fault, and the operator has to know the list stopped being checked —
+      // booking still works, so this warns and never blocks.
+      if ((e as { code?: string } | null)?.code !== 'permission_denied') this.openingUnknown = true;
+      return null;
+    }
+  }
+
+  /** Free slots RIGHT NOW, from the hub's own availability engine, narrowed to what the door will
+   *  actually accept. The market's hard rule: what a person can pick has to be free at the moment
+   *  they pick it, not when the message arrived — and it has to be bookable, not just free. */
   private async loadSlots(): Promise<void> {
     this.startDatetime = '';
-    if (!this.date) { this.slots = []; return; }
+    if (!this.date) { this.slots = []; this.dayClosed = false; this.openingUnknown = false; return; }
     const service = this.services.find((s) => s.id === this.serviceId);
+    // The door answers FIRST: what it says decides both what to ask the engine and what to keep.
+    const opening = await this.askDayOpening();
+    this.dayClosed = opening !== null && opening.length === 0;
     try {
       const result = await erplora().query('appointments.availability.slots', {
         date: this.date,
@@ -280,8 +359,13 @@ export class ErpAppointmentsRequestBooking extends LitElement {
         // time we just took, which is the one moment a hold must NOT block anyone. Same role as
         // `exclude_appointment_id` when moving an appointment off its own slot.
         exclude_hold_ref: this.open?.request_id,
+        // Sent ONLY when the authority answered, and it means «I already have the hours, stop
+        // filtering by the module's own timetable». Sending it with nothing to filter by would
+        // hand back the whole calendar; leaving it out keeps the query exactly as it was.
+        ...(opening !== null ? { schedules_answers: 1 } : {}),
       });
-      this.slots = rows<Slot>(result);
+      const free = rows<Slot>(result);
+      this.slots = opening !== null ? free.filter((s) => insideOpening(s, opening)) : free;
     } catch (e) {
       this.slots = [];
       this.error = e instanceof Error ? e.message : erplora().t(CATALOG, 'ui.errLoadSlots');
@@ -481,8 +565,11 @@ export class ErpAppointmentsRequestBooking extends LitElement {
         ${this.holdExpired
           ? html`<ok-inline-feedback tone="warning" icon="time-outline">${t('ui.holdExpired')}</ok-inline-feedback>`
           : nothing}
+        ${this.openingUnknown
+          ? html`<ok-inline-feedback tone="warning" icon="alert-circle-outline">${t('ui.openingUnknown')}</ok-inline-feedback>`
+          : nothing}
         ${this.slots.length === 0
-          ? html`<p class="said">${t('ui.bookingNoSlots')}</p>`
+          ? html`<p class="said">${t(this.dayClosed ? 'ui.bookingDayClosed' : 'ui.bookingNoSlots')}</p>`
           : html`<div class="slots">
               ${this.slots.map((s) => html`<button type="button" class="slot"
                 aria-pressed=${this.startDatetime === s.slot_start ? 'true' : 'false'}
