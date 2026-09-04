@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "appointments.availability.day_opening",
+  "description": "The date to ask about, and nothing else (appointments#105): the opening hours are read from the hub by the runtime (`reads`), never sent by the caller — hours a caller supplies are hours a caller can forge.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["date"],
+  "properties": {
+    "date": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+      "description": "The business's own calendar date (`2026-08-03`), the same key a special day or an override is written under. Not an instant: there is no clock to cross."
+    }
+  }
+}

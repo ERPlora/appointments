@@ -990,6 +990,36 @@
         "description": "Updates an existing appointment's details such as notes, duration, or assigned employee."
       }
     },
+    "appointments.availability.day_opening": {
+      "permission": "appointments.view_schedule",
+      "schema": "schemas/day_opening.json",
+      "handler": {
+        "type": "wasm",
+        "file": "dist/handler.wasm",
+        "function": "day_opening"
+      },
+      "reads": [
+        {
+          "query": "schedules.business_hours.list",
+          "required": true
+        },
+        {
+          "query": "schedules.special_days.list",
+          "required": true
+        },
+        {
+          "query": "schedules.overrides.list",
+          "required": true
+        },
+        {
+          "query": "schedules.exception_intervals.list",
+          "required": true
+        }
+      ],
+      "ai": {
+        "description": "Returns the stretches the business is open on a given date, exactly as the booking gate resolves them: the rules of the Schedules module with their precedence applied (exact special day, yearly special day, override range, weekly hours) and breaks carved out. `spans` are minutes from that date's own midnight and `source` says who answered — `schedules` when the authority resolved the date (an empty `spans` then means the business is shut that day), `own` when it carries no rule reaching the date and the module's legacy timetable still answers. Read-only: it writes nothing."
+      }
+    },
     "appointments.blocked_times.create": {
       "permission": "appointments.manage_schedule",
       "transaction": true,
