@@ -42,7 +42,13 @@ checks AS (
         CASE WHEN c.advance_days > 0
                   AND erp_date(w.s_start) > erp_date(erp_dateadd(:now, c.advance_days, 'days'))
              THEN 1 ELSE 0 END AS too_far,
-        CASE WHEN EXISTS (
+        -- 🔴 appointments#105 — `:schedules_answers` = 1 apaga este veredicto: la autoridad
+        -- (`schedules`, ADR-0392) ya ha resuelto la fecha y la puerta deja de consultar NUESTRAS
+        -- tablas, así que seguir contestando `outside_schedule` desde ellas es la pantalla
+        -- contradiciendo a la puerta. Ausente = el comportamiento de siempre (el hub que aún
+        -- guarda sus horas aquí). Detalle y motivo en `queries/availability_slots.sql`.
+        CASE WHEN COALESCE(CAST(:schedules_answers AS INTEGER), 0) = 0
+             AND EXISTS (
                  SELECT 1
                  FROM appointments_schedule_timeslot t
                  JOIN appointments_schedule sc ON sc.id = t.schedule_id AND sc.hub_id = :hub_id

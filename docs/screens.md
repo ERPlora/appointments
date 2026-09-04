@@ -88,6 +88,13 @@ cancelling — it keeps the record.
 > where the rest of the product asks whether the business is open. This screen is the module's own
 > older timetable: it still answers while Schedules has no rule at all, so a salon configured
 > before the change keeps working, and it is being retired in appointments#105.
+>
+> Since appointments#105 the **times a screen offers are the times the door accepts**: before
+> listing free slots, the booking panel asks the agenda which stretches the business is open on
+> that date and drops whatever falls outside them, so a salon whose hours live in Schedules is no
+> longer offered 10:00 and refused at 10:00. On a day Schedules closes, the panel says the business
+> is **closed** rather than that the diary is full — they are different problems and only one of
+> them is fixed by trying another professional.
 
 A schedule is a named availability template, with one or more **time slots** per weekday.
 

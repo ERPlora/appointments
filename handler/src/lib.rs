@@ -68,6 +68,12 @@ pub fn book_from_request(input: Json<erplora_guest_sdk::Input>) -> FnResult<Json
 
 #[cfg(feature = "guest")]
 #[plugin_fn]
+pub fn day_opening(input: Json<erplora_guest_sdk::Input>) -> FnResult<Json<Output>> {
+    guest_result(day_opening_pure(input.into_inner().into_value()))
+}
+
+#[cfg(feature = "guest")]
+#[plugin_fn]
 pub fn bulk_create(input: Json<erplora_guest_sdk::Input>) -> FnResult<Json<Output>> {
     guest_result(bulk_create_pure(input.into_inner().into_value()))
 }
@@ -1112,6 +1118,79 @@ fn legacy_timeslot_refusal(input: &Value, from: &WallStamp, to: &WallStamp) -> O
     }
     Some(outside_schedule())
 }
+
+/// A `YYYY-MM-DD` of the business calendar, at its own midnight. The screen asks about a DATE and
+/// not about an instant, so there is no clock to cross here: the date already IS the business's
+/// own, which is exactly the key a special day or an override is written under.
+fn wall_stamp_of_date(date: &str) -> Option<WallStamp> {
+    use chrono::Datelike;
+    let day = chrono::NaiveDate::parse_from_str(date.trim(), "%Y-%m-%d").ok()?;
+    Some(WallStamp {
+        // Re-formatted, never echoed: `2026-7-27` parses and would then match no rule at all.
+        date: day.format("%Y-%m-%d").to_string(),
+        dow: day.weekday().num_days_from_monday() as i64,
+        minute: 0,
+    })
+}
+
+/// The open stretches of ONE date, AS THE DOOR SEES THEM (appointments#105).
+///
+/// **Why a command and not a query.** `queries/availability_slots.sql` has filtered by the
+/// module's OWN `appointments_schedule_timeslot` since the beginning, and after appointments#102
+/// the door stopped asking those tables whenever `schedules` carries a rule. SQL cannot follow:
+/// a query of this module may only name this module's tables, so it cannot read `schedules_*` —
+/// and for the normal hub after #102 (hours in `schedules`, our timeslots empty) its filter
+/// matches nothing at all. The list offered 08:00 to a salon that opens at 10:00 and `create`
+/// refused it one click later with `appointments.outside_schedule`: the screen contradicting the
+/// door, which is the defect appointments#105 names.
+///
+/// **Why it does not resolve anything itself.** It runs [`schedules_opening`] — the very function
+/// the gate runs — for the date the screen is showing. There is no second implementation of
+/// ADR-0392's precedence to drift: whatever the door will accept is what comes back, and
+/// `day_opening_accepts_exactly_what_the_door_accepts` pins them together for good.
+///
+/// The answer says WHO answered, because the two cases need opposite things from the caller:
+///
+///   * `source: "schedules"` — the authority resolved the date. `spans` are the open stretches in
+///     minutes from the date's OWN midnight (past 1440 when a stretch crosses it, negative for
+///     the tail of the previous night), breaks already carved out, and an EMPTY list means the
+///     business is shut that day. The caller filters by them, and only by them;
+///   * `source: "own"` — `schedules` carries no rule that reaches the date, so the door falls
+///     back to our own timeslots and `availability_slots.sql` has ALREADY applied them. `spans`
+///     is empty and the caller must not filter again, or a hub that has not moved its hours yet
+///     would see its whole day disappear.
+///
+/// Read-only: it returns a `result` and never an operation. Missing read = refusal, never an open
+/// door — a screen that quietly stops filtering because a read went missing is the optimistic
+/// list all over again.
+pub fn day_opening_pure(input: Value) -> Result<Output, String> {
+    let payload = input.get("payload").cloned().unwrap_or(Value::Null);
+    let Some(at) = wall_stamp_of_date(&str_or(&payload, "date", "")) else {
+        return Ok(Output::new().with_error(DomainError::new(
+            "appointments.invalid_start",
+            "That date could not be read; the expected shape is YYYY-MM-DD.",
+        )));
+    };
+
+    let opening = match schedules_opening(&input, &at) {
+        Ok(opening) => opening,
+        Err(refusal) => return Ok(Output::new().with_error(refusal)),
+    };
+
+    let (source, spans) = match opening {
+        None => ("own", Vec::new()),
+        Some(DayOpening::Closed) => ("schedules", Vec::new()),
+        Some(DayOpening::Open(spans)) => (
+            "schedules",
+            spans
+                .iter()
+                .map(|s| json!({ "start_minute": s.start, "end_minute": s.end }))
+                .collect(),
+        ),
+    };
+    Ok(Output::new().with_result(json!({ "source": source, "spans": spans })))
+}
+
 
 /// The live slot holds this booking has to respect (appointments#69).
 ///
@@ -6970,5 +7049,186 @@ mod tests {
             .filter(|op| op.command.ends_with("_insert_appointment"))
             .count();
         assert_eq!(booked, 1, "only the Monday occurrence survives the holiday");
+    }
+
+    // ── appointments#105: the SCREEN asks the DOOR ──────────────────────────────────────────
+    //
+    // appointments#102 moved the opening-hours authority to `schedules` for every command that
+    // WRITES a slot, but `queries/availability_slots.sql` kept filtering by the module's OWN
+    // tables — which SQL cannot swap, because a query of this module may only name this module's
+    // tables. For the normal hub after #102 (hours in `schedules`, our timeslots empty) that
+    // filter matches nothing, so the list offered 08:00 to a salon that opens at 10:00 and
+    // `create` refused it a click later with `appointments.outside_schedule`.
+    //
+    // `day_opening` closes it without a second implementation of anything: it is the SAME
+    // `schedules_opening` the door runs, exposed for ONE date, so the screen filters by exactly
+    // what the gate will accept. `source` says who answered — `schedules` (filter by `spans`,
+    // empty = the date is shut) or `own` (the authority is silent, the SQL already applied our
+    // legacy timeslots and the screen must not filter again).
+
+    /// Minutes-from-midnight pairs of the answer, so a test reads like the span it means.
+    fn spans_of(out: &Output) -> Vec<(i64, i64)> {
+        out.result
+            .as_ref()
+            .and_then(|r| r.get("spans"))
+            .and_then(|v| v.as_array())
+            .expect("day_opening answers with spans")
+            .iter()
+            .map(|s| (as_i64(&s["start_minute"], -1), as_i64(&s["end_minute"], -1)))
+            .collect()
+    }
+
+    fn source_of(out: &Output) -> String {
+        out.result
+            .as_ref()
+            .and_then(|r| r.get("source"))
+            .map(as_str)
+            .unwrap_or_default()
+    }
+
+    fn day_opening_input(date: &str, reads: Value) -> Value {
+        json!({
+            "payload": { "date": date },
+            "context": { "hub_id": "h1", "now": "2026-07-01T08:00:00Z", "new_ids": [],
+                         "timezone": "Europe/Madrid", "reads": reads }
+        })
+    }
+
+    /// 2026-07-27 is a MONDAY. The authority opens 09:00–18:00, so that is what the screen has to
+    /// offer — in the same units the gate compares, minutes from the date's own midnight.
+    #[test]
+    fn day_opening_answers_the_stretches_schedules_resolves_for_the_date() {
+        let out = day_opening_pure(day_opening_input(
+            "2026-07-27",
+            sched_hours(sched_weekdays_nine_to_six()),
+        ))
+        .unwrap();
+        assert_eq!(source_of(&out), "schedules");
+        assert_eq!(spans_of(&out), vec![(9 * 60, 18 * 60)]);
+    }
+
+    /// A break is CLOSED time inside the stretch, so the day comes back in two pieces — the same
+    /// carving `schedule_refusal` does, which is why a booking that merely RUNS INTO the break
+    /// stops being offered instead of being offered and then refused.
+    #[test]
+    fn day_opening_carves_the_break_out_of_the_day() {
+        let hours = json!([json!({ "id": "bh-lunch", "day_of_week": 0, "position": 0,
+                                   "open_time": "09:00", "close_time": "18:00", "is_closed": 0,
+                                   "break_start": "14:00", "break_end": "16:00" })]);
+        let out = day_opening_pure(day_opening_input("2026-07-27", sched_hours(hours))).unwrap();
+        assert_eq!(spans_of(&out), vec![(9 * 60, 14 * 60), (16 * 60, 18 * 60)]);
+    }
+
+    /// The authority shuts the date (a closed special day). `source` still says `schedules` — the
+    /// screen has to show NO hours, which is a very different answer from «nobody said anything».
+    #[test]
+    fn day_opening_says_shut_with_no_stretches_when_the_authority_closes_the_date() {
+        let out = day_opening_pure(day_opening_input(
+            "2026-12-25",
+            with_schedules(
+                sched_weekdays_nine_to_six(),
+                json!([{ "id": "sd-xmas", "date": "2026-12-25", "name": "Navidad",
+                         "is_closed": 1, "recurring_yearly": 0 }]),
+                json!([]),
+                json!([]),
+            ),
+        ))
+        .unwrap();
+        assert_eq!(source_of(&out), "schedules");
+        assert_eq!(spans_of(&out), Vec::<(i64, i64)>::new());
+    }
+
+    /// `schedules` carries no rule that reaches the date: the door falls back to our own
+    /// timeslots and so does the SQL, so the screen must NOT filter a second time. Saying `own`
+    /// with no spans is what keeps a hub configured before #102 seeing exactly its own hours.
+    #[test]
+    fn day_opening_hands_the_date_back_when_the_authority_is_silent() {
+        let mut reads = with_schedules(json!([]), json!([]), json!([]), json!([]));
+        reads["appointments.schedules.active_timeslots"] = weekdays_nine_to_six();
+        let out = day_opening_pure(day_opening_input("2026-07-27", reads)).unwrap();
+        assert_eq!(source_of(&out), "own");
+        assert_eq!(spans_of(&out), Vec::<(i64, i64)>::new());
+    }
+
+    /// Missing read = refusal, never an open door — the same rule the gate obeys. A screen that
+    /// silently stops filtering because a read went missing is the optimistic list all over again.
+    #[test]
+    fn day_opening_refuses_when_a_schedules_read_is_missing() {
+        for missing in [
+            "schedules.business_hours.list",
+            "schedules.special_days.list",
+            "schedules.overrides.list",
+            "schedules.exception_intervals.list",
+        ] {
+            let mut reads = sched_hours(sched_weekdays_nine_to_six());
+            reads.as_object_mut().unwrap().remove(missing);
+            let out = day_opening_pure(day_opening_input("2026-07-27", reads)).unwrap();
+            assert_eq!(
+                domain_code(&out).as_deref(),
+                Some("appointments.availability_unavailable"),
+                "{missing} missing must refuse"
+            );
+        }
+    }
+
+    /// A date the handler cannot read is a refusal too, not «everything is open». The schema
+    /// already pins the shape at the door; this is the guard behind it.
+    #[test]
+    fn day_opening_refuses_a_date_it_cannot_read() {
+        for bad in ["", "tomorrow", "2026-13-40"] {
+            let out = day_opening_pure(day_opening_input(
+                bad,
+                sched_hours(sched_weekdays_nine_to_six()),
+            ))
+            .unwrap();
+            assert_eq!(
+                domain_code(&out).as_deref(),
+                Some("appointments.invalid_start"),
+                "`{bad}` must be refused"
+            );
+        }
+    }
+
+    /// 🔒 THE REGRESSION GUARD of appointments#105. The whole point of the command is that the
+    /// screen and the door cannot drift apart, so this walks a whole Monday half hour by half
+    /// hour and demands the SAME verdict from both: every window `day_opening` reports as inside
+    /// a stretch is one the gate lets through, and every one it leaves out is one the gate
+    /// refuses with `appointments.outside_schedule`. If somebody ever changes one side only, this
+    /// fails. The date is 2026-08-03 — a Monday AHEAD of the tests' `now`, so the only rule that
+    /// can speak here is the opening hours one.
+    #[test]
+    fn day_opening_accepts_exactly_what_the_door_accepts() {
+        let hours = json!([json!({ "id": "bh-lunch", "day_of_week": 0, "position": 0,
+                                   "open_time": "09:00", "close_time": "18:00", "is_closed": 0,
+                                   "break_start": "14:00", "break_end": "16:00" })]);
+        let reads = sched_hours(hours);
+        let spans =
+            spans_of(&day_opening_pure(day_opening_input("2026-08-03", reads.clone())).unwrap());
+        assert!(!spans.is_empty(), "the fixture has to open the day");
+
+        let mut offered_any = false;
+        for half_hour in 0..47 {
+            let start_min = half_hour * 30;
+            let end_min = start_min + 30;
+            let offered = spans
+                .iter()
+                .any(|(from, to)| *from <= start_min && end_min <= *to);
+            offered_any |= offered;
+
+            let at = format!(
+                "2026-08-03T{:02}:{:02}:00+02:00",
+                start_min / 60,
+                start_min % 60
+            );
+            let out =
+                create_appointment_pure(input(item(&at, 30, "s1"), Some(reads.clone()))).unwrap();
+            let shut = domain_code(&out).as_deref() == Some("appointments.outside_schedule");
+
+            assert_eq!(
+                offered, !shut,
+                "the screen and the door disagree at {at}: offered={offered}, gate shut={shut}"
+            );
+        }
+        assert!(offered_any, "a walk where nothing is ever offered proves nothing");
     }
 }

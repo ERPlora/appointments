@@ -114,6 +114,17 @@ closed time — an appointment that runs into it does not fit. Precedence, when 
 the same date: the special day of that exact date, then a yearly one, then an override covering the
 date, then the weekly hours. An overnight shift (20:00–02:00) holds a booking past midnight.
 
+**And the screen shows the same set** (appointments#105). The list of free slots used to be
+computed from this module's own older timetable, so a business whose hours had already moved to
+Schedules was offered times the door then refused — better than not refusing them at all, but the
+screen and the door disagreeing. The screen now asks the agenda for the open stretches of the date
+it is showing, resolved by exactly the function the door runs, and offers only slots that fit
+inside them: an appointment has to END before closing time, so the half slot that runs past it is
+not offered either. A day the authority closes is shown as **closed**, not as a full diary. If
+those hours cannot be read — a role without `appointments.view_schedule`, for instance — booking
+still works with the old, wider list; when the cause is a fault rather than a permission, the panel
+says so, because a list that has quietly stopped being checked looks exactly like one that was.
+
 While Schedules has no rule at all, the module's own older timetable still answers, so a salon
 configured before this change keeps exactly the gate it had. Retiring that second timetable is
 appointments#105.

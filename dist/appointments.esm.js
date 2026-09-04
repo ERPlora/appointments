@@ -1999,6 +1999,8 @@ var es_default = {
     bookingSlot: "Hora",
     bookingPick: "Elige\u2026",
     bookingNoSlots: "No hay hueco libre ese d\xEDa. Prueba otro d\xEDa u otro profesional.",
+    bookingDayClosed: "El negocio est\xE1 cerrado ese d\xEDa. Elige otra fecha.",
+    openingUnknown: "No se ha podido comprobar el horario de apertura, as\xED que puede que alguna de estas horas se rechace.",
     bookingConfirm: "Aprobar y reservar",
     bookingCancel: "Cancelar",
     errLoadSlots: "No se han podido leer los huecos libres",
@@ -2220,6 +2222,8 @@ var en_default = {
     bookingSlot: "Time",
     bookingPick: "Choose\u2026",
     bookingNoSlots: "No free time that day. Try another day or another professional.",
+    bookingDayClosed: "The business is closed that day. Pick another date.",
+    openingUnknown: "The opening hours could not be checked, so some of these times may be turned down.",
     bookingConfirm: "Approve and book",
     bookingCancel: "Cancel",
     errLoadSlots: "Could not read the free slots",
@@ -3936,6 +3940,7 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
       (a3) => {
         const loading = a3.loading?.(row) === true;
         const disabled = loading || a3.disabled?.(row) === true;
+        const label = typeof a3.label === "function" ? a3.label(row) : a3.label;
         return b2`
             <ion-button
               size="small"
@@ -3943,11 +3948,11 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
               color=${a3.color ?? "medium"}
               ?disabled=${disabled}
               aria-disabled=${disabled ? "true" : A}
-              aria-label=${a3.label}
-              title=${a3.label}
+              aria-label=${label}
+              title=${label}
               @click=${() => this.emit("rowAction", { actionId: a3.id, row })}
             >
-              ${loading ? b2`<ion-spinner slot="icon-only" name="dots"></ion-spinner>` : a3.icon ? b2`<ion-icon slot="icon-only" .icon=${okIcon(a3.icon)}></ion-icon>` : a3.label}
+              ${loading ? b2`<ion-spinner slot="icon-only" name="dots"></ion-spinner>` : a3.icon ? b2`<ion-icon slot="icon-only" .icon=${okIcon(a3.icon)}></ion-icon>` : label}
             </ion-button>
           `;
       }
@@ -6905,6 +6910,17 @@ function can(permission) {
   const client = erplora4();
   return typeof client.hasPermission === "function" ? client.hasPermission(permission) : true;
 }
+function minuteOfDay(hhmm) {
+  const m4 = /^(\d{1,2}):(\d{2})$/.exec(typeof hhmm === "string" ? hhmm : "");
+  if (!m4) return null;
+  return Number(m4[1]) * 60 + Number(m4[2]);
+}
+function insideOpening(slot, spans) {
+  const start = minuteOfDay(slot.start_time);
+  const end = minuteOfDay(slot.end_time);
+  if (start === null || end === null) return false;
+  return spans.some((s5) => Number(s5.start_minute) <= start && end <= Number(s5.end_minute));
+}
 function rows4(r6) {
   if (Array.isArray(r6)) return r6;
   if (r6 && typeof r6 === "object" && Array.isArray(r6.rows)) return r6.rows;
@@ -6925,6 +6941,8 @@ var ErpAppointmentsRequestBooking = class extends i3 {
     this.staffId = "";
     this.date = today();
     this.slots = [];
+    this.dayClosed = false;
+    this.openingUnknown = false;
     this.startDatetime = "";
     this.busy = false;
     this.error = "";
@@ -7059,15 +7077,55 @@ var ErpAppointmentsRequestBooking = class extends i3 {
     this.customerId = c5.id;
     this.customerLabel = c5.name;
   }
-  /** Free slots RIGHT NOW, from the hub's own availability engine. The market's hard rule: what a
-   *  person can pick has to be free at the moment they pick it, not when the message arrived. */
+  /**
+   * The stretches the business is open on `this.date`, asked of THE DOOR ITSELF (appointments#105).
+   *
+   * Since appointments#102 the authority over the business's hours is `schedules`, and the gate
+   * (`appointments.appointments.create`) resolves the date through its precedence (ADR-0392).
+   * `availability_slots.sql` cannot follow: a module's query may only name that module's tables,
+   * so `schedules_*` is closed to it by contract. For the hub that has already moved its hours the
+   * list was therefore OPTIMISTIC — it offered 10:00 to a salon that opens at 11:00 and `create`
+   * refused it one click later with `appointments.outside_schedule`.
+   *
+   * This does NOT re-implement that precedence in TypeScript. A second authority is the disease,
+   * not the cure: it asks `appointments.availability.day_opening`, which runs the very function
+   * the gate runs, and filters by what comes back. Read-only, so it writes nothing.
+   *
+   * Returns the spans to filter by, or `null` for «do not filter»:
+   *   * `[]` — the authority resolved the date and the business is SHUT. Zero slots, on purpose;
+   *   * `null` — either the authority carries no rule reaching the date (`source: "own"`, and the
+   *     SQL has already applied the module's own timetable, so filtering again would erase the
+   *     whole day for a hub that has not migrated), or it could not be asked at all.
+   */
+  async askDayOpening() {
+    this.openingUnknown = false;
+    if (!can("appointments.view_schedule")) return null;
+    try {
+      const answer = await erplora4().command(
+        "appointments.availability.day_opening",
+        { date: this.date }
+      );
+      if (!answer || answer.source !== "schedules") return null;
+      return Array.isArray(answer.spans) ? answer.spans : [];
+    } catch (e5) {
+      if (e5?.code !== "permission_denied") this.openingUnknown = true;
+      return null;
+    }
+  }
+  /** Free slots RIGHT NOW, from the hub's own availability engine, narrowed to what the door will
+   *  actually accept. The market's hard rule: what a person can pick has to be free at the moment
+   *  they pick it, not when the message arrived — and it has to be bookable, not just free. */
   async loadSlots() {
     this.startDatetime = "";
     if (!this.date) {
       this.slots = [];
+      this.dayClosed = false;
+      this.openingUnknown = false;
       return;
     }
     const service = this.services.find((s5) => s5.id === this.serviceId);
+    const opening = await this.askDayOpening();
+    this.dayClosed = opening !== null && opening.length === 0;
     try {
       const result = await erplora4().query("appointments.availability.slots", {
         date: this.date,
@@ -7076,9 +7134,14 @@ var ErpAppointmentsRequestBooking = class extends i3 {
         // appointments#69: every hold hides its slot from this list — ours would hide the very
         // time we just took, which is the one moment a hold must NOT block anyone. Same role as
         // `exclude_appointment_id` when moving an appointment off its own slot.
-        exclude_hold_ref: this.open?.request_id
+        exclude_hold_ref: this.open?.request_id,
+        // Sent ONLY when the authority answered, and it means «I already have the hours, stop
+        // filtering by the module's own timetable». Sending it with nothing to filter by would
+        // hand back the whole calendar; leaving it out keeps the query exactly as it was.
+        ...opening !== null ? { schedules_answers: 1 } : {}
       });
-      this.slots = rows4(result);
+      const free = rows4(result);
+      this.slots = opening !== null ? free.filter((s5) => insideOpening(s5, opening)) : free;
     } catch (e5) {
       this.slots = [];
       this.error = e5 instanceof Error ? e5.message : erplora4().t(CATALOG4, "ui.errLoadSlots");
@@ -7269,7 +7332,8 @@ var ErpAppointmentsRequestBooking = class extends i3 {
         <label>${t5("ui.bookingSlot")}</label>
         ${this.holdUntil ? b2`<p class="hold">${t5("ui.holdCountdown").replace("{mins}", String(Math.floor(this.holdLeft / 6e4))).replace("{secs}", String(Math.floor(this.holdLeft % 6e4 / 1e3)).padStart(2, "0"))}</p>` : A}
         ${this.holdExpired ? b2`<ok-inline-feedback tone="warning" icon="time-outline">${t5("ui.holdExpired")}</ok-inline-feedback>` : A}
-        ${this.slots.length === 0 ? b2`<p class="said">${t5("ui.bookingNoSlots")}</p>` : b2`<div class="slots">
+        ${this.openingUnknown ? b2`<ok-inline-feedback tone="warning" icon="alert-circle-outline">${t5("ui.openingUnknown")}</ok-inline-feedback>` : A}
+        ${this.slots.length === 0 ? b2`<p class="said">${t5(this.dayClosed ? "ui.bookingDayClosed" : "ui.bookingNoSlots")}</p>` : b2`<div class="slots">
               ${this.slots.map((s5) => b2`<button type="button" class="slot"
                 aria-pressed=${this.startDatetime === s5.slot_start ? "true" : "false"}
                 @click=${() => {
@@ -7321,6 +7385,12 @@ __decorateClass([
 __decorateClass([
   r5()
 ], ErpAppointmentsRequestBooking.prototype, "slots", 2);
+__decorateClass([
+  r5()
+], ErpAppointmentsRequestBooking.prototype, "dayClosed", 2);
+__decorateClass([
+  r5()
+], ErpAppointmentsRequestBooking.prototype, "openingUnknown", 2);
 __decorateClass([
   r5()
 ], ErpAppointmentsRequestBooking.prototype, "startDatetime", 2);

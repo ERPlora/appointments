@@ -100,8 +100,25 @@ WHERE
     AND (cfg.advance_days = 0
          OR erp_date(:date) <= erp_date(erp_dateadd(:now, cfg.advance_days, 'days')))
     -- dentro de un tramo activo del horario (si el hub tiene horarios configurados)
+    --
+    -- 🔴 appointments#105 — QUIÉN MANDA EN EL HORARIO. Estas tablas son las NUESTRAS, y desde
+    -- appointments#102 la puerta solo las consulta mientras `schedules` —la autoridad del
+    -- horario del negocio (ADR-0392)— no tenga ninguna regla que alcance la fecha. Esta query no
+    -- puede seguir esa precedencia por sí sola: una query de este módulo solo puede nombrar
+    -- tablas de este módulo, así que `schedules_*` le está vedado por contrato. Resultado: para
+    -- el hub normal de después de #102 (horas en `schedules`, nuestros tramos vacíos) este filtro
+    -- no casaba con nada y la lista ofrecía las 08:00 a un salón que abre a las 10:00 — y
+    -- `create` la rechazaba un clic después con `appointments.outside_schedule`.
+    -- `:schedules_answers` es el crucero: lo pone a 1 quien ya ha preguntado a
+    -- `appointments.availability.day_opening` y ha recibido `source = "schedules"`, y entonces
+    -- este filtro se APAGA por el mismo motivo por el que lo apaga la puerta — el consumidor
+    -- filtra por los tramos que le devolvió la propia puerta. Ausente (NULL, que es como llega
+    -- un bind que nadie manda) = el comportamiento de siempre, que es lo que sostiene al hub que
+    -- todavía guarda sus horas aquí. El CAST no es estilo: sin él Postgres no puede fijar el tipo
+    -- del bind y el PREPARE muere con 42P08, igual que ya pasó con `:staff_id`.
     AND (
-        NOT EXISTS (
+        COALESCE(CAST(:schedules_answers AS INTEGER), 0) = 1
+        OR NOT EXISTS (
             SELECT 1
             FROM appointments_schedule_timeslot t
             JOIN appointments_schedule sc ON sc.id = t.schedule_id AND sc.hub_id = :hub_id

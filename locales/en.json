@@ -115,6 +115,8 @@
     "bookingSlot": "Time",
     "bookingPick": "Choose…",
     "bookingNoSlots": "No free time that day. Try another day or another professional.",
+    "bookingDayClosed": "The business is closed that day. Pick another date.",
+    "openingUnknown": "The opening hours could not be checked, so some of these times may be turned down.",
     "bookingConfirm": "Approve and book",
     "bookingCancel": "Cancel",
     "errLoadSlots": "Could not read the free slots",
