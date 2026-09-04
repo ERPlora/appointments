@@ -10,7 +10,7 @@
 | `appointments.cannot_cancel` | It is already finished, cancelled or a no-show | Nothing to cancel |
 | `appointments.cannot_mark_no_show` | Its state does not allow it | Check the state |
 | Slot not available — `overlap` | That professional is already booked | Pick another time or another professional |
-| Slot not available — `outside_schedule` | You are not open then — your **Schedules** hours, special days and overrides, read on the business clock and refused by every door, not just the screen | Fix it in **Schedules** (a bank holiday there closes the agenda too); a hub with no hours anywhere still books at any hour |
+| Slot not available — `outside_schedule` | You are not open then — your **Schedules** hours, special days and overrides, read on the business clock and refused by every door, not just the screen. Since appointments#105 the booking screen no longer offers those times at all | Fix it in **Schedules** (a bank holiday there closes the agenda too); a hub with no hours anywhere still books at any hour |
 | Slot not available — `blocked` | Holiday, vacation, break or maintenance | Remove the block or book elsewhere |
 | Slot not available — `too_soon` / `too_far` | Breaks the minimum notice or the maximum advance | Adjust the booking or the settings |
 | Slot not available — `invalid_start` | The start is in the past or malformed | Pick a valid future time |
