@@ -49,6 +49,26 @@ their truth from somewhere other than the prose they judge:
     an operation that actually reads it. An operation that just points elsewhere names the exact
     operation (`schedules.business_hours.list`), which is what the assistant can act on anyway.
 
+AND IT HAS TO MATCH FOR BOTH QUERIES, NOT ONE (appointments#124). Those two checks closed the door
+the bug came through and left the one next to it open. The first only looked at a query that
+answers with a reason, and only `availability_check.sql` carries a `CASE ... END AS reason`, so the
+sister query — the one that lists the free slots of a day — could be told again that it answers
+`outside_schedule` and stay green. The second only fired on the word `schedules`, so the same lie
+written as «crossing the business opening hours» went straight past it.
+
+Both are closed here, and neither by adding words to a blacklist:
+
+  * every query is judged, with «returns no reason at all» as the empty answer of one that has no
+    `reason` column. A word only counts when it is written as a CODE — snake_case anywhere, or a
+    one-word code in backticks — because `blocked`, `overlap` and `held` are also English, and
+    judging those by the bare word turns four honest descriptions of this manifest red;
+  * and the paraphrase is answered with a DUTY instead of a blacklist: an `appointments.availability.*`
+    operation that does not read the authority has to name `appointments.availability.day_opening`
+    in its description. Rewriting the description into a claim of knowing the hours takes the
+    pointer out with it, whatever words the claim is made of — and a pointer is what the assistant
+    can act on anyway. Watching for English synonyms of «opening hours» is the option NOT taken:
+    that list rots on its own and goes quiet when it does (appointments#125).
+
 Usage: tests/hours_single_source.contract.test.py   (exit 0 = green)
 """
 
@@ -268,6 +288,12 @@ HANDLER_REFUSAL = re.compile(r'"appointments\.([a-z_][a-z0-9_]*)"')
 # A referral names the operation the caller should ask instead: `schedules.business_hours.list`.
 QUALIFIED_AUTHORITY = re.compile(r"\bschedules\.[a-z_]+\.[a-z_]+")
 
+# Every operation of this module that answers «can this be booked» (appointments#124).
+AVAILABILITY = "appointments.availability."
+# The only one of them that really knows the opening hours: it reads the authority and hands the
+# answer over. Whoever cannot do that has to point the assistant here by name.
+DAY_OPENING = "appointments.availability.day_opening"
+
 
 def emitted_reasons(sql: str) -> set[str]:
     """The words a statement's `CASE ... END AS reason` can actually produce. Comments are already
@@ -288,6 +314,22 @@ def handler_refusals() -> set[str]:
 
 def describes(spec: dict) -> str:
     return ((spec.get("ai") or {}).get("description") or "")
+
+
+def promised_as_a_code(word: str, description: str) -> bool:
+    """Is `word` offered to the assistant as a REASON CODE, or is it just English?
+
+    A code carrying an underscore (`outside_schedule`, `too_soon`, `slot_on_hold`) is not something
+    anybody writes by accident: any occurrence of it is a promise. A one-word code is a different
+    animal — `blocked`, `overlap` and `held` are ordinary English, and `blocked_times.list` saying
+    it «lists blocked time periods» describes what it does, it does not claim to answer `blocked`.
+    Judging those by the bare word turns four honest descriptions red (measured on this manifest,
+    appointments#124), which is how a guard gets its assertions loosened until it holds nothing.
+    So a one-word code only counts when it is written AS code, in backticks.
+    """
+    if "_" in word:
+        return re.search(rf"\b{re.escape(word)}\b", description) is not None
+    return f"`{word}`" in description
 
 
 def reads_the_authority(name: str, spec: dict) -> bool:
@@ -379,30 +421,113 @@ def check_the_reason_readers_find_the_positive() -> None:
             "reads the table plans a screen around a reason the engine never sends"
         )
 
+    # appointments#124 — the reason check now judges the queries with NO `reason` column, so the
+    # word reader decides everything and the extension has to have something to reach.
+    if not promised_as_a_code("outside_schedule", "closed hours come back as outside_schedule"):
+        fail(
+            "the code reader does not see a snake_case code written in plain prose: the check "
+            "would pass on the very description appointments#118 had to fix"
+        )
+    if promised_as_a_code("blocked", "lists blocked time periods (holidays, vacations)"):
+        fail(
+            "the code reader reads the English word «blocked» as the code `blocked`: it would "
+            "turn the honest description of `blocked_times.list` red and get itself loosened"
+        )
+    if not promised_as_a_code("blocked", "answers `blocked` when the slot is taken"):
+        fail(
+            "the code reader does not see a one-word code written in backticks: a query with no "
+            "`reason` column could promise `blocked` and `held` with nothing to stop it"
+        )
+    if not [n for n, spec in MANIFEST.get("queries", {}).items() if not emitted_reasons(sql_of(spec))]:
+        fail(
+            "every query of the manifest emits a reason: judging the ones that do not is then a "
+            "no-op, and the hole appointments#124 closed would reopen unnoticed"
+        )
+
+    # …and the pointer check has to be judging real operations on both sides of its exemption.
+    availability = {
+        n: spec
+        for block in ("queries", "commands")
+        for n, spec in MANIFEST.get(block, {}).items()
+        if n.startswith(AVAILABILITY)
+    }
+    if not [n for n, spec in availability.items() if not reads_the_authority(n, spec)]:
+        fail(
+            f"no `{AVAILABILITY}*` operation is judged by the pointer check: every one of them "
+            "reads the authority, so the check passes without looking at a single description"
+        )
+    if not [n for n, spec in availability.items() if reads_the_authority(n, spec)]:
+        fail(
+            f"no `{AVAILABILITY}*` operation reads the authority: the exemption of the pointer "
+            f"check is never taken, so it has never been shown to spare `{DAY_OPENING}`"
+        )
+
 
 def check_the_assistant_is_not_promised_a_reason_the_query_cannot_return() -> None:
     """appointments#118 — the assistant builds its tools from the manifest (ADR-0033). A reason word
     in an `ai.description` that the statement's own `CASE` cannot produce is a false belief we
-    planted: it is exactly what appointments#122 describes, only sourced from us."""
+    planted: it is exactly what appointments#122 describes, only sourced from us.
+
+    EVERY query is judged, not only the ones that answer with a reason (appointments#124). The
+    first version skipped a query with no `CASE ... END AS reason` on the grounds that it makes no
+    promise of this shape — but that is backwards: a query that cannot return ANY reason is the one
+    with the most to promise falsely, and it was the hole the bug walked back through. Only
+    `availability_check.sql` carries a `CASE`, so «all the queries with a reason column» meant ONE:
+    the sister query could be told again that it answers `outside_schedule` and stay green. A query
+    with no reason column now carries the empty list as its answer, and every code in the
+    vocabulary is forbidden to it.
+    """
     vocabulary = handler_refusals()
+    for spec in MANIFEST.get("queries", {}).values():
+        vocabulary |= emitted_reasons(sql_of(spec))
     for name, spec in sorted(MANIFEST.get("queries", {}).items()):
         can_return = emitted_reasons(sql_of(spec))
-        if not can_return:
-            continue  # no `reason` column: there is no promise of this shape to keep
-        vocabulary |= can_return
-    for name, spec in sorted(MANIFEST.get("queries", {}).items()):
-        can_return = emitted_reasons(sql_of(spec))
-        if not can_return:
-            continue
         description = describes(spec)
         for word in sorted(vocabulary - can_return):
-            if re.search(rf"\b{re.escape(word)}\b", description):
-                fail(
-                    f"`{name}` tells the assistant it answers `{word}`, but its `CASE ... END AS "
-                    f"reason` can only return {sorted(can_return)}. The tool description is the "
-                    "contract the assistant plans with, so it will ask this query about something "
-                    "it cannot see and read the empty answer as «fine»"
-                )
+            if not promised_as_a_code(word, description):
+                continue
+            answers = (
+                f"its `CASE ... END AS reason` can only return {sorted(can_return)}"
+                if can_return
+                else "it has no `reason` column at all, so it can return none"
+            )
+            fail(
+                f"`{name}` tells the assistant it answers `{word}`, but {answers}. The tool "
+                "description is the contract the assistant plans with, so it will ask this query "
+                "about something it cannot see and read the empty answer as «fine»"
+            )
+
+
+def check_every_availability_answer_points_at_the_authority() -> None:
+    """appointments#124 — the half that a paraphrase used to walk around.
+
+    Forbidding the claim «we cross `schedules`» only holds while the claim is spelled the way the
+    check spells it. «crossing the business opening hours» is the same lie in words the check never
+    had, and it stayed green; going after the synonyms means maintaining a blacklist of English,
+    which rots on its own and fails silently when it does.
+
+    The duty does not rot. An availability answer that does not read the authority has to hand the
+    assistant the operation that does, by name. A paraphrase is then no longer a hole: whoever
+    rewrites the description into a claim of knowing the hours takes the pointer out with it — and
+    if they leave it in, the assistant still has the operation to ask, which is the thing it can
+    actually act on.
+    """
+    for block in ("queries", "commands"):
+        for name, spec in sorted(MANIFEST.get(block, {}).items()):
+            if not name.startswith(AVAILABILITY):
+                continue
+            if reads_the_authority(name, spec):
+                continue
+            if DAY_OPENING in describes(spec):
+                continue
+            fail(
+                f"`{name}` answers about availability without reading the opening hours and "
+                f"without telling the assistant to ask `{DAY_OPENING}`. Since appointments#118 "
+                "nothing of this module's SQL knows when the business is open, so an answer of "
+                "this family either reads the authority or points at the operation that does — "
+                "otherwise the assistant reads «free» as «open» and offers an hour with the "
+                "shutters down"
+            )
 
 
 def check_the_assistant_is_not_told_we_cross_the_hours_authority() -> None:
@@ -438,6 +563,7 @@ def main() -> int:
     check_the_reason_readers_find_the_positive()
     check_the_assistant_is_not_promised_a_reason_the_query_cannot_return()
     check_the_assistant_is_not_told_we_cross_the_hours_authority()
+    check_every_availability_answer_points_at_the_authority()
     if failures:
         print(f"FAIL ({len(failures)}):")
         for f in sorted(set(failures)):
