@@ -304,20 +304,43 @@ QUALIFIED_AUTHORITY = re.compile(r"\bschedules\.[a-z_]+\.[a-z_]+")
 # answer over. Whoever cannot do that has to point the assistant here by name.
 DAY_OPENING = "appointments.availability.day_opening"
 
-# WHAT MAKES AN OPERATION AN AVAILABILITY ANSWER (appointments#125). Not its name. Until this issue
-# the family was `name.startswith("appointments.availability.")`, so the very same answer published
-# under another name owed nothing at all — measured: `appointments.booking.free_hours`, the SQL of
-# `slots` word for word and no pointer, was green. A name is a label the author chooses; these two
-# are what the operation DOES, and they are the manifest's own contract:
-#   · it crosses the booking calendar — what is already booked AND what is blocked out. Reading one
-#     of the two is ordinary (`appointments.appointments.conflicting` reads bookings,
-#     `appointments.blocked_times.list` reads blocks); crossing BOTH is how «when can this be
-#     booked» is computed, whatever the operation is called.
-#   · it asks for the READ permission of the schedule surface. A booking action asks for
-#     `add_appointment`/`change_appointment` instead: the door ENFORCES the hours and refuses, it
-#     does not hand the assistant an answer about them, so its description is a different contract.
+# WHAT MAKES AN OPERATION AN AVAILABILITY ANSWER. Not its name (appointments#125) and not its
+# permission (appointments#131). Both of those are labels the author of the operation picks, and
+# both have been measured letting the very same answer out of this contract:
+#   · #125 — the family was `name.startswith("appointments.availability.")`, so the SQL of `slots`
+#     word for word, republished as `appointments.booking.free_hours` with no pointer, was green.
+#   · #131 — the family then still opened with `spec["permission"] != ANSWER_PERMISSION`, so that
+#     same republished answer went green again just by asking for `view_appointment` instead. It
+#     could claim to cross the opening hours and drop the pointer, and nothing fired.
+# What is left is what the operation DOES, and each half is the manifest's or the handler's own
+# contract rather than a word:
+#   · it does not CHANGE anything — see `changes_anything`. This is the half that keeps the booking
+#     door out. The door reads the very same hours, but it ENFORCES them and refuses; it does not
+#     hand the assistant an answer about them, so its description is a different contract. Writing
+#     is not something an author can mislabel: to write, an operation has to emit an event, run
+#     writing SQL, or hand the host an `Operation`.
+#   · it crosses the booking calendar — what is already booked AND what is blocked out — or it
+#     reads the hours authority. Reading one of the two calendar tables is ordinary
+#     (`appointments.appointments.conflicting` reads bookings, `appointments.blocked_times.list`
+#     reads blocks); crossing BOTH is how «when can this be booked» is computed, whatever the
+#     operation is called.
 BOOKING_CALENDAR = ("appointments_appointment", "appointments_blocked_time")
+# Kept as the probe the readers below plant with: the point of appointments#131 is that publishing
+# an answer with any OTHER permission — or a door with THIS one — changes nothing about the family.
 ANSWER_PERMISSION = "appointments.view_schedule"
+
+# HOW A HANDLER OPERATION WRITES. This module changes nothing except through an `Operation` the
+# handler hands back to the host — SQL of this module that the runtime validates and runs in one
+# transaction (the header of `handler/src/lib.rs` states the contract). So «does this handler
+# write» is answerable from the Rust itself, without believing a label: to write, the function has
+# to name the type, or call something that does.
+HANDLER_WRITE_MARKER = re.compile(r"\bOperation\b")
+RUST_FN = re.compile(r"^(?:pub )?fn ([a-z_][a-z0-9_]*)", re.MULTILINE)
+RUST_CALL = re.compile(r"\b([a-z_][a-z0-9_]*)\s*\(")
+# Everything from here down is the handler's own unit tests. They build `Operation`s by the dozen,
+# and without the cut they would be swallowed into the last production function's text and make
+# every single handler a writer — which would empty the family in SILENCE.
+RUST_TESTS = "\n#[cfg(test)]\n"
 
 # How an `ai.description` talks about the hours the business keeps.
 #
@@ -405,6 +428,66 @@ def declared_reads(spec: dict) -> list[str]:
     return out
 
 
+def handler_functions(source: str) -> dict[str, str]:
+    """Every top-level `fn` of the handler's PRODUCTION Rust, mapped to its own text."""
+    cut = source.find(RUST_TESTS)
+    body = source if cut == -1 else source[:cut]
+    marks = [(m.start(), m.group(1)) for m in RUST_FN.finditer(body)]
+    return {
+        name: body[start : (marks[i + 1][0] if i + 1 < len(marks) else len(body))]
+        for i, (start, name) in enumerate(marks)
+    }
+
+
+def handler_writers(source: str) -> set[str]:
+    """The handler functions that can end up producing an `Operation`, calls to itself included.
+
+    Deliberately over-approximating: a function that so much as NAMES the type counts, and so does
+    anything that can reach one. The two errors are not symmetrical. A writer mistaken for a reader
+    would walk a booking door into the family of answers and the guard would never say so; a reader
+    mistaken for a writer drops one of the four answers and turns
+    `check_the_family_and_the_hours_reader_find_the_positive` RED, by name. Loud is the direction
+    this file chooses every time.
+    """
+    bodies = handler_functions(source)
+    calls = {
+        fn: {c for c in RUST_CALL.findall(text) if c in bodies and c != fn}
+        for fn, text in bodies.items()
+    }
+    writers = {fn for fn, text in bodies.items() if HANDLER_WRITE_MARKER.search(text)}
+    growing = True
+    while growing:
+        growing = False
+        for fn, callees in calls.items():
+            if fn not in writers and callees & writers:
+                writers.add(fn)
+                growing = True
+    return writers
+
+
+HANDLER_SOURCE = HANDLER.read_text() if HANDLER.is_file() else ""
+HANDLER_FUNCTIONS = handler_functions(HANDLER_SOURCE)
+HANDLER_WRITERS = handler_writers(HANDLER_SOURCE)
+
+
+def handler_function(spec: dict) -> str:
+    return str((spec.get("handler") or {}).get("function") or "")
+
+
+def changes_anything(spec: dict) -> bool:
+    """Can this operation change what the hub holds? The three ways this module has of doing it.
+
+    A handler whose function cannot be found in the Rust counts as READ-ONLY on purpose, so the
+    operation lands in the family and its duties speak up, instead of being dropped without a word;
+    `check_every_handler_function_is_in_the_rust` is what says the name has moved.
+    """
+    if spec.get("emit"):
+        return True
+    if tables_written(sql_of(spec)):
+        return True
+    return handler_function(spec) in HANDLER_WRITERS
+
+
 def published(name: str):
     """The spec of an operation of THIS module, wherever the manifest publishes it."""
     for block in ("queries", "commands"):
@@ -421,10 +504,12 @@ def is_an_availability_answer(name: str, spec: dict, seen=None) -> bool:
       · it crosses the booking calendar itself (`slots`, `own_rules`);
       · it reads the hours authority and answers with them (`day_opening`);
       · it is a handler that takes its verdict from one of the above (`check`).
-    Everything asks for the read permission of the schedule surface: a booking door reads the very
-    same things and is deliberately NOT of this family — it refuses, it does not answer.
+    And all four only ANSWER: a booking door reads the very same things and is deliberately NOT of
+    this family — it enforces the hours and refuses, it does not hand the assistant a verdict about
+    them. Since appointments#131 that is measured as «it changes nothing», not as the permission it
+    asks for, because the permission is a label the publisher of the operation chooses.
     """
-    if spec.get("permission") != ANSWER_PERMISSION:
+    if changes_anything(spec):
         return False
     if set(BOOKING_CALENDAR) <= tables_read(sql_of(spec)):
         return True
@@ -766,6 +851,114 @@ def probe_operation(block: str, name: str):
     return spec
 
 
+# A handler written on purpose for the reader below: one function that only answers, two that
+# write (one of them only through a helper, which is how `create_appointment` does it), and a test
+# module underneath that names the type all over the place. Every shape the real file has.
+READ_ONLY_PROBE = """
+fn books() -> Output {
+    Output::new().with_operation(Operation::sql("appointments._insert_appointment", p))
+}
+
+fn books_through_a_helper() -> Output {
+    let mut out = Output::new();
+    for op in rows_to_write() {
+        out = out.with_operation(op);
+    }
+    out
+}
+
+fn rows_to_write() -> Vec<Operation> {
+    vec![Operation::sql("appointments._insert_appointment", p)]
+}
+
+fn answers() -> Output {
+    Output::new().with_result(json!({ "source": "schedules", "spans": spans }))
+}
+
+#[cfg(test)]
+mod tests {
+    fn insert_op(out: &Output) -> &Operation {
+        out.operations.first().unwrap()
+    }
+}
+"""
+
+
+def check_the_read_only_reader_finds_the_positive() -> None:
+    """appointments#131 — the family now turns on «this operation changes nothing», so that reader
+    is the thing holding the whole contract up. Plant every shape before any duty trusts it: a
+    reader that called everything a writer would empty the family in silence, and one that called
+    everything a reader would walk the booking door in.
+    """
+    writers = handler_writers(READ_ONLY_PROBE)
+    if "books" not in writers:
+        fail(
+            "the read-only reader does not see a handler that hands the host an `Operation`: every "
+            "booking door of this module would count as an availability answer"
+        )
+    if "books_through_a_helper" not in writers:
+        fail(
+            "the read-only reader only sees the write when the function makes it itself: "
+            "`create_appointment` builds its operations in `prepare_appointment`, so the door would "
+            "be read as read-only and join the family of answers"
+        )
+    if "answers" in writers:
+        fail(
+            "the read-only reader reads a handler that only returns a result AS a writer: "
+            "`appointments.availability.check` and `.day_opening` would fall out of the family and "
+            "owe nothing, which is the hole appointments#122 and #125 closed"
+        )
+    if "insert_op" in handler_functions(READ_ONLY_PROBE):
+        fail(
+            "the handler's own `#[cfg(test)]` module is being read as production code: its test "
+            "helpers name `Operation` everywhere, so every handler would come out a writer and the "
+            "availability family would be EMPTY — a green that means nothing was read"
+        )
+    # …and the real file is not an empty parse pretending to be a clean bill of health.
+    if len(HANDLER_FUNCTIONS) < 2 or not HANDLER_WRITERS:
+        fail(
+            f"`{HANDLER.name}` parsed into {len(HANDLER_FUNCTIONS)} functions and "
+            f"{len(HANDLER_WRITERS)} writers: the reader is not reading the handler at all, so "
+            "every operation with a handler would be judged read-only"
+        )
+
+    # …and the two ways of writing that no handler is involved in, each planted on a REAL operation
+    # of this manifest: SQL that writes, and an event that announces a change.
+    insert = probe_operation("commands", "appointments._insert_appointment")
+    confirm = probe_operation("commands", "appointments.appointments.confirm")
+    if insert is None or confirm is None:
+        return
+    if not changes_anything(insert):
+        fail(
+            "`appointments._insert_appointment` is read as read-only: writing SQL stops counting as "
+            "a change, so any statement that books, cancels or moves an appointment could join the "
+            "family of availability ANSWERS"
+        )
+    if not changes_anything({k: v for k, v in confirm.items() if k != "sql"}):
+        fail(
+            "an operation that emits `appointments.appointment.*` is read as read-only: announcing "
+            "a change would stop counting as changing anything, and an event-only command could "
+            "answer the assistant about the hours"
+        )
+
+
+def check_every_handler_function_is_in_the_rust() -> None:
+    """A handler operation names its Rust function in the manifest. If that name no longer resolves
+    the read-only reader has nothing to read, and `changes_anything` treats it as read-only on
+    purpose — loud is better than dropped. This is what says so by name.
+    """
+    for block in ("queries", "commands"):
+        for name, spec in sorted(MANIFEST.get(block, {}).items()):
+            fn = handler_function(spec)
+            if fn and fn not in HANDLER_FUNCTIONS:
+                fail(
+                    f"`{name}` declares the handler function `{fn}`, which is not a function of "
+                    f"`{HANDLER.name}`. Whether that operation writes cannot be read any more, so "
+                    "the availability family is guessing. Point the manifest at the function that "
+                    "replaced it"
+                )
+
+
 def check_the_family_and_the_hours_reader_find_the_positive() -> None:
     """appointments#125 — the two new readers are «X must be there» / «X must not be there». A
     family that matched nothing, or a `HOURS_TALK` that matched nothing, would hand out the greens
@@ -779,7 +972,10 @@ def check_the_family_and_the_hours_reader_find_the_positive() -> None:
     slots = probe_operation("queries", "appointments.availability.slots")
     door = probe_operation("commands", "appointments.appointments.create")
     single = probe_operation("queries", "appointments.appointments.conflicting")
-    if slots is None or door is None or single is None:
+    # The door that no label keeps out: it reads the hours authority, emits no event and runs no
+    # SQL of its own, so the ONLY thing that tells it from an answer is that its handler writes.
+    quiet_door = probe_operation("commands", "appointments.appointments.bulk_create")
+    if slots is None or door is None or single is None or quiet_door is None:
         return
 
     # …the family is what the operation DOES, so the same answer under any other name is in it.
@@ -796,17 +992,47 @@ def check_the_family_and_the_hours_reader_find_the_positive() -> None:
             "`appointments.appointments.conflicting` and `blocked_times.list` would owe a pointer "
             "they have no business owing, which is how a guard gets loosened until it holds nothing"
         )
-    # …the booking door reads the authority too, and is out for its permission, not by luck.
+    # …the booking door reads the authority too, and is out because it WRITES (appointments#131).
     if is_an_availability_answer("appointments.appointments.create", door):
         fail(
             "the booking door counts as an availability answer: it ENFORCES the hours and refuses, "
             "so it would be asked for a pointer to the operation it already reads"
         )
-    if not is_an_availability_answer("probe", {**door, "permission": ANSWER_PERMISSION}):
+    if is_an_availability_answer("probe", {**door, "permission": ANSWER_PERMISSION}):
         fail(
-            "the door is dropped by something other than its permission: the read-permission half "
-            "of the family test is not the thing doing the work its comment claims it does"
+            "the booking door published with the read permission of the schedule surface joins the "
+            "availability family: the door is being dropped by the permission its author chose and "
+            "not by what it does, so the whole family test turns on a label (appointments#131)"
         )
+    # …the two read-only handlers stay IN. A family that quietly shrinks is the dangerous
+    # direction of appointments#131: nobody would owe the pointer and nothing would say so.
+    for name in ("appointments.availability.check", "appointments.availability.day_opening"):
+        read_only_handler = probe_operation("commands", name)
+        if read_only_handler is not None and not is_an_availability_answer(name, read_only_handler):
+            fail(
+                f"`{name}` has dropped out of the availability family: it answers about the hours "
+                "with a handler that only returns a result, so reading it as a writer leaves the "
+                "assistant's own answer about the opening hours owing nothing at all"
+            )
+    # …and a door whose write only shows in the Rust is out for it, not for its permission.
+    if is_an_availability_answer("probe", {**quiet_door, "permission": ANSWER_PERMISSION}):
+        fail(
+            "`appointments.appointments.bulk_create` joins the availability family once its "
+            "permission stops being the discriminant: it emits no event and runs no SQL of its "
+            "own, so the reader over the handler's Rust is not doing the work `changes_anything` "
+            "claims it does, and a booking door would be asked to answer about the hours"
+        )
+    # …and the same ANSWER published with any other permission is still in the family: the label
+    # the author picks must not be able to take an operation out of the contract (appointments#131).
+    for foreign in ("appointments.view_appointment", "appointments.manage_schedule"):
+        republished = {**slots, "permission": foreign}
+        if not is_an_availability_answer("appointments.booking.free_hours", republished):
+            fail(
+                f"the SQL of `appointments.availability.slots` published with `{foreign}` leaves "
+                "the availability family: the very same answer under another permission would drop "
+                "the pointer duty and the disclaimer duty with it, and the assistant would go back "
+                "to reading «free» as «open» (appointments#131)"
+            )
 
     # …`HOURS_TALK` sees a claim about the hours, and does not fire on prose that makes none.
     claim = "It also crosses the business opening hours before returning them."
@@ -948,6 +1174,8 @@ def check_the_assistant_is_not_told_we_cross_the_hours_authority() -> None:
 
 def main() -> int:
     check_the_scanner_finds_the_positive()
+    check_the_read_only_reader_finds_the_positive()
+    check_every_handler_function_is_in_the_rust()
     check_no_published_operation_writes_the_hours()
     check_nobody_reads_the_hours()
     check_the_contract_migration_retires_the_tables()
