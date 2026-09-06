@@ -131,7 +131,7 @@
       {
         "file": "migrations/postgres/009_drop_own_timetable.sql",
         "kind": "contract",
-        "since": "1.1.66"
+        "since": "1.1.67"
       }
     ]
   },
