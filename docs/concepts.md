@@ -105,7 +105,9 @@ tables — cannot see them and answers about an hour you are shut as if it were 
 still fails, at the door, with the reason below.
 
 "No slots today" almost always means the opening hours of **Schedules** close that date, not
-that the day is full.
+that the day is full — the booking screen asks `appointments.availability.day_opening` and hides
+the slots outside what it answers, which is why the list can be empty on a day the engine above
+considers every hour free.
 
 These reasons are not only advice any more. `outside_schedule`, `blocked`, `too_soon`, `too_far`
 and `invalid_start` are **refused at the door**: whoever books — the screen, the assistant, a flow,
