@@ -908,7 +908,7 @@ def check_the_read_only_reader_finds_the_positive() -> None:
             "`appointments.availability.check` and `.day_opening` would fall out of the family and "
             "owe nothing, which is the hole appointments#122 and #125 closed"
         )
-    if "insert_op" in handler_functions(READ_ONLY_PROBE):
+    if "insert_op" in "".join(handler_functions(READ_ONLY_PROBE).values()):
         fail(
             "the handler's own `#[cfg(test)]` module is being read as production code: its test "
             "helpers name `Operation` everywhere, so every handler would come out a writer and the "
