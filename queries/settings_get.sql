@@ -13,7 +13,11 @@ SELECT id, default_duration, min_booking_notice, max_advance_booking,
        -- el valor guardado (si no, el formulario enseñaría el defecto del schema para siempre y
        -- guardarlo lo pisaría), y el panel de reserva necesita el mismo número para que la cuenta
        -- atrás en pantalla sea el reloj que de verdad está corriendo en el servidor.
-       hold_minutes
+       hold_minutes,
+       -- appointments#136: si la reserva que hace el propio cliente (online o por una
+       -- automatización) nace ya confirmada. La puerta de reservas lo lee de aquí y solo de aquí:
+       -- es la política del salón, no algo que el llamante pueda traer en el payload.
+       auto_confirm_online <> 0          AS auto_confirm_online
 FROM appointments_settings
 WHERE hub_id = :hub_id AND is_deleted = 0
 LIMIT 1;

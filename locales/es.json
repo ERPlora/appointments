@@ -45,6 +45,10 @@
       "hold_minutes": {
         "label": "Apartar el hueco durante (minutos)",
         "description": "Minutos que un hueco queda apartado mientras alguien decide sobre una solicitud de cita pendiente. 0 desactiva la reserva temporal."
+      },
+      "auto_confirm_online": {
+        "label": "Confirmar automáticamente las citas que reserva el cliente",
+        "description": "Cuando está activado, una cita que reserva el propio cliente —por internet o por una automatización como WhatsApp— se crea ya confirmada y nadie tiene que aceptarlas una a una. Desactívalo para revisarlas todas antes de darlas por buenas."
       }
     }
   },

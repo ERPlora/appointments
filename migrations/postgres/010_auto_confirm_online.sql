@@ -1,0 +1,28 @@
+-- 010_auto_confirm_online.sql — appointments#136: la cita que reservó el propio cliente NACE
+-- CONFIRMADA.
+--
+-- EL PROBLEMA. Toda cita nacía `pending` y alguien del salón tenía que pulsar «Confirmar», una por
+-- una — también las que el cliente ya se había reservado él mismo por internet o por WhatsApp. Para
+-- un negocio que quiere que el canal de WhatsApp funcione solo (whatsapp_inbox#58) eso es una
+-- persona en medio de CADA cita, que es justo lo que el canal existe para quitar. `reservations`
+-- (mesas) ya tenía su interruptor de confirmación automática; `appointments` no.
+--
+-- POR QUÉ NACE ENCENDIDA. En Fresha, Booksy y Square la reserva online se acepta sola por defecto y
+-- «revisar antes de aceptar» es la opción que el negocio ACTIVA si la quiere. El defecto es el
+-- comportamiento del mercado, y apagar el interruptor devuelve exactamente lo de antes.
+--
+-- POR QUÉ UNA COLUMNA Y NO UN ESTADO NUEVO. No hay transición nueva en el ciclo
+-- pending→confirmed→…: lo único que cambia es CON QUÉ ESTADO se inserta la fila. Un ajuste del
+-- singleton de `appointments_settings` es el sitio donde el salón ya configura su política de
+-- reservas (`allow_overlapping`, `hold_minutes`), y es el que la pantalla de Ajustes pinta sola
+-- desde el JSON Schema.
+--
+-- INTEGER 0/1 y no BOOLEAN: contrato de fila §2.5 / ADR-0007 — la DDL portable no tiene BOOLEAN.
+-- El viaje de ida y vuelta al JSON lo cierran `settings_get.sql` (proyecta `<> 0`) y el bind del
+-- runtime (`Json::Bool` → 0/1, hub#208), como el resto de los flags (appointments#79).
+--
+-- Los hubs que ya existen se quedan con el defecto encendido, que es la decisión de producto: un
+-- salón que hoy confirma a mano las reservas online empieza a no tener que hacerlo, y si prefería
+-- revisarlas lo apaga en su pantalla de Ajustes.
+ALTER TABLE appointments_settings
+    ADD COLUMN IF NOT EXISTS auto_confirm_online INTEGER NOT NULL DEFAULT 1;

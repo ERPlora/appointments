@@ -618,6 +618,51 @@ fn allow_overlapping_of(settings: &Value) -> bool {
         .unwrap_or(false)
 }
 
+/// Does this hub let a booking it did not type itself skip the manual review
+/// (appointments#136)?
+///
+/// Absent = ON, because that is what the column says (`NOT NULL DEFAULT 1`) and what the Settings
+/// screen shows (schema `default: true`). The one read that arrives without the key in production
+/// is the EMPTY one: a brand new hub has no settings row until somebody opens the Settings tab and
+/// saves, and [`settings_read`] hands `{}` over then — «falls to the DB defaults», its own words.
+/// That hub is precisely the salon that just installed the WhatsApp channel; reading the empty
+/// row as OFF would make its first bookings wait for a review the screen says is switched off,
+/// and nothing would tell anyone. Same rule as [`default_duration_of`] (60) and
+/// [`allow_overlapping_of`] (false): the fallback IS the column default, never a third value.
+fn auto_confirm_online_of(settings: &Value) -> bool {
+    settings
+        .get("auto_confirm_online")
+        .map(as_bool)
+        .unwrap_or(true)
+}
+
+/// Is this booking already committed by the person who made it, so that nobody at the salon has
+/// to press «Confirm»? (appointments#136)
+///
+/// Until this existed EVERY appointment was born `pending`, including the ones the customer had
+/// just booked herself — so a salon running the unattended WhatsApp channel (whatsapp_inbox#58)
+/// still had a person in the middle of every single booking, which is what the channel exists to
+/// remove. Fresha, Booksy and Square all accept an online booking automatically and make «review
+/// before accepting» the option a business turns ON, so that is the shape: the switch ships on and
+/// switching it off restores the old behaviour exactly.
+///
+/// **Two doors count, and only two.**
+/// - `booked_online` — the flag an online booking carries. It is the caller's claim, and it is
+///   the same claim the row has always stored; what is new is that the salon's own setting decides
+///   what to do with it.
+/// - a non-empty `request_id` in the payload, which is `_book_from_request` and nothing else:
+///   `appointment_create.json`, `appointment_bulk_create.json` and `recurring_materialize.json`
+///   are all `additionalProperties: false` and none of them declares one, so the marker cannot be
+///   forged through the doors a browser can reach. `tests/auto_confirm.contract.test.py` pins that.
+///
+/// Everything else — what the counter types, the occurrences a recurring series materialises — is
+/// the salon's own booking and keeps going through the salon's own review.
+fn born_confirmed(input: &Value, item: &Value, settings: &Value) -> bool {
+    auto_confirm_online_of(settings)
+        && (item.get("booked_online").map(as_bool).unwrap_or(false)
+            || !str_or(&payload_of(input), "request_id", "").is_empty())
+}
+
 fn default_duration_of(settings: &Value) -> i64 {
     settings
         .get("default_duration")
@@ -1746,7 +1791,15 @@ fn prepare_appointment(
     // this function already hands over the whole guest input, and one more parameter that four
     // call sites must remember to forward is one more place to forget it.
     let day = business_day_key(now, business_tz(input));
-    let mut ops: Vec<Operation> = Vec::with_capacity(3);
+    // appointments#136: the status the row is BORN with. Everything below writes THIS and not the
+    // literal `pending` that used to be spelled out twice — the row and its history line have to
+    // agree, and two literals is how they stop agreeing.
+    let status = if born_confirmed(input, item, settings) {
+        "confirmed"
+    } else {
+        "pending"
+    };
+    let mut ops: Vec<Operation> = Vec::with_capacity(4);
 
     let mut bump = Map::new();
     bump.insert("day".into(), json!(day));
@@ -1780,7 +1833,7 @@ fn prepare_appointment(
     p.insert("start_datetime".into(), json!(start.iso()));
     p.insert("end_datetime".into(), json!(end.iso()));
     p.insert("duration_minutes".into(), json!(duration));
-    p.insert("status".into(), json!("pending"));
+    p.insert("status".into(), json!(status));
     p.insert("notes".into(), json!(str_or(item, "notes", "")));
     p.insert(
         "internal_notes".into(),
@@ -1798,7 +1851,7 @@ fn prepare_appointment(
         "start_datetime": start.iso(),
         "end_datetime": end.iso(),
         "duration_minutes": duration,
-        "status": "pending",
+        "status": status,
     })
     .to_string();
     let mut h = Map::new();
@@ -1808,6 +1861,27 @@ fn prepare_appointment(
     h.insert("old_value".into(), Value::Null);
     h.insert("new_value".into(), json!(new_value));
     ops.push(Operation::sql("appointments._insert_history", h));
+
+    // appointments#136: a booking born confirmed leaves the SAME trail as one somebody confirmed
+    // by hand, so the audit trail does not give away where the appointment came from. `old_value`
+    // is NULL and not `{"status":"pending"}` — the row was never pending, and `_history_confirm.sql`
+    // (which does say that, correctly, because it runs behind an UPDATE off `pending`) would be
+    // inventing a transition that did not happen.
+    if status == "confirmed" {
+        let mut c = Map::new();
+        c.insert("appointment_id".into(), json!(appointment_id));
+        c.insert("action".into(), json!("confirmed"));
+        c.insert(
+            "description".into(),
+            json!("Appointment confirmed automatically when it was booked"),
+        );
+        c.insert("old_value".into(), Value::Null);
+        c.insert(
+            "new_value".into(),
+            json!(json!({ "status": "confirmed" }).to_string()),
+        );
+        ops.push(Operation::sql("appointments._insert_history", c));
+    }
 
     candidates.push(Candidate {
         start,
@@ -2134,12 +2208,26 @@ pub fn create_appointment_pure(input: Value) -> Result<Output, String> {
         Err(PrepareError::Domain(refusal)) => return Ok(Output::new().with_error(refusal)),
         Err(PrepareError::Invalid(detail)) => return Err(detail),
     };
+    // appointments#136: born confirmed ANNOUNCES it. `appointments.appointment.created` is emitted
+    // declaratively by the command (`emit` in module.json); the confirmation is CONDITIONAL, so it
+    // can only come from here. Whatever reacts to a confirmation — a reminder, an automation
+    // telling the customer «you are booked» — must not go blind to half the diary just because the
+    // confirmation happened at creation instead of a second later. The name is already declared in
+    // `events.emits`, which is what the runtime checks before queueing it (hub#240).
+    let events = if born_confirmed(&input, &payload, &settings) {
+        vec![erplora_guest_sdk::Event::new(
+            "appointments.appointment.confirmed",
+            json!({ "appointment_id": appointment_id }),
+        )]
+    } else {
+        vec![]
+    };
     // `..Default::default()` para que el literal compile contra LAS DOS formas de `Output`: la de
     // antes de hub#139 y la que ganó `error` (rechazo de dominio). Sin esto el handler deja de
     // compilar en cuanto el checkout del hub avanza, y nadie puede regenerar el wasm (pm#81).
     Ok(Output {
         operations: ops,
-        events: vec![],
+        events,
         ..Default::default()
     })
 }
@@ -2280,34 +2368,40 @@ pub fn book_from_request_pure(input: Value) -> Result<Output, String> {
     consume.insert("source_ref".into(), json!(request_id));
     operations.push(Operation::sql("appointments._hold_consume", consume));
 
+    let mut events = vec![
+        // A booking made through this door is a booking: whatever subscribes to new
+        // appointments (reminders, KPIs) must not go blind to half the diary because it
+        // arrived by WhatsApp.
+        erplora_guest_sdk::Event::new(
+            "appointments.appointment.created",
+            json!({
+                "appointment_id": appointment_id,
+                "customer_id": str_or(&payload, "customer_id", ""),
+                "service_id": str_or(&payload, "service_id", ""),
+                "staff_id": str_or(&payload, "staff_id", ""),
+                "start_datetime": str_or(&payload, "start_datetime", ""),
+                "request_id": request_id,
+            }),
+        ),
+    ];
+    // appointments#136: and the confirmation, when the salon asked for these to be confirmed on
+    // arrival. It is decided ONCE, by `create_appointment_pure` — carrying its events over instead
+    // of re-deciding here is what keeps the event and the `status` on the row from ever disagreeing.
+    events.extend(booked.events);
+    events.push(erplora_guest_sdk::Event::new(
+        BOOKING_FULFILLED,
+        json!({
+            "request_id": request_id,
+            "appointment_id": appointment_id,
+            // Who booked it. The asking module stores this as the link, so the answer is
+            // not hard-wired to one module: a table reservation would answer the same way.
+            "module": "appointments",
+        }),
+    ));
+
     Ok(Output {
         operations,
-        events: vec![
-            // A booking made through this door is a booking: whatever subscribes to new
-            // appointments (reminders, KPIs) must not go blind to half the diary because it
-            // arrived by WhatsApp.
-            erplora_guest_sdk::Event::new(
-                "appointments.appointment.created",
-                json!({
-                    "appointment_id": appointment_id,
-                    "customer_id": str_or(&payload, "customer_id", ""),
-                    "service_id": str_or(&payload, "service_id", ""),
-                    "staff_id": str_or(&payload, "staff_id", ""),
-                    "start_datetime": str_or(&payload, "start_datetime", ""),
-                    "request_id": request_id,
-                }),
-            ),
-            erplora_guest_sdk::Event::new(
-                BOOKING_FULFILLED,
-                json!({
-                    "request_id": request_id,
-                    "appointment_id": appointment_id,
-                    // Who booked it. The asking module stores this as the link, so the answer is
-                    // not hard-wired to one module: a table reservation would answer the same way.
-                    "module": "appointments",
-                }),
-            ),
-        ],
+        events,
         ..Default::default()
     })
 }
@@ -7791,4 +7885,310 @@ mod tests {
             "a walk where the day is all offered or all dropped proves nothing"
         );
     }
+
+    // ── appointments#136 · la cita que reservó el propio cliente NACE CONFIRMADA ────────────────
+    //
+    // Hasta aquí TODA cita nacía `pending` y alguien del salón tenía que pulsar «Confirmar», una
+    // por una — también las que el cliente ya se había reservado él mismo por internet o por
+    // WhatsApp. Para el canal desatendido (whatsapp_inbox#58) eso es una persona en medio de cada
+    // cita, que es justo lo que el canal existe para quitar.
+    //
+    // El mercado lo tiene resuelto en la misma dirección desde hace años: en Fresha, Booksy y
+    // Square la reserva online se ACEPTA sola y «revisar antes de aceptar» es la opción que el
+    // negocio activa si quiere. Así que el interruptor nace encendido y apagarlo devuelve el
+    // comportamiento de siempre.
+    //
+    // Dos puertas cuentan como «el cliente ya se comprometió», y solo dos: la reserva que llega
+    // marcada `booked_online`, y `_book_from_request` — la única que trae `request_id`, porque
+    // `appointment_create.json`, `appointment_bulk_create.json` y `recurring_materialize.json`
+    // son `additionalProperties: false` y no lo declaran (pinado en
+    // `tests/auto_confirm.contract.test.py`). Lo que teclea el mostrador sigue naciendo pendiente.
+
+    /// The settings singleton with the switch in a KNOWN position. The shared [`catalog_reads`]
+    /// fixture leaves the key OUT on purpose — that is the case
+    /// [`a_settings_row_that_predates_the_switch_reads_it_as_the_column_default`] pins.
+    fn settings_auto_confirm(on: bool) -> Value {
+        json!({
+            "appointments.settings.get": [
+                { "allow_overlapping": 0, "default_duration": 60, "min_booking_notice": 0,
+                  "max_advance_booking": 0, "auto_confirm_online": on }
+            ]
+        })
+    }
+
+    /// The same booking as [`item`], but arriving with the flag an online booking carries.
+    fn online_item(start: &str) -> Value {
+        let mut it = item(start, 30, "s1");
+        it["booked_online"] = json!(true);
+        it
+    }
+
+    /// The history entries of one `action`, in the order the handler emitted them.
+    fn history_ops<'a>(out: &'a Output, action: &str) -> Vec<&'a Operation> {
+        out.operations
+            .iter()
+            .filter(|op| {
+                op.command.ends_with("_insert_history")
+                    && op.params.get("action") == Some(&json!(action))
+            })
+            .collect()
+    }
+
+    /// `new_value` travels as a serialised JSON string, the way `_insert_history` stores it.
+    fn history_new_value(op: &Operation) -> Value {
+        let raw = as_str(op.params.get("new_value").unwrap_or(&Value::Null));
+        serde_json::from_str(&raw).unwrap_or(Value::Null)
+    }
+
+    fn status_of(out: &Output) -> Option<&Value> {
+        insert_op(out).params.get("status")
+    }
+
+    /// The heart of the issue: the client booked it herself, the salon said «confirm those on
+    /// their own», so nobody has to press anything.
+    #[test]
+    fn a_booking_the_customer_made_online_is_born_confirmed() {
+        let out = create_appointment_pure(input(
+            online_item("2026-07-31T11:00:00Z"),
+            Some(settings_auto_confirm(true)),
+        ))
+        .unwrap();
+        assert!(out.error.is_none(), "{:?}", out.error);
+        assert_eq!(status_of(&out), Some(&json!("confirmed")));
+    }
+
+    /// And switching it off brings back exactly what the salon had before: review every one.
+    #[test]
+    fn switching_the_setting_off_brings_the_manual_review_back() {
+        let out = create_appointment_pure(input(
+            online_item("2026-07-31T11:00:00Z"),
+            Some(settings_auto_confirm(false)),
+        ))
+        .unwrap();
+        assert_eq!(status_of(&out), Some(&json!("pending")));
+    }
+
+    /// What the counter types is NOT an online booking. The receptionist is on the phone with the
+    /// client and writes it down; the appointment goes through the salon's own review, unchanged.
+    #[test]
+    fn what_the_counter_types_is_still_born_pending() {
+        let out = create_appointment_pure(input(
+            item("2026-07-31T11:00:00Z", 30, "s1"),
+            Some(settings_auto_confirm(true)),
+        ))
+        .unwrap();
+        assert_eq!(status_of(&out), Some(&json!("pending")));
+    }
+
+    /// A settings row that does not carry the switch reads it as the column default (`DEFAULT 1`,
+    /// ON), the way [`default_duration_of`] and [`allow_overlapping_of`] read theirs. The
+    /// shared [`catalog_reads`] fixture leaves the key out on purpose, so this is the case every
+    /// other test in this file runs on.
+    #[test]
+    fn a_settings_row_that_predates_the_switch_reads_it_as_the_column_default() {
+        let out =
+            create_appointment_pure(input(online_item("2026-07-31T11:00:00Z"), None)).unwrap();
+        assert_eq!(status_of(&out), Some(&json!("confirmed")));
+    }
+
+    /// A brand new hub has NO settings row until somebody opens the Settings tab and saves —
+    /// `settings_read` hands the handler `{}` then. That is exactly the salon that just installed
+    /// the WhatsApp channel: its Settings screen already shows the switch ON (it paints the schema
+    /// `default: true`), and the column is `NOT NULL DEFAULT 1`. The handler has to read the empty
+    /// row the way the column and the screen do, or the very first WhatsApp booking is born
+    /// pending while the screen says it should not be — and nothing tells anyone.
+    #[test]
+    fn a_fresh_hub_without_a_settings_row_confirms_like_its_settings_screen_says() {
+        let out = create_appointment_pure(input(
+            online_item("2026-07-31T11:00:00Z"),
+            Some(json!({ "appointments.settings.get": [] })),
+        ))
+        .unwrap();
+        assert!(out.error.is_none(), "{:?}", out.error);
+        assert_eq!(status_of(&out), Some(&json!("confirmed")));
+    }
+
+    /// The chain whatsapp_inbox#58 needs: the request becomes an appointment that is already
+    /// confirmed, so the customer can be told «done» instead of «we'll get back to you».
+    #[test]
+    fn a_booking_request_becomes_a_confirmed_appointment() {
+        let out = book_from_request_pure(input(
+            request_payload("2026-07-31T11:00:00Z"),
+            Some(settings_auto_confirm(true)),
+        ))
+        .unwrap();
+        assert!(
+            event(&out, "appointments.booking_request.fulfilled").is_some(),
+            "{:?}",
+            event(&out, "appointments.booking_request.failed").map(|e| e.payload.clone())
+        );
+        assert_eq!(status_of(&out), Some(&json!("confirmed")));
+    }
+
+    /// A salon that wants to look at every WhatsApp booking before it counts keeps doing so.
+    #[test]
+    fn a_booking_request_stays_pending_when_the_salon_wants_to_review() {
+        let out = book_from_request_pure(input(
+            request_payload("2026-07-31T11:00:00Z"),
+            Some(settings_auto_confirm(false)),
+        ))
+        .unwrap();
+        assert_eq!(status_of(&out), Some(&json!("pending")));
+    }
+
+    /// Born confirmed ANNOUNCES it. Whatever reacts to a confirmation — the reminder, an
+    /// automation answering the customer — must not go blind to half the diary because the
+    /// confirmation happened at creation instead of a second later.
+    #[test]
+    fn a_booking_born_confirmed_announces_the_confirmation() {
+        let out = create_appointment_pure(input(
+            online_item("2026-07-31T11:00:00Z"),
+            Some(settings_auto_confirm(true)),
+        ))
+        .unwrap();
+        let ev = event(&out, "appointments.appointment.confirmed")
+            .expect("a booking that is born confirmed emits the confirmation");
+        assert_eq!(ev.payload.get("appointment_id"), Some(&json!("apt-1")));
+    }
+
+    /// …and one born pending does NOT: an event that fires when nothing was confirmed is the
+    /// defect appointments#18 already paid for once.
+    #[test]
+    fn a_booking_born_pending_announces_no_confirmation() {
+        let out = create_appointment_pure(input(
+            online_item("2026-07-31T11:00:00Z"),
+            Some(settings_auto_confirm(false)),
+        ))
+        .unwrap();
+        assert!(event(&out, "appointments.appointment.confirmed").is_none());
+    }
+
+    /// The same through the WhatsApp door, where the three answers travel together.
+    #[test]
+    fn a_confirmed_booking_request_announces_created_confirmed_and_fulfilled() {
+        let out = book_from_request_pure(input(
+            request_payload("2026-07-31T11:00:00Z"),
+            Some(settings_auto_confirm(true)),
+        ))
+        .unwrap();
+        for name in [
+            "appointments.appointment.created",
+            "appointments.appointment.confirmed",
+            "appointments.booking_request.fulfilled",
+        ] {
+            assert!(event(&out, name).is_some(), "missing {name}: {:?}", out.events);
+        }
+    }
+
+    /// The trail says what really happened: created (already confirmed) and confirmed. Without
+    /// the second line the agenda's history could tell a WhatsApp booking apart from a counter
+    /// one that somebody confirmed — the origin leaking into the audit trail.
+    #[test]
+    fn the_trail_of_a_booking_born_confirmed_records_the_confirmation() {
+        let out = create_appointment_pure(input(
+            online_item("2026-07-31T11:00:00Z"),
+            Some(settings_auto_confirm(true)),
+        ))
+        .unwrap();
+        let created = history_ops(&out, "created");
+        assert_eq!(created.len(), 1);
+        assert_eq!(
+            history_new_value(created[0]).get("status"),
+            Some(&json!("confirmed")),
+            "the creation entry has to report the status the row was BORN with"
+        );
+        let confirmed = history_ops(&out, "confirmed");
+        assert_eq!(confirmed.len(), 1, "one confirmation line, not none and not two");
+        assert_eq!(
+            confirmed[0].params.get("old_value"),
+            Some(&Value::Null),
+            "it was never pending: claiming otherwise would be inventing a transition"
+        );
+        assert_eq!(
+            history_new_value(confirmed[0]).get("status"),
+            Some(&json!("confirmed"))
+        );
+        let pos = |action: &str| {
+            out.operations
+                .iter()
+                .position(|op| {
+                    op.command.ends_with("_insert_history")
+                        && op.params.get("action") == Some(&json!(action))
+                })
+                .unwrap()
+        };
+        assert!(
+            pos("created") < pos("confirmed"),
+            "the creation is written first; the confirmation behind it"
+        );
+    }
+
+    /// And a booking born pending leaves ONE line, exactly as before this issue.
+    #[test]
+    fn the_trail_of_a_booking_born_pending_has_only_the_creation() {
+        let out = create_appointment_pure(input(
+            online_item("2026-07-31T11:00:00Z"),
+            Some(settings_auto_confirm(false)),
+        ))
+        .unwrap();
+        assert_eq!(history_ops(&out, "created").len(), 1);
+        assert!(history_ops(&out, "confirmed").is_empty());
+        assert_eq!(
+            history_new_value(history_ops(&out, "created")[0]).get("status"),
+            Some(&json!("pending"))
+        );
+    }
+
+    /// The third door the counter uses — a batch typed into the agenda — is the salon's own
+    /// booking too. Its items carry no `booked_online` and its payload cannot carry a
+    /// `request_id` (`appointment_bulk_create.json` is closed), so the switch changes nothing.
+    #[test]
+    fn a_batch_the_counter_types_is_still_born_pending() {
+        let mut batch = json!({
+            "customer_id": "c1",
+            "service_id": "s-corte",
+            "staff_id": "s1",
+            "appointments": [
+                { "start_datetime": "2026-07-31T11:00:00Z" },
+                { "start_datetime": "2026-07-31T12:00:00Z" }
+            ]
+        });
+        binder_applied_defaults(BULK_CREATE_SCHEMA, &mut batch);
+        let mut bulk_input = input(batch, Some(settings_auto_confirm(true)));
+        bulk_input["context"]["new_ids"] = json!(["apt-1", "apt-2"]);
+        let out = bulk_create_pure(bulk_input).unwrap();
+        assert!(out.error.is_none(), "{:?}", out.error);
+        let born: Vec<&Value> = insert_ops(&out)
+            .iter()
+            .filter_map(|op| op.params.get("status"))
+            .collect();
+        assert_eq!(born.len(), 2, "both rows of the batch are booked: {:?}", out.operations);
+        assert!(
+            born.iter().all(|s| *s == &json!("pending")),
+            "a batch typed at the counter is the salon's own booking: {born:?}"
+        );
+    }
+
+    /// A recurring series the salon set up is the salon's own booking, whatever the switch says:
+    /// `materialize` books occurrences with `booked_online: false` and its payload cannot carry a
+    /// `request_id`, so no occurrence can slip through the automation door.
+    #[test]
+    fn occurrences_of_a_series_are_never_born_confirmed() {
+        let out = materialize_recurring_pure(series_input(
+            series_payload(),
+            json!([template(json!({}))]),
+            Some(settings_auto_confirm(true)),
+        ))
+        .unwrap();
+        let born: Vec<&Value> = insert_ops(&out)
+            .iter()
+            .filter_map(|op| op.params.get("status"))
+            .collect();
+        assert!(!born.is_empty(), "a run that booked nothing proves nothing");
+        assert!(
+            born.iter().all(|s| *s == &json!("pending")),
+            "a series occurrence is the salon's own booking: {born:?}"
+        );
+    }
+
 }
