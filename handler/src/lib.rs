@@ -621,15 +621,19 @@ fn allow_overlapping_of(settings: &Value) -> bool {
 /// Does this hub let a booking it did not type itself skip the manual review
 /// (appointments#136)?
 ///
-/// Absent = OFF. The column is `NOT NULL DEFAULT 1`, so every row `appointments.settings.get`
-/// hands back carries it; a read that somehow does not is not a mandate to confirm appointments
-/// on the salon's behalf. The default lives where the salon can see and change it — the column
-/// and the form schema — not in a fallback nobody can turn off.
+/// Absent = ON, because that is what the column says (`NOT NULL DEFAULT 1`) and what the Settings
+/// screen shows (schema `default: true`). The one read that arrives without the key in production
+/// is the EMPTY one: a brand new hub has no settings row until somebody opens the Settings tab and
+/// saves, and [`settings_read`] hands `{}` over then — «falls to the DB defaults», its own words.
+/// That hub is precisely the salon that just installed the WhatsApp channel; reading the empty
+/// row as OFF would make its first bookings wait for a review the screen says is switched off,
+/// and nothing would tell anyone. Same rule as [`default_duration_of`] (60) and
+/// [`allow_overlapping_of`] (false): the fallback IS the column default, never a third value.
 fn auto_confirm_online_of(settings: &Value) -> bool {
     settings
         .get("auto_confirm_online")
         .map(as_bool)
-        .unwrap_or(false)
+        .unwrap_or(true)
 }
 
 /// Is this booking already committed by the person who made it, so that nobody at the salon has
@@ -7902,7 +7906,7 @@ mod tests {
 
     /// The settings singleton with the switch in a KNOWN position. The shared [`catalog_reads`]
     /// fixture leaves the key OUT on purpose — that is the case
-    /// [`a_settings_row_without_the_switch_confirms_nothing`] pins.
+    /// [`a_settings_row_that_predates_the_switch_reads_it_as_the_column_default`] pins.
     fn settings_auto_confirm(on: bool) -> Value {
         json!({
             "appointments.settings.get": [
@@ -7976,14 +7980,32 @@ mod tests {
         assert_eq!(status_of(&out), Some(&json!("pending")));
     }
 
-    /// Positive control on the fallback. A settings row that does not carry the switch is not a
-    /// mandate to confirm on the hub's behalf: the handler never invents the policy, it reads it.
-    /// (In production the column is `NOT NULL DEFAULT 1`, so the row always carries it.)
+    /// A settings row that does not carry the switch reads it as the column default (`DEFAULT 1`,
+    /// ON), the way [`default_duration_of`] and [`allow_overlapping_of`] read theirs. The
+    /// shared [`catalog_reads`] fixture leaves the key out on purpose, so this is the case every
+    /// other test in this file runs on.
     #[test]
-    fn a_settings_row_without_the_switch_confirms_nothing() {
+    fn a_settings_row_that_predates_the_switch_reads_it_as_the_column_default() {
         let out =
             create_appointment_pure(input(online_item("2026-07-31T11:00:00Z"), None)).unwrap();
-        assert_eq!(status_of(&out), Some(&json!("pending")));
+        assert_eq!(status_of(&out), Some(&json!("confirmed")));
+    }
+
+    /// A brand new hub has NO settings row until somebody opens the Settings tab and saves —
+    /// `settings_read` hands the handler `{}` then. That is exactly the salon that just installed
+    /// the WhatsApp channel: its Settings screen already shows the switch ON (it paints the schema
+    /// `default: true`), and the column is `NOT NULL DEFAULT 1`. The handler has to read the empty
+    /// row the way the column and the screen do, or the very first WhatsApp booking is born
+    /// pending while the screen says it should not be — and nothing tells anyone.
+    #[test]
+    fn a_fresh_hub_without_a_settings_row_confirms_like_its_settings_screen_says() {
+        let out = create_appointment_pure(input(
+            online_item("2026-07-31T11:00:00Z"),
+            Some(json!({ "appointments.settings.get": [] })),
+        ))
+        .unwrap();
+        assert!(out.error.is_none(), "{:?}", out.error);
+        assert_eq!(status_of(&out), Some(&json!("confirmed")));
     }
 
     /// The chain whatsapp_inbox#58 needs: the request becomes an appointment that is already
@@ -8114,6 +8136,36 @@ mod tests {
         assert_eq!(
             history_new_value(history_ops(&out, "created")[0]).get("status"),
             Some(&json!("pending"))
+        );
+    }
+
+    /// The third door the counter uses — a batch typed into the agenda — is the salon's own
+    /// booking too. Its items carry no `booked_online` and its payload cannot carry a
+    /// `request_id` (`appointment_bulk_create.json` is closed), so the switch changes nothing.
+    #[test]
+    fn a_batch_the_counter_types_is_still_born_pending() {
+        let mut batch = json!({
+            "customer_id": "c1",
+            "service_id": "s-corte",
+            "staff_id": "s1",
+            "appointments": [
+                { "start_datetime": "2026-07-31T11:00:00Z" },
+                { "start_datetime": "2026-07-31T12:00:00Z" }
+            ]
+        });
+        binder_applied_defaults(BULK_CREATE_SCHEMA, &mut batch);
+        let mut bulk_input = input(batch, Some(settings_auto_confirm(true)));
+        bulk_input["context"]["new_ids"] = json!(["apt-1", "apt-2"]);
+        let out = bulk_create_pure(bulk_input).unwrap();
+        assert!(out.error.is_none(), "{:?}", out.error);
+        let born: Vec<&Value> = insert_ops(&out)
+            .iter()
+            .filter_map(|op| op.params.get("status"))
+            .collect();
+        assert_eq!(born.len(), 2, "both rows of the batch are booked: {:?}", out.operations);
+        assert!(
+            born.iter().all(|s| *s == &json!("pending")),
+            "a batch typed at the counter is the salon's own booking: {born:?}"
         );
     }
 
