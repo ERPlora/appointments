@@ -429,6 +429,32 @@ describe('erp-appointments-request-booking', () => {
     ).toContain('ui.bookingDayClosed');
   });
 
+  it('says the day is FULL, not shut, when the business is open and the engine has nothing left', async () => {
+    // The other direction of the same sentence, and the one that only the door can tell apart. The
+    // salon IS open all day; the engine hands back zero rows because a block, the appointments
+    // already taken or a hold ate every candidate. «Closed today» here is a LIE the person on the
+    // phone acts on — they stop asking for that date. This is the half of appointments#132 that
+    // pays for `askDayOpening()` surviving: without it an empty list has only one caption, and the
+    // reason the call was kept stops being true.
+    commandAnswers['appointments.availability.slots'] = { rows: [], total: 0, limit: 0, offset: 0 };
+    commandAnswers['appointments.availability.day_opening'] = {
+      source: 'schedules',
+      spans: [{ start_minute: 540, end_minute: 1200 }],
+    };
+    const el = await mount();
+    await pickService(el);
+
+    expect(offeredTimes(el), 'lleno es lleno: no hay hueco que pintar').toEqual([]);
+    expect(
+      shadow(el).textContent,
+      'pero el negocio ABRE ese día: decir «cerrado» manda a la clienta a otra fecha por una razón falsa',
+    ).toContain('ui.bookingNoSlots');
+    expect(
+      shadow(el).textContent,
+      'y no se dice CERRADO, que es la otra frase',
+    ).not.toContain('ui.bookingDayClosed');
+  });
+
   it('offers the whole day when the authority carries no rule for the date', async () => {
     // `source: "unset"` = la autoridad calla, y entonces la puerta no rechaza NADA (appointments
     // #118). Filtrar aquí borraría el día entero de una agenda que `create` habría aceptado.
