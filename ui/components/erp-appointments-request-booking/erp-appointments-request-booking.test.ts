@@ -53,11 +53,6 @@ beforeEach(() => {
           return { rows: [{ id: 'sv1', name: 'Cut', duration_minutes: 30, is_bookable: 1 }], total: 1 };
         case 'staff.members.list':
           return { rows: [{ id: 's1', full_name: 'Eva', status: 'active', is_bookable: 1 }], total: 1 };
-        case 'appointments.availability.slots':
-          return [
-            { slot_start: '2026-08-20T10:00:00', start_time: '10:00', end_time: '10:30' },
-            { slot_start: '2026-08-20T11:00:00', start_time: '11:00', end_time: '11:30' },
-          ];
         default:
           return [];
       }
@@ -68,6 +63,16 @@ beforeEach(() => {
       if (refusal) throw refusal;
       const envelope: Record<string, unknown> = { ok: true, operations: 0, new_ids: [] };
       if (name in commandAnswers) envelope.result = commandAnswers[name];
+      // appointments#127: the free slots of a day are a HANDLER command now, not a Tier-0 query —
+      // the hours belong to `schedules` and only the handler can read them. The envelope is the
+      // one an unpaginated query used to answer (`{rows,total,limit,offset}`), inside `result`.
+      else if (name === 'appointments.availability.slots') {
+        const rows = [
+          { slot_start: '2026-08-20T10:00:00', start_time: '10:00', end_time: '10:30' },
+          { slot_start: '2026-08-20T11:00:00', start_time: '11:00', end_time: '11:30' },
+        ];
+        envelope.result = { rows, total: rows.length, limit: rows.length, offset: 0 };
+      }
       return envelope;
     },
     hasPermission: () => true,
@@ -141,9 +146,13 @@ describe('erp-appointments-request-booking', () => {
     svc.value = 'sv1';
     svc.dispatchEvent(new Event('change'));
     await settle(el);
-    const asked = queries.filter((q) => q.name === 'appointments.availability.slots');
+    const asked = commands.filter((c) => c.name === 'appointments.availability.slots');
     expect(asked.length, 'the slots come from the hub, live').toBeGreaterThan(0);
-    expect(asked[asked.length - 1].params.duration_minutes).toBe(30);
+    expect(asked[asked.length - 1].payload.duration_minutes).toBe(30);
+    expect(
+      queries.some((q) => q.name === 'appointments.availability.slots'),
+      'the raw SQL half is the engine\u2019s read, not a door the screen may knock on',
+    ).toBe(false);
   });
 
   it('hands the BOUND request back to the host and approves nothing itself', async () => {
@@ -272,8 +281,8 @@ describe('erp-appointments-request-booking', () => {
   it('asks for the slots excluding its OWN hold, or it would hide the time it just took', async () => {
     const el = await mount();
     await bindUpTo(el);
-    const asked = queries.filter((q) => q.name === 'appointments.availability.slots');
-    expect(asked[asked.length - 1].params.exclude_hold_ref).toBe('req-1');
+    const asked = commands.filter((c) => c.name === 'appointments.availability.slots');
+    expect(asked[asked.length - 1].payload.exclude_hold_ref).toBe('req-1');
   });
 
   // ── appointments#105 · la pantalla mira LO MISMO que la puerta ───────────────────────────────
@@ -301,8 +310,8 @@ describe('erp-appointments-request-booking', () => {
   }
 
   function lastSlotsQuery() {
-    const asked = queries.filter((q) => q.name === 'appointments.availability.slots');
-    return asked[asked.length - 1];
+    const asked = commands.filter((c) => c.name === 'appointments.availability.slots');
+    return { name: asked[asked.length - 1].name, params: asked[asked.length - 1].payload };
   }
 
   it('offers only the hours the door will accept, asking the door itself', async () => {
@@ -362,10 +371,15 @@ describe('erp-appointments-request-booking', () => {
     // El caso que rompe de verdad en un salón: el motor propone 12:45 porque su hora de calendario
     // llega hasta las 20:00, pero el servicio dura 30 min y la puerta cierra a las 13:00. `create`
     // exige que la cita TERMINE dentro del tramo, así que media franja no es franja.
-    queryAnswers['appointments.availability.slots'] = [
-      { slot_start: '2026-08-20T12:30:00', slot_end: '2026-08-20T13:00:00', start_time: '12:30', end_time: '13:00' },
-      { slot_start: '2026-08-20T12:45:00', slot_end: '2026-08-20T13:15:00', start_time: '12:45', end_time: '13:15' },
-    ];
+    commandAnswers['appointments.availability.slots'] = {
+      rows: [
+        { slot_start: '2026-08-20T12:30:00', slot_end: '2026-08-20T13:00:00', start_time: '12:30', end_time: '13:00' },
+        { slot_start: '2026-08-20T12:45:00', slot_end: '2026-08-20T13:15:00', start_time: '12:45', end_time: '13:15' },
+      ],
+      total: 2,
+      limit: 2,
+      offset: 0,
+    };
     commandAnswers['appointments.availability.day_opening'] = {
       source: 'schedules',
       spans: [{ start_minute: 660, end_minute: 780 }],

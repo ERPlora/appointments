@@ -9,7 +9,7 @@ Pero las dos queries de disponibilidad hacían `COALESCE(MAX(max_advance_booking
 advance_days` y comparaban SIN caso 0, así que un hub que guarda 0 —que es exactamente lo que
 guardará quien no quiera límite— se quedaba con la agenda a cero:
 
-  · `appointments.availability.slots`  → 0 huecos, cualquier día (`erp_date(:date) <= now+0d`
+  · `appointments.availability.own_slots`  → 0 huecos, cualquier día (`erp_date(:date) <= now+0d`
     solo deja HOY, y hoy ya lo cierra la antelación mínima);
   · `appointments.availability.own_rules`  → `too_far` para cualquier instante futuro;
 
@@ -51,7 +51,7 @@ DB = f"appointments_zero_advance_test_{os.getpid()}"
 HUB = "hub-under-test"
 
 QUERIES = {
-    "appointments.availability.slots": "queries/availability_slots.sql",
+    "appointments.availability.own_slots": "queries/availability_slots.sql",
     "appointments.availability.own_rules": "queries/availability_check.sql",
 }
 
@@ -216,7 +216,7 @@ def slots(date: str) -> list[dict]:
     }
     sql = shim(
         bind(
-            (MODULE_DIR / QUERIES["appointments.availability.slots"]).read_text(),
+            (MODULE_DIR / QUERIES["appointments.availability.own_slots"]).read_text(),
             params,
         )
     )

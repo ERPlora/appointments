@@ -3,9 +3,12 @@
 > **Estado 2026-06-11**: piezas **1, 2, 3, 5 y 6** implementadas en `handler/src/lib.rs`
 > (→ `dist/handler.wasm`: `create_appointment`, `bulk_create`, `bulk_delete`,
 > `materialize_recurring` + contador atómico `_bump_counter`/`002_counter.sql`).
-> Pieza **8** implementada como **queries declarativas Tier 0**
-> (`appointments.availability.slots` / `.check`) — el contrato runtime↔WASM devuelve
-> intenciones, no datos al caller, así que la lógica de calendario vive en SQL.
+> Pieza **8**: la lógica de calendario vive en SQL (`appointments.availability.own_slots` /
+> `.own_rules`, Tier 0), pero la RESPUESTA al caller es un **command con handler WASM**
+> (`.check` desde appointments#122, `.slots` desde appointments#127, `.day_opening`): el horario
+> del negocio pertenece a `schedules` (ADR-0392) y una query de un módulo solo puede nombrar
+> tablas suyas, así que solo el handler puede cruzar los huecos con los tramos abiertos.
+> Devolver DATOS al caller lo permite `Output::with_result` (hub#70), que no existía en 2026-06.
 > Piezas 4 y 7: no bloqueantes (el WHERE/la UI ya protegen). Pendientes: 9 y 10.
 
 El CRUD plano y las transiciones de estado simples ya están en SQL declarativo Tier 0

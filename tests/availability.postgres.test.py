@@ -42,7 +42,7 @@ MANIFEST = json.loads((MODULE_DIR / "module.json").read_text())
 CONTAINER = os.environ.get("ERPLORA_TEST_PG_CONTAINER", "erplora-test-pg-5433")
 
 # The two queries of the availability engine, both driven by the optional `:staff_id`.
-QUERIES = ["appointments.availability.slots", "appointments.availability.own_rules"]
+QUERIES = ["appointments.availability.own_slots", "appointments.availability.own_rules"]
 
 # Bridge functions of ERPlora SQL (ADR-0007 §4a). MUST mirror `BRIDGE_FUNCTIONS` +
 # `render_bridge_fn` in `hub/crates/db/src/lib.rs`: an unrewritten `erp_*` would look to Postgres

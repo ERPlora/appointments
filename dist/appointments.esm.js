@@ -1880,7 +1880,7 @@ __decorateClass3([
 ], OkTimeline.prototype, "align");
 define("ok-timeline", OkTimeline);
 
-// locales/es.json
+// @erplora/module-appointments/locales/es.json
 var es_default = {
   name: "Citas",
   description: "Agenda las citas de tus clientes con sus servicios y profesionales, y s\xEDguelas desde que se reservan hasta que se completan.",
@@ -2100,7 +2100,7 @@ var es_default = {
   }
 };
 
-// locales/en.json
+// @erplora/module-appointments/locales/en.json
 var en_default = {
   name: "Appointments",
   navigation: {
@@ -2319,7 +2319,7 @@ var en_default = {
   }
 };
 
-// ui/lib/business-time.ts
+// @erplora/module-appointments/ui/lib/business-time.ts
 var InvalidLocalTimeError = class extends Error {
   constructor(wall, timezone) {
     super(`invalid_local_time: ${wall} does not exist in ${timezone}`);
@@ -2486,7 +2486,7 @@ function deviceZoneDiffers(timezone = businessTimezone()) {
   return offsetMinutesAt(now, timezone) !== -new Date(now).getTimezoneOffset();
 }
 
-// ui/components/erp-appointments-customer-history/erp-appointments-customer-history.ts
+// @erplora/module-appointments/ui/components/erp-appointments-customer-history/erp-appointments-customer-history.ts
 var CATALOG = { es: es_default, en: en_default };
 function erplora() {
   const c5 = globalThis.erplora;
@@ -5502,7 +5502,7 @@ __decorateClass5([
 ], OkScheduler.prototype, "heldId");
 define("ok-scheduler", OkScheduler);
 
-// ui/components/erp-appointments-series/erp-appointments-series.ts
+// @erplora/module-appointments/ui/components/erp-appointments-series/erp-appointments-series.ts
 var CATALOG2 = { es: es_default, en: en_default };
 function erplora2() {
   const c5 = globalThis.erplora;
@@ -5947,7 +5947,7 @@ __decorateClass([
 ], ErpAppointmentsSeries.prototype, "editDuration", 2);
 define("erp-appointments-series", ErpAppointmentsSeries);
 
-// ui/components/erp-appointments-list/erp-appointments-list.ts
+// @erplora/module-appointments/ui/components/erp-appointments-list/erp-appointments-list.ts
 var CATALOG3 = { es: es_default, en: en_default };
 var STATUS_KEYS2 = {
   pending: "ui.statusPending",
@@ -6891,7 +6891,7 @@ __decorateClass([
 ], ErpAppointmentsList.prototype, "overlapPrompt", 2);
 define("erp-appointments-list", ErpAppointmentsList);
 
-// ui/components/erp-appointments-request-booking/erp-appointments-request-booking.ts
+// @erplora/module-appointments/ui/components/erp-appointments-request-booking/erp-appointments-request-booking.ts
 var CATALOG4 = { es: es_default, en: en_default };
 function erplora4() {
   const c5 = globalThis.erplora;
@@ -7117,7 +7117,7 @@ var ErpAppointmentsRequestBooking = class extends i3 {
     const opening = await this.askDayOpening();
     this.dayClosed = opening !== null && opening.length === 0;
     try {
-      const result = await erplora4().query("appointments.availability.slots", {
+      const answer = await erplora4().command("appointments.availability.slots", {
         date: this.date,
         staff_id: this.staffId,
         duration_minutes: service?.duration_minutes,
@@ -7126,7 +7126,7 @@ var ErpAppointmentsRequestBooking = class extends i3 {
         // `exclude_appointment_id` when moving an appointment off its own slot.
         exclude_hold_ref: this.open?.request_id
       });
-      const free = rows4(result);
+      const free = rows4(answer?.result);
       this.slots = opening !== null ? free.filter((s5) => insideOpening(s5, opening)) : free;
     } catch (e5) {
       this.slots = [];

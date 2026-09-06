@@ -355,7 +355,14 @@ export class ErpAppointmentsRequestBooking extends LitElement {
     const opening = await this.askDayOpening();
     this.dayClosed = opening !== null && opening.length === 0;
     try {
-      const result = await erplora().query('appointments.availability.slots', {
+      // appointments#127: the free slots of a day are a COMMAND with a handler now, not the raw
+      // Tier-0 query. A module's SQL can only name its own tables, so the only place that can cross
+      // a candidate slot with the opening hours — which live in `schedules` — is the handler. Same
+      // route `check` took in appointments#122. The envelope is the one an unpaginated query used
+      // to answer (`{rows,total,limit,offset}`), carried inside `result`.
+      const answer = await erplora().command<{
+        result?: { rows?: Slot[] } | null;
+      } | null>('appointments.availability.slots', {
         date: this.date,
         staff_id: this.staffId,
         duration_minutes: service?.duration_minutes,
@@ -364,7 +371,12 @@ export class ErpAppointmentsRequestBooking extends LitElement {
         // `exclude_appointment_id` when moving an appointment off its own slot.
         exclude_hold_ref: this.open?.request_id,
       });
-      const free = rows<Slot>(result);
+      const free = rows<Slot>(answer?.result);
+      // Belt AND braces, on purpose and only for now. Since appointments#127 the engine already
+      // drops everything outside the open stretches, so this filter should never remove a row —
+      // it is the appointments#105 patch, and it comes out in appointments#132 rather than
+      // silently here. Losing it before the handler ships to every hub would put the closed-day
+      // hours back on screen, so #132 carries the version check that makes it safe to drop.
       this.slots = opening !== null ? free.filter((s) => insideOpening(s, opening)) : free;
     } catch (e) {
       this.slots = [];
