@@ -42,10 +42,10 @@ def risk_of(name: str) -> str:
 BULK = {"appointments.appointments.bulk_delete"}
 
 # Borrados de UNA fila. Soft-delete, pero el usuario no puede deshacerlos desde la pantalla.
+# `schedules.delete` / `timeslots.delete` salieron con appointments#117: el horario se configura
+# en `schedules` y este módulo ya no lo escribe.
 SINGLE = {
     "appointments.appointments.delete",
-    "appointments.schedules.delete",
-    "appointments.timeslots.delete",
     "appointments.blocked_times.delete",
     "appointments.recurring.delete",
 }

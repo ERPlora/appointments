@@ -98,7 +98,8 @@ When a slot is not free, you are told **why**:
 | `too_far` | It is beyond how far ahead you allow bookings |
 | `invalid_start` | The start is in the past or unparseable |
 
-"No slots today" almost always means a schedule is missing, not that the day is full.
+"No slots today" almost always means the opening hours of **Schedules** close that date, not
+that the day is full.
 
 These reasons are not only advice any more. `outside_schedule`, `blocked`, `too_soon`, `too_far`
 and `invalid_start` are **refused at the door**: whoever books — the screen, the assistant, a flow,

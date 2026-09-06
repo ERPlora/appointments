@@ -24,7 +24,9 @@
     "appointments.recurring_not_found": {},
     "appointments.recurring_unavailable": {},
     "appointments.request_not_bound": {},
-    "appointments.schedule_unavailable": {},
+    "appointments.schedule_unavailable": {
+      "deprecated": "1.1.65"
+    },
     "appointments.service_not_bookable": {},
     "appointments.service_not_found": {},
     "appointments.settings_unavailable": {},
@@ -167,50 +169,6 @@
         "description": "Lists the most recent appointments of one customer (newest first) with service, professional, status and the visit notes — the visit history the customer sheet shows. Public read used by the `customers.detail` slot."
       },
       "expose_api": true
-    },
-    "appointments.schedules.list": {
-      "permission": "appointments.view_schedule",
-      "sql": "queries/schedules_list.sql",
-      "list": {
-        "search": [
-          "name",
-          "description"
-        ],
-        "sort": [
-          "id",
-          "name",
-          "description",
-          "is_default",
-          "is_active"
-        ],
-        "default_sort": "name",
-        "default_dir": "asc",
-        "filters": {
-          "name": {
-            "op": "like"
-          },
-          "description": {
-            "op": "like"
-          },
-          "is_default": {
-            "op": "eq"
-          },
-          "is_active": {
-            "op": "eq"
-          }
-        },
-        "page_size": 50
-      },
-      "ai": {
-        "description": "Lists the availability schedules configured for staff members."
-      }
-    },
-    "appointments.schedules.timeslots": {
-      "permission": "appointments.view_schedule",
-      "sql": "queries/schedule_timeslots.sql",
-      "ai": {
-        "description": "Retrieves the available time slots for a given staff schedule."
-      }
     },
     "appointments.schedules.active_timeslots": {
       "permission": "appointments.view_schedule",
@@ -359,13 +317,6 @@
       },
       "ai": {
         "description": "Lists configured recurring appointment templates."
-      }
-    },
-    "appointments.agenda.status": {
-      "permission": "appointments.view_schedule",
-      "sql": "queries/agenda_status.sql",
-      "ai": {
-        "description": "Reports whether the agenda is set up: how many active schedules and bookable weekly time slots the business has declared."
       }
     },
     "appointments.settings.get": {
@@ -1242,35 +1193,6 @@
         }
       ]
     },
-    "appointments.schedules.create": {
-      "permission": "appointments.manage_schedule",
-      "transaction": true,
-      "sql": [
-        "commands/schedule_create.sql"
-      ],
-      "schema": "schemas/schedule_create.json",
-      "emit": [
-        "appointments.schedule.created"
-      ],
-      "ai": {
-        "description": "Creates a new availability schedule for an employee or resource."
-      }
-    },
-    "appointments.schedules.delete": {
-      "permission": "appointments.manage_schedule",
-      "transaction": true,
-      "sql": [
-        "commands/schedule_delete.sql"
-      ],
-      "schema": "schemas/schedule_id.json",
-      "emit": [
-        "appointments.schedule.deleted"
-      ],
-      "ai": {
-        "description": "Deletes an existing staff availability schedule (destructive).",
-        "risk": "destructive"
-      }
-    },
     "appointments.settings.upsert": {
       "permission": "appointments.manage_settings",
       "transaction": true,
@@ -1322,35 +1244,6 @@
       "ai": {
         "description": "Gives back a slot that was set aside for a pending request, because another time was chosen or the request was turned down."
       }
-    },
-    "appointments.timeslots.create": {
-      "permission": "appointments.manage_schedule",
-      "transaction": true,
-      "sql": [
-        "commands/timeslot_create.sql"
-      ],
-      "schema": "schemas/timeslot_create.json",
-      "ai": {
-        "description": "Adds a time slot block to a staff availability schedule."
-      },
-      "expect_rows": {
-        "op": "min",
-        "n": 1,
-        "error": "appointments.schedule_unavailable",
-        "message": "That schedule is not available: it does not exist in this business or it has been deleted."
-      }
-    },
-    "appointments.timeslots.delete": {
-      "permission": "appointments.manage_schedule",
-      "transaction": true,
-      "sql": [
-        "commands/timeslot_delete.sql"
-      ],
-      "schema": "schemas/timeslot_id.json",
-      "ai": {
-        "description": "Removes a time slot block from a staff availability schedule (destructive).",
-        "risk": "destructive"
-      }
     }
   },
   "events": {
@@ -1377,8 +1270,6 @@
       "appointments.booking_request.fulfilled",
       "appointments.recurring.created",
       "appointments.recurring.updated",
-      "appointments.schedule.created",
-      "appointments.schedule.deleted",
       "appointments.settings.updated",
       "appointments.slot.held",
       "appointments.slot.hold_released"
@@ -1386,23 +1277,6 @@
   },
   "ui": {
     "entry": "dist/appointments.esm.js"
-  },
-  "setup": {
-    "query": "appointments.agenda.status",
-    "configured_when": [
-      {
-        "field": "weekly_time_slots",
-        "truthy": true
-      }
-    ],
-    "title": "Your working hours",
-    "description": "Tell the hub the days and times you work, so the agenda only offers slots while you are open.",
-    "icon": "time-outline",
-    "route": "/m/appointments/appointments",
-    "permission": "appointments.manage_schedule",
-    "countries": [],
-    "order": 101,
-    "required": false
   },
   "scheduled_tasks": [
     {

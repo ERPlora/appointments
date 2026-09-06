@@ -1,7 +1,8 @@
 # Appointments — Screens
 
 The module contributes one tab to the hub navigation: **Appointments** — the agenda. Everything else
-(schedules, blocked time, recurring templates, settings) is reached from inside it.
+(blocked time, recurring templates, settings) is reached from inside it. The opening hours are NOT
+here: they are set in the **Schedules** module (appointments#117).
 
 ## Appointments — the agenda
 
@@ -81,30 +82,14 @@ with what changed. Cancelling stores the reason in that entry.
 Destructive, with confirmation, and **admin only** (`appointments.delete_appointment`). Prefer
 cancelling — it keeps the record.
 
-## Working hours (schedules)
+## Working hours
 
-> ⚠️ **Set your opening hours in the Schedules module, not here** (appointments#102). Since that
-> change the booking door reads the hours, bank holidays and overrides of **Schedules**, which is
-> where the rest of the product asks whether the business is open. This screen is the module's own
-> older timetable: it still answers while Schedules has no rule at all, so a salon configured
-> before the change keeps working, and it is being retired in appointments#105.
->
-> Since appointments#105 the **times a screen offers are the times the door accepts**: before
-> listing free slots, the booking panel asks the agenda which stretches the business is open on
-> that date and drops whatever falls outside them, so a salon whose hours live in Schedules is no
-> longer offered 10:00 and refused at 10:00. On a day Schedules closes, the panel says the business
-> is **closed** rather than that the diary is full — they are different problems and only one of
-> them is fixed by trying another professional.
-
-A schedule is a named availability template, with one or more **time slots** per weekday.
-
-1. Create the schedule, giving it a name. One can be the default.
-2. Add time slots: **day of the week** (0 = Monday … 6 = Sunday), start time and end time, as
-   `HH:MM`.
-3. The agenda only offers slots inside them.
-
-Listing needs `appointments.view_schedule`; creating and deleting need
-`appointments.manage_schedule`. A slot is unique per schedule, day and start time.
+> The opening hours are set in the **Schedules** module, and only there (appointments#117). This
+> module used to carry a second timetable of its own — its own screen, its own operations and its
+> own first-run step — and a salon that changed the hours in one place kept being answered by the
+> other. Now the agenda READS the hours, bank holidays and overrides of Schedules and offers only
+> what fits inside them; a business that already had hours stored here keeps being served by them
+> while Schedules has no rule reaching the date, but nothing writes them any more.
 
 ## Blocked time
 
@@ -188,9 +173,3 @@ The module keeps a per-hub settings row read with `appointments.settings.get` an
 > The manifest **does** declare a `settings` block (`schemas/settings_upsert.json`, read with
 > `appointments.settings.get`, written with `appointments.settings.upsert`), so the shell renders
 > the form itself; `tests/settings.contract.test.py` pins that wiring.
-
-## First-run setup
-
-Appointments contributes an **optional** setup step called **"Your working hours"**: *Tell the hub
-the days and times you work, so the agenda only offers slots while you are open.* It is done once the
-business has active schedules with weekly time slots, and needs `appointments.manage_schedule`.
