@@ -374,9 +374,9 @@ export class ErpAppointmentsRequestBooking extends LitElement {
       const free = rows<Slot>(answer?.result);
       // Belt AND braces, on purpose and only for now. Since appointments#127 the engine already
       // drops everything outside the open stretches, so this filter should never remove a row —
-      // it is the appointments#105 patch, kept until it is retired in its own issue rather than
-      // silently in this one. Leaving it costs nothing and losing it before the handler ships
-      // everywhere would put the closed-day hours back on screen.
+      // it is the appointments#105 patch, and it comes out in appointments#132 rather than
+      // silently here. Losing it before the handler ships to every hub would put the closed-day
+      // hours back on screen, so #132 carries the version check that makes it safe to drop.
       this.slots = opening !== null ? free.filter((s) => insideOpening(s, opening)) : free;
     } catch (e) {
       this.slots = [];
