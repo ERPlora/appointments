@@ -1,13 +1,14 @@
 -- Horario COMERCIAL vivo del hub, sin filtrar por día (read autoritativa del handler WASM de
 -- `create`, `reschedule`, `bulk_create` y `recurring.materialize` — ADR-0069, appointments#89).
 --
--- Por qué existe, habiendo ya `appointments.schedules.timeslots`: aquélla pide `:schedule_id`, y
--- `reads.params` solo sabe bindear un `payload.<campo>` literal — ninguno de los cuatro comandos
--- lleva el id de la plantilla en su payload. Y un LOTE o una SERIE reservan en varios días, así
--- que tampoco se puede pedir «los tramos de ESTE día». Se traen todos los tramos activos del hub
--- y el corte fino (día de la semana y ventana [inicio, fin]) lo hace el handler, que es el único
--- que puede cruzar hora de PARED con un INSTANTE: necesita la zona del negocio (`context.timezone`,
--- hub#1022) y la tabla IANA que el guest lleva dentro.
+-- Why it takes no parameter at all: `reads.params` can only bind a literal `payload.<field>`, and
+-- none of the four commands carries the id of a timetable in its payload — nor could a BATCH or a
+-- SERIES ask for «the stretches of THIS day», since they book across several. (It used to be told
+-- apart from `appointments.schedules.timeslots`, which asked for a `:schedule_id`; that query was
+-- retired with the rest of this module's hours surface — appointments#117.) Every live stretch of
+-- the hub comes back and the fine cut (weekday and the [start, end] window) is the handler's — the
+-- only one that can cross WALL time with an INSTANT, because it needs the business's zone
+-- (`context.timezone`, hub#1022) and the IANA table the guest carries inside.
 --
 -- Es EL MISMO conjunto que mira `availability_check.sql` para calcular `outside_schedule`: tramos
 -- vivos y activos de plantillas vivas y activas, del hub, SIN join con la profesional (el horario

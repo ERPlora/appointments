@@ -46,6 +46,7 @@ import sys
 import urllib.error
 import urllib.request
 import uuid
+import zoneinfo
 
 BASE = (
     os.environ.get("APPOINTMENTS_HUB_BASE_URL")
@@ -73,7 +74,7 @@ class Hub:
             )
             sys.exit(1)
         self.user = f"u-{uuid.uuid4().hex[:8]}"
-        self.hub_id = self._runtime_hub_id()
+        self.hub_id, self.timezone = self._runtime_context()
         self._require_installed(needs)
 
     # ── transport ────────────────────────────────────────────────────────────────────────
@@ -100,7 +101,13 @@ class Hub:
             except json.JSONDecodeError:
                 return err.code, {"raw": raw}
 
-    def _runtime_hub_id(self) -> str:
+    def _runtime_context(self) -> tuple[str, str]:
+        """`(hub_id, timezone)` — the tenant the seeds land under, and the BUSINESS's clock.
+
+        The timezone is the second fact no battery may hard-code: the opening-hours gate crosses
+        WALL time (`context.timezone`, resolved by the host — hub#731) against the hours
+        `schedules` holds, so `08:00Z` is only 08:00 for the business on a hub that runs on UTC.
+        The endpoint publishes the resolved IANA name, never `null`."""
         req = urllib.request.Request(f"{BASE}/api/hub/context", method="GET")
         with urllib.request.urlopen(req, timeout=60) as res:
             body = json.loads(res.read().decode())
@@ -108,7 +115,11 @@ class Hub:
         if not hub_id:
             print(f"{self.battery}: GET /api/hub/context did not say the hub_id: {body}")
             sys.exit(1)
-        return hub_id
+        timezone = body.get("timezone")
+        if not timezone:
+            print(f"{self.battery}: GET /api/hub/context did not say the timezone: {body}")
+            sys.exit(1)
+        return hub_id, timezone
 
     def _require_installed(self, needs: tuple[str, ...]) -> None:
         status, body = self._request("GET", "/api/modules")
@@ -381,5 +392,32 @@ def next_weekday(weekday: int = 2, at_least_days: int = 7) -> str:
 def instant(day: str, hhmm: str) -> str:
     """`2026-09-09T12:00:00+00:00` — an appointment is an INSTANT with its offset, never a naive
     string. UTC on purpose: `availability.check` reads the hour off the bind and the runtime's
-    Postgres session is UTC, so a battery written in local time would move with the machine."""
+    Postgres session is UTC, so a battery written in local time would move with the machine.
+
+    For anything about OPENING HOURS use `business_instant()` instead: the door reads the wall
+    clock, not this one."""
     return f"{day}T{hhmm}:00+00:00"
+
+
+def business_instant(hub: Hub, day: str, hhmm: str) -> str:
+    """The same instant written on the BUSINESS's clock: `"12:00"` here is noon for whoever runs
+    the salon, with the offset that zone really had on that date.
+
+    `instant()` above is UTC because the availability QUERY reads the hour straight off the bind
+    (`erp_extract('hour', …)` renders a `timestamptz` in the session's zone, and the runtime's is
+    UTC). The DOOR does not: `schedule_refusal` converts the instant with `context.timezone`
+    (hub#731) before crossing it against the hours `schedules` holds. So a section about opening
+    hours has to speak WALL time or it is asserting about the offset of whoever ran it — on a hub
+    in Madrid `08:00Z` is 10:00 in the shop, lands inside a 09:00–18:00 week, and the red turns
+    green while proving the opposite of what it claims."""
+    hour, minute = (int(part) for part in hhmm.split(":"))
+    try:
+        zone = zoneinfo.ZoneInfo(hub.timezone)
+    except zoneinfo.ZoneInfoNotFoundError as err:
+        raise AssertionError(
+            f"the hub runs on {hub.timezone!r} and this machine has no such zone ({err}): the "
+            "opening-hours section cannot be written on a clock it cannot read"
+        ) from err
+    return datetime.datetime.combine(
+        datetime.date.fromisoformat(day), datetime.time(hour, minute), tzinfo=zone
+    ).isoformat()

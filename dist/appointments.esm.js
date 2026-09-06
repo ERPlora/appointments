@@ -2063,10 +2063,6 @@ var es_default = {
     daySunday: "Domingo",
     reasonSeriesPatternChanged: "La cita peri\xF3dica cambi\xF3 de pauta"
   },
-  setup: {
-    title: "Tu horario de trabajo",
-    description: "Dile al hub qu\xE9 d\xEDas y a qu\xE9 horas trabajas, para que la agenda solo ofrezca huecos cuando est\xE1s abierto."
-  },
   errors: {
     "appointments.cannot_cancel": "Esta cita ya no se puede cancelar en su estado actual.",
     "appointments.cancellation_notice_required": "Esta cita solo se puede cancelar online con la antelaci\xF3n requerida. Contacta con el negocio.",
@@ -2285,10 +2281,6 @@ var en_default = {
     daySaturday: "Saturday",
     daySunday: "Sunday",
     reasonSeriesPatternChanged: "The repeating appointment changed its pattern"
-  },
-  setup: {
-    title: "Your working hours",
-    description: "Tell the hub the days and times you work, so the agenda only offers slots while you are open."
   },
   errors: {
     "appointments.cannot_cancel": "This appointment can no longer be cancelled in its current state.",
