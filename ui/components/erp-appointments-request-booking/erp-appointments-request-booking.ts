@@ -76,26 +76,6 @@ function can(permission: string): boolean {
   return typeof client.hasPermission === 'function' ? client.hasPermission(permission) : true;
 }
 
-/** `HH:MM` — the shape `availability.slots` returns — as minutes from midnight. `null` when it
- *  cannot be read: a time we are unable to place must not quietly count as 00:00. Slot candidates
- *  are always generated INSIDE the requested date (`availability_slots.sql` walks the hub's
- *  calendar hours), so there is no day to cross and this number is directly comparable. */
-function minuteOfDay(hhmm: unknown): number | null {
-  const m = /^(\d{1,2}):(\d{2})$/.exec(typeof hhmm === 'string' ? hhmm : '');
-  if (!m) return null;
-  return Number(m[1]) * 60 + Number(m[2]);
-}
-
-/** Does the WHOLE slot fit inside one open stretch? Straddling an edge is out, and that is the
- *  door's own rule, not a stricter one invented here: `create` needs the appointment to end before
- *  closing time, so half a slot is no slot. */
-function insideOpening(slot: Slot, spans: OpenSpan[]): boolean {
-  const start = minuteOfDay(slot.start_time);
-  const end = minuteOfDay(slot.end_time);
-  if (start === null || end === null) return false;
-  return spans.some((s) => Number(s.start_minute) <= start && end <= Number(s.end_minute));
-}
-
 function rows<T>(r: unknown): T[] {
   if (Array.isArray(r)) return r as T[];
   if (r && typeof r === 'object' && Array.isArray((r as { rows?: T[] }).rows)) return (r as { rows: T[] }).rows;
@@ -300,24 +280,23 @@ export class ErpAppointmentsRequestBooking extends LitElement {
   }
 
   /**
-   * The stretches the business is open on `this.date`, asked of THE DOOR ITSELF (appointments#105).
+   * The stretches the business is open on `this.date`, asked of THE DOOR ITSELF — and, since
+   * appointments#132, asked ONLY to caption the list, never to cut it.
    *
-   * Since appointments#102 the authority over the business's hours is `schedules`, and the gate
+   * The authority over the business's hours is `schedules` (appointments#102) and the gate
    * (`appointments.appointments.create`) resolves the date through its precedence (ADR-0392).
-   * `availability_slots.sql` cannot follow: a module's query may only name that module's tables,
-   * so `schedules_*` is closed to it by contract. For the hub that has already moved its hours the
-   * list was therefore OPTIMISTIC — it offered 10:00 to a salon that opens at 11:00 and `create`
-   * refused it one click later with `appointments.outside_schedule`.
+   * Recutting the list here would be a second implementation of that precedence in TypeScript,
+   * which is the disease and not the cure — the engine behind `appointments.availability.slots`
+   * already runs the very function the gate runs (appointments#127).
    *
-   * This does NOT re-implement that precedence in TypeScript. A second authority is the disease,
-   * not the cure: it asks `appointments.availability.day_opening`, which runs the very function
-   * the gate runs, and filters by what comes back. Read-only, so it writes nothing.
-   *
-   * Returns the spans to filter by, or `null` for «do not filter»:
-   *   * `[]` — the authority resolved the date and the business is SHUT. Zero slots, on purpose;
+   * What survives is what the LIST CANNOT SAY BY ITSELF, because zero slots is not a reason:
+   *   * `[]` — the authority resolved the date and the business is SHUT (`dayClosed`): the person
+   *     at the counter has to read «closed today», not «no times left»;
    *   * `null` — either the authority carries no rule reaching the date (`source: "unset"`, and
-   *     then the gate refuses nothing, so filtering would erase a whole day the door would have
-   *     accepted), or it could not be asked at all.
+   *     then the gate refuses nothing either), or it could not be asked at all, which is what
+   *     `openingUnknown` warns about.
+   *
+   * Read-only, so it writes nothing.
    */
   private async askDayOpening(): Promise<OpenSpan[] | null> {
     this.openingUnknown = false;
@@ -328,7 +307,7 @@ export class ErpAppointmentsRequestBooking extends LitElement {
       // `result` is where a handler's own answer travels (hub#70): the command envelope the SDK
       // hands back is `{ ok, operations, new_ids, result }`, the same shape every other module
       // reads its `new_ids` from. Reading `source` off the envelope itself finds nothing, and
-      // «nothing» here means «the authority did not answer», which switches the whole filter off.
+      // «nothing» here means «the authority did not answer», which is not «the business is shut».
       const answer = await erplora().command<{
         result?: { source?: string; spans?: OpenSpan[] } | null;
       } | null>('appointments.availability.day_opening', { date: this.date });
@@ -337,21 +316,22 @@ export class ErpAppointmentsRequestBooking extends LitElement {
       return Array.isArray(opening.spans) ? opening.spans : [];
     } catch (e) {
       // `permission_denied` is a ROLE, not a fault (an API key, a custom role): degrade quietly.
-      // Anything else IS a fault, and the operator has to know the list stopped being checked —
-      // booking still works, so this warns and never blocks.
+      // Anything else IS a fault, and the operator has to know the closed-day notice went with it
+      // — the list itself is still the engine's, so booking works: this warns and never blocks.
       if ((e as { code?: string } | null)?.code !== 'permission_denied') this.openingUnknown = true;
       return null;
     }
   }
 
-  /** Free slots RIGHT NOW, from the hub's own availability engine, narrowed to what the door will
-   *  actually accept. The market's hard rule: what a person can pick has to be free at the moment
-   *  they pick it, not when the message arrived — and it has to be bookable, not just free. */
+  /** Free slots RIGHT NOW, exactly as the hub's own availability engine hands them over — it has
+   *  already narrowed them to what the door will accept (appointments#127/#132). The market's hard
+   *  rule: what a person can pick has to be free at the moment they pick it, not when the message
+   *  arrived — and it has to be bookable, not just free. */
   private async loadSlots(): Promise<void> {
     this.startDatetime = '';
     if (!this.date) { this.slots = []; this.dayClosed = false; this.openingUnknown = false; return; }
     const service = this.services.find((s) => s.id === this.serviceId);
-    // The door answers FIRST: what it says decides both what to ask the engine and what to keep.
+    // The door answers FIRST, and only so the empty list can say WHY it is empty.
     const opening = await this.askDayOpening();
     this.dayClosed = opening !== null && opening.length === 0;
     try {
@@ -372,12 +352,14 @@ export class ErpAppointmentsRequestBooking extends LitElement {
         exclude_hold_ref: this.open?.request_id,
       });
       const free = rows<Slot>(answer?.result);
-      // Belt AND braces, on purpose and only for now. Since appointments#127 the engine already
-      // drops everything outside the open stretches, so this filter should never remove a row —
-      // it is the appointments#105 patch, and it comes out in appointments#132 rather than
-      // silently here. Losing it before the handler ships to every hub would put the closed-day
-      // hours back on screen, so #132 carries the version check that makes it safe to drop.
-      this.slots = opening !== null ? free.filter((s) => insideOpening(s, opening)) : free;
+      // AS IT COMES (appointments#132). The screen used to filter this list again against the
+      // stretches it had just asked for — the appointments#105 patch, kept as belt and braces
+      // while appointments#127 moved the hours into the engine. It comes out here: the handler
+      // crosses the candidates with the SAME `schedules_opening` the booking door runs, so a
+      // second pass can only ever disagree with the authority, never improve on it. Screen and
+      // engine travel in the same module version (the engine is this module's own
+      // `dist/handler.wasm`), so there is no half-updated hub to protect against.
+      this.slots = free;
     } catch (e) {
       this.slots = [];
       this.error = e instanceof Error ? e.message : erplora().t(CATALOG, 'ui.errLoadSlots');

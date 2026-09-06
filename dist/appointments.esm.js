@@ -1880,7 +1880,7 @@ __decorateClass3([
 ], OkTimeline.prototype, "align");
 define("ok-timeline", OkTimeline);
 
-// @erplora/module-appointments/locales/es.json
+// locales/es.json
 var es_default = {
   name: "Citas",
   description: "Agenda las citas de tus clientes con sus servicios y profesionales, y s\xEDguelas desde que se reservan hasta que se completan.",
@@ -2100,7 +2100,7 @@ var es_default = {
   }
 };
 
-// @erplora/module-appointments/locales/en.json
+// locales/en.json
 var en_default = {
   name: "Appointments",
   navigation: {
@@ -2319,7 +2319,7 @@ var en_default = {
   }
 };
 
-// @erplora/module-appointments/ui/lib/business-time.ts
+// ui/lib/business-time.ts
 var InvalidLocalTimeError = class extends Error {
   constructor(wall, timezone) {
     super(`invalid_local_time: ${wall} does not exist in ${timezone}`);
@@ -2486,7 +2486,7 @@ function deviceZoneDiffers(timezone = businessTimezone()) {
   return offsetMinutesAt(now, timezone) !== -new Date(now).getTimezoneOffset();
 }
 
-// @erplora/module-appointments/ui/components/erp-appointments-customer-history/erp-appointments-customer-history.ts
+// ui/components/erp-appointments-customer-history/erp-appointments-customer-history.ts
 var CATALOG = { es: es_default, en: en_default };
 function erplora() {
   const c5 = globalThis.erplora;
@@ -5502,7 +5502,7 @@ __decorateClass5([
 ], OkScheduler.prototype, "heldId");
 define("ok-scheduler", OkScheduler);
 
-// @erplora/module-appointments/ui/components/erp-appointments-series/erp-appointments-series.ts
+// ui/components/erp-appointments-series/erp-appointments-series.ts
 var CATALOG2 = { es: es_default, en: en_default };
 function erplora2() {
   const c5 = globalThis.erplora;
@@ -5947,7 +5947,7 @@ __decorateClass([
 ], ErpAppointmentsSeries.prototype, "editDuration", 2);
 define("erp-appointments-series", ErpAppointmentsSeries);
 
-// @erplora/module-appointments/ui/components/erp-appointments-list/erp-appointments-list.ts
+// ui/components/erp-appointments-list/erp-appointments-list.ts
 var CATALOG3 = { es: es_default, en: en_default };
 var STATUS_KEYS2 = {
   pending: "ui.statusPending",
@@ -6891,7 +6891,7 @@ __decorateClass([
 ], ErpAppointmentsList.prototype, "overlapPrompt", 2);
 define("erp-appointments-list", ErpAppointmentsList);
 
-// @erplora/module-appointments/ui/components/erp-appointments-request-booking/erp-appointments-request-booking.ts
+// ui/components/erp-appointments-request-booking/erp-appointments-request-booking.ts
 var CATALOG4 = { es: es_default, en: en_default };
 function erplora4() {
   const c5 = globalThis.erplora;
@@ -6901,17 +6901,6 @@ function erplora4() {
 function can(permission) {
   const client = erplora4();
   return typeof client.hasPermission === "function" ? client.hasPermission(permission) : true;
-}
-function minuteOfDay(hhmm) {
-  const m4 = /^(\d{1,2}):(\d{2})$/.exec(typeof hhmm === "string" ? hhmm : "");
-  if (!m4) return null;
-  return Number(m4[1]) * 60 + Number(m4[2]);
-}
-function insideOpening(slot, spans) {
-  const start = minuteOfDay(slot.start_time);
-  const end = minuteOfDay(slot.end_time);
-  if (start === null || end === null) return false;
-  return spans.some((s5) => Number(s5.start_minute) <= start && end <= Number(s5.end_minute));
 }
 function rows4(r6) {
   if (Array.isArray(r6)) return r6;
@@ -7070,24 +7059,23 @@ var ErpAppointmentsRequestBooking = class extends i3 {
     this.customerLabel = c5.name;
   }
   /**
-   * The stretches the business is open on `this.date`, asked of THE DOOR ITSELF (appointments#105).
+   * The stretches the business is open on `this.date`, asked of THE DOOR ITSELF — and, since
+   * appointments#132, asked ONLY to caption the list, never to cut it.
    *
-   * Since appointments#102 the authority over the business's hours is `schedules`, and the gate
+   * The authority over the business's hours is `schedules` (appointments#102) and the gate
    * (`appointments.appointments.create`) resolves the date through its precedence (ADR-0392).
-   * `availability_slots.sql` cannot follow: a module's query may only name that module's tables,
-   * so `schedules_*` is closed to it by contract. For the hub that has already moved its hours the
-   * list was therefore OPTIMISTIC — it offered 10:00 to a salon that opens at 11:00 and `create`
-   * refused it one click later with `appointments.outside_schedule`.
+   * Recutting the list here would be a second implementation of that precedence in TypeScript,
+   * which is the disease and not the cure — the engine behind `appointments.availability.slots`
+   * already runs the very function the gate runs (appointments#127).
    *
-   * This does NOT re-implement that precedence in TypeScript. A second authority is the disease,
-   * not the cure: it asks `appointments.availability.day_opening`, which runs the very function
-   * the gate runs, and filters by what comes back. Read-only, so it writes nothing.
-   *
-   * Returns the spans to filter by, or `null` for «do not filter»:
-   *   * `[]` — the authority resolved the date and the business is SHUT. Zero slots, on purpose;
+   * What survives is what the LIST CANNOT SAY BY ITSELF, because zero slots is not a reason:
+   *   * `[]` — the authority resolved the date and the business is SHUT (`dayClosed`): the person
+   *     at the counter has to read «closed today», not «no times left»;
    *   * `null` — either the authority carries no rule reaching the date (`source: "unset"`, and
-   *     then the gate refuses nothing, so filtering would erase a whole day the door would have
-   *     accepted), or it could not be asked at all.
+   *     then the gate refuses nothing either), or it could not be asked at all, which is what
+   *     `openingUnknown` warns about.
+   *
+   * Read-only, so it writes nothing.
    */
   async askDayOpening() {
     this.openingUnknown = false;
@@ -7102,9 +7090,10 @@ var ErpAppointmentsRequestBooking = class extends i3 {
       return null;
     }
   }
-  /** Free slots RIGHT NOW, from the hub's own availability engine, narrowed to what the door will
-   *  actually accept. The market's hard rule: what a person can pick has to be free at the moment
-   *  they pick it, not when the message arrived — and it has to be bookable, not just free. */
+  /** Free slots RIGHT NOW, exactly as the hub's own availability engine hands them over — it has
+   *  already narrowed them to what the door will accept (appointments#127/#132). The market's hard
+   *  rule: what a person can pick has to be free at the moment they pick it, not when the message
+   *  arrived — and it has to be bookable, not just free. */
   async loadSlots() {
     this.startDatetime = "";
     if (!this.date) {
@@ -7127,7 +7116,7 @@ var ErpAppointmentsRequestBooking = class extends i3 {
         exclude_hold_ref: this.open?.request_id
       });
       const free = rows4(answer?.result);
-      this.slots = opening !== null ? free.filter((s5) => insideOpening(s5, opening)) : free;
+      this.slots = free;
     } catch (e5) {
       this.slots = [];
       this.error = e5 instanceof Error ? e5.message : erplora4().t(CATALOG4, "ui.errLoadSlots");
