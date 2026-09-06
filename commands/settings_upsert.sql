@@ -2,14 +2,16 @@
 -- por uq_appointments_settings_hub). Portado de AppointmentsSettings. Runtime inyecta
 -- :new_id/:hub_id/:current_user_id/:now. En el conflicto por hub_id sobrescribe los campos
 -- editables y actualiza la auditoría (conserva id/created_*).
--- Los flags booleanos del schema (allow_overlapping/send_reminders/allow_customer_cancellation)
--- se castean a INTEGER 0/1 con CASE WHEN: el runtime bindea el booleano JSON como boolean nativo
--- y las columnas son INTEGER (contrato de fila 2.5) — Postgres NO castea boolean a integer
--- (SQLite sí colaba por tipado dinámico). Ver appointments#25.
+-- Los flags booleanos del schema (allow_overlapping/send_reminders/allow_customer_cancellation/
+-- auto_confirm_online) se bindean CRUDOS: el runtime traduce el booleano JSON a 0/1 al bindear
+-- (`Json::Bool(b) => q.bind(if *b { 1 } else { 0 })`, hub#208/ADR-0154) y las columnas son INTEGER
+-- (contrato de fila §2.5). El `CASE WHEN` que describía este comentario se retiró con aquel cambio;
+-- Postgres sigue sin castear boolean a integer, por eso el bind lo hace por nosotros.
+-- Ver appointments#25 y appointments#79.
 INSERT INTO appointments_settings
   (id, hub_id, default_duration, min_booking_notice, max_advance_booking, allow_overlapping,
    send_reminders, reminder_hours_before, allow_customer_cancellation, cancellation_notice_hours,
-   calendar_start_hour, calendar_end_hour, slot_interval, hold_minutes,
+   calendar_start_hour, calendar_end_hour, slot_interval, hold_minutes, auto_confirm_online,
    is_deleted, created_by, updated_by, created_at, updated_at)
 VALUES
   (:new_id, :hub_id, :default_duration, :min_booking_notice, :max_advance_booking,
@@ -20,6 +22,10 @@ VALUES
    :cancellation_notice_hours,
    :calendar_start_hour, :calendar_end_hour, :slot_interval,
    COALESCE(:hold_minutes, 15),
+   -- appointments#136. COALESCE por la misma razón que `hold_minutes`: el schema le pone
+   -- `default: true`, así que el runtime siempre lo manda (ADR-0073), pero un llamante que
+   -- escriba esta sentencia sin él no puede dejar en NULL una columna NOT NULL.
+   COALESCE(:auto_confirm_online, 1),
    0, :current_user_id, :current_user_id, :now, :now)
 ON CONFLICT(hub_id) DO UPDATE SET
   default_duration            = excluded.default_duration,
@@ -34,6 +40,7 @@ ON CONFLICT(hub_id) DO UPDATE SET
   calendar_end_hour           = excluded.calendar_end_hour,
   slot_interval               = excluded.slot_interval,
   hold_minutes                = excluded.hold_minutes,
+  auto_confirm_online         = excluded.auto_confirm_online,
   is_deleted                  = 0,
   deleted_at                  = NULL,
   updated_by                  = :current_user_id,

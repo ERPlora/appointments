@@ -76,6 +76,12 @@
       "maximum": 120,
       "default": 15,
       "description": "Minutes a slot stays set aside while somebody decides on a pending booking request. 0 switches holds off."
+    },
+    "auto_confirm_online": {
+      "type": "boolean",
+      "title": "Confirm bookings made by the customer automatically",
+      "default": true,
+      "description": "When on, an appointment the customer booked herself — online or through an automation such as WhatsApp — is created already confirmed, so nobody has to accept it one by one. Turn it off to review every one of them before it counts."
     }
   }
 }
