@@ -74,6 +74,12 @@ pub fn day_opening(input: Json<erplora_guest_sdk::Input>) -> FnResult<Json<Outpu
 
 #[cfg(feature = "guest")]
 #[plugin_fn]
+pub fn check_availability(input: Json<erplora_guest_sdk::Input>) -> FnResult<Json<Output>> {
+    guest_result(check_availability_pure(input.into_inner().into_value()))
+}
+
+#[cfg(feature = "guest")]
+#[plugin_fn]
 pub fn bulk_create(input: Json<erplora_guest_sdk::Input>) -> FnResult<Json<Output>> {
     guest_result(bulk_create_pure(input.into_inner().into_value()))
 }
@@ -1148,6 +1154,97 @@ pub fn day_opening_pure(input: Value) -> Result<Output, String> {
         ),
     };
     Ok(Output::new().with_result(json!({ "source": source, "spans": spans })))
+}
+
+/// The engine's own rules, answered by `queries/availability_check.sql` (appointments#122).
+const OWN_RULES_READ: &str = "appointments.availability.own_rules";
+
+/// The refusals the gate ranks BELOW the opening hours, in `prepare_appointment`'s order:
+/// lead time → **hours** → blocked → overlap → hold. A slot the SQL refuses for one of these and
+/// that is ALSO shut comes back `outside_schedule`, because that is the word the door would answer.
+///
+/// Stated as the list BELOW and not the list above on purpose. A reason this list has never heard
+/// of keeps its own word, so a verdict added to the SQL tomorrow can only ever be reported as
+/// itself — never silently overwritten by the hours. The list is pinned against the SQL's own
+/// `CASE ... END AS reason` by `tests/availability_rules.contract.test.py`, so «never heard of» is
+/// a red test and not a quiet drift.
+const RANKED_BELOW_THE_HOURS: [&str; 3] = ["blocked", "overlap", "held"];
+
+/// Is this slot free? — the engine, answering the SAME hours the door enforces (appointments#122).
+///
+/// **What was wrong.** «Is Tuesday at 8 free?» came back FREE from a salon that opens at nine, and
+/// the caller only found out at `create`, one click later. `queries/availability_check.sql`
+/// computed `outside_schedule` from this module's OWN timetable until appointments#117/#118
+/// retired it; with the hours in `schedules` (ADR-0392) that verdict simply stopped being emitted,
+/// and a query of this module may only name this module's tables — so no amount of SQL can bring
+/// it back. The screen papered over it by asking [`day_opening_pure`] separately and filtering
+/// itself (appointments#105); the assistant, a flow, an integration and the public API read
+/// `available` and believed it.
+///
+/// **Why it answers here.** This is the only place that can see both halves. The SQL keeps every
+/// verdict built on tables this module owns — the booking notice, the blocked periods, the
+/// appointments already on the books, the slots held for a pending request — and arrives as an
+/// authoritative read; the hours come from `schedules` through [`schedule_refusal`], the very
+/// function `create` and `reschedule` run. There is no second implementation of ADR-0392's
+/// precedence to drift, which is what
+/// `check_and_the_door_agree_on_the_hours_hour_by_hour` pins for good.
+///
+/// **The order is the door's.** A slot that is both too soon and shut is `too_soon`, because
+/// `lead_time_refusal` runs before `schedule_refusal`; a slot that is both blocked and shut is
+/// `outside_schedule`, because the hours run before the blocked time. The engine ranking the same
+/// refusals differently from the door is the screen contradicting the door all over again.
+///
+/// Read-only: it returns a `result` and never an operation. A read that did not arrive is a
+/// refusal and never an open door — the manifest declares them `required`, and an engine that
+/// shrugs when its input is missing is the optimistic answer this issue is about.
+pub fn check_availability_pure(input: Value) -> Result<Output, String> {
+    let payload = payload_of(&input);
+
+    let Some(row) = read_rows(&input, OWN_RULES_READ).and_then(|rows| rows.first()) else {
+        return Ok(Output::new().with_error(availability_unavailable()));
+    };
+    let available = row.get("available").map(|v| as_i64(v, 0)).unwrap_or(0);
+    let reason = row.get("reason").map(as_str).unwrap_or_default();
+
+    // Refused for something the door decides BEFORE it looks at the clock on the wall: that word
+    // stands, and the hours are not even asked.
+    if available == 0 && !RANKED_BELOW_THE_HOURS.contains(&reason.as_str()) {
+        return Ok(verdict(0, &reason));
+    }
+
+    let Some(settings) = settings_read(&input) else {
+        return Ok(Output::new().with_error(availability_unavailable()));
+    };
+    let duration = payload
+        .get("duration_minutes")
+        .map(|v| as_i64(v, 0))
+        .filter(|d| *d >= 1)
+        .unwrap_or_else(|| default_duration_of(&settings));
+    let Some(start) = parse_dt(&str_or(&payload, "start_datetime", "")) else {
+        // The instant could not be read here, so the hours cannot be judged at all. Answering the
+        // SQL's verdict would be answering «free» about an hour nobody checked.
+        return Ok(Output::new().with_error(DomainError::new(
+            "appointments.availability_unavailable",
+            "That time could not be read on the business clock.",
+        )));
+    };
+    let end = start.add_minutes(duration);
+
+    match schedule_refusal(&input, business_tz(&input), &start, &end) {
+        Some(refusal) if refusal.code == "appointments.outside_schedule" => {
+            Ok(verdict(0, "outside_schedule"))
+        }
+        // The hours themselves could not be resolved (a `schedules` read missing, an unreadable
+        // instant). That is a failure, not a free slot.
+        Some(refusal) => Ok(Output::new().with_error(refusal)),
+        None => Ok(verdict(available, &reason)),
+    }
+}
+
+/// The engine's answer, in the shape the caller reads: `available` 0/1 and the first `reason` that
+/// failed — the very pair `queries/availability_check.sql` has always returned.
+fn verdict(available: i64, reason: &str) -> Output {
+    Output::new().with_result(json!({ "available": available, "reason": reason }))
 }
 
 
@@ -7132,5 +7229,198 @@ mod tests {
             );
         }
         assert!(offered_any, "a walk where nothing is ever offered proves nothing");
+    }
+
+    // ── appointments#122 · the ENGINE answers the hours too, or it lies ────────────────────────
+    //
+    // «Is Tuesday at 8 free?» came back FREE from a salon that opens at 9, and the caller only
+    // found out one click later, when `create` refused. The screen had papered over it by asking
+    // `day_opening` separately and filtering itself (appointments#105), but that is the screen's
+    // patch, not the engine's answer: the assistant, a flow, an integration and the public API all
+    // read `available` and believed it.
+    //
+    // The engine now answers through the handler, exactly like the door: `availability_check.sql`
+    // keeps the verdicts built on tables THIS module owns (notice, blocks, overlaps, holds) and
+    // the handler adds the one it does not — the hours, from `schedules`, through the very
+    // function the gate runs. The order is the gate's, not the query's convenience.
+
+    /// The engine's own rules, as `queries/availability_check.sql` answers them.
+    fn own_rules(available: i64, reason: &str) -> Value {
+        json!([{ "available": available, "reason": reason }])
+    }
+
+    fn check_input(start: &str, rules: Value, reads: Value) -> Value {
+        let mut merged = reads;
+        merged["appointments.availability.own_rules"] = rules;
+        json!({
+            "payload": { "start_datetime": start, "duration_minutes": 30, "staff_id": "s1" },
+            "context": { "hub_id": "h1", "now": "2026-07-01T08:00:00Z", "new_ids": [],
+                         "timezone": "Europe/Madrid", "reads": merged }
+        })
+    }
+
+    /// `(available, reason)` as the caller reads them off the answer.
+    fn verdict_of(out: &Output) -> (i64, String) {
+        let result = out.result.clone().unwrap_or(Value::Null);
+        (
+            result.get("available").map(|v| as_i64(v, -1)).unwrap_or(-1),
+            result.get("reason").map(as_str).unwrap_or_default(),
+        )
+    }
+
+    /// 🔴 THE SYMPTOM OF THE ISSUE. 2026-07-31 is a FRIDAY and the salon closes at 18:00. Nothing
+    /// this module owns objects to 23:00 — no block, no appointment, no hold — so the SQL says
+    /// FREE, and that is the answer that used to reach the assistant.
+    #[test]
+    fn check_says_outside_schedule_when_the_business_is_shut() {
+        let out = check_availability_pure(check_input(
+            "2026-07-31T23:00:00+02:00",
+            own_rules(1, ""),
+            sched_hours(sched_weekdays_nine_to_six()),
+        ))
+        .unwrap();
+        assert_eq!(verdict_of(&out), (0, "outside_schedule".to_string()));
+    }
+
+    /// The same Friday at 15:00 is open, and the engine must not invent a refusal there.
+    #[test]
+    fn check_keeps_the_hour_available_when_the_business_is_open() {
+        let out = check_availability_pure(check_input(
+            "2026-07-31T15:00:00+02:00",
+            own_rules(1, ""),
+            sched_hours(sched_weekdays_nine_to_six()),
+        ))
+        .unwrap();
+        assert_eq!(verdict_of(&out), (1, String::new()));
+    }
+
+    /// The hours do not overwrite what the SQL already refused BEFORE them in the gate's order:
+    /// `lead_time_refusal` runs before `schedule_refusal`, so a slot that is both too soon and
+    /// shut comes back `too_soon` — the same word `create` would answer.
+    #[test]
+    fn check_keeps_a_refusal_the_door_ranks_above_the_hours() {
+        for reason in ["invalid_start", "too_soon", "too_far"] {
+            let out = check_availability_pure(check_input(
+                "2026-07-31T23:00:00+02:00",
+                own_rules(0, reason),
+                sched_hours(sched_weekdays_nine_to_six()),
+            ))
+            .unwrap();
+            assert_eq!(verdict_of(&out), (0, reason.to_string()));
+        }
+    }
+
+    /// …and it DOES overwrite the ones the gate ranks below: the door checks the hours before the
+    /// blocked time, the overlap and the hold, so a shut hour is `outside_schedule` even when the
+    /// agenda has something else to say about it.
+    #[test]
+    fn check_ranks_the_hours_above_the_refusals_the_door_ranks_lower() {
+        for reason in ["blocked", "overlap", "held"] {
+            let out = check_availability_pure(check_input(
+                "2026-07-31T23:00:00+02:00",
+                own_rules(0, reason),
+                sched_hours(sched_weekdays_nine_to_six()),
+            ))
+            .unwrap();
+            assert_eq!(
+                verdict_of(&out),
+                (0, "outside_schedule".to_string()),
+                "the door refuses {reason} with outside_schedule first"
+            );
+        }
+    }
+
+    /// A hub that has configured no hours anywhere books at any hour — the same answer the door
+    /// gives, and for the same reason: «I have not set my hours yet» must not read as «I cannot
+    /// take bookings».
+    #[test]
+    fn check_leaves_every_hour_available_when_no_hours_are_configured() {
+        let out = check_availability_pure(check_input(
+            "2026-07-31T23:00:00+02:00",
+            own_rules(1, ""),
+            sched_hours(json!([])),
+        ))
+        .unwrap();
+        assert_eq!(verdict_of(&out), (1, String::new()));
+    }
+
+    /// Missing read = refusal, never an open door. Both halves: the authority's lists and the
+    /// module's own engine.
+    #[test]
+    fn check_refuses_when_a_read_it_needs_did_not_arrive() {
+        let mut reads = sched_hours(sched_weekdays_nine_to_six());
+        reads.as_object_mut().unwrap().remove("schedules.special_days.list");
+        let out = check_availability_pure(check_input(
+            "2026-07-31T15:00:00+02:00",
+            own_rules(1, ""),
+            reads,
+        ))
+        .unwrap();
+        assert_eq!(
+            domain_code(&out).as_deref(),
+            Some("appointments.availability_unavailable")
+        );
+
+        let mut without_engine = check_input(
+            "2026-07-31T15:00:00+02:00",
+            own_rules(1, ""),
+            sched_hours(sched_weekdays_nine_to_six()),
+        );
+        without_engine["context"]["reads"]
+            .as_object_mut()
+            .unwrap()
+            .remove("appointments.availability.own_rules");
+        let out = check_availability_pure(without_engine).unwrap();
+        assert_eq!(
+            domain_code(&out).as_deref(),
+            Some("appointments.availability_unavailable")
+        );
+    }
+
+    /// 🔒 THE REGRESSION GUARD. Half-hour by half-hour, what the engine calls unavailable-because-
+    /// shut is exactly what the door refuses with `appointments.outside_schedule`. This is the
+    /// pair appointments#122 exists to close: the engine saying «free» about an hour the door will
+    /// refuse is the whole defect, and a walk is the only shape that cannot pass by accident.
+    #[test]
+    fn check_and_the_door_agree_on_the_hours_hour_by_hour() {
+        let hours = json!([json!({ "id": "bh-lunch", "day_of_week": 0, "position": 0,
+                                   "open_time": "09:00", "close_time": "18:00", "is_closed": 0,
+                                   "break_start": "14:00", "break_end": "16:00" })]);
+        let reads = sched_hours(hours);
+        let mut shut_somewhere = false;
+        let mut open_somewhere = false;
+        for half_hour in 0..47 {
+            let start_min = half_hour * 30;
+            let at = format!(
+                "2026-08-03T{:02}:{:02}:00+02:00",
+                start_min / 60,
+                start_min % 60
+            );
+
+            let engine = check_availability_pure(check_input(
+                &at,
+                own_rules(1, ""),
+                reads.clone(),
+            ))
+            .unwrap();
+            let engine_shut = verdict_of(&engine) == (0, "outside_schedule".to_string());
+
+            let door = create_appointment_pure(input(item(&at, 30, "s1"), Some(reads.clone())))
+                .unwrap();
+            let door_shut =
+                domain_code(&door).as_deref() == Some("appointments.outside_schedule");
+
+            shut_somewhere |= door_shut;
+            open_somewhere |= !door_shut;
+            assert_eq!(
+                engine_shut, door_shut,
+                "the engine and the door disagree at {at}: engine shut={engine_shut}, \
+                 door shut={door_shut}"
+            );
+        }
+        assert!(
+            shut_somewhere && open_somewhere,
+            "a walk where the day is all open or all shut proves nothing"
+        );
     }
 }

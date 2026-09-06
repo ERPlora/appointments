@@ -11,7 +11,7 @@ guardará quien no quiera límite— se quedaba con la agenda a cero:
 
   · `appointments.availability.slots`  → 0 huecos, cualquier día (`erp_date(:date) <= now+0d`
     solo deja HOY, y hoy ya lo cierra la antelación mínima);
-  · `appointments.availability.check`  → `too_far` para cualquier instante futuro;
+  · `appointments.availability.own_rules`  → `too_far` para cualquier instante futuro;
 
 mientras `create` SÍ reservaba ese mismo instante. La pantalla consulta `check` antes de crear y
 aborta con su mensaje, así que el mostrador se quedaba sin poder reservar por la pantalla con la
@@ -52,7 +52,7 @@ HUB = "hub-under-test"
 
 QUERIES = {
     "appointments.availability.slots": "queries/availability_slots.sql",
-    "appointments.availability.check": "queries/availability_check.sql",
+    "appointments.availability.own_rules": "queries/availability_check.sql",
 }
 
 # The fixed `now` the runtime would inject. 2026-09-01 is a Tuesday: tomorrow 11:00 is ~26 h
@@ -233,7 +233,7 @@ def check(start: str) -> dict:
     }
     sql = shim(
         bind(
-            (MODULE_DIR / QUERIES["appointments.availability.check"]).read_text(),
+            (MODULE_DIR / QUERIES["appointments.availability.own_rules"]).read_text(),
             params,
         )
     )

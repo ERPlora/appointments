@@ -276,18 +276,23 @@ def set_booking_policy(
 def availability(
     hub: Hub, start: str, duration: int, staff_id: str | None = None
 ) -> tuple[int, str]:
-    """`(available, reason)` of `appointments.availability.check` — the authoritative engine
-    `create`/`reschedule` consult before materialising (ADR-0021: the WASM handler cannot pre-load
-    reads of its own)."""
-    params: dict = {"start_datetime": start, "duration_minutes": duration}
+    """`(available, reason)` of `appointments.availability.check` — the engine that answers the
+    same verdict the booking door enforces.
+
+    It is a COMMAND and not a query since appointments#122: the opening hours belong to
+    `schedules`, a query of a module may only name its own tables, and a handler is the only place
+    that gets the authority's lists pre-loaded (`reads`). The SQL half survives underneath as
+    `appointments.availability.own_rules`."""
+    payload: dict = {"start_datetime": start, "duration_minutes": duration}
     if staff_id is not None:
-        params["staff_id"] = staff_id
-    rows = hub.query("appointments.availability.check", params)
-    if not rows:
+        payload["staff_id"] = staff_id
+    verdict = hub.result("appointments.availability.check", payload)
+    if not isinstance(verdict, dict) or "available" not in verdict:
         raise AssertionError(
-            f"availability.check answered no row for {start} ({duration} min, staff={staff_id})"
+            f"availability.check answered {verdict!r} for {start} "
+            f"({duration} min, staff={staff_id})"
         )
-    return int(rows[0]["available"]), rows[0].get("reason") or ""
+    return int(verdict["available"]), verdict.get("reason") or ""
 
 
 # ── the links a booking needs, created for real ──────────────────────────────────────────

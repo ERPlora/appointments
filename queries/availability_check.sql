@@ -1,25 +1,32 @@
--- Motor de disponibilidad: ¿está libre una franja concreta? (WASM-TODO pieza 8 /
--- check_availability). Query declarativa Tier 0 — misma lógica que availability_slots
--- pero para UNA franja, devolviendo `available` (0/1) y el primer `reason` que falla:
+-- The availability engine, own-rules half: is THIS slot free? (appointments#122)
+--
+-- Returns `available` (0/1) and the first `reason` that fails, in the door's order:
 --   invalid_start | too_soon | too_far | blocked | overlap | held | ''
 --
--- 🔴 appointments#118 — AQUÍ YA NO SE MIRA EL HORARIO. Esta query calculaba `outside_schedule`
--- contra las tablas de horario PROPIAS del módulo, que se retiraron con la pantalla que las
--- escribía (#117) y con su respaldo (#118). El horario del negocio es de `schedules` (ADR-0392) y
--- una query de un módulo solo puede nombrar tablas de su módulo, así que este SQL no puede
--- seguir esa precedencia ni por asomo: quien necesite las horas pregunta a
--- `appointments.availability.day_opening`, que corre la MISMA función que la puerta. La pantalla
--- de reserva ya lo hace así desde #105.
+-- 🔴 THE HOURS ARE NOT HERE, AND CANNOT BE. This query used to compute `outside_schedule` against
+-- the module's OWN timetable, retired with the screen that wrote it (appointments#117) and with
+-- its fallback (appointments#118). The business opening hours belong to `schedules` (ADR-0392) and
+-- a query of a module may only name its own module's tables, so this SQL cannot follow that
+-- precedence even in principle. That is why it is no longer the operation anybody calls:
+-- appointments#122 turned `appointments.availability.check` into a handler command that takes this
+-- verdict as an authoritative read and adds the hours through `schedule_refusal` — the very
+-- function the booking door runs. Whoever only wants the open stretches of a date asks
+-- `appointments.availability.day_opening`.
 --
--- Binds: :start_datetime (ISO 8601, requerido) · :duration_minutes (opcional; default =
--- settings.default_duration) · :staff_id (opcional; ausente = agenda global).
--- Runtime inyecta :hub_id y :now. Fechas/horas vía funciones-puente erp_* (ADR-0007 §4a):
--- erp_dt (datetime comparable), erp_date (parte fecha), erp_dateadd (suma intervalo).
--- Fechas en TEXT ISO-8601.
--- :staff_id va CASTEADO (`CAST(:staff_id AS TEXT)`) y no es estilo: Postgres fija el tipo de un
--- bind en su PRIMERA aparición y `IS [NOT] NULL` no aporta ninguno, así que sin :staff_id —la
--- agenda global, o sea la llamada normal— el bind viajaba sin tipo y el PREPARE moría con 42P08.
--- Mismo idioma que ya usa queries/appointments_list.sql. Cubierto por tests/availability.pg.test.py.
+-- The names say which half is which: this query is `appointments.availability.own_rules` and it
+-- answers ONLY what this module owns — the booking notice, the blocked periods, the appointments
+-- already on the books and the slots held for a pending request.
+--
+-- Binds: :start_datetime (ISO 8601, required) · :duration_minutes (optional; default =
+-- settings.default_duration) · :staff_id (optional; absent = the whole agenda) ·
+-- :exclude_hold_ref (optional; the pending request that owns a hold on this slot).
+-- The runtime injects :hub_id and :now. Dates/times go through the erp_* bridge functions
+-- (ADR-0007 §4a): erp_dt (comparable datetime), erp_date (date part), erp_dateadd (add interval).
+-- Dates are ISO-8601 TEXT.
+-- :staff_id is CAST (`CAST(:staff_id AS TEXT)`) and that is not style: Postgres fixes a bind's
+-- type at its FIRST appearance and `IS [NOT] NULL` contributes none, so without :staff_id — the
+-- whole agenda, which is the normal call — the bind travelled untyped and PREPARE died with 42P08.
+-- Same idiom queries/appointments_list.sql already uses. Covered by tests/availability.postgres.test.py.
 WITH cfg AS (
     SELECT COALESCE(COALESCE(:duration_minutes, MAX(default_duration)), 60) AS dur,
            COALESCE(MAX(min_booking_notice),  60) AS notice_min,

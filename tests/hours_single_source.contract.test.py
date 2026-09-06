@@ -44,7 +44,11 @@ their truth from somewhere other than the prose they judge:
   * the reasons a query CAN return are parsed out of its own `CASE ... END AS reason`;
   * the vocabulary of reason words is the union of those plus the `appointments.<code>` refusals the
     handler emits — so `outside_schedule` is a KNOWN word (the door really does refuse with it),
-    which is what makes «the engine offers it» detectable instead of merely absent;
+    which is what makes «a query offers it» detectable instead of merely absent. Since
+    appointments#122 the OPERATION `appointments.availability.check` does answer it, legitimately:
+    it is a handler command that adds the hours to the SQL verdict. What is judged here is the SQL
+    half (`appointments.availability.own_rules`), which still cannot produce that word, and the doc
+    table, which has to list exactly what the operation answers — hours included;
   * naming the authority bare («crossing schedules») is a claim to cross it, and is only allowed to
     an operation that actually reads it. An operation that just points elsewhere names the exact
     operation (`schedules.business_hours.list`), which is what the assistant can act on anyway.
@@ -100,13 +104,21 @@ HANDLER = MODULE_DIR / "handler" / "src" / "lib.rs"
 # The authority that owns the opening hours (ADR-0392, appointments#102).
 AUTHORITY = "schedules"
 
-# The doc page that explains the refusals to a human. Only the table of the section below is this
-# battery's business — the prose under it talks about the DOOR, which does still refuse on hours.
+# The doc page that explains the refusals to a human. Only the TABLE of the section below is this
+# battery's business: it is the list a reader plans a screen around, so it has to match what
+# `appointments.availability.check` can actually answer — its SQL half's `CASE` plus the opening
+# hours the handler adds (appointments#122). The prose around it is not a row and is not judged.
 CONCEPTS = "docs/concepts.md"
 REASONS_SECTION = "Availability has reasons"
 
-# The engine whose `CASE` the doc table describes.
-AVAILABILITY_CHECK = "appointments.availability.check"
+# The verdict the engine adds on top of its SQL: the opening hours, from the authority
+# (appointments#122). It is the one reason of the table the `CASE` cannot produce.
+HOURS_REASON = "outside_schedule"
+
+# The engine whose `CASE` the doc table describes. It is the SQL half of
+# `appointments.availability.check`, which since appointments#122 answers through the handler
+# so it can add the opening hours the SQL cannot reach.
+AVAILABILITY_CHECK = "appointments.availability.own_rules"
 
 # The six operations appointments#117 retired. Cheap half of the check — kept by name so the diff
 # that brings one back is readable, but the SQL scan below is what actually holds the line.
@@ -355,7 +367,12 @@ def doc_table_reasons() -> tuple[set[str], str]:
     end = next(
         (i for i, ln in enumerate(lines[start + 1 :], start + 1) if ln.startswith("#")), len(lines)
     )
-    section = lines[start + 1 : end]
+    return section_reasons(lines[start + 1 : end])
+
+
+def section_reasons(section: list[str]) -> tuple[set[str], str]:
+    """Split a section into the reasons of its TABLE and the prose around it. Pure, so the
+    boundary between the two can be probed with a planted positive."""
     reasons = set()
     prose = []
     for ln in section:
@@ -366,6 +383,24 @@ def doc_table_reasons() -> tuple[set[str], str]:
         else:
             prose.append(ln)
     return reasons, "\n".join(prose)
+
+
+def answerable_reasons(name: str, spec: dict) -> set[str]:
+    """Every `reason` word an operation of the availability family can actually put on the wire.
+
+    A query answers its own `CASE ... END AS reason`. A handler COMMAND answers the `CASE` of the
+    query it takes as its verdict — the `reads` it declares inside this family — plus the one word
+    only a handler can add: `outside_schedule`, and only when it reads the authority that owns the
+    hours. That is what `appointments.availability.check` became in appointments#122.
+    """
+    reasons = emitted_reasons(sql_of(spec))
+    for read in spec.get("reads") or []:
+        query = str(read.get("query", "")) if isinstance(read, dict) else ""
+        if query.startswith(AVAILABILITY):
+            reasons |= emitted_reasons(sql_of(MANIFEST.get("queries", {}).get(query, {})))
+    if reads_the_authority(name, spec):
+        reasons.add(HOURS_REASON)
+    return reasons
 
 
 def check_the_reason_readers_find_the_positive() -> None:
@@ -404,21 +439,51 @@ def check_the_reason_readers_find_the_positive() -> None:
             f"no reason row found in the «{REASONS_SECTION}» table of {CONCEPTS}: the doc check "
             "passes on an empty set"
         )
-    # The positive is placed AFTER the filtered region on purpose: the paragraph under the table
-    # says the door refuses on `outside_schedule`, and that is TRUE. A parser that swallowed the
-    # prose would drag that word into the table set and fail the honest doc.
-    if "outside_schedule" not in prose:
+    # What the engine can answer: the SQL half's own `CASE`, plus the hours the handler adds
+    # (appointments#122). The table is read by whoever plans a screen around those reasons, so it
+    # must be neither more nor less than that.
+    answerable = emitted_reasons(sql_of(engine)) | {HOURS_REASON}
+    for reason in sorted(table - answerable):
         fail(
-            f"the «{REASONS_SECTION}» prose no longer mentions `outside_schedule`: the door still "
-            "refuses with it, and this check has lost the control that proves the table parser "
-            "stops at the table"
+            f"{CONCEPTS} lists `{reason}` as an answer of the availability engine, which can only "
+            f"send {sorted(answerable)}: whoever reads the table plans a screen around a reason "
+            "that never arrives"
         )
-    if "outside_schedule" in table:
+    if HOURS_REASON not in table:
         fail(
-            f"{CONCEPTS} lists `outside_schedule` as an answer of the availability engine: the "
-            f"`CASE` of `{AVAILABILITY_CHECK}` cannot return it since appointments#118. The door "
-            "refuses with it — which the paragraph under the table already says — but whoever "
-            "reads the table plans a screen around a reason the engine never sends"
+            f"{CONCEPTS} does not list `{HOURS_REASON}` among the engine's answers: since "
+            "appointments#122 the check answers the opening hours exactly like the door, and a "
+            "table that hides it tells the reader to go on asking `day_opening` separately — the "
+            "very workaround that issue removed"
+        )
+    if "Schedules" not in prose:
+        fail(
+            f"the «{REASONS_SECTION}» prose no longer names the authority the hours come from: "
+            "the reader is left with a reason and nowhere to go and change it"
+        )
+
+    # Boundary control, planted: a reason named only in the PROSE must not be counted as a row of
+    # the table. Without it the parser could swallow the paragraph and the two checks above would
+    # be judging prose.
+    probe_table, probe_prose = section_reasons(
+        [
+            "| Reason | Meaning |",
+            "|---|---|",
+            "| `overlap` | that professional is already booked |",
+            "",
+            "The door also refuses with `too_far`, and this line is prose, not a row.",
+        ]
+    )
+    if probe_table != {"overlap"}:
+        fail(
+            f"the doc parser reads {sorted(probe_table)} as the rows of a table whose only row is "
+            "`overlap`: the reasons of the prose would be judged as if the table listed them"
+        )
+    if "too_far" not in probe_prose:
+        fail(
+            "the doc parser drops the prose of the section instead of setting it aside, so the "
+            "line that separates «a row of the table» from «a sentence about it» is not there any "
+            "more and the two checks above are judging whatever the parser happened to keep"
         )
 
     # appointments#124 — the reason check now judges the queries with NO `reason` column, so the
@@ -462,11 +527,59 @@ def check_the_reason_readers_find_the_positive() -> None:
             f"check is never taken, so it has never been shown to spare `{DAY_OPENING}`"
         )
 
+    # …and what a COMMAND of the family can answer has to be READ, not assumed. If
+    # `answerable_reasons` came back empty the promise check above would fire on every honest
+    # word instead of the false ones — and if it never added the hours it would fire on the one
+    # word appointments#122 exists to let `check` say.
+    engine = {
+        n: spec
+        for n, spec in MANIFEST.get("commands", {}).items()
+        if n.startswith(AVAILABILITY) and any(
+            str(r.get("query", "")).startswith(AVAILABILITY)
+            for r in (spec.get("reads") or [])
+            if isinstance(r, dict)
+        )
+    }
+    if not engine:
+        fail(
+            f"no command of `{AVAILABILITY}*` takes another one as its verdict: since "
+            "appointments#122 the engine answers that way, and without one the reader below is "
+            "never exercised"
+        )
+    for name, spec in sorted(engine.items()):
+        answers = answerable_reasons(name, spec)
+        if not answers - {HOURS_REASON}:
+            fail(
+                f"`{name}` reads a verdict of this module and `answerable_reasons` gets no word "
+                "out of it: the promise check would then judge its description against an empty "
+                f"set and call every honest reason a lie ({sorted(answers)})"
+            )
+        if HOURS_REASON not in answers:
+            fail(
+                f"`{name}` reads the authority and `answerable_reasons` still does not grant it "
+                f"`{HOURS_REASON}`: the promise check would turn appointments#122's own answer red"
+            )
+    if HOURS_REASON in answerable_reasons("probe", {"reads": []}):
+        fail(
+            f"`answerable_reasons` grants `{HOURS_REASON}` to an operation that reads nothing: it "
+            "would spare the description that promises the hours from a query that cannot see them"
+        )
 
-def check_the_assistant_is_not_promised_a_reason_the_query_cannot_return() -> None:
+
+def check_the_assistant_is_not_promised_a_reason_the_operation_cannot_return() -> None:
     """appointments#118 — the assistant builds its tools from the manifest (ADR-0033). A reason word
-    in an `ai.description` that the statement's own `CASE` cannot produce is a false belief we
-    planted: it is exactly what appointments#122 describes, only sourced from us.
+    in an `ai.description` that the operation cannot actually produce is a false belief we planted:
+    it is exactly what appointments#122 describes, only sourced from us.
+
+    🔴 OPERATIONS, not queries. This judged `MANIFEST["queries"]` alone until appointments#122
+    moved `appointments.availability.check` into `commands` — and the day it moved, the description
+    the assistant plans with stopped being judged by anything at all (measured: the same false
+    promise is red on the manifest before that change and green after it). The other half of the
+    manifest, appointments#124's pointer duty, exempts `check` for the good reason that it now
+    reads the authority, so the exemption and the blind spot lined up on the same operation. The
+    whole availability family is judged here, whichever block it is published in, and what a
+    handler command can answer is computed the way it answers: the `CASE` of the query it reads,
+    plus the hours it adds.
 
     EVERY query is judged, not only the ones that answer with a reason (appointments#124). The
     first version skipped a query with no `CASE ... END AS reason` on the grounds that it makes no
@@ -480,21 +593,29 @@ def check_the_assistant_is_not_promised_a_reason_the_query_cannot_return() -> No
     vocabulary = handler_refusals()
     for spec in MANIFEST.get("queries", {}).values():
         vocabulary |= emitted_reasons(sql_of(spec))
-    for name, spec in sorted(MANIFEST.get("queries", {}).items()):
-        can_return = emitted_reasons(sql_of(spec))
+    judged = {
+        **MANIFEST.get("queries", {}),
+        **{
+            n: spec
+            for n, spec in MANIFEST.get("commands", {}).items()
+            if n.startswith(AVAILABILITY)
+        },
+    }
+    for name, spec in sorted(judged.items()):
+        can_return = answerable_reasons(name, spec)
         description = describes(spec)
         for word in sorted(vocabulary - can_return):
             if not promised_as_a_code(word, description):
                 continue
             answers = (
-                f"its `CASE ... END AS reason` can only return {sorted(can_return)}"
+                f"it can only answer {sorted(can_return)}"
                 if can_return
-                else "it has no `reason` column at all, so it can return none"
+                else "it has no `reason` to answer at all, so it can return none"
             )
             fail(
                 f"`{name}` tells the assistant it answers `{word}`, but {answers}. The tool "
-                "description is the contract the assistant plans with, so it will ask this query "
-                "about something it cannot see and read the empty answer as «fine»"
+                "description is the contract the assistant plans with, so it will ask this "
+                "operation about something it cannot see and read the empty answer as «fine»"
             )
 
 
@@ -530,6 +651,37 @@ def check_every_availability_answer_points_at_the_authority() -> None:
             )
 
 
+def check_an_availability_answer_that_reads_the_hours_says_so() -> None:
+    """The DUAL of appointments#124's pointer duty, and the hole appointments#122 opened.
+
+    #124 made an availability answer that does NOT read the authority hand the assistant the
+    operation that does. `appointments.availability.check` now reads it, so it is exempt — and
+    with nothing on the other side of that exemption its description could go back to «It does NOT
+    look at the opening hours» word for word and stay green (measured on this manifest). That
+    sentence is the lie of #122 spelled backwards: the assistant would go on asking `day_opening`
+    separately and filtering by hand, which is the workaround the issue removed.
+
+    So the exemption is paid for: an operation of the family that reaches the authority has to name
+    it. Positive duty and not a blacklist of phrases, for the same reason #124 chose one — a list
+    of forbidden wordings rots in silence, a duty to name the authority does not, and whoever
+    rewrites the description into a claim of ignoring the hours takes the name out with it.
+    """
+    for block in ("queries", "commands"):
+        for name, spec in sorted(MANIFEST.get(block, {}).items()):
+            if not name.startswith(AVAILABILITY):
+                continue
+            if not reads_the_authority(name, spec):
+                continue
+            if re.search(rf"\b{AUTHORITY}\b", describes(spec), re.IGNORECASE):
+                continue
+            fail(
+                f"`{name}` reads the opening hours of `{AUTHORITY}` and does not say so. Its "
+                "description is what the assistant plans with: silence there reads as «this one "
+                "does not know the hours», which is the answer appointments#122 stopped being "
+                f"true — say it reads `{AUTHORITY}`"
+            )
+
+
 def check_the_assistant_is_not_told_we_cross_the_hours_authority() -> None:
     """Naming `schedules` bare is a claim to take it into account, and only an operation that
     actually reaches it may make that claim. Pointing elsewhere is fine and useful — but then it
@@ -561,7 +713,8 @@ def main() -> int:
     check_setup_does_not_ask_for_our_hours()
     check_the_docs_do_not_offer_them()
     check_the_reason_readers_find_the_positive()
-    check_the_assistant_is_not_promised_a_reason_the_query_cannot_return()
+    check_the_assistant_is_not_promised_a_reason_the_operation_cannot_return()
+    check_an_availability_answer_that_reads_the_hours_says_so()
     check_the_assistant_is_not_told_we_cross_the_hours_authority()
     check_every_availability_answer_points_at_the_authority()
     if failures:
