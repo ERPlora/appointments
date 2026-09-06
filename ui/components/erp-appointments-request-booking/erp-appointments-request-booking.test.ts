@@ -19,8 +19,17 @@ import { beforeEach, describe, expect, it } from 'vitest';
 
 const queries: { name: string; params: Record<string, unknown> }[] = [];
 const commands: { name: string; payload: Record<string, unknown> }[] = [];
-/** What a command answers in THIS test. The SDK hands the caller the command's `result` unwrapped
- *  (`unwrap(env)` returns `env.data`), so a mock returns the payload itself, not an envelope. */
+/** What a command's HANDLER answers in THIS test — the `result` alone; the mock wraps it the way
+ *  the runtime does.
+ *
+ *  This mock used to hand the answer back bare, on the belief that the SDK unwrapped it. It does
+ *  not: `unwrap(env)` returns `env.data`, and the handler's answer travels INSIDE that, under
+ *  `result` (hub#70), next to `new_ids` and `operations` — which is exactly how every other module
+ *  reads one (`command<{ new_ids?: string[] }>('customers.create', …)`). Measured against
+ *  `ghcr.io/erplora/hub:dev` while writing appointments#117:
+ *  `{"new_ids":[],"ok":true,"operations":0,"result":{"source":"schedules","spans":[…]}}`.
+ *  A mock that invents a friendlier envelope than the runtime's is a green light for a screen that
+ *  cannot work — it is what let the appointments#105 fix ship reading a field that is never there. */
 const commandAnswers: Record<string, unknown> = {};
 /** What a command REFUSES with in this test, so degradation can be pinned as well as the happy path. */
 const commandFailures: Record<string, Error> = {};
@@ -57,7 +66,9 @@ beforeEach(() => {
       commands.push({ name, payload });
       const refusal = commandFailures[name];
       if (refusal) throw refusal;
-      return commandAnswers[name] ?? {};
+      const envelope: Record<string, unknown> = { ok: true, operations: 0, new_ids: [] };
+      if (name in commandAnswers) envelope.result = commandAnswers[name];
+      return envelope;
     },
     hasPermission: () => true,
     locale: 'en',

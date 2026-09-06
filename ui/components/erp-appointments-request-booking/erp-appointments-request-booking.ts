@@ -325,12 +325,16 @@ export class ErpAppointmentsRequestBooking extends LitElement {
     // security — the runtime re-checks — it just keeps a legitimate role from generating a refusal.
     if (!can('appointments.view_schedule')) return null;
     try {
-      const answer = await erplora().command<{ source?: string; spans?: OpenSpan[] } | null>(
-        'appointments.availability.day_opening',
-        { date: this.date },
-      );
-      if (!answer || answer.source !== 'schedules') return null;
-      return Array.isArray(answer.spans) ? answer.spans : [];
+      // `result` is where a handler's own answer travels (hub#70): the command envelope the SDK
+      // hands back is `{ ok, operations, new_ids, result }`, the same shape every other module
+      // reads its `new_ids` from. Reading `source` off the envelope itself finds nothing, and
+      // «nothing» here means «the authority did not answer», which switches the whole filter off.
+      const answer = await erplora().command<{
+        result?: { source?: string; spans?: OpenSpan[] } | null;
+      } | null>('appointments.availability.day_opening', { date: this.date });
+      const opening = answer?.result;
+      if (!opening || opening.source !== 'schedules') return null;
+      return Array.isArray(opening.spans) ? opening.spans : [];
     } catch (e) {
       // `permission_denied` is a ROLE, not a fault (an API key, a custom role): degrade quietly.
       // Anything else IS a fault, and the operator has to know the list stopped being checked —

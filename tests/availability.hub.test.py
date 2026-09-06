@@ -21,8 +21,14 @@ battery pins, section by section:
   3. THE `allow_overlapping` TOGGLE: with it on, the double booking is allowed — and the `create`
      door follows the same policy, which is what makes the toggle worth having (the engine saying
      yes while the door says no would be a setting that does nothing).
-  4. OUTSIDE WORKING HOURS: with a Monday–Friday 09:00–18:00 schedule seeded, 08:00 is refused with
-     `reason='outside_schedule'` while 12:00 of the same day is free.
+  4. OUTSIDE WORKING HOURS: with a Monday–Friday 09:00–18:00 week seeded IN `schedules` — the
+     authority that owns the opening hours (ADR-0392, appointments#102/#117) — `create` refuses
+     08:00 with `appointments.outside_schedule` and books 12:00 of the same day, and
+     `appointments.availability.day_opening` hands the screen the same 09:00–18:00 the door just
+     enforced. The engine is asked too, and says `available` at 08:00: it computes
+     `outside_schedule` from THIS module's own timetable, which nothing can write since #117, so
+     the hours are the door's business now and the screen filters by `day_opening`
+     (appointments#105) instead of trusting the query.
 
 Why against the runtime and not a scratch Postgres: `:hub_id` and `:now` are injected by the HOST,
 the `erp_*` bridge functions are rendered by the real dialect, and the rows are written by the WASM
@@ -52,6 +58,7 @@ from hub_harness import (
     Hub,
     availability,
     book,
+    business_instant,
     instant,
     next_weekday,
     seed_links,
@@ -70,7 +77,8 @@ def main() -> int:
     links = seed_links(hub, "overlap", duration_minutes=DURATION)
     day = next_weekday()
     # 12:00 on purpose: inside any plausible working schedule, so this section stays true even on
-    # a hub that already had shifts seeded (§4 seeds them for every later run against this hub).
+    # a hub that already had its week seeded (§4 seeds one in `schedules` for every later run
+    # against this shared hub).
     noon = instant(day, "12:00")
 
     book(hub, links, links.staff_id, noon, DURATION)
@@ -109,38 +117,75 @@ def main() -> int:
         "§3 …and `create` books it for real", bool(second), f"got id {second!r}"
     )
 
-    # ── 4 · outside the working schedule ─────────────────────────────────────────────────
-    print("§4 outside the working schedule")
+    # ── 4 · outside the working hours, which `schedules` owns ────────────────────────────
+    print("§4 outside the working hours (`schedules` is the authority)")
     set_booking_policy(hub, allow_overlapping=False)
-    schedule_id = hub.new_id(
-        "appointments.schedules.create",
-        {"name": f"Horario salón {day}", "is_default": True},
-    )
+    # The hours are written where they LIVE (appointments#102/#117): this module has no command
+    # that writes a timetable any more, and seeding one through a back door would prove the gate
+    # against a surface no owner can reach.
     for day_of_week in range(0, 5):  # 0=Monday … 4=Friday
         hub.run(
-            "appointments.timeslots.create",
+            "schedules.business_hours.set",
             {
-                "schedule_id": schedule_id,
                 "day_of_week": day_of_week,
-                "start_time": "09:00",
-                "end_time": "18:00",
+                "intervals": [{"open_time": "09:00", "close_time": "18:00"}],
             },
         )
+    # WALL time, not UTC: the door crosses the booking against the business clock, so 08:00 has to
+    # be 08:00 in the shop or this section is about the offset of whoever ran it.
+    open_hour = business_instant(hub, day, "12:00")
+    shut_hour = business_instant(hub, day, "08:00")
 
-    # A professional with NO appointments of her own, so the only thing that can refuse here is
-    # the schedule — otherwise §4 would be re-testing §1.
+    # THE SCREEN. `day_opening` is what the booking form draws the day from, and it runs the very
+    # function the door decides with — no second implementation of ADR-0392's precedence to drift.
+    opening = hub.result("appointments.availability.day_opening", {"date": day})
+    hub.check("§4 the day is resolved by `schedules`", opening.get("source"), "schedules")
+    hub.check(
+        "§4 …and the open stretch is 09:00-18:00 in minutes from midnight",
+        opening.get("spans"),
+        [{"start_minute": 540, "end_minute": 1080}],
+    )
+
+    # THE DOOR. A professional with NO appointments of her own, so the only thing that can refuse
+    # here is the schedule — otherwise §4 would be re-testing §1.
     free = seed_links(hub, "schedule", duration_minutes=DURATION)
-    avail, reason = availability(hub, noon, DURATION, free.staff_id)
-    hub.check("§4 12:00 on a weekday is inside the schedule", (avail, reason), (1, ""))
+    hub.refused(
+        "§4 08:00 is before opening",
+        "appointments.appointments.create",
+        {
+            "customer_id": free.customer_id,
+            "customer_name": "Cliente",
+            "service_id": free.service_id,
+            "service_name": free.service_name,
+            "staff_id": free.staff_id,
+            "staff_name": "no-lo-decide-el-payload",
+            "start_datetime": shut_hour,
+            "duration_minutes": DURATION,
+        },
+        "appointments.outside_schedule",
+    )
+    booked = book(hub, free, free.staff_id, open_hour, DURATION)
+    hub.check_true(
+        "§4 …and 12:00 of the same day books", bool(booked), f"got id {booked!r}"
+    )
 
-    avail, reason = availability(hub, instant(day, "08:00"), DURATION, free.staff_id)
-    hub.check("§4 08:00 is before opening", avail, 0)
-    hub.check("§4 …and the reason is the schedule", reason, "outside_schedule")
+    # AND THE REFUSAL CAME FROM THE DOOR, not from a leftover verdict of the engine. Since #117
+    # nothing can write this module's own timetable, so `availability.check` — which computes
+    # `outside_schedule` from those rows — has nothing to say and answers `available` at 08:00.
+    # That silence is precisely why the screen filters by `day_opening` (appointments#105) instead
+    # of trusting the engine, and asserting it here is what keeps §4 from passing by accident.
+    avail, reason = availability(hub, shut_hour, DURATION, free.other_staff_id)
+    hub.check(
+        "§4 the engine alone does not know the hours any more",
+        (avail, reason),
+        (1, ""),
+    )
 
     return hub.finish(
         "the availability engine refuses the overlap per professional, keeps the other "
         "professional free, honours the `allow_overlapping` toggle at the engine AND at the door, "
-        "and marks the hours outside the working schedule"
+        "and the booking door enforces the opening hours `schedules` owns — the same ones "
+        "`day_opening` hands the screen"
     )
 
 

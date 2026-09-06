@@ -19,7 +19,7 @@ versión instalada y cita la de TU versión, no la de la última publicada. En i
 | Fichero | Para qué |
 | ------- | -------- |
 | [`docs/overview.md`](docs/overview.md) | Qué hace y qué NO hace; el ciclo de vida y los eventos |
-| [`docs/screens.md`](docs/screens.md) | La agenda (lista ↔ por profesional), reservar, horarios, bloqueos y recurrentes |
+| [`docs/screens.md`](docs/screens.md) | La agenda (lista ↔ por profesional), reservar, bloqueos y recurrentes |
 | [`docs/concepts.md`](docs/concepts.md) | **Capacidad = nº de profesionales**, `allow_overlapping` apaga la comprobación ENTERA, transición inválida = RECHAZO (ya no OK mudo con evento duplicado), reprogramar se excluye a sí misma |
 | [`docs/limits.md`](docs/limits.md) | Los 5 códigos `cannot_*`, las 6 razones de no-disponibilidad, caps y permisos por acción |
 
@@ -29,14 +29,14 @@ versión instalada y cita la de TU versión, no la de la última publicada. En i
 | ---- | ------ | ------- |
 | query | `appointments.appointments.list` / `.get` / `.history` / `.conflicting` | `view_appointment` |
 | query | `appointments.availability.slots` / `.check` (motor autoritativo, Tier 0) | `view_schedule` |
-| query | `appointments.schedules.list` / `.timeslots` · `appointments.blocked_times.list` | `view_schedule` |
-| query | `appointments.recurring.list` · `.settings.get` · `.agenda.status` | `view_appointment` |
+| query | `appointments.blocked_times.list` · `appointments.schedules.active_timeslots` (respaldo transitorio: las horas se configuran en `schedules` — appointments#117/#118) | `view_schedule` |
+| query | `appointments.recurring.list` · `.settings.get` | `view_appointment` |
 | command | `appointments.appointments.create` (WASM, `reads` → `conflicting`) / `.bulk_create` (WASM) | `add_appointment` |
 | command | `confirm` / `start` / `complete` / `cancel` / `no_show` / `reschedule` / `update` (todas con `expect_rows` + código de dominio) | `change_appointment` |
 | command | `appointments.appointments.delete` / `.bulk_delete` (WASM) | `delete_appointment` |
-| command | `schedules.*` / `timeslots.*` / `blocked_times.*` | `manage_schedule` |
+| command | `blocked_times.*` | `manage_schedule` |
 | command | `recurring.create` / `.materialize` (WASM) / `.delete` · `settings.upsert` | `add_appointment` / `manage_settings` |
-| emite | `appointments.appointment.*`, `.schedule.*`, `.blocked_time.created`, `.recurring.created`, `.settings.updated` | — |
+| emite | `appointments.appointment.*`, `.blocked_time.created`, `.recurring.created`, `.settings.updated` | — |
 | escucha | — | — |
 
 Navegación: `erp-appointments-list` («Appointments»), con conmutador **lista ↔ por profesional**

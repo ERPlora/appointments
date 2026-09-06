@@ -5,8 +5,8 @@
 Appointments is the diary of a booking-based business — a salon, a clinic, a workshop. It books a
 slot for a **customer**, against a **service** and a **professional**, and carries that booking
 through its life: pending, confirmed, in progress, and then completed, cancelled or a no-show. It
-knows when you are open (schedules), when you are not (blocked time), and it refuses to double-book
-the same professional.
+knows when you are open (the **Schedules** module), when you are not (blocked time), and it
+refuses to double-book the same professional.
 
 It also holds recurring templates, so "every other Tuesday at 10" can be turned into real
 appointments.
@@ -46,7 +46,6 @@ name, phone and price. There are no cross-module foreign keys.
 | `appointments.appointment.cancelled` / `.no_show` | it ends badly |
 | `appointments.appointment.rescheduled` | it moves |
 | `appointments.appointment.deleted` | it is removed |
-| `appointments.schedule.created` / `.deleted` | working hours change |
 | `appointments.blocked_time.created` | time is blocked |
 | `appointments.recurring.created` | a recurring template is created |
 | `appointments.settings.updated` | the settings are saved |

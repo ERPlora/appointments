@@ -26,8 +26,6 @@ A refused transition rolls back **everything**: no row change, no history entry 
 | Update | `appointment_id`, `customer_name`, `start_datetime`, `end_datetime`, `duration_minutes` |
 | Reschedule | `appointment_id`, `start_datetime`, `end_datetime`, `duration_minutes` |
 | Cancel | `appointment_id` (plus the reason) |
-| Create a schedule | `name` |
-| Create a time slot | `schedule_id`, `day_of_week`, `start_time`, `end_time` |
 | Create blocked time | `title`, `start_datetime`, `end_datetime` |
 | Create a recurring template | `customer_name`, `service_name`, `frequency`, `time`, `duration_minutes`, `start_date` |
 
@@ -49,7 +47,7 @@ A refused transition rolls back **everything**: no row change, no history entry 
 | Appointments per bulk creation | 50 |
 | Appointments per bulk deletion | 50 |
 | Appointments materialised per run of a recurring template | 50 |
-| Rows per page (schedules, blocked time, recurring) | 50 |
+| Rows per page (blocked time, recurring) | 50 |
 | Maximum rows a paginated request may ask for | 500 |
 | Appointments per day per hub, by numbering | 9999 |
 
@@ -64,14 +62,17 @@ is valid the whole call fails with the detail.
 | Book an appointment | `appointments.add_appointment` |
 | Confirm, start, complete, cancel, no-show, reschedule, update | `appointments.change_appointment` |
 | Delete an appointment | `appointments.delete_appointment` |
-| See schedules, time slots, blocked time and availability | `appointments.view_schedule` |
-| Create or delete schedules, time slots and blocked time | `appointments.manage_schedule` |
+| See blocked time and availability | `appointments.view_schedule` |
+| Create or delete blocked time | `appointments.manage_schedule` |
 | Change the module settings | `appointments.manage_settings` |
 
 By role: **admin** has everything. **manager** has everything except deleting appointments and
 changing settings. **employee** can **see and book** appointments and see the schedule, but
 **cannot** confirm, start, complete, cancel, mark a no-show or reschedule, and cannot manage
-schedules.
+blocked time.
+
+The opening hours themselves are **not** managed here at all: they live in the **Schedules**
+module, with its own permissions (appointments#117).
 
 That split is deliberate: taking a booking at the counter is routine; moving somebody's diary is not.
 
@@ -88,9 +89,9 @@ customer directory are unaffected.
 
 ## When something looks wrong
 
-**"There are no free slots today."** Almost always a missing or wrong **schedule**. Check that a
-schedule exists, is active, and has a time slot for that weekday — and remember weekdays are 0 =
-Monday. Then check blocked time.
+**"There are no free slots today."** Almost always the opening hours, and they are set in the
+**Schedules** module: check the weekly hours of that weekday there, and whether a special day or an
+override closes the date. Then check blocked time.
 
 **"It says overlap but the professional is free."** Look at whether the clashing booking is a
 cancelled one — those are excluded — and at whether you are booking the same professional. Overlap is
