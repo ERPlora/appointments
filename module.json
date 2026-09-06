@@ -460,6 +460,12 @@
         "commands/appointment_cancel.sql"
       ]
     },
+    "appointments._gate_clear": {
+      "permission": "appointments.change_appointment",
+      "sql": [
+        "commands/_gate_clear.sql"
+      ]
+    },
     "appointments._history_cancel": {
       "permission": "appointments.change_appointment",
       "sql": [
@@ -928,7 +934,8 @@
       "transaction": true,
       "sql": [
         "commands/appointment_update.sql",
-        "commands/_appointment_overlap_assert.sql"
+        "commands/_appointment_overlap_assert.sql",
+        "commands/_gate_clear.sql"
       ],
       "schema": "schemas/appointment_update.json",
       "emit": [
