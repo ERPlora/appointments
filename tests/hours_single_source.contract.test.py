@@ -44,7 +44,11 @@ their truth from somewhere other than the prose they judge:
   * the reasons a query CAN return are parsed out of its own `CASE ... END AS reason`;
   * the vocabulary of reason words is the union of those plus the `appointments.<code>` refusals the
     handler emits — so `outside_schedule` is a KNOWN word (the door really does refuse with it),
-    which is what makes «the engine offers it» detectable instead of merely absent;
+    which is what makes «a query offers it» detectable instead of merely absent. Since
+    appointments#122 the OPERATION `appointments.availability.check` does answer it, legitimately:
+    it is a handler command that adds the hours to the SQL verdict. What is judged here is the SQL
+    half (`appointments.availability.own_rules`), which still cannot produce that word, and the doc
+    table, which has to list exactly what the operation answers — hours included;
   * naming the authority bare («crossing schedules») is a claim to cross it, and is only allowed to
     an operation that actually reads it. An operation that just points elsewhere names the exact
     operation (`schedules.business_hours.list`), which is what the assistant can act on anyway.
@@ -100,13 +104,21 @@ HANDLER = MODULE_DIR / "handler" / "src" / "lib.rs"
 # The authority that owns the opening hours (ADR-0392, appointments#102).
 AUTHORITY = "schedules"
 
-# The doc page that explains the refusals to a human. Only the table of the section below is this
-# battery's business — the prose under it talks about the DOOR, which does still refuse on hours.
+# The doc page that explains the refusals to a human. Only the TABLE of the section below is this
+# battery's business: it is the list a reader plans a screen around, so it has to match what
+# `appointments.availability.check` can actually answer — its SQL half's `CASE` plus the opening
+# hours the handler adds (appointments#122). The prose around it is not a row and is not judged.
 CONCEPTS = "docs/concepts.md"
 REASONS_SECTION = "Availability has reasons"
 
-# The engine whose `CASE` the doc table describes.
-AVAILABILITY_CHECK = "appointments.availability.check"
+# The verdict the engine adds on top of its SQL: the opening hours, from the authority
+# (appointments#122). It is the one reason of the table the `CASE` cannot produce.
+HOURS_REASON = "outside_schedule"
+
+# The engine whose `CASE` the doc table describes. It is the SQL half of
+# `appointments.availability.check`, which since appointments#122 answers through the handler
+# so it can add the opening hours the SQL cannot reach.
+AVAILABILITY_CHECK = "appointments.availability.own_rules"
 
 # The six operations appointments#117 retired. Cheap half of the check — kept by name so the diff
 # that brings one back is readable, but the SQL scan below is what actually holds the line.
@@ -355,7 +367,12 @@ def doc_table_reasons() -> tuple[set[str], str]:
     end = next(
         (i for i, ln in enumerate(lines[start + 1 :], start + 1) if ln.startswith("#")), len(lines)
     )
-    section = lines[start + 1 : end]
+    return section_reasons(lines[start + 1 : end])
+
+
+def section_reasons(section: list[str]) -> tuple[set[str], str]:
+    """Split a section into the reasons of its TABLE and the prose around it. Pure, so the
+    boundary between the two can be probed with a planted positive."""
     reasons = set()
     prose = []
     for ln in section:
@@ -404,21 +421,51 @@ def check_the_reason_readers_find_the_positive() -> None:
             f"no reason row found in the «{REASONS_SECTION}» table of {CONCEPTS}: the doc check "
             "passes on an empty set"
         )
-    # The positive is placed AFTER the filtered region on purpose: the paragraph under the table
-    # says the door refuses on `outside_schedule`, and that is TRUE. A parser that swallowed the
-    # prose would drag that word into the table set and fail the honest doc.
-    if "outside_schedule" not in prose:
+    # What the engine can answer: the SQL half's own `CASE`, plus the hours the handler adds
+    # (appointments#122). The table is read by whoever plans a screen around those reasons, so it
+    # must be neither more nor less than that.
+    answerable = emitted_reasons(sql_of(engine)) | {HOURS_REASON}
+    for reason in sorted(table - answerable):
         fail(
-            f"the «{REASONS_SECTION}» prose no longer mentions `outside_schedule`: the door still "
-            "refuses with it, and this check has lost the control that proves the table parser "
-            "stops at the table"
+            f"{CONCEPTS} lists `{reason}` as an answer of the availability engine, which can only "
+            f"send {sorted(answerable)}: whoever reads the table plans a screen around a reason "
+            "that never arrives"
         )
-    if "outside_schedule" in table:
+    if HOURS_REASON not in table:
         fail(
-            f"{CONCEPTS} lists `outside_schedule` as an answer of the availability engine: the "
-            f"`CASE` of `{AVAILABILITY_CHECK}` cannot return it since appointments#118. The door "
-            "refuses with it — which the paragraph under the table already says — but whoever "
-            "reads the table plans a screen around a reason the engine never sends"
+            f"{CONCEPTS} does not list `{HOURS_REASON}` among the engine's answers: since "
+            "appointments#122 the check answers the opening hours exactly like the door, and a "
+            "table that hides it tells the reader to go on asking `day_opening` separately — the "
+            "very workaround that issue removed"
+        )
+    if "Schedules" not in prose:
+        fail(
+            f"the «{REASONS_SECTION}» prose no longer names the authority the hours come from: "
+            "the reader is left with a reason and nowhere to go and change it"
+        )
+
+    # Boundary control, planted: a reason named only in the PROSE must not be counted as a row of
+    # the table. Without it the parser could swallow the paragraph and the two checks above would
+    # be judging prose.
+    probe_table, probe_prose = section_reasons(
+        [
+            "| Reason | Meaning |",
+            "|---|---|",
+            "| `overlap` | that professional is already booked |",
+            "",
+            "The door also refuses with `too_far`, and this line is prose, not a row.",
+        ]
+    )
+    if probe_table != {"overlap"}:
+        fail(
+            f"the doc parser reads {sorted(probe_table)} as the rows of a table whose only row is "
+            "`overlap`: the reasons of the prose would be judged as if the table listed them"
+        )
+    if "too_far" not in probe_prose:
+        fail(
+            "the doc parser drops the prose of the section instead of setting it aside, so the "
+            "line that separates «a row of the table» from «a sentence about it» is not there any "
+            "more and the two checks above are judging whatever the parser happened to keep"
         )
 
     # appointments#124 — the reason check now judges the queries with NO `reason` column, so the

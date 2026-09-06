@@ -47,7 +47,7 @@ MODULE_DIR = pathlib.Path(__file__).resolve().parent.parent
 MANIFEST = json.loads((MODULE_DIR / "module.json").read_text())
 
 SLOTS = "appointments.availability.slots"
-CHECK = "appointments.availability.check"
+CHECK = "appointments.availability.own_rules"
 CONTAINER = os.environ.get("ERPLORA_TEST_PG_CONTAINER", "erplora-test-pg-5433")
 DB = f"appointments_availability_window_{uuid.uuid4().hex[:8]}"
 HUB = "hub-under-test"

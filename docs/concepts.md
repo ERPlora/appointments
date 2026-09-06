@@ -91,6 +91,7 @@ When a slot is not free, the availability check tells you **why**:
 
 | Reason | Meaning |
 |---|---|
+| `outside_schedule` | You are closed at that hour |
 | `overlap` | That professional is already booked then |
 | `blocked` | Holiday, vacation, break or maintenance covers it |
 | `held` | Another pending booking request has that slot set aside for a few minutes |
@@ -98,16 +99,19 @@ When a slot is not free, the availability check tells you **why**:
 | `too_far` | It is beyond how far ahead you allow bookings |
 | `invalid_start` | The start is in the past or unparseable |
 
-Being **closed** is not on that list, and that is deliberate since appointments#118: the opening
-hours belong to **Schedules**, so the availability check — which only reads this module's own
-tables — cannot see them and answers about an hour you are shut as if it were free. Ask
-`appointments.availability.day_opening` for the stretches you are open that date. Booking anyway
-still fails, at the door, with the reason below.
+Being **closed** is on that list again since appointments#122, and it is the same verdict the
+booking door gives: asking whether Tuesday at 8 is free used to answer YES from a salon that opens
+at nine, and you only found out when the booking was refused. The opening hours belong to
+**Schedules** and no SQL of this module can reach another module's tables, so the check reads them
+the way the door does — through the handler — and answers with them. An hour it calls free is an
+hour a booking will be accepted at.
+
+`appointments.availability.day_opening` still answers the stretches you are open on a date, which
+is what a calendar needs to draw the day; the check answers about ONE slot.
 
 "No slots today" almost always means the opening hours of **Schedules** close that date, not
 that the day is full — the booking screen asks `appointments.availability.day_opening` and hides
-the slots outside what it answers, which is why the list can be empty on a day the engine above
-considers every hour free.
+the slots outside what it answers.
 
 These reasons are not only advice any more. `outside_schedule`, `blocked`, `too_soon`, `too_far`
 and `invalid_start` are **refused at the door**: whoever books — the screen, the assistant, a flow,

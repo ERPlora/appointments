@@ -335,11 +335,137 @@ def check_schedules_authority() -> None:
                 )
 
 
+# ── appointments#122 · the ENGINE answers the hours too ──────────────────────────────────────
+#
+# Everything above is about the DOOR. `appointments.availability.check` is the other side: what a
+# caller is told BEFORE booking. It answered «free» about an hour the door would refuse, because a
+# query of a module may only name its own tables and the hours belong to `schedules`. It is a
+# handler command now, taking the SQL verdict as a read and adding the hours through the very
+# function the door runs.
+ENGINE = "appointments.availability.check"
+ENGINE_RULES = "appointments.availability.own_rules"
+ENGINE_FN = "check_availability"
+HANDLER = MODULE_DIR / "handler" / "src" / "lib.rs"
+# The `CASE ... END AS reason` of the SQL half is the list of verdicts it can produce.
+REASON_CASE = re.compile(r"CASE(.*?)END\s+AS\s+reason", re.IGNORECASE | re.DOTALL)
+REASON_LITERAL = re.compile(r"THEN\s+'([a-z_][a-z0-9_]*)'", re.IGNORECASE)
+# …and this is how the handler says «the hours outrank this one».
+RANKED_BELOW = re.compile(r"RANKED_BELOW_THE_HOURS:\s*\[&str;\s*\d+\]\s*=\s*\[([^\]]*)\]")
+
+
+def sql_reasons() -> set[str]:
+    """Every `reason` the SQL half can answer, read from its own `CASE`."""
+    rel = MANIFEST.get("queries", {}).get(ENGINE_RULES, {}).get("sql")
+    if not rel:
+        return set()
+    sql = "\n".join(
+        line.split("--", 1)[0] for line in (MODULE_DIR / rel).read_text().splitlines()
+    )
+    out: set[str] = set()
+    for body in REASON_CASE.findall(sql):
+        out |= {r.lower() for r in REASON_LITERAL.findall(body)}
+    return out
+
+
+def ranked_below_the_hours(source: str) -> set[str]:
+    """The verdicts the handler declares the opening hours outrank."""
+    m = RANKED_BELOW.search(source)
+    return set(re.findall(r'"([a-z_][a-z0-9_]*)"', m.group(1))) if m else set()
+
+
+def check_the_engine_answers_the_hours() -> None:
+    engine = MANIFEST.get("commands", {}).get(ENGINE)
+    if engine is None:
+        fail(
+            f"`{ENGINE}` is not a command: a query cannot declare `reads` or a handler (the "
+            "manifest schema has neither), so as a query it can never see the opening hours and "
+            "answers «free» about an hour the door refuses"
+        )
+        return
+    if ENGINE in MANIFEST.get("queries", {}):
+        fail(
+            f"`{ENGINE}` is published as a query AND as a command: two doors with one name answer "
+            "differently, and the SQL one is the one that does not know the hours"
+        )
+    if engine.get("handler", {}).get("function") != ENGINE_FN:
+        fail(
+            f"`{ENGINE}` does not run `{ENGINE_FN}`: the verdict is back in SQL that cannot read "
+            f"`schedules`, got {engine.get('handler')!r}"
+        )
+    declared = {
+        r.get("query"): bool(r.get("required"))
+        for r in engine.get("reads", [])
+        if isinstance(r, dict)
+    }
+    for needed in (ENGINE_RULES, POLICY_READ, *SCHEDULES_READS):
+        if needed not in declared:
+            fail(
+                f"`{ENGINE}` does not declare the read `{needed}`: without it the engine answers "
+                "on an input it never got"
+            )
+        elif not declared[needed]:
+            fail(
+                f"`{ENGINE}` declares `{needed}` without `required`: a read that may quietly fail "
+                "to resolve turns the engine optimistic again — exactly the bug of #122"
+            )
+
+
+def check_every_verdict_of_the_sql_is_ranked_against_the_hours() -> None:
+    """The handler decides in the DOOR's order: lead time → hours → blocked → overlap → hold. A
+    verdict added to the SQL tomorrow that nobody ranked would be reported as itself and never be
+    overwritten by the hours — safe, but silently wrong for a rule the door ranks lower. So every
+    word the SQL can answer has to be accounted for in the handler: either it is named in
+    `RANKED_BELOW_THE_HOURS`, or the door emits it itself as an `appointments.<code>` refusal and
+    is therefore the one that decided it."""
+    source = HANDLER.read_text()
+    below = ranked_below_the_hours(source)
+    reasons = sql_reasons()
+    if not reasons:
+        fail(
+            f"no `reason` could be read from the SQL of `{ENGINE_RULES}`: this check then passes "
+            "on an empty set and ranks nothing"
+        )
+    if not below:
+        fail(
+            "`RANKED_BELOW_THE_HOURS` could not be read from the handler: the ranking would look "
+            "empty and every verdict would seem to outrank the opening hours"
+        )
+    for reason in sorted(reasons):
+        if reason in below or f'"appointments.{reason}"' in source:
+            continue
+        fail(
+            f"the SQL can answer `{reason}` and the handler ranks it nowhere: add it to "
+            "`RANKED_BELOW_THE_HOURS` if the opening hours outrank it, or make the door emit it — "
+            "an unranked verdict silently escapes the hours the door does enforce"
+        )
+
+
+def check_the_ranking_reader_finds_the_positive() -> None:
+    """Both readers above are «X must be there»: if either returned nothing the check would pass
+    on emptiness. Plant the positive and the negative before trusting them."""
+    probe = "const RANKED_BELOW_THE_HOURS: [&str; 2] = [\"blocked\", \"held\"];"
+    if ranked_below_the_hours(probe) != {"blocked", "held"}:
+        fail(
+            "the ranking reader cannot read a plain `RANKED_BELOW_THE_HOURS`: it would report an "
+            f"empty set and rank nothing ({ranked_below_the_hours(probe)!r})"
+        )
+    if ranked_below_the_hours("const SOMETHING_ELSE: [&str; 1] = [\"blocked\"];"):
+        fail("the ranking reader matches any Rust array: it would read the wrong list")
+    if "held" not in sql_reasons():
+        fail(
+            "`held` is not among the reasons read from the SQL: the parser is not reaching the "
+            f"`CASE` of `{ENGINE_RULES}`, so the coverage check ranks nothing"
+        )
+
+
 def main() -> int:
     check_writers()
     check_reschedule()
     check_schedules_authority()
     check_i18n()
+    check_the_engine_answers_the_hours()
+    check_every_verdict_of_the_sql_is_ranked_against_the_hours()
+    check_the_ranking_reader_finds_the_positive()
     if failures:
         print(f"FAIL ({len(failures)}):")
         for f in failures:

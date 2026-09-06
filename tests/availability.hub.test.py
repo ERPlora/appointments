@@ -6,10 +6,13 @@ Replaces `crates/runtime/tests/appointments_availability_e2e.rs` of the hub, whi
 module's business rules from inside the kernel's own suite. Contract «El Hub se CIERRA como
 KERNEL» §5: the kernel proves its contract with a fixture, the module proves its own behaviour.
 
-The authoritative engine is the Tier-0 query `appointments.availability.check` (declarative SQL):
-it is what `create`/`reschedule` consult by `staff_id` BEFORE materialising, and what the screen
-calls to grey a slot out (the WASM handler cannot pre-load reads of its own — ADR-0021). What this
-battery pins, section by section:
+The authoritative engine is `appointments.availability.check`: what `create`/`reschedule` consult
+by `staff_id` BEFORE materialising, and what the screen, the assistant, a flow or an integration
+call to know whether a slot can be sold. Since appointments#122 it is a HANDLER command and no
+longer a Tier-0 query — the SQL half survives underneath as the read
+`appointments.availability.own_rules` — because the opening hours belong to `schedules` and a
+query of a module may only name its own module's tables. What this battery pins, section by
+section:
 
   1. OVERLAP PER PROFESSIONAL, respecting the service duration: with `allow_overlapping=false`, a
      second appointment for the SAME professional inside [start, start+duration) is refused with
@@ -25,10 +28,10 @@ battery pins, section by section:
      authority that owns the opening hours (ADR-0392, appointments#102/#117) — `create` refuses
      08:00 with `appointments.outside_schedule` and books 12:00 of the same day, and
      `appointments.availability.day_opening` hands the screen the same 09:00–18:00 the door just
-     enforced. The engine is asked too, and says `available` at 08:00: it used to compute
-     `outside_schedule` from THIS module's own timetable, retired in appointments#118, so the
-     hours are the door's business alone and the screen filters by `day_opening`
-     (appointments#105) instead of trusting the query.
+     enforced. **And the engine says the same**: asked about 08:00 it answers
+     `available=0 / outside_schedule`, the door's own word. It used to answer `available` there —
+     the hole appointments#122 closed — because the verdict was computed from THIS module's own
+     timetable, retired in appointments#118, and the SQL had no way to reach the authority's.
 
 Why against the runtime and not a scratch Postgres: `:hub_id` and `:now` are injected by the HOST,
 the `erp_*` bridge functions are rendered by the real dialect, and the rows are written by the WASM
@@ -169,16 +172,26 @@ def main() -> int:
         "§4 …and 12:00 of the same day books", bool(booked), f"got id {booked!r}"
     )
 
-    # AND THE REFUSAL CAME FROM THE DOOR, not from a leftover verdict of the engine.
-    # appointments#118 retired this module's own timetable and the `outside_schedule` verdict
-    # `availability.check` computed from it, so the engine has nothing to say about the hours and
-    # answers `available` at 08:00. That silence is precisely why the screen filters by
-    # `day_opening` (appointments#105) instead of trusting the engine, and asserting it here is
-    # what keeps §4 from passing by accident.
+    # 🔴 AND THE ENGINE SAYS THE SAME AS THE DOOR (appointments#122). This assertion used to
+    # demand `(1, "")` here, and it documented the bug: asking «is 08:00 free?» answered YES about
+    # an hour `create` had just refused two lines above, and the caller only found out by trying to
+    # book. The screen hid it by filtering with `day_opening` on its own (appointments#105) — the
+    # screen's patch, not the engine's answer, and the assistant, a flow and the public API had no
+    # such patch. `check` now takes the SQL verdict as a read and adds the hours through
+    # `schedule_refusal`, the very function the door just ran, so the two cannot drift.
+    # `other_staff_id` on purpose: nothing of this module's own rules objects to that slot, so the
+    # ONLY thing that can refuse it here is the schedule.
     avail, reason = availability(hub, shut_hour, DURATION, free.other_staff_id)
     hub.check(
-        "§4 the engine alone does not know the hours any more",
+        "§4 the engine answers the same hours the door enforces",
         (avail, reason),
+        (0, "outside_schedule"),
+    )
+    # …and it does not refuse the whole day: 12:00, which the door just accepted, is free for it.
+    open_avail, open_reason = availability(hub, open_hour, DURATION, free.other_staff_id)
+    hub.check(
+        "§4 …and 12:00, which the door accepts, stays available for the engine",
+        (open_avail, open_reason),
         (1, ""),
     )
 
@@ -186,7 +199,7 @@ def main() -> int:
         "the availability engine refuses the overlap per professional, keeps the other "
         "professional free, honours the `allow_overlapping` toggle at the engine AND at the door, "
         "and the booking door enforces the opening hours `schedules` owns — the same ones "
-        "`day_opening` hands the screen"
+        "`day_opening` hands the screen AND the same ones `availability.check` now answers"
     )
 
 

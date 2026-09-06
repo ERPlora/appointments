@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "appointments.availability.check",
+  "description": "The slot to ask about, and nothing else (appointments#122): the opening hours, the agenda and the settings are read from the hub by the runtime (`reads`), never sent by the caller — hours a caller supplies are hours a caller can forge.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["start_datetime"],
+  "properties": {
+    "start_datetime": {
+      "type": "string",
+      "minLength": 1,
+      "description": "When the slot starts, ISO 8601 with its offset (`2026-08-03T09:00:00+02:00`). The hours are judged on the business's own clock, so an instant without an offset is read as UTC."
+    },
+    "duration_minutes": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "How long the slot lasts. Absent = the hub's `default_duration`. The appointment has to fit WHOLE inside an open stretch, so this is what decides whether a booking that starts before closing runs past it."
+    },
+    "staff_id": {
+      "type": "string",
+      "description": "Ask about ONE professional's agenda. Absent = the whole agenda: any appointment or block of the hub counts."
+    },
+    "exclude_hold_ref": {
+      "type": "string",
+      "description": "The pending booking request that OWNS a hold on this slot, so its own hold does not refuse it. Only the request that set the slot aside can name it."
+    }
+  }
+}
