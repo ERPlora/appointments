@@ -55,7 +55,14 @@ RESCHEDULE_CHAIN = [
     "appointments._reschedule_row",
     "appointments._appointment_overlap_assert",
     "appointments._history_reschedule",
+    "appointments._gate_clear",
 ]
+# The gate table's drain (appointments#116). It is the last link of every chain that uses a gate,
+# so the table is empty once the command commits.
+GATE_CLEAR = "appointments._gate_clear"
+# `appointments.appointments.update` is DECLARATIVE: its chain is the manifest's own `sql[]`, and
+# it writes the same gate table through `_appointment_overlap_assert`.
+UPDATE_CHAIN = ["appointments.appointments.update"]
 
 failures: list[str] = []
 notes: list[str] = []
@@ -65,13 +72,21 @@ def fail(msg: str) -> None:
     failures.append(msg)
 
 
-def sql_of(command: str) -> str:
-    """The single statement of an internal command, straight from the manifest."""
+def statements_of(command: str) -> list[str]:
+    """Every statement of a command, in manifest order.
+
+    An internal command carries exactly one file; a declarative command like
+    `appointments.appointments.update` chains several, and the runtime runs them in that order
+    inside one transaction — so the battery has to as well.
+    """
     files = (MANIFEST.get("commands", {}).get(command) or {}).get("sql") or []
-    if len(files) != 1:
-        fail(f"{command}: expected exactly one sql file, got {files!r}")
-        return ""
-    return (MODULE_DIR / files[0]).read_text()
+    if not files:
+        fail(f"{command}: the manifest declares no sql chain")
+        return []
+    if command.split(".", 1)[1].startswith("_") and len(files) != 1:
+        fail(f"{command}: an internal command must be one statement, got {files!r}")
+        return []
+    return [(MODULE_DIR / f).read_text() for f in files]
 
 
 # ── Postgres plumbing ────────────────────────────────────────────────────────────────────
@@ -196,7 +211,9 @@ def run_chain(commands: list[str], params: dict, pad=pad_min_width) -> str | Non
     Returns None when it committed, or the Postgres error when the transaction aborted — which is
     how a gate with `CHECK (ok = 1)` refuses.
     """
-    body = "\n".join(shim(bind(sql_of(c), params), pad) for c in commands)
+    body = "\n".join(
+        shim(bind(stmt, params), pad) for c in commands for stmt in statements_of(c)
+    )
     try:
         psql([], db=DB, stdin=f"BEGIN;\n{body}\nCOMMIT;\n")
         return None
@@ -510,6 +527,116 @@ def check_control_still_sees_the_bug() -> None:
         )
 
 
+def check_the_gate_table_is_drained() -> None:
+    """`appointments__gate` is scratch space for ONE command run, not a log (appointments#116).
+
+    Every assert that PASSES inserts `(gate, 1)` and the command commits, so with nothing to drain
+    the table the row stays for good: two per reschedule, one per update, for ever. Only the `ok = 0`
+    row disappears, and only because its own transaction is rolled back.
+
+    `verifactu` already solved this — `commands/_gate_clear.sql` is the last link of the `sql[]`
+    chain of every command that uses a gate — and this pins the same contract for appointments
+    where it is actually executed: after a run that COMMITS the table is empty, and after a run the
+    gate REFUSES it is empty too (the rollback takes the refusing row with it).
+    """
+    psql([], db=DB, stdin="DELETE FROM appointments__gate;")  # a known floor, whatever ran before
+
+    # A reschedule that passes both gates: a-1 to a day nobody else uses.
+    err = run_chain(
+        RESCHEDULE_CHAIN,
+        reschedule_params(
+            "a-1",
+            "2026-08-25T10:00:00+02:00",
+            "2026-08-25T10:30:00+02:00",
+            30,
+            "2026-08-20T10:00:00+02:00",
+        ),
+    )
+    if err:
+        fail(f"the drain scenario's reschedule was refused: {err}")
+        return
+    left = scalar("SELECT count(*) FROM appointments__gate")
+    if left != "0":
+        fail(
+            f"a committed reschedule left {left} row(s) in appointments__gate - the gate table is "
+            "not drained and grows for ever (appointments#116)"
+        )
+
+    # A reschedule the state gate refuses: an id that does not exist is not reschedulable.
+    err = run_chain(
+        RESCHEDULE_CHAIN,
+        reschedule_params(
+            "a-does-not-exist",
+            "2026-08-25T12:00:00+02:00",
+            "2026-08-25T12:30:00+02:00",
+            30,
+            "2026-08-20T10:10:00+02:00",
+        ),
+    )
+    if err is None:
+        fail("the state gate did NOT fire for an appointment that does not exist")
+        return
+    left = scalar("SELECT count(*) FROM appointments__gate")
+    if left != "0":
+        fail(f"a refused reschedule left {left} row(s) in appointments__gate")
+
+    # The other consumer of the gate is the DECLARATIVE chain of `appointments.appointments.update`,
+    # whose overlap assert writes the very same table.
+    err = run_chain(
+        UPDATE_CHAIN,
+        booking(
+            HUB,
+            "a-1",
+            "20260825",
+            "2026-08-25T10:00:00+02:00",
+            30,
+            now="2026-08-20T10:20:00+02:00",
+            notes="edited",
+        ),
+    )
+    if err:
+        fail(f"a legitimate update was refused: {err}")
+        return
+    left = scalar("SELECT count(*) FROM appointments__gate")
+    if left != "0":
+        fail(
+            f"a committed update left {left} row(s) in appointments__gate - the declarative chain "
+            "is not drained (appointments#116)"
+        )
+
+
+def check_control_still_sees_the_accumulation() -> None:
+    """THE CONTROL: a battery that only ever asserts «the table is empty» passes just as well when
+    it has stopped looking. Run the SAME reschedule with the drain link taken out of the chain and
+    demand the rows the issue reported — two, one per gate. If this stops failing, the check above
+    proves nothing."""
+    psql([], db=DB, stdin="DELETE FROM appointments__gate;")
+    without_drain = [c for c in RESCHEDULE_CHAIN if c != GATE_CLEAR]
+    if without_drain == RESCHEDULE_CHAIN:
+        fail(f"the control cannot remove `{GATE_CLEAR}`: it is not in the reschedule chain")
+        return
+    err = run_chain(
+        without_drain,
+        reschedule_params(
+            "a-1",
+            "2026-08-26T10:00:00+02:00",
+            "2026-08-26T10:30:00+02:00",
+            30,
+            "2026-08-20T10:30:00+02:00",
+        ),
+    )
+    if err:
+        fail(f"the control scenario's reschedule was refused: {err}")
+        return
+    left = scalar("SELECT count(*) FROM appointments__gate")
+    if left != "2":
+        fail(
+            "the control no longer sees the accumulation: without the drain link a passing "
+            f"reschedule left {left} row(s), expected the 2 the two gates insert"
+        )
+    psql([], db=DB, stdin="DELETE FROM appointments__gate;")
+
+
 def check_against_postgres() -> None:
     if failures:
         return
@@ -530,12 +657,16 @@ def check_against_postgres() -> None:
             check_number_survives_the_ten_thousandth_of_the_day()
         if not failures:
             check_control_still_sees_the_bug()
+        if not failures:
+            check_the_gate_table_is_drained()
+        if not failures:
+            check_control_still_sees_the_accumulation()
     finally:
         psql(["-c", f'DROP DATABASE IF EXISTS "{DB}"'])
 
 
 def check_chains_are_declared() -> None:
-    for command in CREATE_CHAIN + RESCHEDULE_CHAIN:
+    for command in CREATE_CHAIN + RESCHEDULE_CHAIN + UPDATE_CHAIN:
         if not isinstance(MANIFEST.get("commands", {}).get(command), dict):
             fail(
                 f"{command}: the handler emits it as an intention but it is not a declared command"

@@ -1916,6 +1916,11 @@ pub fn reschedule_appointment_pure(input: Value) -> Result<Output, String> {
             Operation::sql("appointments._reschedule_row", p),
             Operation::sql("appointments._appointment_overlap_assert", only_id(())),
             Operation::sql("appointments._history_reschedule", only_id(())),
+            // Last link: both asserts above wrote a passing row into `appointments__gate`, and a
+            // row that passes survives the commit. Draining here — and only here, once every
+            // assert is through — keeps the gate table scratch space instead of a log that grows
+            // two rows per reschedule for ever (appointments#116, the `verifactu` pattern).
+            Operation::sql("appointments._gate_clear", only_id(())),
         ],
         events: vec![],
         ..Default::default()
@@ -6070,6 +6075,9 @@ mod tests {
     /// The handler decides with a read and the row is written afterwards, so the check-then-insert
     /// race is still there for everything but overlap — which keeps its SERVER-SIDE gate inside the
     /// same transaction (appointments#20). Moving the command to WASM must not drop it.
+    ///
+    /// The chain ENDS by draining the gate table (appointments#116): both asserts write a passing
+    /// row that would otherwise survive the commit and pile up one reschedule at a time.
     #[test]
     fn reschedule_still_runs_the_server_side_overlap_gate_and_the_history() {
         let out = reschedule_appointment_pure(reschedule_input(
@@ -6086,6 +6094,7 @@ mod tests {
                 "appointments._reschedule_row",
                 "appointments._appointment_overlap_assert",
                 "appointments._history_reschedule",
+                "appointments._gate_clear",
             ]
         );
     }

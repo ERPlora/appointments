@@ -1,0 +1,15 @@
+-- Drain of `appointments__gate` (appointments#116), the same contract `verifactu` already runs
+-- (`verifactu/commands/_gate_clear.sql`).
+--
+-- The gate table is scratch space for ONE command run, never a log: each assert inserts
+-- `(gate, ok)` and only `ok = 0` disappears on its own, by rolling its transaction back. A row
+-- that PASSES survives the commit, so without this link the table grows by two rows per
+-- reschedule and one per update, for ever — and every future `ALTER TABLE` on it inherits the
+-- scan of everything piled up (migration 008 already had to reason about that).
+--
+-- Chained LAST, so it is only reached once every assert of the chain has passed: on a refusal the
+-- whole transaction — this DELETE included — is rolled back, and the table is left exactly as it
+-- was. It clears the table whole rather than this run's rows: the table is empty at rest, so
+-- there is nothing else to hit, and a hub upgrading with rows already piled up drains them on its
+-- first successful command.
+DELETE FROM appointments__gate;
