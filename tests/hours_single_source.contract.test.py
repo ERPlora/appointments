@@ -745,14 +745,42 @@ def check_every_availability_answer_points_at_the_authority() -> None:
             )
 
 
+def probe_operation(block: str, name: str):
+    """The spec this reader plants a positive or a negative with, or a failure saying it is gone.
+
+    Every probe below needs a REAL operation of this manifest to be worth anything, and each one is
+    found by its name. A missing one therefore has to be loud: the alternative — skipping the probe
+    when the name does not resolve — is how a reader keeps printing OK while it has stopped reading
+    anything, which is exactly the failure appointments#125 closed on the duties themselves.
+    """
+    spec = MANIFEST.get(block, {}).get(name)
+    if spec is None:
+        fail(
+            f"`{name}` is not published as a {'query' if block == 'queries' else 'command'} "
+            "any more, and this reader plants its "
+            "positives with it: renaming it would silently take the probe with it, leaving the "
+            "duties below green without a single operation behind them. Point this probe at "
+            "whatever replaced it"
+        )
+        return None
+    return spec
+
+
 def check_the_family_and_the_hours_reader_find_the_positive() -> None:
     """appointments#125 — the two new readers are «X must be there» / «X must not be there». A
     family that matched nothing, or a `HOURS_TALK` that matched nothing, would hand out the greens
     for free. Plant each positive and each negative before trusting either.
     """
-    slots = MANIFEST.get("queries", {}).get("appointments.availability.slots", {})
-    door = MANIFEST.get("commands", {}).get("appointments.appointments.create", {})
-    single = MANIFEST.get("queries", {}).get("appointments.appointments.conflicting", {})
+    # The three operations this reader plants its positives and its negatives with. Resolved by
+    # NAME, because a probe has to know what it is probing — but the absence of one is a FAILURE
+    # and never a skip: `if door and …` would let the whole booking-door half go quiet the day
+    # somebody renames `create`, and a guard that stops looking when a name moves is the very bug
+    # appointments#125 is about.
+    slots = probe_operation("queries", "appointments.availability.slots")
+    door = probe_operation("commands", "appointments.appointments.create")
+    single = probe_operation("queries", "appointments.appointments.conflicting")
+    if slots is None or door is None or single is None:
+        return
 
     # …the family is what the operation DOES, so the same answer under any other name is in it.
     if not is_an_availability_answer("appointments.booking.free_hours", slots):
@@ -769,12 +797,12 @@ def check_the_family_and_the_hours_reader_find_the_positive() -> None:
             "they have no business owing, which is how a guard gets loosened until it holds nothing"
         )
     # …the booking door reads the authority too, and is out for its permission, not by luck.
-    if door and is_an_availability_answer("appointments.appointments.create", door):
+    if is_an_availability_answer("appointments.appointments.create", door):
         fail(
             "the booking door counts as an availability answer: it ENFORCES the hours and refuses, "
             "so it would be asked for a pointer to the operation it already reads"
         )
-    if door and not is_an_availability_answer("probe", {**door, "permission": ANSWER_PERMISSION}):
+    if not is_an_availability_answer("probe", {**door, "permission": ANSWER_PERMISSION}):
         fail(
             "the door is dropped by something other than its permission: the read-permission half "
             "of the family test is not the thing doing the work its comment claims it does"
@@ -855,11 +883,16 @@ def check_an_availability_answer_says_what_it_does_not_know() -> None:
             if DENIAL.search(claim):
                 continue
             fail(
-                f"`{name}` tells the assistant it takes the opening hours into account — «"
+                f"`{name}` mentions the opening hours without denying it knows them — «"
                 f"{claim.strip()}» — and it reads neither a `{AUTHORITY}_*` table nor a `reads` on "
-                f"the authority. Pointing at `{DAY_OPENING}` as well does not undo it: what the "
+                "the authority. TWO ways out, and only you can tell which one this is: (a) it IS a "
+                f"claim — drop it. Pointing at `{DAY_OPENING}` as well does not undo it: what the "
                 "assistant plans with is the claim, so it stops asking and offers an hour with the "
-                "business shut. An answer that cannot see the hours may only say that it cannot"
+                "business shut; (b) it is the DISCLAIMER written in a way `DENIAL` has never seen "
+                "(«unknown to it», «no hours of its own», a negation left in the next clause) — "
+                "then add that wording to `DENIAL`, which is what this guard asks for by failing "
+                "loud instead of letting an unreviewed sentence through. An answer that cannot see "
+                "the hours may only say that it cannot"
             )
 
 
