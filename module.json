@@ -54,7 +54,7 @@
     "customers",
     {
       "id": "schedules",
-      "min_version": "2.0.17"
+      "min_version": "2.0.28"
     },
     "services",
     "staff"
@@ -127,6 +127,11 @@
         "file": "migrations/postgres/008_named_gate_constraints.sql",
         "kind": "contract",
         "since": "1.1.63"
+      },
+      {
+        "file": "migrations/postgres/009_drop_own_timetable.sql",
+        "kind": "contract",
+        "since": "1.1.66"
       }
     ]
   },
@@ -169,10 +174,6 @@
         "description": "Lists the most recent appointments of one customer (newest first) with service, professional, status and the visit notes — the visit history the customer sheet shows. Public read used by the `customers.detail` slot."
       },
       "expose_api": true
-    },
-    "appointments.schedules.active_timeslots": {
-      "permission": "appointments.view_schedule",
-      "sql": "queries/schedule_active_timeslots.sql"
     },
     "appointments.availability.slots": {
       "permission": "appointments.view_schedule",
@@ -432,9 +433,6 @@
           }
         },
         {
-          "query": "appointments.schedules.active_timeslots"
-        },
-        {
           "query": "schedules.business_hours.list"
         },
         {
@@ -606,10 +604,6 @@
           "params": {
             "staff_id": "payload.staff_id"
           },
-          "required": true
-        },
-        {
-          "query": "appointments.schedules.active_timeslots",
           "required": true
         },
         {
@@ -785,10 +779,6 @@
           "required": true
         },
         {
-          "query": "appointments.schedules.active_timeslots",
-          "required": true
-        },
-        {
           "query": "schedules.business_hours.list",
           "required": true
         },
@@ -887,10 +877,6 @@
           "required": true
         },
         {
-          "query": "appointments.schedules.active_timeslots",
-          "required": true
-        },
-        {
           "query": "schedules.business_hours.list",
           "required": true
         },
@@ -972,7 +958,7 @@
         }
       ],
       "ai": {
-        "description": "Returns the stretches the business is open on a given date, exactly as the booking gate resolves them: the rules of the Schedules module with their precedence applied (exact special day, yearly special day, override range, weekly hours) and breaks carved out. `spans` are minutes from that date's own midnight and `source` says who answered — `schedules` when the authority resolved the date (an empty `spans` then means the business is shut that day), `own` when it carries no rule reaching the date and the module's legacy timetable still answers. Read-only: it writes nothing."
+        "description": "Returns the stretches the business is open on a given date, exactly as the booking gate resolves them: the rules of the Schedules module with their precedence applied (exact special day, yearly special day, override range, weekly hours) and breaks carved out. `spans` are minutes from that date's own midnight and `source` says who answered — `schedules` when the authority resolved the date (an empty `spans` then means the business is shut that day), `unset` when it carries no rule reaching the date, and then nothing is refused and the caller must not filter at all. Read-only: it writes nothing."
       }
     },
     "appointments.blocked_times.create": {
@@ -1141,10 +1127,6 @@
           "params": {
             "staff_id": "payload.staff_id"
           },
-          "required": true
-        },
-        {
-          "query": "appointments.schedules.active_timeslots",
           "required": true
         },
         {

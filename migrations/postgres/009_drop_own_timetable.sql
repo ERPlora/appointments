@@ -1,0 +1,27 @@
+-- El módulo retira SU PROPIA copia del horario del negocio (appointments#118).
+--
+-- POR QUÉ EXISTÍAN. appointments#89 cerró la puerta de reservas leyendo estas dos tablas porque la
+-- matriz de propiedad se leyó como «no hay módulo de horarios». Sí lo hay: `schedules` es la
+-- respuesta única del producto a «¿estamos abiertos?» (ADR-0392), y appointments#102 pasó la puerta
+-- a leerlo. Desde entonces esta copia solo contestaba mientras la autoridad no tuviera ninguna
+-- regla que alcanzara la fecha — el respaldo del salón configurado ANTES de aquel cambio.
+--
+-- POR QUÉ SE VAN AHORA, Y NO ANTES. Hacían falta las dos condiciones a la vez, y ya se cumplen:
+--   1. appointments#117 retiró la pantalla y los cuatro comandos que escribían aquí, así que nadie
+--      puede editar estas filas. Lo que quedara guardado se volvió invisible para el negocio;
+--   2. schedules#36 siembra la semana entera (L-V 09:00-18:00, fin de semana cerrado) al INSTALAR
+--      el módulo, y la vuelve a sembrar en cada actualización mientras el hub no tenga ni una fila.
+--      «Sin horario configurado» dejó de ser el estado normal de un hub recién montado.
+-- Juntas convierten el respaldo en un rechazo que el salón no puede explicar con nada de lo que ve
+-- configurado: unas horas viejas que ya no puede tocar. `module.json` sube el `min_version` de
+-- `schedules` a `2.0.28` —la primera versión que trae la siembra— para que esto sea una garantía
+-- del manifest y no una esperanza.
+--
+-- NO SE PIERDE NADA. El runtime traduce un `DROP TABLE` de una migración `contract` a
+-- `ALTER TABLE … RENAME TO _deprecated_…`: las filas siguen ahí, apartadas, si alguna vez hay que
+-- mirar qué horario tenía un hub. Por eso son dos sentencias y no una lista — el `RENAME` acepta
+-- UNA tabla — y por eso no hay ni un `DELETE` ni un `TRUNCATE`.
+--
+-- El tramo va primero: es el lado que apunta al padre por clave ajena.
+DROP TABLE IF EXISTS appointments_schedule_timeslot;
+DROP TABLE IF EXISTS appointments_schedule;

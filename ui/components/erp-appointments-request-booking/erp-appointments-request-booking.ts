@@ -315,9 +315,9 @@ export class ErpAppointmentsRequestBooking extends LitElement {
    *
    * Returns the spans to filter by, or `null` for «do not filter»:
    *   * `[]` — the authority resolved the date and the business is SHUT. Zero slots, on purpose;
-   *   * `null` — either the authority carries no rule reaching the date (`source: "own"`, and the
-   *     SQL has already applied the module's own timetable, so filtering again would erase the
-   *     whole day for a hub that has not migrated), or it could not be asked at all.
+   *   * `null` — either the authority carries no rule reaching the date (`source: "unset"`, and
+   *     then the gate refuses nothing, so filtering would erase a whole day the door would have
+   *     accepted), or it could not be asked at all.
    */
   private async askDayOpening(): Promise<OpenSpan[] | null> {
     this.openingUnknown = false;
@@ -363,10 +363,6 @@ export class ErpAppointmentsRequestBooking extends LitElement {
         // time we just took, which is the one moment a hold must NOT block anyone. Same role as
         // `exclude_appointment_id` when moving an appointment off its own slot.
         exclude_hold_ref: this.open?.request_id,
-        // Sent ONLY when the authority answered, and it means «I already have the hours, stop
-        // filtering by the module's own timetable». Sending it with nothing to filter by would
-        // hand back the whole calendar; leaving it out keeps the query exactly as it was.
-        ...(opening !== null ? { schedules_answers: 1 } : {}),
       });
       const free = rows<Slot>(result);
       this.slots = opening !== null ? free.filter((s) => insideOpening(s, opening)) : free;

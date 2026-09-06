@@ -745,10 +745,6 @@ const SCHEDULES_SPECIAL_DAYS_READ: &str = "schedules.special_days.list";
 const SCHEDULES_OVERRIDES_READ: &str = "schedules.overrides.list";
 const SCHEDULES_EXCEPTION_INTERVALS_READ: &str = "schedules.exception_intervals.list";
 
-/// The module's OWN timeslots, the transitional answer for a hub whose hours have not moved to
-/// `schedules` yet. Kept as a fallback, never as a second opinion — see [`schedule_refusal`].
-const OWN_TIMESLOTS_READ: &str = "appointments.schedules.active_timeslots";
-
 /// An open stretch of one date, in minutes from ITS midnight. `end` runs past 1440 when the
 /// stretch crosses midnight, and `start` goes negative for the tail of the previous night, so a
 /// booking window can be compared against it with plain arithmetic.
@@ -989,11 +985,12 @@ fn schedules_opening(input: &Value, at: &WallStamp) -> Result<Option<DayOpening>
 /// holidays — were invisible here. So the chain is now `schedules`': exact special day > yearly
 /// special day > override range > weekly hours, resolved for the booking's own date.
 ///
-/// **One answer, never two.** The precedence is strict: the moment `schedules` carries any rule
-/// that reaches this date, our own timeslots are not consulted. They answer only while `schedules`
-/// is empty — a hub that has not moved its hours yet keeps exactly the gate appointments#89 gave
-/// it, which is why upgrading cannot silently switch a working guard off. Retiring those tables
-/// (and moving their rows) is appointments#105.
+/// **One answer, and only one.** `schedules` is the ONLY place the hours are read from
+/// (appointments#118). This module kept its own copy of the timetable as a transitional fallback
+/// for a hub configured before appointments#102; appointments#117 left it with no screen to write
+/// it and schedules#36 seeds a whole week on install, so what those rows still held was a leftover
+/// nobody could see refusing bookings nobody could explain. The tables, their read and the branch
+/// that consulted them are gone.
 ///
 /// The rest of the semantics are unchanged:
 ///
@@ -1027,8 +1024,13 @@ fn schedule_refusal(input: &Value, tz: chrono_tz::Tz, start: &Dt, end: &Dt) -> O
         Ok(opening) => opening,
         Err(refusal) => return Some(refusal),
     };
+    // Nothing configured ANYWHERE: every hour of the calendar is bookable. Refusing here would
+    // turn «I have not set my hours yet» into «I cannot take bookings», an outage and not a guard
+    // — and it is what the market does (Setmore ships an off-hours toggle, Acuity and Square let
+    // the counter book anyway). Since schedules#36 the authority seeds a whole week on install, so
+    // this is only reached by a hub that deliberately cleared it.
     let Some(opening) = opening else {
-        return legacy_timeslot_refusal(input, &from, &to);
+        return None;
     };
 
     // The booking measured from midnight of its OWN date: an appointment that runs into the next
@@ -1074,51 +1076,6 @@ fn day_offset(from: &str, to: &str) -> Option<i64> {
     Some(civil(to)? - civil(from)?)
 }
 
-/// The gate as appointments#89 left it, over the module's OWN timeslots. It answers only while
-/// `schedules` carries no rule that reaches the date, so a hub configured before appointments#102
-/// keeps the exact behaviour it has today — including «no timeslot at all = every hour counts».
-fn legacy_timeslot_refusal(input: &Value, from: &WallStamp, to: &WallStamp) -> Option<DomainError> {
-    let Some(rows) = read_rows(input, OWN_TIMESLOTS_READ) else {
-        return Some(DomainError::new(
-            "appointments.availability_unavailable",
-            "The business opening hours could not be read; the appointment was not booked.",
-        ));
-    };
-    // Not configured anywhere: every hour of the calendar is bookable (same as `availability_slots`).
-    if rows.is_empty() {
-        return None;
-    }
-    // An appointment that runs past midnight leaves its weekday, and no single timeslot can hold
-    // it. Treating it as outside is the honest answer, and it matches the SQL, which compares one
-    // `day_of_week` only.
-    let end_min = if to.dow == from.dow {
-        to.minute
-    } else {
-        24 * 60 + 1
-    };
-
-    let open = rows.iter().any(|row| {
-        if row.get("is_deleted").map(as_bool).unwrap_or(false) {
-            return false;
-        }
-        if row.get("day_of_week").map(|v| as_i64(v, -1)).unwrap_or(-1) != from.dow {
-            return false;
-        }
-        let (Some(open), Some(close)) = (
-            wall_minutes(&as_str(row.get("start_time").unwrap_or(&Value::Null))),
-            wall_minutes(&as_str(row.get("end_time").unwrap_or(&Value::Null))),
-        ) else {
-            return false;
-        };
-        open <= from.minute && end_min <= close
-    });
-
-    if open {
-        return None;
-    }
-    Some(outside_schedule())
-}
-
 /// A `YYYY-MM-DD` of the business calendar, at its own midnight. The screen asks about a DATE and
 /// not about an instant, so there is no clock to cross here: the date already IS the business's
 /// own, which is exactly the key a special day or an override is written under.
@@ -1155,10 +1112,12 @@ fn wall_stamp_of_date(date: &str) -> Option<WallStamp> {
 ///     minutes from the date's OWN midnight (past 1440 when a stretch crosses it, negative for
 ///     the tail of the previous night), breaks already carved out, and an EMPTY list means the
 ///     business is shut that day. The caller filters by them, and only by them;
-///   * `source: "own"` — `schedules` carries no rule that reaches the date, so the door falls
-///     back to our own timeslots and `availability_slots.sql` has ALREADY applied them. `spans`
-///     is empty and the caller must not filter again, or a hub that has not moved its hours yet
-///     would see its whole day disappear.
+///   * `source: "unset"` — the authority carries no rule reaching the date, so the gate refuses
+///     nothing and every calendar hour is bookable. `spans` is empty and the caller must NOT
+///     filter by it, or a hub with no hours would see its whole day disappear from a screen the
+///     door would have accepted. It was called `own` until appointments#118, when the module's
+///     own timetable — the thing that used to answer here — was retired; nothing answers now, and
+///     the name says so.
 ///
 /// Read-only: it returns a `result` and never an operation. Missing read = refusal, never an open
 /// door — a screen that quietly stops filtering because a read went missing is the optimistic
@@ -1178,7 +1137,7 @@ pub fn day_opening_pure(input: Value) -> Result<Output, String> {
     };
 
     let (source, spans) = match opening {
-        None => ("own", Vec::new()),
+        None => ("unset", Vec::new()),
         Some(DayOpening::Closed) => ("schedules", Vec::new()),
         Some(DayOpening::Open(spans)) => (
             "schedules",
@@ -3054,15 +3013,12 @@ mod tests {
     /// the service (staff#9). Ids match [`item`]: customer `c1`, service `s-corte`, staff `s1`.
     fn catalog_reads() -> Value {
         json!({
-            // appointments#89: the runtime pre-loads the hub's opening hours for all four booking
-            // commands, so the shared fixture carries it for the same reason it carries the
-            // catalogue — a test that never sees a read production always sends is a test of a
-            // different handler. Empty = a hub that has not configured its hours, which is the
-            // state most of these cases are really about; the ones that DO care plant their own.
-            "appointments.schedules.active_timeslots": [],
-            // appointments#102: and the four lists of `schedules`, the AUTHORITY, which the
-            // runtime pre-loads for the same four commands. All empty = a hub that has not moved
-            // its hours there, which is where the module's own timeslots still answer.
+            // appointments#102: the four lists of `schedules`, the AUTHORITY, which the runtime
+            // pre-loads for all four booking commands — so the shared fixture carries them for the
+            // same reason it carries the catalogue: a test that never sees a read production
+            // always sends is a test of a different handler. All empty = a hub that has not
+            // configured its hours, which is the state most of these cases are really about, and
+            // then every calendar hour is bookable; the ones that DO care plant their own.
             "schedules.business_hours.list": [],
             "schedules.special_days.list": [],
             "schedules.overrides.list": [],
@@ -6403,34 +6359,12 @@ mod tests {
     // business timezone, which the core now hands over in `context.timezone` (hub#1022). Guessing a
     // fixed offset instead is what refuses correct bookings twice a year — hence the DST cases.
 
-    fn hours(dow: i64, from: &str, to: &str) -> Value {
-        json!({ "day_of_week": dow, "start_time": from, "end_time": to })
-    }
-
-    /// The settings read plus the hub's active timeslots, which is what these four commands see.
-    fn with_slots(slots: Value) -> Value {
-        let mut reads = lead_time(0, 0);
-        reads["appointments.schedules.active_timeslots"] = slots;
-        reads
-    }
-
-    /// Monday–Friday, 09:00–18:00 — the shape of nearly every salon's week.
-    fn weekdays_nine_to_six() -> Value {
-        json!([
-            hours(0, "09:00", "18:00"),
-            hours(1, "09:00", "18:00"),
-            hours(2, "09:00", "18:00"),
-            hours(3, "09:00", "18:00"),
-            hours(4, "09:00", "18:00")
-        ])
-    }
-
     /// 2026-07-31 is a FRIDAY (`day_of_week` 4) and the hub closes at 18:00, so 23:00 is shut.
     #[test]
     fn create_refuses_a_booking_outside_the_business_hours() {
         let out = create_appointment_pure(input(
             item("2026-07-31T23:00:00+02:00", 30, "s1"),
-            Some(with_slots(weekdays_nine_to_six())),
+            Some(sched_hours(sched_weekdays_nine_to_six())),
         ))
         .unwrap();
         assert_eq!(
@@ -6445,7 +6379,7 @@ mod tests {
     fn create_accepts_a_booking_inside_the_business_hours() {
         let out = create_appointment_pure(input(
             item("2026-07-31T15:00:00+02:00", 30, "s1"),
-            Some(with_slots(weekdays_nine_to_six())),
+            Some(sched_hours(sched_weekdays_nine_to_six())),
         ))
         .unwrap();
         assert_eq!(domain_code(&out), None);
@@ -6458,7 +6392,7 @@ mod tests {
     fn create_refuses_a_booking_that_runs_past_closing_time() {
         let out = create_appointment_pure(input(
             item("2026-07-31T17:45:00+02:00", 30, "s1"),
-            Some(with_slots(weekdays_nine_to_six())),
+            Some(sched_hours(sched_weekdays_nine_to_six())),
         ))
         .unwrap();
         assert_eq!(
@@ -6472,7 +6406,7 @@ mod tests {
     fn create_refuses_a_booking_on_a_day_the_hub_does_not_open() {
         let out = create_appointment_pure(input(
             item("2026-08-01T11:00:00+02:00", 30, "s1"),
-            Some(with_slots(weekdays_nine_to_six())),
+            Some(sched_hours(sched_weekdays_nine_to_six())),
         ))
         .unwrap();
         assert_eq!(
@@ -6489,31 +6423,11 @@ mod tests {
     fn a_hub_with_no_schedule_configured_can_still_book() {
         let out = create_appointment_pure(input(
             item("2026-07-31T23:00:00+02:00", 30, "s1"),
-            Some(with_slots(json!([]))),
+            Some(sched_hours(json!([]))),
         ))
         .unwrap();
         assert_eq!(domain_code(&out), None);
         assert!(!out.operations.is_empty());
-    }
-
-    /// The read is `required` in the manifest. If it does not arrive the answer is a refusal, not
-    /// an open door: a guard whose input is missing must fail CLOSED, like the blocked-times one.
-    #[test]
-    fn create_refuses_when_the_timeslots_read_is_missing() {
-        let mut inp = input(
-            item("2026-07-31T15:00:00+02:00", 30, "s1"),
-            Some(with_slots(weekdays_nine_to_six())),
-        );
-        inp["context"]["reads"]
-            .as_object_mut()
-            .expect("reads is an object")
-            .remove("appointments.schedules.active_timeslots");
-        let out = create_appointment_pure(inp).unwrap();
-        assert_eq!(
-            domain_code(&out).as_deref(),
-            Some("appointments.availability_unavailable")
-        );
-        assert!(out.operations.is_empty());
     }
 
     // ── the day the clock changes ──────────────────────────────────────────────────────────────
@@ -6529,7 +6443,7 @@ mod tests {
     fn a_booking_on_the_dst_day_is_judged_on_the_business_wall_clock() {
         let out = create_appointment_pure(input(
             item("2026-10-25T17:30:00+01:00", 20, "s1"),
-            Some(with_slots(json!([hours(6, "09:00", "18:00")]))),
+            Some(sched_hours(json!([bh(6, "09:00", "18:00")]))),
         ))
         .unwrap();
         assert_eq!(domain_code(&out), None);
@@ -6542,7 +6456,7 @@ mod tests {
     fn the_gate_still_refuses_before_opening_on_the_dst_day() {
         let out = create_appointment_pure(input(
             item("2026-10-25T08:30:00+01:00", 20, "s1"),
-            Some(with_slots(json!([hours(6, "09:00", "18:00")]))),
+            Some(sched_hours(json!([bh(6, "09:00", "18:00")]))),
         ))
         .unwrap();
         assert_eq!(
@@ -6557,7 +6471,7 @@ mod tests {
         let out = reschedule_appointment_pure(reschedule_input(
             move_to("2026-07-31T23:00:00+02:00", Some(30)),
             booked_row("2026-07-31T11:00:00Z", 60, "confirmed"),
-            Some(with_slots(weekdays_nine_to_six())),
+            Some(sched_hours(sched_weekdays_nine_to_six())),
         ))
         .unwrap();
         assert_eq!(
@@ -6571,7 +6485,7 @@ mod tests {
         let out = reschedule_appointment_pure(reschedule_input(
             move_to("2026-07-31T15:00:00+02:00", Some(30)),
             booked_row("2026-07-31T11:00:00Z", 60, "confirmed"),
-            Some(with_slots(weekdays_nine_to_six())),
+            Some(sched_hours(sched_weekdays_nine_to_six())),
         ))
         .unwrap();
         assert_eq!(domain_code(&out), None);
@@ -6586,7 +6500,7 @@ mod tests {
         let out = materialize_recurring_pure(series_input(
             series_payload(),
             json!([template(json!({ "frequency": "daily", "max_occurrences": 2 }))]),
-            Some(with_slots(json!([hours(0, "09:00", "18:00")]))),
+            Some(sched_hours(json!([bh(0, "09:00", "18:00")]))),
         ))
         .unwrap();
         assert_eq!(domain_code(&out), None, "the series must not be aborted");
@@ -6602,11 +6516,11 @@ mod tests {
     /// Without it, «1 booked» would also be the answer to a series that silently stopped working.
     #[test]
     fn materialize_books_every_occurrence_when_the_hub_is_open_all_week() {
-        let all_week: Vec<Value> = (0..7).map(|d| hours(d, "09:00", "18:00")).collect();
+        let all_week: Vec<Value> = (0..7).map(|d| bh(d, "09:00", "18:00")).collect();
         let out = materialize_recurring_pure(series_input(
             series_payload(),
             json!([template(json!({ "frequency": "daily", "max_occurrences": 2 }))]),
-            Some(with_slots(Value::Array(all_week))),
+            Some(sched_hours(Value::Array(all_week))),
         ))
         .unwrap();
         assert_eq!(domain_code(&out), None);
@@ -6639,14 +6553,14 @@ mod tests {
                 "break_start": null, "break_end": null })
     }
 
-    /// Monday–Friday 09:00–18:00, the same week as [`weekdays_nine_to_six`] but in the shape of
-    /// the authority, so both paths can be compared case by case.
+    /// Monday–Friday 09:00–18:00 — the shape of nearly every salon's week, as
+    /// `schedules.business_hours.list` publishes it.
     fn sched_weekdays_nine_to_six() -> Value {
         Value::Array((0..5).map(|d| bh(d, "09:00", "18:00")).collect())
     }
 
-    /// The four reads of `schedules` the runtime pre-loads for the booking commands. Our own
-    /// timeslots travel EMPTY, which is the hub that keeps its hours in `schedules`.
+    /// The four reads of `schedules` the runtime pre-loads for the booking commands — the only
+    /// hours the gate has consulted since appointments#118.
     fn with_schedules(
         hours: Value,
         special_days: Value,
@@ -6654,7 +6568,6 @@ mod tests {
         intervals: Value,
     ) -> Value {
         let mut reads = lead_time(0, 0);
-        reads["appointments.schedules.active_timeslots"] = json!([]);
         reads["schedules.business_hours.list"] = hours;
         reads["schedules.special_days.list"] = special_days;
         reads["schedules.overrides.list"] = overrides;
@@ -6936,52 +6849,33 @@ mod tests {
         );
     }
 
-    /// 🔴 ZERO REGRESSION. A hub that has not moved its hours to `schedules` keeps the gate it
-    /// has today: with NO rule at all in `schedules`, our own active timeslots decide, byte for
-    /// byte as appointments#89 left them. Without this, upgrading would silently switch off a
-    /// working guard for every salon already configured.
+    /// 🔴 THE SYMPTOM OF appointments#118. Our own timetable has had no screen to write it
+    /// since appointments#117, and `schedules` seeds a whole week the moment it is installed
+    /// (schedules#36), so whatever those rows still hold is a leftover nobody can see or edit.
+    /// Letting them refuse a booking is a rejection the salon cannot explain with anything it has
+    /// configured. They decide nothing any more: with no rule in the authority, every calendar
+    /// hour is bookable, exactly as it already is for a hub whose own rows are empty.
     #[test]
-    fn the_modules_own_timeslots_still_decide_while_schedules_has_no_rules() {
+    fn the_gate_ignores_the_modules_own_timetable() {
         let mut reads = with_schedules(json!([]), json!([]), json!([]), json!([]));
-        reads["appointments.schedules.active_timeslots"] = weekdays_nine_to_six();
-
-        let out = create_appointment_pure(input(
-            item("2026-07-31T23:00:00+02:00", 30, "s1"),
-            Some(reads.clone()),
-        ))
-        .unwrap();
-        assert_eq!(
-            domain_code(&out).as_deref(),
-            Some("appointments.outside_schedule"),
-            "the legacy timeslots still shut the night"
+        // Monday–Friday 09:00–18:00 in the shape the retired read published. Written out and not
+        // built from a helper on purpose: the helper went with the read, and a guard that plants
+        // the old rows by hand keeps biting even if somebody wires that query back in.
+        reads["appointments.schedules.active_timeslots"] = Value::Array(
+            (0..5)
+                .map(|d| json!({ "day_of_week": d, "start_time": "09:00", "end_time": "18:00" }))
+                .collect(),
         );
 
         let out = create_appointment_pure(input(
-            item("2026-07-31T15:00:00+02:00", 30, "s1"),
-            Some(reads),
-        ))
-        .unwrap();
-        assert_eq!(domain_code(&out), None, "and still open the afternoon");
-    }
-
-    /// And the precedence is STRICT, so there is one answer and not two opinions: the moment
-    /// `schedules` carries a rule, our own timeslots stop being consulted. Here they say the
-    /// Friday afternoon is open and `schedules` says the salon is shut that day — the authority
-    /// wins.
-    #[test]
-    fn schedules_wins_over_the_modules_own_timeslots() {
-        let mut reads = sched_hours(json!([bh(0, "09:00", "18:00")]));
-        reads["appointments.schedules.active_timeslots"] = weekdays_nine_to_six();
-
-        let out = create_appointment_pure(input(
-            item("2026-07-31T15:00:00+02:00", 30, "s1"),
+            item("2026-07-31T23:00:00+02:00", 30, "s1"),
             Some(reads),
         ))
         .unwrap();
         assert_eq!(
-            domain_code(&out).as_deref(),
-            Some("appointments.outside_schedule"),
-            "schedules opens Mondays only; our own tables must not open the Friday"
+            domain_code(&out),
+            None,
+            "a leftover row of our own timetable must not shut the night"
         );
     }
 
@@ -7147,15 +7041,14 @@ mod tests {
         assert_eq!(spans_of(&out), Vec::<(i64, i64)>::new());
     }
 
-    /// `schedules` carries no rule that reaches the date: the door falls back to our own
-    /// timeslots and so does the SQL, so the screen must NOT filter a second time. Saying `own`
-    /// with no spans is what keeps a hub configured before #102 seeing exactly its own hours.
+    /// The authority carries no rule that reaches the date, so the gate refuses nothing and the
+    /// screen must NOT filter: saying `unset` with no spans is what keeps a hub with no hours
+    /// seeing the whole day it can actually book (appointments#118).
     #[test]
     fn day_opening_hands_the_date_back_when_the_authority_is_silent() {
-        let mut reads = with_schedules(json!([]), json!([]), json!([]), json!([]));
-        reads["appointments.schedules.active_timeslots"] = weekdays_nine_to_six();
+        let reads = with_schedules(json!([]), json!([]), json!([]), json!([]));
         let out = day_opening_pure(day_opening_input("2026-07-27", reads)).unwrap();
-        assert_eq!(source_of(&out), "own");
+        assert_eq!(source_of(&out), "unset");
         assert_eq!(spans_of(&out), Vec::<(i64, i64)>::new());
     }
 

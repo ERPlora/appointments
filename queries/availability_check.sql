@@ -1,13 +1,21 @@
 -- Motor de disponibilidad: ¿está libre una franja concreta? (WASM-TODO pieza 8 /
 -- check_availability). Query declarativa Tier 0 — misma lógica que availability_slots
 -- pero para UNA franja, devolviendo `available` (0/1) y el primer `reason` que falla:
---   invalid_start | too_soon | too_far | outside_schedule | blocked | overlap | ''
+--   invalid_start | too_soon | too_far | blocked | overlap | held | ''
+--
+-- 🔴 appointments#118 — AQUÍ YA NO SE MIRA EL HORARIO. Esta query calculaba `outside_schedule`
+-- contra las tablas de horario PROPIAS del módulo, que se retiraron con la pantalla que las
+-- escribía (#117) y con su respaldo (#118). El horario del negocio es de `schedules` (ADR-0392) y
+-- una query de un módulo solo puede nombrar tablas de su módulo, así que este SQL no puede
+-- seguir esa precedencia ni por asomo: quien necesite las horas pregunta a
+-- `appointments.availability.day_opening`, que corre la MISMA función que la puerta. La pantalla
+-- de reserva ya lo hace así desde #105.
 --
 -- Binds: :start_datetime (ISO 8601, requerido) · :duration_minutes (opcional; default =
 -- settings.default_duration) · :staff_id (opcional; ausente = agenda global).
 -- Runtime inyecta :hub_id y :now. Fechas/horas vía funciones-puente erp_* (ADR-0007 §4a):
--- erp_dt (datetime comparable), erp_date (parte fecha), erp_dateadd (suma intervalo),
--- erp_dow_mon0 (día de semana 0=lunes), erp_extract (hora/minuto). Fechas en TEXT ISO-8601.
+-- erp_dt (datetime comparable), erp_date (parte fecha), erp_dateadd (suma intervalo).
+-- Fechas en TEXT ISO-8601.
 -- :staff_id va CASTEADO (`CAST(:staff_id AS TEXT)`) y no es estilo: Postgres fija el tipo de un
 -- bind en su PRIMERA aparición y `IS [NOT] NULL` no aporta ninguno, así que sin :staff_id —la
 -- agenda global, o sea la llamada normal— el bind viajaba sin tipo y el PREPARE moría con 42P08.
@@ -22,12 +30,7 @@ WITH cfg AS (
 ),
 win AS (
     SELECT erp_dt(:start_datetime) AS s_start,
-           erp_dateadd(:start_datetime, c.dur, 'minutes') AS s_end,
-           erp_dow_mon0(:start_datetime) AS dow,
-           erp_extract('hour', :start_datetime) * 60
-             + erp_extract('minute', :start_datetime) AS start_min,
-           erp_extract('hour', :start_datetime) * 60
-             + erp_extract('minute', :start_datetime) + c.dur AS end_min
+           erp_dateadd(:start_datetime, c.dur, 'minutes') AS s_end
     FROM cfg c
 ),
 checks AS (
@@ -42,32 +45,6 @@ checks AS (
         CASE WHEN c.advance_days > 0
                   AND erp_date(w.s_start) > erp_date(erp_dateadd(:now, c.advance_days, 'days'))
              THEN 1 ELSE 0 END AS too_far,
-        -- 🔴 appointments#105 — `:schedules_answers` = 1 apaga este veredicto: la autoridad
-        -- (`schedules`, ADR-0392) ya ha resuelto la fecha y la puerta deja de consultar NUESTRAS
-        -- tablas, así que seguir contestando `outside_schedule` desde ellas es la pantalla
-        -- contradiciendo a la puerta. Ausente = el comportamiento de siempre (el hub que aún
-        -- guarda sus horas aquí). Detalle y motivo en `queries/availability_slots.sql`.
-        CASE WHEN COALESCE(CAST(:schedules_answers AS INTEGER), 0) = 0
-             AND EXISTS (
-                 SELECT 1
-                 FROM appointments_schedule_timeslot t
-                 JOIN appointments_schedule sc ON sc.id = t.schedule_id AND sc.hub_id = :hub_id
-                 WHERE t.hub_id = :hub_id AND t.is_deleted = 0 AND t.is_active = 1
-                   AND sc.is_deleted = 0 AND sc.is_active = 1
-             )
-             AND NOT EXISTS (
-                 SELECT 1
-                 FROM appointments_schedule_timeslot t
-                 JOIN appointments_schedule sc ON sc.id = t.schedule_id AND sc.hub_id = :hub_id
-                 WHERE t.hub_id = :hub_id AND t.is_deleted = 0 AND t.is_active = 1
-                   AND sc.is_deleted = 0 AND sc.is_active = 1
-                   AND t.day_of_week = w.dow
-                   AND (CAST(substr(t.start_time, 1, 2) AS INTEGER) * 60
-                        + CAST(substr(t.start_time, 4, 2) AS INTEGER)) <= w.start_min
-                   AND w.end_min <= (CAST(substr(t.end_time, 1, 2) AS INTEGER) * 60
-                                     + CAST(substr(t.end_time, 4, 2) AS INTEGER))
-             )
-             THEN 1 ELSE 0 END AS outside_schedule,
         CASE WHEN EXISTS (
                  SELECT 1
                  FROM appointments_blocked_time b
@@ -113,13 +90,12 @@ checks AS (
     FROM win w, cfg c
 )
 SELECT
-    CASE WHEN invalid_start + too_soon + too_far + outside_schedule + blocked + overlap + held = 0
+    CASE WHEN invalid_start + too_soon + too_far + blocked + overlap + held = 0
          THEN 1 ELSE 0 END AS available,
     CASE
         WHEN invalid_start = 1 THEN 'invalid_start'
         WHEN too_soon = 1 THEN 'too_soon'
         WHEN too_far = 1 THEN 'too_far'
-        WHEN outside_schedule = 1 THEN 'outside_schedule'
         WHEN blocked = 1 THEN 'blocked'
         WHEN overlap = 1 THEN 'overlap'
         WHEN held = 1 THEN 'held'

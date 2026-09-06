@@ -20,7 +20,7 @@
 -- agenda global, o sea la llamada normal— el bind viajaba sin tipo y el PREPARE moría con 42P08.
 -- Mismo idioma que ya usa queries/appointments_list.sql. Cubierto por tests/availability.pg.test.py.
 -- Fechas/horas vía funciones-puente erp_* (ADR-0007 §4a): erp_dt (datetime comparable),
--- erp_date (parte fecha), erp_dateadd (suma intervalo), erp_dow_mon0 (día de semana 0=lunes),
+-- erp_date (parte fecha), erp_dateadd (suma intervalo),
 -- erp_timefmt (HH:MM). Las fechas se guardan como TEXT ISO-8601.
 --
 -- ⚠️ EL MISMO RELOJ PARA LOS DOS LADOS (appointments#76). Los huecos candidatos son texto NAIVE
@@ -50,8 +50,7 @@ cfg AS (
            COALESCE(COALESCE(:duration_minutes, MAX(default_duration)), 60) AS dur,
            COALESCE(MAX(min_booking_notice),  60)  AS notice_min,
            COALESCE(MAX(max_advance_booking), 90)  AS advance_days,
-           COALESCE(MAX(allow_overlapping),    0)  AS allow_overlapping,
-           erp_dow_mon0(:date) AS dow
+           COALESCE(MAX(allow_overlapping),    0)  AS allow_overlapping
     FROM appointments_settings
     WHERE hub_id = :hub_id AND is_deleted = 0
 ),
@@ -99,45 +98,15 @@ WHERE
         >= erp_dateadd(:now, cfg.notice_min, 'minutes')
     AND (cfg.advance_days = 0
          OR erp_date(:date) <= erp_date(erp_dateadd(:now, cfg.advance_days, 'days')))
-    -- dentro de un tramo activo del horario (si el hub tiene horarios configurados)
-    --
-    -- 🔴 appointments#105 — QUIÉN MANDA EN EL HORARIO. Estas tablas son las NUESTRAS, y desde
-    -- appointments#102 la puerta solo las consulta mientras `schedules` —la autoridad del
-    -- horario del negocio (ADR-0392)— no tenga ninguna regla que alcance la fecha. Esta query no
-    -- puede seguir esa precedencia por sí sola: una query de este módulo solo puede nombrar
-    -- tablas de este módulo, así que `schedules_*` le está vedado por contrato. Resultado: para
-    -- el hub normal de después de #102 (horas en `schedules`, nuestros tramos vacíos) este filtro
-    -- no casaba con nada y la lista ofrecía las 08:00 a un salón que abre a las 10:00 — y
-    -- `create` la rechazaba un clic después con `appointments.outside_schedule`.
-    -- `:schedules_answers` es el crucero: lo pone a 1 quien ya ha preguntado a
-    -- `appointments.availability.day_opening` y ha recibido `source = "schedules"`, y entonces
-    -- este filtro se APAGA por el mismo motivo por el que lo apaga la puerta — el consumidor
-    -- filtra por los tramos que le devolvió la propia puerta. Ausente (NULL, que es como llega
-    -- un bind que nadie manda) = el comportamiento de siempre, que es lo que sostiene al hub que
-    -- todavía guarda sus horas aquí. El CAST no es estilo: sin él Postgres no puede fijar el tipo
-    -- del bind y el PREPARE muere con 42P08, igual que ya pasó con `:staff_id`.
-    AND (
-        COALESCE(CAST(:schedules_answers AS INTEGER), 0) = 1
-        OR NOT EXISTS (
-            SELECT 1
-            FROM appointments_schedule_timeslot t
-            JOIN appointments_schedule sc ON sc.id = t.schedule_id AND sc.hub_id = :hub_id
-            WHERE t.hub_id = :hub_id AND t.is_deleted = 0 AND t.is_active = 1
-              AND sc.is_deleted = 0 AND sc.is_active = 1
-        )
-        OR EXISTS (
-            SELECT 1
-            FROM appointments_schedule_timeslot t
-            JOIN appointments_schedule sc ON sc.id = t.schedule_id AND sc.hub_id = :hub_id
-            WHERE t.hub_id = :hub_id AND t.is_deleted = 0 AND t.is_active = 1
-              AND sc.is_deleted = 0 AND sc.is_active = 1
-              AND t.day_of_week = cfg.dow
-              AND (CAST(substr(t.start_time, 1, 2) AS INTEGER) * 60
-                   + CAST(substr(t.start_time, 4, 2) AS INTEGER)) <= c.start_min
-              AND c.end_min <= (CAST(substr(t.end_time, 1, 2) AS INTEGER) * 60
-                                + CAST(substr(t.end_time, 4, 2) AS INTEGER))
-        )
-    )
+    -- 🔴 appointments#118 — EL HORARIO NO SE FILTRA AQUÍ. Hasta #117 esta query recortaba la
+    -- lista con las tablas de horario PROPIAS del módulo, y appointments#105 le puso el crucero
+    -- `:schedules_answers` para apagarlas cuando la autoridad ya había resuelto la fecha. Las dos
+    -- cosas se van juntas: el horario del negocio es de `schedules` (ADR-0392) y una query de un
+    -- módulo solo puede nombrar tablas de su módulo, así que este SQL nunca pudo seguir esa
+    -- precedencia. Quien pinta la lista pregunta primero a `appointments.availability.day_opening`
+    -- —que corre la MISMA función que la puerta— y filtra por los tramos que le devuelve; lo que
+    -- sale de aquí son los huecos que quedan libres una vez descontados aviso mínimo, antelación
+    -- máxima, tiempo bloqueado, citas y retenciones.
     -- sin tiempo bloqueado (hub entero = staff_id NULL; o el del :staff_id pedido)
     AND NOT EXISTS (
         SELECT 1
