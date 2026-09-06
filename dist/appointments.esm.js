@@ -1928,6 +1928,10 @@ var es_default = {
       hold_minutes: {
         label: "Apartar el hueco durante (minutos)",
         description: "Minutos que un hueco queda apartado mientras alguien decide sobre una solicitud de cita pendiente. 0 desactiva la reserva temporal."
+      },
+      auto_confirm_online: {
+        label: "Confirmar autom\xE1ticamente las citas que reserva el cliente",
+        description: "Cuando est\xE1 activado, una cita que reserva el propio cliente \u2014por internet o por una automatizaci\xF3n como WhatsApp\u2014 se crea ya confirmada y nadie tiene que aceptarlas una a una. Desact\xEDvalo para revisarlas todas antes de darlas por buenas."
       }
     }
   },
@@ -2147,6 +2151,10 @@ var en_default = {
       hold_minutes: {
         label: "Hold a slot for (minutes)",
         description: "Minutes a slot stays set aside while somebody decides on a pending booking request. 0 switches holds off."
+      },
+      auto_confirm_online: {
+        label: "Confirm bookings made by the customer automatically",
+        description: "When on, an appointment the customer booked herself \u2014 online or through an automation such as WhatsApp \u2014 is created already confirmed, so nobody has to accept it one by one. Turn it off to review every one of them before it counts."
       }
     }
   },
