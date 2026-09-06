@@ -87,16 +87,22 @@ succeeding.
 
 ## Availability has reasons, and they are worth reading
 
-When a slot is not free, you are told **why**:
+When a slot is not free, the availability check tells you **why**:
 
 | Reason | Meaning |
 |---|---|
 | `overlap` | That professional is already booked then |
-| `outside_schedule` | You are not open at that time |
 | `blocked` | Holiday, vacation, break or maintenance covers it |
+| `held` | Another pending booking request has that slot set aside for a few minutes |
 | `too_soon` | It breaks the minimum booking notice |
 | `too_far` | It is beyond how far ahead you allow bookings |
 | `invalid_start` | The start is in the past or unparseable |
+
+Being **closed** is not on that list, and that is deliberate since appointments#118: the opening
+hours belong to **Schedules**, so the availability check — which only reads this module's own
+tables — cannot see them and answers about an hour you are shut as if it were free. Ask
+`appointments.availability.day_opening` for the stretches you are open that date. Booking anyway
+still fails, at the door, with the reason below.
 
 "No slots today" almost always means the opening hours of **Schedules** close that date, not
 that the day is full.

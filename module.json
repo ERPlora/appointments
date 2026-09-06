@@ -179,14 +179,14 @@
       "permission": "appointments.view_schedule",
       "sql": "queries/availability_slots.sql",
       "ai": {
-        "description": "Returns the free booking slots for a given date (optionally for a specific staff member and duration), crossing schedules, blocked time, existing appointments and the slots currently set aside for pending booking requests with the booking-notice settings."
+        "description": "Returns the free booking slots for a given date (optionally for a specific staff member and duration), crossing the calendar window and booking-notice settings, blocked time, existing appointments and the slots currently set aside for pending booking requests. It does NOT know the opening hours: ask `appointments.availability.day_opening` for the stretches the business is actually open that date."
       }
     },
     "appointments.availability.check": {
       "permission": "appointments.view_schedule",
       "sql": "queries/availability_check.sql",
       "ai": {
-        "description": "Checks whether a specific date/time slot is available for booking and returns the reason when it is not (too_soon, too_far, outside_schedule, blocked, overlap or held — `held` means another pending booking request has that slot set aside for a few minutes)."
+        "description": "Checks whether a specific date/time slot is available for booking and returns the reason when it is not (invalid_start, too_soon, too_far, blocked, overlap or held — `held` means another pending booking request has that slot set aside for a few minutes). It does NOT look at the opening hours: ask `appointments.availability.day_opening` whether the business is open at that time, because an hour the business is closed comes back from here as available."
       }
     },
     "appointments.blocked_times.list": {
