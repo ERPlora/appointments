@@ -28,7 +28,8 @@ versión instalada y cita la de TU versión, no la de la última publicada. En i
 | Tipo | Nombre | Permiso |
 | ---- | ------ | ------- |
 | query | `appointments.appointments.list` / `.get` / `.history` / `.conflicting` | `view_appointment` |
-| query | `appointments.availability.slots` / `.check` (motor autoritativo, Tier 0) | `view_schedule` |
+| query | `appointments.availability.own_slots` / `.own_rules` (la mitad del motor que este módulo POSEE: agenda, bloqueos, reservas provisionales y ajustes — no sabe del horario) | `view_schedule` |
+| command | `appointments.availability.slots` / `.check` / `.day_opening` (motor autoritativo, WASM: cruza lo anterior con el horario que vive en `schedules`) | `view_schedule` |
 | query | `appointments.blocked_times.list` | `view_schedule` |
 | query | `appointments.recurring.list` · `.settings.get` | `view_appointment` |
 | command | `appointments.appointments.create` (WASM, `reads` → `conflicting`) / `.bulk_create` (WASM) | `add_appointment` |

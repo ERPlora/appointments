@@ -142,7 +142,9 @@ def main() -> int:
     # THE SCREEN. `day_opening` is what the booking form draws the day from, and it runs the very
     # function the door decides with — no second implementation of ADR-0392's precedence to drift.
     opening = hub.result("appointments.availability.day_opening", {"date": day})
-    hub.check("§4 the day is resolved by `schedules`", opening.get("source"), "schedules")
+    hub.check(
+        "§4 the day is resolved by `schedules`", opening.get("source"), "schedules"
+    )
     hub.check(
         "§4 …and the open stretch is 09:00-18:00 in minutes from midnight",
         opening.get("spans"),
@@ -188,18 +190,71 @@ def main() -> int:
         (0, "outside_schedule"),
     )
     # …and it does not refuse the whole day: 12:00, which the door just accepted, is free for it.
-    open_avail, open_reason = availability(hub, open_hour, DURATION, free.other_staff_id)
+    open_avail, open_reason = availability(
+        hub, open_hour, DURATION, free.other_staff_id
+    )
     hub.check(
         "§4 …and 12:00, which the door accepts, stays available for the engine",
         (open_avail, open_reason),
         (1, ""),
     )
 
+    # ── 5 · THE LIST, not just the single question (appointments#127) ────────────────────
+    #
+    # §4 pins the engine answering about ONE hour. This pins the other half of the same
+    # contract — the LIST the booking screen paints — because the two had drifted: `check`
+    # went through the handler in appointments#122 and started seeing the authority's hours,
+    # while `slots` stayed a Tier-0 query that structurally cannot (a module's SQL may only
+    # name its own tables), so it kept offering 08:00 on a day it had just refused at 08:00.
+    # The raw generator still starts at `calendar_start_hour`, which defaults to 8, so an
+    # unfiltered list WOULD contain 08:00 here: this section is only green if the handler
+    # carved the hours out.
+    print("§5 the LIST of free slots respects the same opening hours")
+    page = hub.result(
+        "appointments.availability.slots",
+        {"date": day, "staff_id": free.other_staff_id, "duration_minutes": DURATION},
+    )
+    times = [r["start_time"] for r in page["rows"]]
+    ends = [r["end_time"] for r in page["rows"]]
+    hub.check_true(
+        "§5 the list is not empty on an open day", bool(times), f"got {times!r}"
+    )
+    hub.check(
+        "§5 nothing before 09:00 is offered (08:00 is what the generator would emit)",
+        [t for t in times if t < "09:00"],
+        [],
+    )
+    hub.check(
+        "§5 …and nothing runs past 18:00, because the whole slot must fit",
+        [e for e in ends if e > "18:00"],
+        [],
+    )
+    hub.check_true(
+        "§5 …while 12:00, the hour the door accepts, IS offered",
+        "12:00" in times,
+        f"got {times!r}",
+    )
+    # The envelope stays the one an unpaginated query answered, so every existing caller keeps
+    # reading it the same way. `total` counting the FILTERED rows is the load-bearing half: a
+    # `total` left over from the generator would tell a paginating caller there are more hours
+    # than the business is open for, which is the same bug one level up.
+    hub.check(
+        "§5 the page still answers the four keys of an unpaginated query",
+        sorted(page.keys()),
+        ["limit", "offset", "rows", "total"],
+    )
+    hub.check(
+        "§5 …and `total` counts what came back, not what the generator produced",
+        (page["total"], page["offset"]),
+        (len(times), 0),
+    )
+
     return hub.finish(
         "the availability engine refuses the overlap per professional, keeps the other "
         "professional free, honours the `allow_overlapping` toggle at the engine AND at the door, "
         "and the booking door enforces the opening hours `schedules` owns — the same ones "
-        "`day_opening` hands the screen AND the same ones `availability.check` now answers"
+        "`day_opening` hands the screen, the same ones `availability.check` now answers, and the "
+        "same ones the LIST of free slots is cut to"
     )
 
 
