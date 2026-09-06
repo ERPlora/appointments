@@ -165,6 +165,20 @@ class Hub:
             raise AssertionError(f"command {name} answered {status}: {body}")
         return body["data"]
 
+    def result(self, name: str, payload: dict):
+        """What the command's HANDLER answered — `data.result` (hub#70).
+
+        The envelope is `{ok, operations, new_ids, result}` and the key appears only when a handler
+        answered, so reading `source`/`spans` off `data` itself finds nothing at all. That is not a
+        detail of this harness: it is how every caller reads one, and reading it wrong is a screen
+        that silently believes the authority never spoke."""
+        data = self.run(name, payload)
+        if "result" not in data:
+            raise AssertionError(
+                f"command {name} answered no `result`; its handler returned nothing: {data}"
+            )
+        return data["result"]
+
     def new_id(self, name: str, payload: dict) -> str:
         """The id the HOST minted for the row a command created. Never composed by the caller:
         the id is the runtime's to give (row contract), and a battery that guesses it is testing

@@ -7093,12 +7093,10 @@ var ErpAppointmentsRequestBooking = class extends i3 {
     this.openingUnknown = false;
     if (!can("appointments.view_schedule")) return null;
     try {
-      const answer = await erplora4().command(
-        "appointments.availability.day_opening",
-        { date: this.date }
-      );
-      if (!answer || answer.source !== "schedules") return null;
-      return Array.isArray(answer.spans) ? answer.spans : [];
+      const answer = await erplora4().command("appointments.availability.day_opening", { date: this.date });
+      const opening = answer?.result;
+      if (!opening || opening.source !== "schedules") return null;
+      return Array.isArray(opening.spans) ? opening.spans : [];
     } catch (e5) {
       if (e5?.code !== "permission_denied") this.openingUnknown = true;
       return null;

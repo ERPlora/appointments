@@ -138,7 +138,7 @@ def main() -> int:
 
     # THE SCREEN. `day_opening` is what the booking form draws the day from, and it runs the very
     # function the door decides with — no second implementation of ADR-0392's precedence to drift.
-    opening = hub.run("appointments.availability.day_opening", {"date": day})
+    opening = hub.result("appointments.availability.day_opening", {"date": day})
     hub.check("§4 the day is resolved by `schedules`", opening.get("source"), "schedules")
     hub.check(
         "§4 …and the open stretch is 09:00-18:00 in minutes from midnight",
