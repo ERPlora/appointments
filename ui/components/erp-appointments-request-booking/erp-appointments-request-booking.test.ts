@@ -314,8 +314,80 @@ describe('erp-appointments-request-booking', () => {
     return { name: asked[asked.length - 1].name, params: asked[asked.length - 1].payload };
   }
 
-  it('offers only the hours the door will accept, asking the door itself', async () => {
-    // La autoridad abre de 11:00 a 13:00 ese día. El motor propone 10:00 y 11:00.
+  // appointments#132: THE ENGINE DECIDES WHICH HOURS EXIST, THE SCREEN ONLY PAINTS THEM.
+  //
+  // Since appointments#127 `appointments.availability.slots` is a handler command that already
+  // crosses its candidates with the open stretches of `schedules` — the very function the booking
+  // door runs (ADR-0392). The filter this screen used to apply on top (the appointments#105 patch)
+  // was a SECOND authority over the same question, and a second authority is the disease, not the
+  // cure: the day the two disagree the screen wins silently, and an hour the engine kept on
+  // purpose disappears with nobody able to say why. The screen keeps ASKING the door, because the
+  // notices need it — an empty list cannot tell «shut» from «full» — but it no longer judges.
+  it('paints the slots the engine hands back AS THEY COME, with no opinion of its own', async () => {
+    // A shape the engine will not produce, on purpose: it keeps 08:00 (outside) and 12:45 (which
+    // ends at 13:15, past closing) while the authority answers 11:00–13:00. Those two rows are the
+    // ones a screen-side filter eats, so they are what makes this test fail if one comes back.
+    commandAnswers['appointments.availability.slots'] = {
+      rows: [
+        { slot_start: '2026-08-20T08:00:00', slot_end: '2026-08-20T08:30:00', start_time: '08:00', end_time: '08:30' },
+        { slot_start: '2026-08-20T11:00:00', slot_end: '2026-08-20T11:30:00', start_time: '11:00', end_time: '11:30' },
+        { slot_start: '2026-08-20T12:45:00', slot_end: '2026-08-20T13:15:00', start_time: '12:45', end_time: '13:15' },
+      ],
+      total: 3,
+      limit: 3,
+      offset: 0,
+    };
+    commandAnswers['appointments.availability.day_opening'] = {
+      source: 'schedules',
+      spans: [{ start_minute: 660, end_minute: 780 }],
+    };
+    const el = await mount();
+    await pickService(el);
+
+    expect(
+      offeredTimes(el),
+      'not one row is dropped on the way to the screen: the engine already answered the hours',
+    ).toEqual(['08:00', '11:00', '12:45']);
+  });
+
+  it('does not resurrect an hour the engine left out', async () => {
+    // The other half of the same contract. The authority is open all morning and the engine still
+    // hands back ONE slot, because a block, an appointment or a hold took the rest — verdicts the
+    // screen cannot see. Filling the gaps from the opening hours would offer times already sold.
+    commandAnswers['appointments.availability.slots'] = {
+      rows: [
+        { slot_start: '2026-08-20T11:00:00', slot_end: '2026-08-20T11:30:00', start_time: '11:00', end_time: '11:30' },
+      ],
+      total: 1,
+      limit: 1,
+      offset: 0,
+    };
+    commandAnswers['appointments.availability.day_opening'] = {
+      source: 'schedules',
+      spans: [{ start_minute: 540, end_minute: 1200 }],
+    };
+    const el = await mount();
+    await pickService(el);
+
+    expect(
+      offeredTimes(el),
+      'an open stretch is not a list of free hours: only the engine knows what is taken',
+    ).toEqual(['11:00']);
+  });
+
+  it('asks the door about the very date it is showing, and the engine about that same one', async () => {
+    // The authority opens 11:00-13:00 that day and the engine hands back the 11:00 it already
+    // kept for it — that is the ONLY list the screen paints (appointments#132). What is pinned
+    // here is that both questions are about the same date: asking the door about today while the
+    // list is tomorrow's is how the closed-day notice ends up on the wrong day.
+    commandAnswers['appointments.availability.slots'] = {
+      rows: [
+        { slot_start: '2026-08-20T11:00:00', slot_end: '2026-08-20T11:30:00', start_time: '11:00', end_time: '11:30' },
+      ],
+      total: 1,
+      limit: 1,
+      offset: 0,
+    };
     commandAnswers['appointments.availability.day_opening'] = {
       source: 'schedules',
       spans: [{ start_minute: 660, end_minute: 780 }],
@@ -335,13 +407,17 @@ describe('erp-appointments-request-booking', () => {
       'schedules_answers' in lastSlotsQuery().params,
       'appointments#118: el crucero se fue con las tablas propias que apagaba',
     ).toBe(false);
-    expect(
-      offeredTimes(el),
-      'las 10:00 caen fuera del tramo que la puerta resolvió para esa fecha: ofrecerlas es mentir',
-    ).toEqual(['11:00']);
+    expect(offeredTimes(el), 'y pinta la lista del motor, entera').toEqual(['11:00']);
   });
 
-  it('does not offer a single hour on a day the authority says the business is shut', async () => {
+  it('says the business is SHUT, which an empty list cannot say on its own', async () => {
+    // On a closed day the engine itself answers zero rows — `DayOpening::Closed` leaves no open
+    // stretch for a candidate to fit into. That half is pinned where it now lives: the handler's
+    // `slots_offers_nothing_on_a_day_the_authority_shuts` and `tests/availability.hub.test.py` §5,
+    // against a real kernel. What is left for the screen is the REASON, and that is why
+    // `day_opening` is still asked after appointments#132: «closed today» and «no times left» are
+    // different sentences for whoever is on the phone, and an empty list says neither.
+    commandAnswers['appointments.availability.slots'] = { rows: [], total: 0, limit: 0, offset: 0 };
     commandAnswers['appointments.availability.day_opening'] = { source: 'schedules', spans: [] };
     const el = await mount();
     await pickService(el);
@@ -367,31 +443,13 @@ describe('erp-appointments-request-booking', () => {
     ).not.toContain('ui.bookingDayClosed');
   });
 
-  it('drops the last slot of the day when it would run PAST closing time', async () => {
-    // El caso que rompe de verdad en un salón: el motor propone 12:45 porque su hora de calendario
-    // llega hasta las 20:00, pero el servicio dura 30 min y la puerta cierra a las 13:00. `create`
-    // exige que la cita TERMINE dentro del tramo, así que media franja no es franja.
-    commandAnswers['appointments.availability.slots'] = {
-      rows: [
-        { slot_start: '2026-08-20T12:30:00', slot_end: '2026-08-20T13:00:00', start_time: '12:30', end_time: '13:00' },
-        { slot_start: '2026-08-20T12:45:00', slot_end: '2026-08-20T13:15:00', start_time: '12:45', end_time: '13:15' },
-      ],
-      total: 2,
-      limit: 2,
-      offset: 0,
-    };
-    commandAnswers['appointments.availability.day_opening'] = {
-      source: 'schedules',
-      spans: [{ start_minute: 660, end_minute: 780 }],
-    };
-    const el = await mount();
-    await pickService(el);
-
-    expect(
-      offeredTimes(el),
-      'las 12:45 acaban a las 13:15, con el negocio ya cerrado: la puerta la rechazaría',
-    ).toEqual(['12:30']);
-  });
+  // 🪦 «drops the last slot of the day when it would run PAST closing time» vivía aquí y se fue con
+  // appointments#132. Media franja no es franja —`create` exige que la cita TERMINE dentro del
+  // tramo—, pero esa regla es del MOTOR desde appointments#127 y se prueba donde se aplica:
+  // `handler/src/lib.rs::slots_keeps_only_the_hours_inside_the_open_stretches` (las 17:45 se van de
+  // un 09:00-18:00) y `tests/availability.hub.test.py` §5 contra un kernel de verdad. Lo que le
+  // toca a la pantalla —no volver a aplicarla— lo cubre el test de arriba, que le mete justo una
+  // franja a caballo del cierre y exige que la pinte.
 
   function refusal(code: string): Error {
     return Object.assign(new Error(code), { code });
