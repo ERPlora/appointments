@@ -31,7 +31,9 @@ instead of refusing — a guard whose input can go missing is a guard that OPENS
      (appointments#89). This one used to be the section's famous absence: business hours are WALL
      CLOCK, an appointment is an instant, and crossing them needs the business timezone, which a
      module could not read. `context.timezone` (hub#1022) landed, so the rule moved from
-     `queries/availability_check.sql` — advisory — into the handler.
+     `queries/availability_check.sql` — advisory — into the handler. Since appointments#118
+     «the opening hours» means the four `schedules.*` lists and nothing else: this module's own
+     copy, and the read that served it, are retired, so the only guard left is the one below.
 
 What is NOT here, and is not an oversight: the PROFESSIONAL's own working hours. The business is
 open, but whether that particular person works that hour is a second rule, and its read
@@ -102,13 +104,17 @@ BOOKING_COMMANDS = (
 # graceful (no `required: true`) so a failed resolution becomes a `booking_refused` ANSWER the
 # inbox can show, instead of a runtime abort that retries into the dead-letter and answers nobody.
 LISTENER_BOOKING_COMMANDS = ("appointments._book_from_request",)
-OPENING_HOURS_READ = "appointments.schedules.active_timeslots"
 # appointments#102 — the AUTHORITY. `appointments` owns the appointment and the agenda block; the
 # business opening hours belong to `schedules`, which ADR-0392 made the single answer of the
 # product to «are we open?». The gate resolves its precedence — exact special day > yearly special
 # day > override range > weekly hours — over the booking's own date, so all four lists have to be
 # there. They declare a `list` block and that is fine: `preload_reads` goes through
 # `queries::execute`, which returns the WHOLE set, paginating internally (hub#650).
+# schedules#36 — the first release that SEEDS the week (L-F 09:00-18:00, weekend closed) when the
+# module is installed. appointments#118 retired this module's own timetable BECAUSE of it: below
+# this floor «the hub has no opening hours» is a reachable state again, and the gate fails closed.
+SEEDING_SCHEDULES = "2.0.28"
+
 SCHEDULES_READS = (
     "schedules.business_hours.list",
     "schedules.special_days.list",
@@ -121,6 +127,11 @@ failures: list[str] = []
 
 def fail(msg: str) -> None:
     failures.append(msg)
+
+
+def _version(raw: str) -> tuple:
+    """`2.0.28` > `2.0.9`: compare the numbers, not the strings."""
+    return tuple(int(part) for part in re.findall(r"\d+", str(raw)))
 
 
 def reads_of(command: str) -> dict:
@@ -250,49 +261,6 @@ def check_i18n() -> None:
                 )
 
 
-def check_opening_hours_read() -> None:
-    """appointments#89 — the door needs its hinge: the opening-hours read, declared and required."""
-    query = MANIFEST.get("queries", {}).get(OPENING_HOURS_READ)
-    if not isinstance(query, dict):
-        fail(
-            f"queries.{OPENING_HOURS_READ}: not declared — the handler has nothing to read"
-        )
-    elif not (MODULE_DIR / str(query.get("sql"))).exists():
-        fail(
-            f"queries.{OPENING_HOURS_READ}.sql: {query.get('sql')!r} is not in the package"
-        )
-    elif "list" in query:
-        fail(
-            f"queries.{OPENING_HOURS_READ}: is a paginated `list`; a handler read gets plain rows"
-        )
-    for command in BOOKING_COMMANDS:
-        read = reads_of(command).get(OPENING_HOURS_READ)
-        if read is None:
-            fail(
-                f"{command}: declares no read of {OPENING_HOURS_READ!r} — it can book outside the "
-                "business opening hours, which is the whole of appointments#89"
-            )
-        elif read.get("required") is not True:
-            fail(
-                f"{command}: the {OPENING_HOURS_READ!r} read is not `required: true` — a read that "
-                "may fail to resolve leaves the opening-hours gate open"
-            )
-    for command in LISTENER_BOOKING_COMMANDS:
-        read = reads_of(command).get(OPENING_HOURS_READ)
-        if read is None:
-            fail(
-                f"{command}: declares no read of {OPENING_HOURS_READ!r} — it books through "
-                "`create_appointment_pure`, whose gate fails CLOSED, so every approval is refused "
-                "with `availability_unavailable` and the WhatsApp→appointment flow is dead"
-            )
-        elif read.get("required") is True:
-            fail(
-                f"{command}: the {OPENING_HOURS_READ!r} read must stay GRACEFUL (no `required: "
-                "true`), like every read of this listener — a runtime abort retries into the "
-                "dead-letter and the inbox never gets its answer; the handler already fails closed"
-            )
-
-
 def check_schedules_authority() -> None:
     """appointments#102 — the opening hours belong to `schedules`, so the door has to READ it.
 
@@ -326,6 +294,14 @@ def check_schedules_authority() -> None:
             "depends_on[schedules]: no `min_version` — `schedules.exception_intervals.list` was "
             "born in 2.0.17 (schedules#23); against an older one the read fails and every booking "
             "aborts instead of the install refusing (hub#681)"
+        )
+    elif _version(floor) < _version(SEEDING_SCHEDULES):
+        fail(
+            f"depends_on[schedules].min_version is {floor!r}, below {SEEDING_SCHEDULES} — that is "
+            "the first release that SEEDS the week on install (schedules#36), and appointments#118 "
+            "removed this module's own timetable on the strength of it. Against an older "
+            "`schedules` a fresh hub can carry no hours at all, and the gate refuses every booking "
+            "with nothing the owner can see to fix"
         )
 
     for command in BOOKING_COMMANDS:
@@ -362,7 +338,6 @@ def check_schedules_authority() -> None:
 def main() -> int:
     check_writers()
     check_reschedule()
-    check_opening_hours_read()
     check_schedules_authority()
     check_i18n()
     if failures:

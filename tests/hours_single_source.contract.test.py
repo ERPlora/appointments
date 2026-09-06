@@ -21,19 +21,18 @@ publishes and asks what it does to the two hours tables — so a `appointments.o
 that writes the very same rows fails just the same. The names of the six retired operations are
 checked too, but as the cheap half; the SQL scan is the one that holds.
 
-WHAT DELIBERATELY STAYS. `appointments.schedules.active_timeslots` and the two availability
-queries still READ those tables: that is the transitional fallback the handler
-(`legacy_timeslot_refusal`) uses while `schedules` carries no rule reaching the date, and it is
-what keeps a salon configured before appointments#102 working. Reading is not a second place to
-configure — nobody can write there any more. Its removal, with the tables themselves, is
-appointments#118.
+NOTHING STAYS ANY MORE (appointments#118). Until this issue the two availability queries and
+`appointments.schedules.active_timeslots` still READ those tables: the transitional fallback the
+handler used while `schedules` carried no rule reaching the date, kept for the salon configured
+before appointments#102. Both conditions that made it necessary are gone — appointments#117
+retired every write, and schedules#36 seeds the whole week on install — so the fallback had become
+a refusal the salon could not explain with anything it can see configured. The reads went with it
+and migration 009 retires the tables themselves, which is why the allowlist below is EMPTY: no
+statement of this module may name them at all.
 
-BUT THE FALLBACK IS NOT A TOOL. A `reads` source of the handler is not something the assistant
-should be handed: offered as «the business's opening hours», it answers from a table nothing can
-write any more — empty on every hub set up after #117 — so the assistant would tell the owner the
-salon has no hours while `schedules` holds them. The one tool for that question is
-`schedules.business_hours.list`; the availability engine (`availability.slots`/`.check`) keeps its
-`ai` block because it answers a different question (is THIS slot free?), not «when are we open?».
+That is what turns this battery from «only one place WRITES the hours» into «only one place HAS
+them». A query that reads `appointments_schedule*` now cannot even run, so bringing one back means
+bringing the tables back, and the migration check below is what makes that visible in the diff.
 
 Usage: tests/hours_single_source.contract.test.py   (exit 0 = green)
 """
@@ -50,21 +49,13 @@ MANIFEST = json.loads((MODULE_DIR / "module.json").read_text())
 # not this battery's business.
 HOURS_TABLES = ("appointments_schedule", "appointments_schedule_timeslot")
 
-# The queries allowed to READ them: the transitional fallback, owned by appointments#118. Anything
-# else reading them is a management surface that came back.
-READ_ALLOWLIST = {
-    "appointments.schedules.active_timeslots",
-    "appointments.availability.slots",
-    "appointments.availability.check",
-}
+# Nobody may read them either, since appointments#118: the transitional fallback is gone and the
+# tables with it. An empty allowlist is the point — it is not a placeholder waiting to be filled.
+READ_ALLOWLIST: set[str] = set()
 
-# The availability ENGINE: it reads the hours tables to answer «is this slot free?», which is a
-# different question from «when is the business open?», so it may stay a tool of the assistant.
-# Every other allowed reader is the handler's fallback, and a fallback is not offered to anyone.
-AVAILABILITY_ENGINE = {
-    "appointments.availability.slots",
-    "appointments.availability.check",
-}
+# The migration that retires the tables. `contract` is what makes the runtime translate the
+# `DROP TABLE` into `ALTER TABLE ... RENAME TO _deprecated_...` instead of destroying the rows.
+RETIRING_MIGRATION = "migrations/postgres/009_drop_own_timetable.sql"
 
 # The six operations appointments#117 retired. Cheap half of the check — kept by name so the diff
 # that brings one back is readable, but the SQL scan below is what actually holds the line.
@@ -149,7 +140,8 @@ def check_no_published_operation_writes_the_hours() -> None:
                 )
 
 
-def check_only_the_fallback_reads_the_hours() -> None:
+def check_nobody_reads_the_hours() -> None:
+    """appointments#118 — not «only the fallback reads them» any more: NOBODY does."""
     for name, spec in sorted(MANIFEST.get("queries", {}).items()):
         if name in READ_ALLOWLIST:
             continue
@@ -157,25 +149,49 @@ def check_only_the_fallback_reads_the_hours() -> None:
         for table in HOURS_TABLES:
             if table in read:
                 fail(
-                    f"`{name}` reads `{table}` and is not the transitional fallback: listing this "
-                    "module's own timetable is what made it look configurable. The hours are read "
-                    "from `schedules.business_hours.list`"
+                    f"`{name}` reads `{table}`: since appointments#118 the table is retired by "
+                    "migration 009, so this query answers on a renamed table or aborts. The "
+                    "opening hours are read from `schedules.business_hours.list`"
                 )
 
 
-def check_the_fallback_is_not_offered_to_the_assistant() -> None:
-    """A query that reads the hours tables and is not the engine is the handler's `reads` source:
-    it carries no `ai` block, or the assistant gets a second — and now always empty — place to ask
-    when the business is open."""
-    for name in sorted(READ_ALLOWLIST - AVAILABILITY_ENGINE):
-        spec = MANIFEST.get("queries", {}).get(name)
-        if spec is None:
-            continue
-        if spec.get("ai"):
+def check_the_contract_migration_retires_the_tables() -> None:
+    """The reads going is half the fix; the tables have to go too, or the next writer re-creates
+    the surface by simply naming a table that is still there. `contract` is what keeps the rows:
+    the runtime turns a `DROP TABLE` of a contract migration into a `RENAME TO _deprecated_...`.
+    """
+    entries = MANIFEST.get("migrations", {}).get("postgres") or []
+    entry = next(
+        (
+            e
+            for e in entries
+            if isinstance(e, dict) and e.get("file") == RETIRING_MIGRATION
+        ),
+        None,
+    )
+    if entry is None:
+        fail(
+            f"`{RETIRING_MIGRATION}` is not declared in migrations.postgres: the two hours tables "
+            "stay in every hub's database, ready for the next query to name them again"
+        )
+        return
+    if entry.get("kind") != "contract":
+        fail(
+            f"`{RETIRING_MIGRATION}` is not `kind: contract` ({entry.get('kind')!r}): the guard "
+            "would take the DROP literally and destroy the rows instead of renaming them aside"
+        )
+    sql = strip_comments((MODULE_DIR / RETIRING_MIGRATION).read_text())
+    dropped = {
+        t.lower()
+        for t in re.findall(
+            r"\bDROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?([a-z_][a-z0-9_]*)", sql, re.IGNORECASE
+        )
+    }
+    for table in HOURS_TABLES:
+        if table not in dropped:
             fail(
-                f"`{name}` is offered to the assistant (`ai` block): it is the handler's transitional "
-                "fallback over a table nothing writes since appointments#117, so as a tool it answers "
-                "«no opening hours» on every new hub. The assistant asks `schedules.business_hours.list`"
+                f"`{RETIRING_MIGRATION}` does not drop `{table}`: it survives in the database and "
+                "the single-source-of-truth is only true in the manifest"
             )
 
 
@@ -215,8 +231,8 @@ def check_the_docs_do_not_offer_them() -> None:
 def main() -> int:
     check_the_scanner_finds_the_positive()
     check_no_published_operation_writes_the_hours()
-    check_only_the_fallback_reads_the_hours()
-    check_the_fallback_is_not_offered_to_the_assistant()
+    check_nobody_reads_the_hours()
+    check_the_contract_migration_retires_the_tables()
     check_the_retired_operations_are_gone()
     check_setup_does_not_ask_for_our_hours()
     check_the_docs_do_not_offer_them()
@@ -225,7 +241,10 @@ def main() -> int:
         for f in sorted(set(failures)):
             print(f"  - {f}")
         return 1
-    print("OK: the opening hours are configured in `schedules` and nowhere else")
+    print(
+        "OK: the opening hours live in `schedules` and nowhere else — this module neither "
+        "writes, reads nor keeps them"
+    )
     return 0
 
 
