@@ -172,10 +172,7 @@
     },
     "appointments.schedules.active_timeslots": {
       "permission": "appointments.view_schedule",
-      "sql": "queries/schedule_active_timeslots.sql",
-      "ai": {
-        "description": "The hub's live business opening hours as weekday time ranges. The authoritative answer to when the business is open."
-      }
+      "sql": "queries/schedule_active_timeslots.sql"
     },
     "appointments.availability.slots": {
       "permission": "appointments.view_schedule",

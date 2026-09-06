@@ -28,6 +28,13 @@ what keeps a salon configured before appointments#102 working. Reading is not a 
 configure — nobody can write there any more. Its removal, with the tables themselves, is
 appointments#118.
 
+BUT THE FALLBACK IS NOT A TOOL. A `reads` source of the handler is not something the assistant
+should be handed: offered as «the business's opening hours», it answers from a table nothing can
+write any more — empty on every hub set up after #117 — so the assistant would tell the owner the
+salon has no hours while `schedules` holds them. The one tool for that question is
+`schedules.business_hours.list`; the availability engine (`availability.slots`/`.check`) keeps its
+`ai` block because it answers a different question (is THIS slot free?), not «when are we open?».
+
 Usage: tests/hours_single_source.contract.test.py   (exit 0 = green)
 """
 
@@ -47,6 +54,14 @@ HOURS_TABLES = ("appointments_schedule", "appointments_schedule_timeslot")
 # else reading them is a management surface that came back.
 READ_ALLOWLIST = {
     "appointments.schedules.active_timeslots",
+    "appointments.availability.slots",
+    "appointments.availability.check",
+}
+
+# The availability ENGINE: it reads the hours tables to answer «is this slot free?», which is a
+# different question from «when is the business open?», so it may stay a tool of the assistant.
+# Every other allowed reader is the handler's fallback, and a fallback is not offered to anyone.
+AVAILABILITY_ENGINE = {
     "appointments.availability.slots",
     "appointments.availability.check",
 }
@@ -148,6 +163,22 @@ def check_only_the_fallback_reads_the_hours() -> None:
                 )
 
 
+def check_the_fallback_is_not_offered_to_the_assistant() -> None:
+    """A query that reads the hours tables and is not the engine is the handler's `reads` source:
+    it carries no `ai` block, or the assistant gets a second — and now always empty — place to ask
+    when the business is open."""
+    for name in sorted(READ_ALLOWLIST - AVAILABILITY_ENGINE):
+        spec = MANIFEST.get("queries", {}).get(name)
+        if spec is None:
+            continue
+        if spec.get("ai"):
+            fail(
+                f"`{name}` is offered to the assistant (`ai` block): it is the handler's transitional "
+                "fallback over a table nothing writes since appointments#117, so as a tool it answers "
+                "«no opening hours» on every new hub. The assistant asks `schedules.business_hours.list`"
+            )
+
+
 def check_the_retired_operations_are_gone() -> None:
     for name in RETIRED:
         for block in ("queries", "commands"):
@@ -185,6 +216,7 @@ def main() -> int:
     check_the_scanner_finds_the_positive()
     check_no_published_operation_writes_the_hours()
     check_only_the_fallback_reads_the_hours()
+    check_the_fallback_is_not_offered_to_the_assistant()
     check_the_retired_operations_are_gone()
     check_setup_does_not_ask_for_our_hours()
     check_the_docs_do_not_offer_them()
