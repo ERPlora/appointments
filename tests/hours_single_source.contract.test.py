@@ -643,7 +643,27 @@ def check_the_reason_readers_find_the_positive() -> None:
             "appointments#122 the engine answers that way, and without one the reader below is "
             "never exercised"
         )
-    for name, spec in sorted(engine.items()):
+    # Only a command whose verdict query HAS a `CASE ... END AS reason` can hand words over, and
+    # since appointments#127 the family has one that has none: `appointments.availability.slots`
+    # answers a LIST of free slots, not a reason. Demanding words of it would be demanding that a
+    # query grow a `reason` column to be allowed to read the authority — and the promise check
+    # already states the empty case correctly («it has no `reason` to answer at all»). The reader
+    # is still proven on the one that does answer reasons, which is what this self-test is for.
+    verdicts = {
+        n: spec
+        for n, spec in engine.items()
+        if any(
+            (sub := published(q)) is not None and emitted_reasons(sql_of(sub))
+            for q in declared_reads(spec)
+        )
+    }
+    if not verdicts:
+        fail(
+            "no command of the family reads a query that answers with a reason: nothing then "
+            "proves `answerable_reasons` gets a single word out of a `CASE`, and the promise "
+            "check would call every honest reason a lie without this reader noticing"
+        )
+    for name, spec in sorted(verdicts.items()):
         answers = answerable_reasons(name, spec)
         if not answers - {HOURS_REASON}:
             fail(
@@ -651,7 +671,8 @@ def check_the_reason_readers_find_the_positive() -> None:
                 "out of it: the promise check would then judge its description against an empty "
                 f"set and call every honest reason a lie ({sorted(answers)})"
             )
-        if HOURS_REASON not in answers:
+    for name, spec in sorted(engine.items()):
+        if HOURS_REASON not in answerable_reasons(name, spec):
             fail(
                 f"`{name}` reads the authority and `answerable_reasons` still does not grant it "
                 f"`{HOURS_REASON}`: the promise check would turn appointments#122's own answer red"
@@ -776,7 +797,7 @@ def check_the_family_and_the_hours_reader_find_the_positive() -> None:
     # and never a skip: `if door and …` would let the whole booking-door half go quiet the day
     # somebody renames `create`, and a guard that stops looking when a name moves is the very bug
     # appointments#125 is about.
-    slots = probe_operation("queries", "appointments.availability.slots")
+    slots = probe_operation("queries", "appointments.availability.own_slots")
     door = probe_operation("commands", "appointments.appointments.create")
     single = probe_operation("queries", "appointments.appointments.conflicting")
     if slots is None or door is None or single is None:

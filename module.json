@@ -175,11 +175,11 @@
       },
       "expose_api": true
     },
-    "appointments.availability.slots": {
+    "appointments.availability.own_slots": {
       "permission": "appointments.view_schedule",
       "sql": "queries/availability_slots.sql",
       "ai": {
-        "description": "Returns the free booking slots for a given date (optionally for a specific staff member and duration), crossing the calendar window and booking-notice settings, blocked time, existing appointments and the slots currently set aside for pending booking requests. It does NOT know the opening hours: ask `appointments.availability.day_opening` for the stretches the business is actually open that date."
+        "description": "The half of the day's free slots this module owns: the calendar window and booking-notice settings, the blocked time, the appointments already on the books and the slots currently set aside for pending booking requests. It does NOT know the opening hours: this is the runtime read of `appointments.availability.slots`, which adds them from the authority before answering, and `appointments.availability.day_opening` is what returns them on their own (runtime reads)."
       }
     },
     "appointments.availability.own_rules": {
@@ -955,6 +955,46 @@
         },
         {
           "query": "appointments.settings.get",
+          "required": true
+        },
+        {
+          "query": "schedules.business_hours.list",
+          "required": true
+        },
+        {
+          "query": "schedules.special_days.list",
+          "required": true
+        },
+        {
+          "query": "schedules.overrides.list",
+          "required": true
+        },
+        {
+          "query": "schedules.exception_intervals.list",
+          "required": true
+        }
+      ]
+    },
+    "appointments.availability.slots": {
+      "permission": "appointments.view_schedule",
+      "schema": "schemas/availability_slots.json",
+      "handler": {
+        "type": "wasm",
+        "file": "dist/handler.wasm",
+        "function": "available_slots"
+      },
+      "ai": {
+        "description": "Lists the free booking slots of a given date (optionally for one staff member and a duration), crossing the calendar window and booking-notice settings, blocked time, existing appointments and the slots set aside for pending booking requests. It answers the SAME opening hours the booking door enforces, read from the `schedules` module, so an hour this offers is an hour a booking will be accepted at — the business being shut that date comes back as an empty list."
+      },
+      "reads": [
+        {
+          "query": "appointments.availability.own_slots",
+          "params": {
+            "date": "payload.date",
+            "duration_minutes": "payload.duration_minutes",
+            "staff_id": "payload.staff_id",
+            "exclude_hold_ref": "payload.exclude_hold_ref"
+          },
           "required": true
         },
         {

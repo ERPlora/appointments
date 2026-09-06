@@ -80,6 +80,12 @@ pub fn check_availability(input: Json<erplora_guest_sdk::Input>) -> FnResult<Jso
 
 #[cfg(feature = "guest")]
 #[plugin_fn]
+pub fn available_slots(input: Json<erplora_guest_sdk::Input>) -> FnResult<Json<Output>> {
+    guest_result(available_slots_pure(input.into_inner().into_value()))
+}
+
+#[cfg(feature = "guest")]
+#[plugin_fn]
 pub fn bulk_create(input: Json<erplora_guest_sdk::Input>) -> FnResult<Json<Output>> {
     guest_result(bulk_create_pure(input.into_inner().into_value()))
 }
@@ -1245,6 +1251,105 @@ pub fn check_availability_pure(input: Value) -> Result<Output, String> {
 /// failed — the very pair `queries/availability_check.sql` has always returned.
 fn verdict(available: i64, reason: &str) -> Output {
     Output::new().with_result(json!({ "available": available, "reason": reason }))
+}
+
+/// The day's free slots as `queries/availability_slots.sql` answers them — the half this module
+/// owns (appointments#127).
+const OWN_SLOTS_READ: &str = "appointments.availability.own_slots";
+
+/// Does the whole slot fit inside ONE open stretch? `None` when the row cannot be read at all.
+///
+/// Whole, not overlapping: a booking that starts before closing and runs past it is refused by the
+/// door, so offering it would be the same contradiction on the other edge. The units are the ones
+/// [`schedules_opening`] answers in — minutes from the date's own midnight — and the row carries
+/// them as the `HH:MM` pair the caller reads, which is what keeps this comparison free of any
+/// second reading of the clock.
+fn slot_inside(row: &Value, spans: &[Span]) -> Option<bool> {
+    let start = wall_minutes(&as_str(row.get("start_time")?))?;
+    let end = wall_minutes(&as_str(row.get("end_time")?))?;
+    Some(spans.iter().any(|s| s.start <= start && end <= s.end))
+}
+
+/// The list's answer, in the very envelope the caller already reads (appointments#127).
+///
+/// `slots` was a Tier-0 query until this issue, and the runtime hands an unpaginated query back as
+/// `{rows, total, limit, offset}` (`crates/runtime/src/queries.rs::QueryPage`). Answering the same
+/// shape from the handler is what makes this a fix and not a migration: nobody who calls it has to
+/// learn a new envelope to stop being lied to. `total` counts what the caller ACTUALLY gets, so a
+/// pager built on it cannot promise hours the business is shut for.
+fn slot_page(rows: Vec<Value>) -> Output {
+    let total = rows.len();
+    Output::new().with_result(json!({
+        "rows": rows,
+        "total": total,
+        "limit": total,
+        "offset": 0,
+    }))
+}
+
+/// What slots are free that day? — the list, answering the SAME hours the door enforces
+/// (appointments#127).
+///
+/// **What was wrong.** «What have I got on Sunday?» came back with the whole calendar day of a
+/// salon that does not open on Sundays; so did the hour before opening and the lunch break. This
+/// is the question of appointments#122 asked in bulk, and it is the one that gets asked most:
+/// `queries/availability_slots.sql` generates the candidates of the settings' calendar window and
+/// discounts the booking notice, the blocked time, the appointments and the holds — every verdict
+/// built on tables THIS module owns — and knows nothing about the opening hours. It cannot: they
+/// belong to `schedules` (ADR-0392) and a query of a module may only name its own module's
+/// tables. The booking screen papered over it by asking [`day_opening_pure`] separately and
+/// filtering itself (appointments#105), which is the screen's patch and not the engine's answer —
+/// the assistant, a flow, an integration and the public API read the list and believed it.
+///
+/// **Why it answers here.** Same reason as [`check_availability_pure`], and through the same
+/// door: the SQL half arrives as an authoritative read and the hours come from
+/// [`schedules_opening`], the very function `create` and `reschedule` run. There is no second
+/// implementation of ADR-0392's precedence to drift, which is what
+/// `slots_offers_exactly_what_the_door_accepts` pins for good.
+///
+/// **Silence is not a shut day.** `source: unset` — the authority carrying no rule that reaches
+/// the date — means the gate refuses nothing there, so the list is handed back WHOLE. Filtering by
+/// an empty answer would erase a day the door would have accepted, which is the optimistic list in
+/// reverse: a hub that has not configured its hours yet losing its agenda without being told why.
+///
+/// Read-only: it returns a `result` and never an operation. A read that did not arrive is a
+/// refusal and never an open door.
+pub fn available_slots_pure(input: Value) -> Result<Output, String> {
+    let payload = payload_of(&input);
+    let Some(at) = wall_stamp_of_date(&str_or(&payload, "date", "")) else {
+        return Ok(Output::new().with_error(DomainError::new(
+            "appointments.invalid_start",
+            "That date could not be read; the expected shape is YYYY-MM-DD.",
+        )));
+    };
+    let Some(rows) = read_rows(&input, OWN_SLOTS_READ) else {
+        return Ok(Output::new().with_error(availability_unavailable()));
+    };
+
+    let opening = match schedules_opening(&input, &at) {
+        Ok(opening) => opening,
+        Err(refusal) => return Ok(Output::new().with_error(refusal)),
+    };
+    let spans = match opening {
+        // The authority is silent about the date: nothing to filter by, and filtering by nothing
+        // would empty a day the door books.
+        None => return Ok(slot_page(rows.clone())),
+        Some(DayOpening::Closed) => Vec::new(),
+        Some(DayOpening::Open(spans)) => spans,
+    };
+
+    let mut kept = Vec::with_capacity(rows.len());
+    for row in rows {
+        // A row OUR OWN SQL returned in a shape nobody can judge is a fault, not a slot to drop
+        // quietly: a shorter list would hide a broken read behind an answer that looks fine.
+        let Some(inside) = slot_inside(row, &spans) else {
+            return Ok(Output::new().with_error(availability_unavailable()));
+        };
+        if inside {
+            kept.push(row.clone());
+        }
+    }
+    Ok(slot_page(kept))
 }
 
 
@@ -7421,6 +7526,269 @@ mod tests {
         assert!(
             shut_somewhere && open_somewhere,
             "a walk where the day is all open or all shut proves nothing"
+        );
+    }
+    // ── appointments#127 · the LIST answers the hours too, or it lies ──────────────────────────
+    //
+    // appointments#122 closed the question about ONE hour; this is the one that gets asked all
+    // day. «What slots do I have on Sunday?» came back with the whole calendar day of a salon
+    // that does not open on Sundays, and so did the lunch break and the hour before opening. The
+    // screen papered over it by asking `day_opening` separately and filtering itself
+    // (appointments#105) — the screen's patch, not the engine's answer: the assistant, a flow, an
+    // integration and the public API read the list and believed it.
+    //
+    // `queries/availability_slots.sql` cannot fix it: the hours belong to `schedules` (ADR-0392)
+    // and a query of this module may only name this module's tables. So the SQL keeps every
+    // verdict built on tables this module owns and arrives as the read
+    // `appointments.availability.own_slots`; the hours are carved out HERE, with the very
+    // `schedules_opening` the door runs.
+
+    /// One row as `queries/availability_slots.sql` returns it: the naive wall pair plus the
+    /// `HH:MM` pair the caller reads.
+    fn own_slot(date: &str, start_min: i64, dur: i64) -> Value {
+        let hhmm = |m: i64| format!("{:02}:{:02}", m / 60, m % 60);
+        let (from, to) = (hhmm(start_min), hhmm(start_min + dur));
+        json!({
+            "slot_start": format!("{date}T{from}:00"),
+            "slot_end": format!("{date}T{to}:00"),
+            "start_time": from,
+            "end_time": to,
+        })
+    }
+
+    /// The whole calendar day the SQL generates with the hub defaults (08:00–20:00, step 15) for
+    /// a 30-minute service — every candidate, hours not yet applied. This is exactly the list the
+    /// issue measured: 45 slots offered on a Sunday the salon is shut.
+    fn own_slots_calendar_day(date: &str, dur: i64) -> Value {
+        let mut rows = Vec::new();
+        let mut m = 8 * 60;
+        while m + dur <= 20 * 60 {
+            rows.push(own_slot(date, m, dur));
+            m += 15;
+        }
+        Value::Array(rows)
+    }
+
+    fn slots_input(date: &str, own: Value, reads: Value) -> Value {
+        let mut merged = reads;
+        merged["appointments.availability.own_slots"] = own;
+        json!({
+            "payload": { "date": date, "duration_minutes": 30, "staff_id": "s1" },
+            "context": { "hub_id": "h1", "now": "2026-07-01T08:00:00Z", "new_ids": [],
+                         "timezone": "Europe/Madrid", "reads": merged }
+        })
+    }
+
+    /// The `HH:MM` starts the caller ends up seeing, read off the very envelope it reads today.
+    fn offered(out: &Output) -> Vec<String> {
+        out.result
+            .as_ref()
+            .and_then(|r| r.get("rows"))
+            .and_then(|v| v.as_array())
+            .expect("the list answers with rows")
+            .iter()
+            .map(|row| as_str(&row["start_time"]))
+            .collect()
+    }
+
+    /// 🔴 THE SYMPTOM OF THE ISSUE. 2026-08-30 is a SUNDAY and the salon works Monday to Friday.
+    /// Nothing this module owns objects to any of those hours — no block, no appointment, no hold
+    /// — so the SQL offers the whole calendar day, and that is the list that used to reach the
+    /// assistant, a flow and the public API.
+    #[test]
+    fn slots_offers_nothing_on_a_day_the_authority_shuts() {
+        let out = available_slots_pure(slots_input(
+            "2026-08-30",
+            own_slots_calendar_day("2026-08-30", 30),
+            sched_hours(sched_weekdays_nine_to_six()),
+        ))
+        .unwrap();
+        assert_eq!(offered(&out), Vec::<String>::new());
+    }
+
+    /// The Monday of that same week is open 09:00–18:00, so the calendar hours outside it go and
+    /// the ones inside it stay — including the last one that FITS WHOLE (17:30–18:00) and not the
+    /// one that would run past closing (17:45–18:15).
+    #[test]
+    fn slots_keeps_only_the_hours_inside_the_open_stretches() {
+        let out = available_slots_pure(slots_input(
+            "2026-08-31",
+            own_slots_calendar_day("2026-08-31", 30),
+            sched_hours(sched_weekdays_nine_to_six()),
+        ))
+        .unwrap();
+        let times = offered(&out);
+        assert_eq!(times.first().map(String::as_str), Some("09:00"));
+        assert_eq!(times.last().map(String::as_str), Some("17:30"));
+        for gone in ["08:00", "08:45", "17:45", "18:00"] {
+            assert!(!times.iter().any(|t| t == gone), "{gone} is outside 09:00-18:00");
+        }
+    }
+
+    /// A break is CLOSED time inside the stretch, so the list loses the hours that run into it —
+    /// the same carving the door does, which is why 13:45 stops being offered instead of being
+    /// offered and then refused.
+    #[test]
+    fn slots_carves_the_break_out_of_the_day() {
+        let hours = json!([json!({ "id": "bh-lunch", "day_of_week": 0, "position": 0,
+                                   "open_time": "09:00", "close_time": "18:00", "is_closed": 0,
+                                   "break_start": "14:00", "break_end": "16:00" })]);
+        let out = available_slots_pure(slots_input(
+            "2026-08-31",
+            own_slots_calendar_day("2026-08-31", 30),
+            sched_hours(hours),
+        ))
+        .unwrap();
+        let times = offered(&out);
+        for kept in ["13:30", "16:00"] {
+            assert!(times.iter().any(|t| t == kept), "{kept} fits whole inside a stretch");
+        }
+        for gone in ["13:45", "14:00", "15:30"] {
+            assert!(!times.iter().any(|t| t == gone), "{gone} runs into the break");
+        }
+    }
+
+    /// A hub that has configured no hours anywhere books at any hour, so the list must NOT be
+    /// filtered: the door refuses nothing there, and a day that quietly empties is the same
+    /// contradiction as an optimistic list, only in reverse.
+    #[test]
+    fn slots_hands_the_whole_day_back_when_the_authority_is_silent() {
+        let day = own_slots_calendar_day("2026-08-30", 30);
+        let expected = day.as_array().unwrap().len();
+        let out = available_slots_pure(slots_input("2026-08-30", day, sched_hours(json!([]))))
+            .unwrap();
+        assert_eq!(offered(&out).len(), expected);
+    }
+
+    /// The envelope the caller already reads does not change (appointments#127): `slots` was a
+    /// Tier-0 query and the runtime hands an unpaginated one back as `{rows,total,limit,offset}`.
+    /// `total` counts what the caller actually gets, so a pager built on it cannot promise hours
+    /// the business is shut for.
+    #[test]
+    fn slots_answers_the_same_envelope_the_query_answered() {
+        let out = available_slots_pure(slots_input(
+            "2026-08-31",
+            own_slots_calendar_day("2026-08-31", 30),
+            sched_hours(sched_weekdays_nine_to_six()),
+        ))
+        .unwrap();
+        let result = out.result.clone().expect("the list answers with a result");
+        let kept = offered(&out).len() as i64;
+        assert_eq!(as_i64(&result["total"], -1), kept);
+        assert_eq!(as_i64(&result["limit"], -1), kept);
+        assert_eq!(as_i64(&result["offset"], -1), 0);
+    }
+
+    /// Missing read = refusal, never an open door — the same rule the gate and `check` obey. A
+    /// list that silently stops filtering because a read went missing is the optimistic list all
+    /// over again.
+    #[test]
+    fn slots_refuses_when_a_read_it_needs_did_not_arrive() {
+        for missing in [
+            "schedules.business_hours.list",
+            "schedules.special_days.list",
+            "schedules.overrides.list",
+            "schedules.exception_intervals.list",
+            "appointments.availability.own_slots",
+        ] {
+            let mut input = slots_input(
+                "2026-08-31",
+                own_slots_calendar_day("2026-08-31", 30),
+                sched_hours(sched_weekdays_nine_to_six()),
+            );
+            input["context"]["reads"]
+                .as_object_mut()
+                .unwrap()
+                .remove(missing);
+            let out = available_slots_pure(input).unwrap();
+            assert_eq!(
+                domain_code(&out).as_deref(),
+                Some("appointments.availability_unavailable"),
+                "{missing} missing must refuse"
+            );
+        }
+    }
+
+    /// A date the handler cannot read is a refusal too, not «everything is open». The schema pins
+    /// the shape at the door; this is the guard behind it.
+    #[test]
+    fn slots_refuses_a_date_it_cannot_read() {
+        for bad in ["", "tomorrow", "2026-13-40"] {
+            let out = available_slots_pure(slots_input(
+                bad,
+                own_slots_calendar_day("2026-08-31", 30),
+                sched_hours(sched_weekdays_nine_to_six()),
+            ))
+            .unwrap();
+            assert_eq!(
+                domain_code(&out).as_deref(),
+                Some("appointments.invalid_start"),
+                "`{bad}` must be refused"
+            );
+        }
+    }
+
+    /// A row this module's own SQL returned in a shape nobody can judge is a FAULT, not a slot to
+    /// quietly drop: dropping it hides a broken read behind a shorter list, which is the mute
+    /// failure the production-ready rule is about.
+    #[test]
+    fn slots_refuses_a_row_it_cannot_read_instead_of_dropping_it() {
+        let out = available_slots_pure(slots_input(
+            "2026-08-31",
+            json!([{ "slot_start": "2026-08-31T09:00:00", "slot_end": "2026-08-31T09:30:00" }]),
+            sched_hours(sched_weekdays_nine_to_six()),
+        ))
+        .unwrap();
+        assert_eq!(
+            domain_code(&out).as_deref(),
+            Some("appointments.availability_unavailable")
+        );
+    }
+
+    /// 🔒 THE REGRESSION GUARD of appointments#127. Quarter-hour by quarter-hour, what the list
+    /// OFFERS is exactly what the door ACCEPTS: a slot the list keeps is a slot `create` books,
+    /// and a slot the list drops is one `create` refuses with `appointments.outside_schedule`.
+    /// This is the pair the issue exists to close — the list saying «free» about an hour the door
+    /// will refuse — and a walk is the only shape that cannot pass by accident.
+    #[test]
+    fn slots_offers_exactly_what_the_door_accepts() {
+        let hours = json!([json!({ "id": "bh-lunch", "day_of_week": 0, "position": 0,
+                                   "open_time": "09:00", "close_time": "18:00", "is_closed": 0,
+                                   "break_start": "14:00", "break_end": "16:00" })]);
+        let reads = sched_hours(hours);
+        // 2026-08-03 is a Monday AHEAD of the tests' `now`, so the only rule that can speak is
+        // the weekly one — the same date `check_and_the_door_agree_on_the_hours_hour_by_hour`
+        // walks, on purpose: the two guards have to be reading the same day.
+        let day = "2026-08-03";
+        let out = available_slots_pure(slots_input(
+            day,
+            own_slots_calendar_day(day, 30),
+            reads.clone(),
+        ))
+        .unwrap();
+        let times = offered(&out);
+
+        let mut offered_any = false;
+        let mut dropped_any = false;
+        let mut m = 8 * 60;
+        while m + 30 <= 20 * 60 {
+            let at = format!("{day}T{:02}:{:02}:00+02:00", m / 60, m % 60);
+            let hhmm = format!("{:02}:{:02}", m / 60, m % 60);
+            let in_list = times.iter().any(|t| *t == hhmm);
+            let door = create_appointment_pure(input(item(&at, 30, "s1"), Some(reads.clone())))
+                .unwrap();
+            let door_shut = domain_code(&door).as_deref() == Some("appointments.outside_schedule");
+            offered_any |= in_list;
+            dropped_any |= !in_list;
+            assert_eq!(
+                in_list, !door_shut,
+                "the list and the door disagree at {at}: offered={in_list}, door shut={door_shut}"
+            );
+            m += 15;
+        }
+        assert!(
+            offered_any && dropped_any,
+            "a walk where the day is all offered or all dropped proves nothing"
         );
     }
 }
