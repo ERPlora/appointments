@@ -300,11 +300,52 @@ HANDLER_REFUSAL = re.compile(r'"appointments\.([a-z_][a-z0-9_]*)"')
 # A referral names the operation the caller should ask instead: `schedules.business_hours.list`.
 QUALIFIED_AUTHORITY = re.compile(r"\bschedules\.[a-z_]+\.[a-z_]+")
 
-# Every operation of this module that answers «can this be booked» (appointments#124).
-AVAILABILITY = "appointments.availability."
-# The only one of them that really knows the opening hours: it reads the authority and hands the
+# The only operation that really knows the opening hours: it reads the authority and hands the
 # answer over. Whoever cannot do that has to point the assistant here by name.
 DAY_OPENING = "appointments.availability.day_opening"
+
+# WHAT MAKES AN OPERATION AN AVAILABILITY ANSWER (appointments#125). Not its name. Until this issue
+# the family was `name.startswith("appointments.availability.")`, so the very same answer published
+# under another name owed nothing at all — measured: `appointments.booking.free_hours`, the SQL of
+# `slots` word for word and no pointer, was green. A name is a label the author chooses; these two
+# are what the operation DOES, and they are the manifest's own contract:
+#   · it crosses the booking calendar — what is already booked AND what is blocked out. Reading one
+#     of the two is ordinary (`appointments.appointments.conflicting` reads bookings,
+#     `appointments.blocked_times.list` reads blocks); crossing BOTH is how «when can this be
+#     booked» is computed, whatever the operation is called.
+#   · it asks for the READ permission of the schedule surface. A booking action asks for
+#     `add_appointment`/`change_appointment` instead: the door ENFORCES the hours and refuses, it
+#     does not hand the assistant an answer about them, so its description is a different contract.
+BOOKING_CALENDAR = ("appointments_appointment", "appointments_blocked_time")
+ANSWER_PERMISSION = "appointments.view_schedule"
+
+# How an `ai.description` talks about the hours the business keeps.
+#
+# 🔴 THIS IS NOT A BLACKLIST OF FORBIDDEN WORDINGS, and the difference is the whole design. A list
+# of phrases an operation may not say is what appointments#124 refused, for a good reason: it goes
+# out of date the first time somebody says it another way, and it does so in SILENCE — the missing
+# phrase reads as «nothing to report». Here the vocabulary is on the other side of the assertion:
+# an answer that does not read the authority MUST hit it, because saying «I do not know the opening
+# hours» is the disclaimer it owes (`check_an_availability_answer_says_what_it_does_not_know`). A
+# wording this regex has never seen therefore turns the guard RED and names the operation, instead
+# of letting the claim through unseen. Failing loud is what a list of English can be trusted to do.
+HOURS_TALK = re.compile(
+    r"\b(?:open|opening|business|working|trading|closing)\s+(?:hours|times)\b"
+    r"|\bhours?\s+the\s+business\b"
+    r"|\bbusiness\s+is\s+(?:open|closed|shut)\b"
+    r"|\bwhen\s+the\s+business\s+(?:opens|closes|is\s+open)\b",
+    re.IGNORECASE,
+)
+# Clauses, not sentences: a claim bolted on after a semicolon or a colon is the same claim.
+CLAUSE = re.compile(r"(?<=[.!?;:])\s+")
+# The markers that turn a mention of the hours into the disclaimer it is allowed to be. Whitelist
+# on purpose: an unknown way of negating produces a FALSE RED that names the description, never a
+# quiet green — the opposite failure mode of the blacklist this replaces.
+DENIAL = re.compile(
+    r"\b(?:not|never|neither|nor|without|cannot|can't|don't|doesn't|isn't|aren't|ignores?|"
+    r"ignoring|unaware|blind)\b",
+    re.IGNORECASE,
+)
 
 
 def emitted_reasons(sql: str) -> set[str]:
@@ -354,6 +395,67 @@ def reads_the_authority(name: str, spec: dict) -> bool:
     )
 
 
+def declared_reads(spec: dict) -> list[str]:
+    """The operations a handler command takes its answer from, by name."""
+    out = []
+    for read in spec.get("reads") or []:
+        query = str(read.get("query", "")) if isinstance(read, dict) else str(read)
+        if query:
+            out.append(query)
+    return out
+
+
+def published(name: str):
+    """The spec of an operation of THIS module, wherever the manifest publishes it."""
+    for block in ("queries", "commands"):
+        spec = MANIFEST.get(block, {}).get(name)
+        if spec is not None:
+            return spec
+    return None
+
+
+def is_an_availability_answer(name: str, spec: dict, seen=None) -> bool:
+    """Does this operation answer «can this be booked / when is it free»? Judged by what it does.
+
+    Three shapes, all of them the operation's own behaviour and none of them its name:
+      · it crosses the booking calendar itself (`slots`, `own_rules`);
+      · it reads the hours authority and answers with them (`day_opening`);
+      · it is a handler that takes its verdict from one of the above (`check`).
+    Everything asks for the read permission of the schedule surface: a booking door reads the very
+    same things and is deliberately NOT of this family — it refuses, it does not answer.
+    """
+    if spec.get("permission") != ANSWER_PERMISSION:
+        return False
+    if set(BOOKING_CALENDAR) <= tables_read(sql_of(spec)):
+        return True
+    if reads_the_authority(name, spec):
+        return True
+    seen = set() if seen is None else seen
+    seen.add(name)
+    for query in declared_reads(spec):
+        if query in seen:
+            continue
+        sub = published(query)
+        if sub is not None and is_an_availability_answer(query, sub, seen):
+            return True
+    return False
+
+
+def availability_answers() -> list[tuple[str, dict]]:
+    """Every published operation of the family, in one place so all the duties judge the same set."""
+    out = []
+    for block in ("queries", "commands"):
+        for name, spec in sorted(MANIFEST.get(block, {}).items()):
+            if is_an_availability_answer(name, spec):
+                out.append((name, spec))
+    return out
+
+
+def hours_claims(description: str) -> list[str]:
+    """The clauses of a description that say something about the hours the business keeps."""
+    return [c for c in CLAUSE.split(description) if c.strip() and HOURS_TALK.search(c)]
+
+
 def doc_table_reasons() -> tuple[set[str], str]:
     """The reasons listed in the TABLE of the «Availability has reasons» section, and the prose that
     follows it. Only rows of the markdown table count: the paragraph below is about the door."""
@@ -394,10 +496,10 @@ def answerable_reasons(name: str, spec: dict) -> set[str]:
     hours. That is what `appointments.availability.check` became in appointments#122.
     """
     reasons = emitted_reasons(sql_of(spec))
-    for read in spec.get("reads") or []:
-        query = str(read.get("query", "")) if isinstance(read, dict) else ""
-        if query.startswith(AVAILABILITY):
-            reasons |= emitted_reasons(sql_of(MANIFEST.get("queries", {}).get(query, {})))
+    for query in declared_reads(spec):
+        sub = published(query)
+        if sub is not None and is_an_availability_answer(query, sub):
+            reasons |= emitted_reasons(sql_of(sub))
     if reads_the_authority(name, spec):
         reasons.add(HOURS_REASON)
     return reasons
@@ -510,21 +612,16 @@ def check_the_reason_readers_find_the_positive() -> None:
         )
 
     # …and the pointer check has to be judging real operations on both sides of its exemption.
-    availability = {
-        n: spec
-        for block in ("queries", "commands")
-        for n, spec in MANIFEST.get(block, {}).items()
-        if n.startswith(AVAILABILITY)
-    }
+    availability = dict(availability_answers())
     if not [n for n, spec in availability.items() if not reads_the_authority(n, spec)]:
         fail(
-            f"no `{AVAILABILITY}*` operation is judged by the pointer check: every one of them "
-            "reads the authority, so the check passes without looking at a single description"
+            "no availability answer is judged by the pointer check: every one of them reads the "
+            "authority, so the check passes without looking at a single description"
         )
     if not [n for n, spec in availability.items() if reads_the_authority(n, spec)]:
         fail(
-            f"no `{AVAILABILITY}*` operation reads the authority: the exemption of the pointer "
-            f"check is never taken, so it has never been shown to spare `{DAY_OPENING}`"
+            "no availability answer reads the authority: the exemption of the pointer check is "
+            f"never taken, so it has never been shown to spare `{DAY_OPENING}`"
         )
 
     # …and what a COMMAND of the family can answer has to be READ, not assumed. If
@@ -534,15 +631,15 @@ def check_the_reason_readers_find_the_positive() -> None:
     engine = {
         n: spec
         for n, spec in MANIFEST.get("commands", {}).items()
-        if n.startswith(AVAILABILITY) and any(
-            str(r.get("query", "")).startswith(AVAILABILITY)
-            for r in (spec.get("reads") or [])
-            if isinstance(r, dict)
+        if is_an_availability_answer(n, spec)
+        and any(
+            (sub := published(q)) is not None and is_an_availability_answer(q, sub)
+            for q in declared_reads(spec)
         )
     }
     if not engine:
         fail(
-            f"no command of `{AVAILABILITY}*` takes another one as its verdict: since "
+            "no command of the availability family takes another one as its verdict: since "
             "appointments#122 the engine answers that way, and without one the reader below is "
             "never exercised"
         )
@@ -598,7 +695,7 @@ def check_the_assistant_is_not_promised_a_reason_the_operation_cannot_return() -
         **{
             n: spec
             for n, spec in MANIFEST.get("commands", {}).items()
-            if n.startswith(AVAILABILITY)
+            if is_an_availability_answer(n, spec)
         },
     }
     for name, spec in sorted(judged.items()):
@@ -633,21 +730,169 @@ def check_every_availability_answer_points_at_the_authority() -> None:
     if they leave it in, the assistant still has the operation to ask, which is the thing it can
     actually act on.
     """
-    for block in ("queries", "commands"):
-        for name, spec in sorted(MANIFEST.get(block, {}).items()):
-            if not name.startswith(AVAILABILITY):
-                continue
-            if reads_the_authority(name, spec):
-                continue
-            if DAY_OPENING in describes(spec):
-                continue
-            fail(
+    for name, spec in availability_answers():
+        if reads_the_authority(name, spec):
+            continue
+        if DAY_OPENING in describes(spec):
+            continue
+        fail(
                 f"`{name}` answers about availability without reading the opening hours and "
                 f"without telling the assistant to ask `{DAY_OPENING}`. Since appointments#118 "
                 "nothing of this module's SQL knows when the business is open, so an answer of "
                 "this family either reads the authority or points at the operation that does — "
                 "otherwise the assistant reads «free» as «open» and offers an hour with the "
                 "shutters down"
+            )
+
+
+def probe_operation(block: str, name: str):
+    """The spec this reader plants a positive or a negative with, or a failure saying it is gone.
+
+    Every probe below needs a REAL operation of this manifest to be worth anything, and each one is
+    found by its name. A missing one therefore has to be loud: the alternative — skipping the probe
+    when the name does not resolve — is how a reader keeps printing OK while it has stopped reading
+    anything, which is exactly the failure appointments#125 closed on the duties themselves.
+    """
+    spec = MANIFEST.get(block, {}).get(name)
+    if spec is None:
+        fail(
+            f"`{name}` is not published as a {'query' if block == 'queries' else 'command'} "
+            "any more, and this reader plants its "
+            "positives with it: renaming it would silently take the probe with it, leaving the "
+            "duties below green without a single operation behind them. Point this probe at "
+            "whatever replaced it"
+        )
+        return None
+    return spec
+
+
+def check_the_family_and_the_hours_reader_find_the_positive() -> None:
+    """appointments#125 — the two new readers are «X must be there» / «X must not be there». A
+    family that matched nothing, or a `HOURS_TALK` that matched nothing, would hand out the greens
+    for free. Plant each positive and each negative before trusting either.
+    """
+    # The three operations this reader plants its positives and its negatives with. Resolved by
+    # NAME, because a probe has to know what it is probing — but the absence of one is a FAILURE
+    # and never a skip: `if door and …` would let the whole booking-door half go quiet the day
+    # somebody renames `create`, and a guard that stops looking when a name moves is the very bug
+    # appointments#125 is about.
+    slots = probe_operation("queries", "appointments.availability.slots")
+    door = probe_operation("commands", "appointments.appointments.create")
+    single = probe_operation("queries", "appointments.appointments.conflicting")
+    if slots is None or door is None or single is None:
+        return
+
+    # …the family is what the operation DOES, so the same answer under any other name is in it.
+    if not is_an_availability_answer("appointments.booking.free_hours", slots):
+        fail(
+            "the family test misses the SQL of `appointments.availability.slots` published under "
+            "another name: that is the hole appointments#125 exists to close, so the pointer duty "
+            "would be back to trusting the prefix of a name the author chooses"
+        )
+    # …and it is not so wide that every read of the schedule surface joins it.
+    if is_an_availability_answer("probe", {**single, "permission": ANSWER_PERMISSION}):
+        fail(
+            "reading the bookings alone puts an operation in the availability family: "
+            "`appointments.appointments.conflicting` and `blocked_times.list` would owe a pointer "
+            "they have no business owing, which is how a guard gets loosened until it holds nothing"
+        )
+    # …the booking door reads the authority too, and is out for its permission, not by luck.
+    if is_an_availability_answer("appointments.appointments.create", door):
+        fail(
+            "the booking door counts as an availability answer: it ENFORCES the hours and refuses, "
+            "so it would be asked for a pointer to the operation it already reads"
+        )
+    if not is_an_availability_answer("probe", {**door, "permission": ANSWER_PERMISSION}):
+        fail(
+            "the door is dropped by something other than its permission: the read-permission half "
+            "of the family test is not the thing doing the work its comment claims it does"
+        )
+
+    # …`HOURS_TALK` sees a claim about the hours, and does not fire on prose that makes none.
+    claim = "It also crosses the business opening hours before returning them."
+    if not hours_claims(claim):
+        fail(
+            "`HOURS_TALK` does not see the very claim appointments#125 measured green: the check "
+            "below would pass on every description without reading one"
+        )
+    if hours_claims("Returns the free booking slots for a given date, crossing blocked time."):
+        fail(
+            "`HOURS_TALK` fires on a description that says nothing about the opening hours: the "
+            "honest half of this manifest would go red and the vocabulary would get loosened"
+        )
+    # …and `DENIAL` is what tells the disclaimer from the claim, on those same two.
+    if DENIAL.search(claim):
+        fail("`DENIAL` reads a plain claim as a denial: the check below can never fire")
+    if not DENIAL.search("It does NOT know the opening hours: ask for them elsewhere."):
+        fail(
+            "`DENIAL` does not see the disclaimer this manifest actually writes: every honest "
+            "availability answer would go red"
+        )
+    # …and a claim bolted on with a semicolon is a claim, not part of the disclaimer clause.
+    bolted = "It does NOT know the opening hours; it crosses the business opening hours anyway."
+    if not [c for c in hours_claims(bolted) if not DENIAL.search(c)]:
+        fail(
+            "a claim appended after a semicolon is swallowed by the denial in the clause before "
+            "it: the check below is dodged by punctuation alone"
+        )
+
+
+def check_an_availability_answer_says_what_it_does_not_know() -> None:
+    """appointments#125 — the pointer is a duty to ADD, and a duty to add is not a duty to be true.
+
+    appointments#124 made an availability answer that cannot see the hours hand the assistant the
+    operation that can, by name. Nothing then looked at the rest of the sentence, so the description
+    could keep the pointer and BESIDE it claim the answer already crosses the hours — measured on
+    the manifest of appointments#126: `appointments.availability.slots` plus «It also crosses the
+    business opening hours before returning them.» was green. What reaches the assistant is the
+    claim, not the pointer: it stops asking `day_opening`, and offers an hour with the shutters
+    down. It is the bug of appointments#118 and appointments#122 through the last rendija left, and
+    the one nobody would open on purpose — it is exactly the sentence that sounds right to write.
+
+    THE INVARIANT, AND WHY IT IS NOT A BLACKLIST. An answer that does not read the authority may
+    mention the opening hours only to DENY knowing them. Not «these phrasings are forbidden» — that
+    list is the one appointments#124 refused, because the wording it has never seen reads as
+    «nothing to report» and the lie goes through in silence. Here the duty runs the other way:
+
+      · the description MUST say something about the hours (that is the disclaimer the pointer is
+        attached to). So a wording `HOURS_TALK` does not know makes THIS check fail and print the
+        operation — the vocabulary is re-proven against the manifest on every run, and its way of
+        being out of date is a red, never a quiet green;
+      · every clause that does mention them must carry a denial. `DENIAL` is a whitelist for the
+        same reason: an unusual way of negating costs a false red that names the description, which
+        somebody fixes, instead of a green that nobody ever looks at again.
+
+    Clauses, not sentences: “…: ask `day_opening`; it also crosses the opening hours” is the same
+    claim with different punctuation.
+    """
+    for name, spec in availability_answers():
+        if reads_the_authority(name, spec):
+            continue
+        description = describes(spec)
+        claims = hours_claims(description)
+        if not claims:
+            fail(
+                f"`{name}` answers about availability without reading the opening hours and "
+                "without saying so anywhere in its description. Since appointments#118 nothing of "
+                f"this module's SQL knows when the business is open: name the gap, then point at "
+                f"`{DAY_OPENING}`. (If it IS said and this check cannot see it, the wording is new "
+                "to `HOURS_TALK` — add it there, which is what keeps that vocabulary honest)"
+            )
+            continue
+        for claim in claims:
+            if DENIAL.search(claim):
+                continue
+            fail(
+                f"`{name}` mentions the opening hours without denying it knows them — «"
+                f"{claim.strip()}» — and it reads neither a `{AUTHORITY}_*` table nor a `reads` on "
+                "the authority. TWO ways out, and only you can tell which one this is: (a) it IS a "
+                f"claim — drop it. Pointing at `{DAY_OPENING}` as well does not undo it: what the "
+                "assistant plans with is the claim, so it stops asking and offers an hour with the "
+                "business shut; (b) it is the DISCLAIMER written in a way `DENIAL` has never seen "
+                "(«unknown to it», «no hours of its own», a negation left in the next clause) — "
+                "then add that wording to `DENIAL`, which is what this guard asks for by failing "
+                "loud instead of letting an unreviewed sentence through. An answer that cannot see "
+                "the hours may only say that it cannot"
             )
 
 
@@ -666,15 +911,12 @@ def check_an_availability_answer_that_reads_the_hours_says_so() -> None:
     of forbidden wordings rots in silence, a duty to name the authority does not, and whoever
     rewrites the description into a claim of ignoring the hours takes the name out with it.
     """
-    for block in ("queries", "commands"):
-        for name, spec in sorted(MANIFEST.get(block, {}).items()):
-            if not name.startswith(AVAILABILITY):
-                continue
-            if not reads_the_authority(name, spec):
-                continue
-            if re.search(rf"\b{AUTHORITY}\b", describes(spec), re.IGNORECASE):
-                continue
-            fail(
+    for name, spec in availability_answers():
+        if not reads_the_authority(name, spec):
+            continue
+        if re.search(rf"\b{AUTHORITY}\b", describes(spec), re.IGNORECASE):
+            continue
+        fail(
                 f"`{name}` reads the opening hours of `{AUTHORITY}` and does not say so. Its "
                 "description is what the assistant plans with: silence there reads as «this one "
                 "does not know the hours», which is the answer appointments#122 stopped being "
@@ -717,6 +959,8 @@ def main() -> int:
     check_an_availability_answer_that_reads_the_hours_says_so()
     check_the_assistant_is_not_told_we_cross_the_hours_authority()
     check_every_availability_answer_points_at_the_authority()
+    check_the_family_and_the_hours_reader_find_the_positive()
+    check_an_availability_answer_says_what_it_does_not_know()
     if failures:
         print(f"FAIL ({len(failures)}):")
         for f in sorted(set(failures)):
