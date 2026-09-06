@@ -373,6 +373,19 @@ def ranked_below_the_hours(source: str) -> set[str]:
     return set(re.findall(r'"([a-z_][a-z0-9_]*)"', m.group(1))) if m else set()
 
 
+# The refusals the DOOR decides before it ever looks at the clock on the wall: `prepare_appointment`
+# runs `lead_time_refusal` before `schedule_refusal`, so the hours cannot overwrite them and the
+# engine must hand them back untouched. Everything else the SQL can answer the door ranks BELOW the
+# hours, so it belongs in `RANKED_BELOW_THE_HOURS`. The two lists together have to cover the `CASE`.
+RANKED_ABOVE_THE_HOURS = frozenset({"invalid_start", "too_soon", "too_far"})
+
+
+def unranked_reasons(reasons: set[str], below: set[str]) -> set[str]:
+    """The SQL verdicts the handler places NOWHERE against the opening hours. Pure, so the
+    partition can be probed with a planted positive instead of trusted."""
+    return set(reasons) - set(below) - set(RANKED_ABOVE_THE_HOURS)
+
+
 def check_the_engine_answers_the_hours() -> None:
     engine = MANIFEST.get("commands", {}).get(ENGINE)
     if engine is None:
@@ -414,9 +427,15 @@ def check_every_verdict_of_the_sql_is_ranked_against_the_hours() -> None:
     """The handler decides in the DOOR's order: lead time → hours → blocked → overlap → hold. A
     verdict added to the SQL tomorrow that nobody ranked would be reported as itself and never be
     overwritten by the hours — safe, but silently wrong for a rule the door ranks lower. So every
-    word the SQL can answer has to be accounted for in the handler: either it is named in
-    `RANKED_BELOW_THE_HOURS`, or the door emits it itself as an `appointments.<code>` refusal and
-    is therefore the one that decided it."""
+    word the SQL can answer has to be accounted for: either the hours outrank it
+    (`RANKED_BELOW_THE_HOURS`) or the door settles it first (`RANKED_ABOVE_THE_HOURS`).
+
+    🔴 «or the door emits it as an `appointments.<code>` refusal» is NOT good enough, and that is
+    what this check said first. `slot_on_hold` and `overlapping_appointment` are codes the door
+    emits AND ranks below the hours: a verdict added to the SQL under either name walked straight
+    through, and the engine would report it instead of `outside_schedule` — the exact silent escape
+    the paragraph above says this check prevents (measured on this manifest). Being emitted by the
+    door proves the door knows the word, not that the door decides it before the clock."""
     source = HANDLER.read_text()
     below = ranked_below_the_hours(source)
     reasons = sql_reasons()
@@ -430,13 +449,18 @@ def check_every_verdict_of_the_sql_is_ranked_against_the_hours() -> None:
             "`RANKED_BELOW_THE_HOURS` could not be read from the handler: the ranking would look "
             "empty and every verdict would seem to outrank the opening hours"
         )
-    for reason in sorted(reasons):
-        if reason in below or f'"appointments.{reason}"' in source:
-            continue
+    for reason in sorted(unranked_reasons(reasons, below)):
         fail(
             f"the SQL can answer `{reason}` and the handler ranks it nowhere: add it to "
-            "`RANKED_BELOW_THE_HOURS` if the opening hours outrank it, or make the door emit it — "
-            "an unranked verdict silently escapes the hours the door does enforce"
+            "`RANKED_BELOW_THE_HOURS` if the opening hours outrank it, or to "
+            f"`RANKED_ABOVE_THE_HOURS` here if the door settles it first (and then say so in "
+            "`prepare_appointment`) — an unranked verdict silently escapes the hours the door "
+            "does enforce"
+        )
+    for reason in sorted(below & RANKED_ABOVE_THE_HOURS):
+        fail(
+            f"`{reason}` is ranked BOTH above and below the opening hours: the engine and the door "
+            "cannot both be the one that decides it"
         )
 
 
@@ -456,6 +480,44 @@ def check_the_ranking_reader_finds_the_positive() -> None:
             "`held` is not among the reasons read from the SQL: the parser is not reaching the "
             f"`CASE` of `{ENGINE_RULES}`, so the coverage check ranks nothing"
         )
+
+    # The partition has to REJECT a verdict the door merely knows a word for. `slot_on_hold` is a
+    # refusal the door emits and ranks BELOW the hours: accepting it on that ground is the hole
+    # this check used to have.
+    below = ranked_below_the_hours(HANDLER.read_text())
+    if not unranked_reasons({"slot_on_hold"}, below):
+        fail(
+            "the partition accepts `slot_on_hold` as ranked: a verdict the door emits but settles "
+            "AFTER the hours would pass unranked and escape them in silence"
+        )
+    if unranked_reasons({"too_soon", "blocked"}, below):
+        fail(
+            "the partition calls `too_soon`/`blocked` unranked: every honest verdict of the SQL "
+            f"would be red ({sorted(unranked_reasons({'too_soon', 'blocked'}, below))})"
+        )
+
+    # …and what puts the three of `RANKED_ABOVE_THE_HOURS` above them is one fact of the door:
+    # `lead_time_refusal` runs BEFORE `schedule_refusal`. Reorder it and this list is a lie.
+    source = HANDLER.read_text()
+    door = source[source.find("fn prepare_appointment") :]
+    lead, hours = door.find("lead_time_refusal(settings"), door.find("schedule_refusal(input")
+    if lead < 0 or hours < 0:
+        fail(
+            "`prepare_appointment` no longer calls `lead_time_refusal` and `schedule_refusal` by "
+            "name: `RANKED_ABOVE_THE_HOURS` has nothing left anchoring it to the door's order"
+        )
+    elif lead > hours:
+        fail(
+            "the door now judges the opening hours BEFORE the lead time, so "
+            f"{sorted(RANKED_ABOVE_THE_HOURS)} are no longer above them: the engine hands back a "
+            "word the door would have overwritten"
+        )
+    for reason in sorted(RANKED_ABOVE_THE_HOURS):
+        if f'"appointments.{reason}"' not in source:
+            fail(
+                f"`{reason}` is ranked above the hours here but the door emits no "
+                f"`appointments.{reason}`: the list has drifted from the refusals that exist"
+            )
 
 
 def main() -> int:
