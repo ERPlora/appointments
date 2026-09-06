@@ -10,7 +10,7 @@
 
 El CRUD plano y las transiciones de estado simples ya están en SQL declarativo Tier 0
 (`commands/*.sql`): update, confirm/start/complete/cancel/no_show/reschedule, soft-delete,
-CRUD de schedules/timeslots/blocked_time/recurring y upsert de settings. Lo que sigue es
+CRUD de blocked_time/recurring y upsert de settings. Lo que sigue es
 lógica de validación / cálculo / batch / contador atómico que **no** cabe en una sola
 sentencia SQL y debe convertirse en handler WASM (`handler/src/lib.rs` → `dist/handler.wasm`).
 
@@ -89,6 +89,11 @@ Origen: `Appointment.reschedule` / `update` (recalculan `end = start + duration`
  `appointments.appointments.conflicting` (ADR-0069, appointments#110/hub#110).
 
 ## 8. Disponibilidad / slots libres (whatsapp.py: `check_availability`, `get_available_slots`)
+> Ya as-built, con UN cambio sobre el original: el horario del negocio NO es de este módulo.
+> appointments#102 pasó la puerta a leer `schedules` (ADR-0392) y appointments#118 retiró las dos
+> tablas propias que se describen abajo. Donde el original cruzaba `appointments_schedule`, hoy se
+> cruzan las cuatro listas de `schedules` que el runtime inyecta en `context.reads`.
+
 - `check_availability(date, time, service, staff)`: cruzar la plantilla de horario
  (`appointments_schedule` + `_timeslot` del día de la semana) con `blocked_time` y citas
  existentes para decidir si una franja está libre. Respeta `min_booking_notice` /

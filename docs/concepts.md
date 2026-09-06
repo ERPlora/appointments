@@ -126,14 +126,18 @@ those hours cannot be read — a role without `appointments.view_schedule`, for 
 still works with the old, wider list; when the cause is a fault rather than a permission, the panel
 says so, because a list that has quietly stopped being checked looks exactly like one that was.
 
-While Schedules has no rule at all, the module's own older timetable still answers, so a salon
-configured before this change keeps exactly the gate it had. Retiring that second timetable is
-appointments#105.
+This module no longer keeps a timetable of its own at all (appointments#118). It used to answer
+while Schedules carried no rule reaching the date — the salon configured before the hours moved.
+Two things retired it: nothing had been able to WRITE those rows since appointments#117, and
+Schedules now seeds a full week when it is installed (schedules#36), so «this hub has no hours»
+stopped being the normal state of a new business. What was left was a refusal the owner could not
+explain with anything visible: old hours nobody could reach, let alone edit.
 
-One deliberate exception: a hub that has **not configured its opening hours anywhere** can still
-book at any hour. «I have not set my schedule» must not mean «I cannot take bookings» — the same
-call the trade makes (Setmore ships an off-hours toggle, Acuity and Square let the counter book
-anyway), and the way out is seeding a default week so the state stops happening (schedules#36).
+So when Schedules carries no rule for the date, the door refuses **nothing**: a hub that has **not
+configured its opening hours anywhere** can still book at any hour. «I have not set my schedule»
+must not mean «I cannot take bookings» — the same call the trade makes (Setmore ships an off-hours
+toggle, Acuity and Square let the counter book anyway). It is a state a fresh hub should never
+reach, which is why `schedules` is a hard dependency from the version that seeds the week on.
 
 Still advisory, and tracked in appointments#98: whether that particular **professional** works that
 hour. The business being open is what the door checks today.
