@@ -25,9 +25,9 @@ battery pins, section by section:
      authority that owns the opening hours (ADR-0392, appointments#102/#117) — `create` refuses
      08:00 with `appointments.outside_schedule` and books 12:00 of the same day, and
      `appointments.availability.day_opening` hands the screen the same 09:00–18:00 the door just
-     enforced. The engine is asked too, and says `available` at 08:00: it computes
-     `outside_schedule` from THIS module's own timetable, which nothing can write since #117, so
-     the hours are the door's business now and the screen filters by `day_opening`
+     enforced. The engine is asked too, and says `available` at 08:00: it used to compute
+     `outside_schedule` from THIS module's own timetable, retired in appointments#118, so the
+     hours are the door's business alone and the screen filters by `day_opening`
      (appointments#105) instead of trusting the query.
 
 Why against the runtime and not a scratch Postgres: `:hub_id` and `:now` are injected by the HOST,
@@ -169,11 +169,12 @@ def main() -> int:
         "§4 …and 12:00 of the same day books", bool(booked), f"got id {booked!r}"
     )
 
-    # AND THE REFUSAL CAME FROM THE DOOR, not from a leftover verdict of the engine. Since #117
-    # nothing can write this module's own timetable, so `availability.check` — which computes
-    # `outside_schedule` from those rows — has nothing to say and answers `available` at 08:00.
-    # That silence is precisely why the screen filters by `day_opening` (appointments#105) instead
-    # of trusting the engine, and asserting it here is what keeps §4 from passing by accident.
+    # AND THE REFUSAL CAME FROM THE DOOR, not from a leftover verdict of the engine.
+    # appointments#118 retired this module's own timetable and the `outside_schedule` verdict
+    # `availability.check` computed from it, so the engine has nothing to say about the hours and
+    # answers `available` at 08:00. That silence is precisely why the screen filters by
+    # `day_opening` (appointments#105) instead of trusting the engine, and asserting it here is
+    # what keeps §4 from passing by accident.
     avail, reason = availability(hub, shut_hour, DURATION, free.other_staff_id)
     hub.check(
         "§4 the engine alone does not know the hours any more",
