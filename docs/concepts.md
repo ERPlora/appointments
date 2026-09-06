@@ -87,19 +87,27 @@ succeeding.
 
 ## Availability has reasons, and they are worth reading
 
-When a slot is not free, you are told **why**:
+When a slot is not free, the availability check tells you **why**:
 
 | Reason | Meaning |
 |---|---|
 | `overlap` | That professional is already booked then |
-| `outside_schedule` | You are not open at that time |
 | `blocked` | Holiday, vacation, break or maintenance covers it |
+| `held` | Another pending booking request has that slot set aside for a few minutes |
 | `too_soon` | It breaks the minimum booking notice |
 | `too_far` | It is beyond how far ahead you allow bookings |
 | `invalid_start` | The start is in the past or unparseable |
 
+Being **closed** is not on that list, and that is deliberate since appointments#118: the opening
+hours belong to **Schedules**, so the availability check — which only reads this module's own
+tables — cannot see them and answers about an hour you are shut as if it were free. Ask
+`appointments.availability.day_opening` for the stretches you are open that date. Booking anyway
+still fails, at the door, with the reason below.
+
 "No slots today" almost always means the opening hours of **Schedules** close that date, not
-that the day is full.
+that the day is full — the booking screen asks `appointments.availability.day_opening` and hides
+the slots outside what it answers, which is why the list can be empty on a day the engine above
+considers every hour free.
 
 These reasons are not only advice any more. `outside_schedule`, `blocked`, `too_soon`, `too_far`
 and `invalid_start` are **refused at the door**: whoever books — the screen, the assistant, a flow,
@@ -126,14 +134,18 @@ those hours cannot be read — a role without `appointments.view_schedule`, for 
 still works with the old, wider list; when the cause is a fault rather than a permission, the panel
 says so, because a list that has quietly stopped being checked looks exactly like one that was.
 
-While Schedules has no rule at all, the module's own older timetable still answers, so a salon
-configured before this change keeps exactly the gate it had. Retiring that second timetable is
-appointments#105.
+This module no longer keeps a timetable of its own at all (appointments#118). It used to answer
+while Schedules carried no rule reaching the date — the salon configured before the hours moved.
+Two things retired it: nothing had been able to WRITE those rows since appointments#117, and
+Schedules now seeds a full week when it is installed (schedules#36), so «this hub has no hours»
+stopped being the normal state of a new business. What was left was a refusal the owner could not
+explain with anything visible: old hours nobody could reach, let alone edit.
 
-One deliberate exception: a hub that has **not configured its opening hours anywhere** can still
-book at any hour. «I have not set my schedule» must not mean «I cannot take bookings» — the same
-call the trade makes (Setmore ships an off-hours toggle, Acuity and Square let the counter book
-anyway), and the way out is seeding a default week so the state stops happening (schedules#36).
+So when Schedules carries no rule for the date, the door refuses **nothing**: a hub that has **not
+configured its opening hours anywhere** can still book at any hour. «I have not set my schedule»
+must not mean «I cannot take bookings» — the same call the trade makes (Setmore ships an off-hours
+toggle, Acuity and Square let the counter book anyway). It is a state a fresh hub should never
+reach, which is why `schedules` is a hard dependency from the version that seeds the week on.
 
 Still advisory, and tracked in appointments#98: whether that particular **professional** works that
 hour. The business being open is what the door checks today.

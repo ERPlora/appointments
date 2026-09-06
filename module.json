@@ -54,7 +54,7 @@
     "customers",
     {
       "id": "schedules",
-      "min_version": "2.0.17"
+      "min_version": "2.0.28"
     },
     "services",
     "staff"
@@ -127,6 +127,11 @@
         "file": "migrations/postgres/008_named_gate_constraints.sql",
         "kind": "contract",
         "since": "1.1.63"
+      },
+      {
+        "file": "migrations/postgres/009_drop_own_timetable.sql",
+        "kind": "contract",
+        "since": "1.1.67"
       }
     ]
   },
@@ -170,22 +175,18 @@
       },
       "expose_api": true
     },
-    "appointments.schedules.active_timeslots": {
-      "permission": "appointments.view_schedule",
-      "sql": "queries/schedule_active_timeslots.sql"
-    },
     "appointments.availability.slots": {
       "permission": "appointments.view_schedule",
       "sql": "queries/availability_slots.sql",
       "ai": {
-        "description": "Returns the free booking slots for a given date (optionally for a specific staff member and duration), crossing schedules, blocked time, existing appointments and the slots currently set aside for pending booking requests with the booking-notice settings."
+        "description": "Returns the free booking slots for a given date (optionally for a specific staff member and duration), crossing the calendar window and booking-notice settings, blocked time, existing appointments and the slots currently set aside for pending booking requests. It does NOT know the opening hours: ask `appointments.availability.day_opening` for the stretches the business is actually open that date."
       }
     },
     "appointments.availability.check": {
       "permission": "appointments.view_schedule",
       "sql": "queries/availability_check.sql",
       "ai": {
-        "description": "Checks whether a specific date/time slot is available for booking and returns the reason when it is not (too_soon, too_far, outside_schedule, blocked, overlap or held — `held` means another pending booking request has that slot set aside for a few minutes)."
+        "description": "Checks whether a specific date/time slot is available for booking and returns the reason when it is not (invalid_start, too_soon, too_far, blocked, overlap or held — `held` means another pending booking request has that slot set aside for a few minutes). It does NOT look at the opening hours: ask `appointments.availability.day_opening` whether the business is open at that time, because an hour the business is closed comes back from here as available."
       }
     },
     "appointments.blocked_times.list": {
@@ -432,9 +433,6 @@
           }
         },
         {
-          "query": "appointments.schedules.active_timeslots"
-        },
-        {
           "query": "schedules.business_hours.list"
         },
         {
@@ -606,10 +604,6 @@
           "params": {
             "staff_id": "payload.staff_id"
           },
-          "required": true
-        },
-        {
-          "query": "appointments.schedules.active_timeslots",
           "required": true
         },
         {
@@ -785,10 +779,6 @@
           "required": true
         },
         {
-          "query": "appointments.schedules.active_timeslots",
-          "required": true
-        },
-        {
           "query": "schedules.business_hours.list",
           "required": true
         },
@@ -887,10 +877,6 @@
           "required": true
         },
         {
-          "query": "appointments.schedules.active_timeslots",
-          "required": true
-        },
-        {
           "query": "schedules.business_hours.list",
           "required": true
         },
@@ -972,7 +958,7 @@
         }
       ],
       "ai": {
-        "description": "Returns the stretches the business is open on a given date, exactly as the booking gate resolves them: the rules of the Schedules module with their precedence applied (exact special day, yearly special day, override range, weekly hours) and breaks carved out. `spans` are minutes from that date's own midnight and `source` says who answered — `schedules` when the authority resolved the date (an empty `spans` then means the business is shut that day), `own` when it carries no rule reaching the date and the module's legacy timetable still answers. Read-only: it writes nothing."
+        "description": "Returns the stretches the business is open on a given date, exactly as the booking gate resolves them: the rules of the Schedules module with their precedence applied (exact special day, yearly special day, override range, weekly hours) and breaks carved out. `spans` are minutes from that date's own midnight and `source` says who answered — `schedules` when the authority resolved the date (an empty `spans` then means the business is shut that day), `unset` when it carries no rule reaching the date, and then nothing is refused and the caller must not filter at all. Read-only: it writes nothing."
       }
     },
     "appointments.blocked_times.create": {
@@ -1141,10 +1127,6 @@
           "params": {
             "staff_id": "payload.staff_id"
           },
-          "required": true
-        },
-        {
-          "query": "appointments.schedules.active_timeslots",
           "required": true
         },
         {

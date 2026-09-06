@@ -21,19 +21,33 @@ publishes and asks what it does to the two hours tables — so a `appointments.o
 that writes the very same rows fails just the same. The names of the six retired operations are
 checked too, but as the cheap half; the SQL scan is the one that holds.
 
-WHAT DELIBERATELY STAYS. `appointments.schedules.active_timeslots` and the two availability
-queries still READ those tables: that is the transitional fallback the handler
-(`legacy_timeslot_refusal`) uses while `schedules` carries no rule reaching the date, and it is
-what keeps a salon configured before appointments#102 working. Reading is not a second place to
-configure — nobody can write there any more. Its removal, with the tables themselves, is
-appointments#118.
+NOTHING STAYS ANY MORE (appointments#118). Until this issue the two availability queries and
+`appointments.schedules.active_timeslots` still READ those tables: the transitional fallback the
+handler used while `schedules` carried no rule reaching the date, kept for the salon configured
+before appointments#102. Both conditions that made it necessary are gone — appointments#117
+retired every write, and schedules#36 seeds the whole week on install — so the fallback had become
+a refusal the salon could not explain with anything it can see configured. The reads went with it
+and migration 009 retires the tables themselves, which is why the allowlist below is EMPTY: no
+statement of this module may name them at all.
 
-BUT THE FALLBACK IS NOT A TOOL. A `reads` source of the handler is not something the assistant
-should be handed: offered as «the business's opening hours», it answers from a table nothing can
-write any more — empty on every hub set up after #117 — so the assistant would tell the owner the
-salon has no hours while `schedules` holds them. The one tool for that question is
-`schedules.business_hours.list`; the availability engine (`availability.slots`/`.check`) keeps its
-`ai` block because it answers a different question (is THIS slot free?), not «when are we open?».
+That is what turns this battery from «only one place WRITES the hours» into «only one place HAS
+them». A query that reads `appointments_schedule*` now cannot even run, so bringing one back means
+bringing the tables back, and the migration check below is what makes that visible in the diff.
+
+AND WHAT WE TELL THE ASSISTANT HAS TO MATCH (appointments#118, second round). Retiring a verdict
+from the SQL is only half of it: the assistant builds its tools from the manifest (ADR-0033), so an
+`ai.description` that still lists `outside_schedule` teaches it that this engine knows about the
+opening hours when the `CASE` can no longer return that word. That is the same false belief
+appointments#122 documents, planted by us. The two checks at the bottom close it, and both read
+their truth from somewhere other than the prose they judge:
+
+  * the reasons a query CAN return are parsed out of its own `CASE ... END AS reason`;
+  * the vocabulary of reason words is the union of those plus the `appointments.<code>` refusals the
+    handler emits — so `outside_schedule` is a KNOWN word (the door really does refuse with it),
+    which is what makes «the engine offers it» detectable instead of merely absent;
+  * naming the authority bare («crossing schedules») is a claim to cross it, and is only allowed to
+    an operation that actually reads it. An operation that just points elsewhere names the exact
+    operation (`schedules.business_hours.list`), which is what the assistant can act on anyway.
 
 Usage: tests/hours_single_source.contract.test.py   (exit 0 = green)
 """
@@ -50,21 +64,29 @@ MANIFEST = json.loads((MODULE_DIR / "module.json").read_text())
 # not this battery's business.
 HOURS_TABLES = ("appointments_schedule", "appointments_schedule_timeslot")
 
-# The queries allowed to READ them: the transitional fallback, owned by appointments#118. Anything
-# else reading them is a management surface that came back.
-READ_ALLOWLIST = {
-    "appointments.schedules.active_timeslots",
-    "appointments.availability.slots",
-    "appointments.availability.check",
-}
+# Nobody may read them either, since appointments#118: the transitional fallback is gone and the
+# tables with it. An empty allowlist is the point — it is not a placeholder waiting to be filled.
+READ_ALLOWLIST: set[str] = set()
 
-# The availability ENGINE: it reads the hours tables to answer «is this slot free?», which is a
-# different question from «when is the business open?», so it may stay a tool of the assistant.
-# Every other allowed reader is the handler's fallback, and a fallback is not offered to anyone.
-AVAILABILITY_ENGINE = {
-    "appointments.availability.slots",
-    "appointments.availability.check",
-}
+# The migration that retires the tables. `contract` is what makes the runtime translate the
+# `DROP TABLE` into `ALTER TABLE ... RENAME TO _deprecated_...` instead of destroying the rows.
+RETIRING_MIGRATION = "migrations/postgres/009_drop_own_timetable.sql"
+
+# The door's own refusals, read from the Rust that emits them. `outside_schedule` lives here and
+# NOT in the availability engine any more: that asymmetry is the whole point of the two checks at
+# the bottom, so the vocabulary has to come from the handler and not from a list typed here.
+HANDLER = MODULE_DIR / "handler" / "src" / "lib.rs"
+
+# The authority that owns the opening hours (ADR-0392, appointments#102).
+AUTHORITY = "schedules"
+
+# The doc page that explains the refusals to a human. Only the table of the section below is this
+# battery's business — the prose under it talks about the DOOR, which does still refuse on hours.
+CONCEPTS = "docs/concepts.md"
+REASONS_SECTION = "Availability has reasons"
+
+# The engine whose `CASE` the doc table describes.
+AVAILABILITY_CHECK = "appointments.availability.check"
 
 # The six operations appointments#117 retired. Cheap half of the check — kept by name so the diff
 # that brings one back is readable, but the SQL scan below is what actually holds the line.
@@ -149,7 +171,8 @@ def check_no_published_operation_writes_the_hours() -> None:
                 )
 
 
-def check_only_the_fallback_reads_the_hours() -> None:
+def check_nobody_reads_the_hours() -> None:
+    """appointments#118 — not «only the fallback reads them» any more: NOBODY does."""
     for name, spec in sorted(MANIFEST.get("queries", {}).items()):
         if name in READ_ALLOWLIST:
             continue
@@ -157,25 +180,49 @@ def check_only_the_fallback_reads_the_hours() -> None:
         for table in HOURS_TABLES:
             if table in read:
                 fail(
-                    f"`{name}` reads `{table}` and is not the transitional fallback: listing this "
-                    "module's own timetable is what made it look configurable. The hours are read "
-                    "from `schedules.business_hours.list`"
+                    f"`{name}` reads `{table}`: since appointments#118 the table is retired by "
+                    "migration 009, so this query answers on a renamed table or aborts. The "
+                    "opening hours are read from `schedules.business_hours.list`"
                 )
 
 
-def check_the_fallback_is_not_offered_to_the_assistant() -> None:
-    """A query that reads the hours tables and is not the engine is the handler's `reads` source:
-    it carries no `ai` block, or the assistant gets a second — and now always empty — place to ask
-    when the business is open."""
-    for name in sorted(READ_ALLOWLIST - AVAILABILITY_ENGINE):
-        spec = MANIFEST.get("queries", {}).get(name)
-        if spec is None:
-            continue
-        if spec.get("ai"):
+def check_the_contract_migration_retires_the_tables() -> None:
+    """The reads going is half the fix; the tables have to go too, or the next writer re-creates
+    the surface by simply naming a table that is still there. `contract` is what keeps the rows:
+    the runtime turns a `DROP TABLE` of a contract migration into a `RENAME TO _deprecated_...`.
+    """
+    entries = MANIFEST.get("migrations", {}).get("postgres") or []
+    entry = next(
+        (
+            e
+            for e in entries
+            if isinstance(e, dict) and e.get("file") == RETIRING_MIGRATION
+        ),
+        None,
+    )
+    if entry is None:
+        fail(
+            f"`{RETIRING_MIGRATION}` is not declared in migrations.postgres: the two hours tables "
+            "stay in every hub's database, ready for the next query to name them again"
+        )
+        return
+    if entry.get("kind") != "contract":
+        fail(
+            f"`{RETIRING_MIGRATION}` is not `kind: contract` ({entry.get('kind')!r}): the guard "
+            "would take the DROP literally and destroy the rows instead of renaming them aside"
+        )
+    sql = strip_comments((MODULE_DIR / RETIRING_MIGRATION).read_text())
+    dropped = {
+        t.lower()
+        for t in re.findall(
+            r"\bDROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?([a-z_][a-z0-9_]*)", sql, re.IGNORECASE
+        )
+    }
+    for table in HOURS_TABLES:
+        if table not in dropped:
             fail(
-                f"`{name}` is offered to the assistant (`ai` block): it is the handler's transitional "
-                "fallback over a table nothing writes since appointments#117, so as a tool it answers "
-                "«no opening hours» on every new hub. The assistant asks `schedules.business_hours.list`"
+                f"`{RETIRING_MIGRATION}` does not drop `{table}`: it survives in the database and "
+                "the single-source-of-truth is only true in the manifest"
             )
 
 
@@ -212,20 +259,194 @@ def check_the_docs_do_not_offer_them() -> None:
                 fail(f"{rel} still documents `{name}` as an operation of this module")
 
 
+REASON_CASE = re.compile(r"CASE(.*?)END\s+AS\s+reason", re.IGNORECASE | re.DOTALL)
+REASON_LITERAL = re.compile(r"THEN\s+'([a-z_][a-z0-9_]*)'", re.IGNORECASE)
+# `[a-z_]` on purpose, so the internal `appointments._insert_appointment` commands DO match and the
+# filter in `handler_refusals` is the thing that drops them. A regex that never saw them would make
+# that filter — and the self-check that proves it works — vacuous.
+HANDLER_REFUSAL = re.compile(r'"appointments\.([a-z_][a-z0-9_]*)"')
+# A referral names the operation the caller should ask instead: `schedules.business_hours.list`.
+QUALIFIED_AUTHORITY = re.compile(r"\bschedules\.[a-z_]+\.[a-z_]+")
+
+
+def emitted_reasons(sql: str) -> set[str]:
+    """The words a statement's `CASE ... END AS reason` can actually produce. Comments are already
+    stripped by `sql_of`, so a reason quoted in prose does not count as emitted."""
+    out: set[str] = set()
+    for body in REASON_CASE.findall(sql):
+        out |= {r.lower() for r in REASON_LITERAL.findall(body)}
+    return out
+
+
+def handler_refusals() -> set[str]:
+    """The `appointments.<code>` refusals the door emits, straight from the Rust. Internal commands
+    (`appointments._insert_appointment`) are plumbing, not refusals, so they are dropped."""
+    if not HANDLER.is_file():
+        return set()
+    return {c for c in HANDLER_REFUSAL.findall(HANDLER.read_text()) if not c.startswith("_")}
+
+
+def describes(spec: dict) -> str:
+    return ((spec.get("ai") or {}).get("description") or "")
+
+
+def reads_the_authority(name: str, spec: dict) -> bool:
+    """Reaches `schedules` for real: either its SQL selects from a `schedules_*` table, or it
+    declares a `reads` on one of the authority's operations (how a handler gets them)."""
+    if any(t.startswith(f"{AUTHORITY}_") for t in tables_read(sql_of(spec))):
+        return True
+    return any(
+        str(r.get("query", "")).startswith(f"{AUTHORITY}.") for r in (spec.get("reads") or [])
+    )
+
+
+def doc_table_reasons() -> tuple[set[str], str]:
+    """The reasons listed in the TABLE of the «Availability has reasons» section, and the prose that
+    follows it. Only rows of the markdown table count: the paragraph below is about the door."""
+    path = MODULE_DIR / CONCEPTS
+    if not path.is_file():
+        return set(), ""
+    lines = path.read_text().splitlines()
+    start = next((i for i, ln in enumerate(lines) if ln.startswith("#") and REASONS_SECTION in ln), None)
+    if start is None:
+        return set(), ""
+    end = next(
+        (i for i, ln in enumerate(lines[start + 1 :], start + 1) if ln.startswith("#")), len(lines)
+    )
+    section = lines[start + 1 : end]
+    reasons = set()
+    prose = []
+    for ln in section:
+        if ln.lstrip().startswith("|"):
+            cells = [c.strip() for c in ln.strip().strip("|").split("|")]
+            if cells and cells[0].startswith("`") and cells[0].endswith("`"):
+                reasons.add(cells[0].strip("`").lower())
+        else:
+            prose.append(ln)
+    return reasons, "\n".join(prose)
+
+
+def check_the_reason_readers_find_the_positive() -> None:
+    """Both new checks below are «X must not appear»: if the parsers returned nothing the greens
+    would be free. Prove each one sees a planted positive before trusting an absence."""
+    probe = strip_comments(
+        "SELECT CASE WHEN a = 1 THEN \'too_soon\' WHEN b = 1 THEN \'held\' ELSE \'\' END AS reason"
+    )
+    if emitted_reasons(probe) != {"too_soon", "held"}:
+        fail(
+            "the reason parser does not read a plain `CASE ... END AS reason`: it would report an "
+            f"empty set for every query and pass on anything ({emitted_reasons(probe)!r})"
+        )
+    if emitted_reasons("SELECT 1 FROM t"):
+        fail("the reason parser invents reasons for a statement that has no `reason` column")
+
+    refusals = handler_refusals()
+    if "outside_schedule" not in refusals:
+        fail(
+            "the handler scan does not find `appointments.outside_schedule`: the vocabulary would "
+            "not contain the very word this check exists to catch, so it could never fire"
+        )
+    if any(c.startswith("_") for c in refusals):
+        fail("the handler scan counts internal commands as refusals: it would fire on plumbing")
+
+    engine = MANIFEST.get("queries", {}).get(AVAILABILITY_CHECK, {})
+    if not emitted_reasons(sql_of(engine)):
+        fail(
+            f"`{AVAILABILITY_CHECK}` reads as emitting no reason at all: the scan is not reaching "
+            "the real SQL, and both checks below are then judging prose against an empty set"
+        )
+
+    table, prose = doc_table_reasons()
+    if not table:
+        fail(
+            f"no reason row found in the «{REASONS_SECTION}» table of {CONCEPTS}: the doc check "
+            "passes on an empty set"
+        )
+    # The positive is placed AFTER the filtered region on purpose: the paragraph under the table
+    # says the door refuses on `outside_schedule`, and that is TRUE. A parser that swallowed the
+    # prose would drag that word into the table set and fail the honest doc.
+    if "outside_schedule" not in prose:
+        fail(
+            f"the «{REASONS_SECTION}» prose no longer mentions `outside_schedule`: the door still "
+            "refuses with it, and this check has lost the control that proves the table parser "
+            "stops at the table"
+        )
+    if "outside_schedule" in table:
+        fail(
+            f"{CONCEPTS} lists `outside_schedule` as an answer of the availability engine: the "
+            f"`CASE` of `{AVAILABILITY_CHECK}` cannot return it since appointments#118. The door "
+            "refuses with it — which the paragraph under the table already says — but whoever "
+            "reads the table plans a screen around a reason the engine never sends"
+        )
+
+
+def check_the_assistant_is_not_promised_a_reason_the_query_cannot_return() -> None:
+    """appointments#118 — the assistant builds its tools from the manifest (ADR-0033). A reason word
+    in an `ai.description` that the statement's own `CASE` cannot produce is a false belief we
+    planted: it is exactly what appointments#122 describes, only sourced from us."""
+    vocabulary = handler_refusals()
+    for name, spec in sorted(MANIFEST.get("queries", {}).items()):
+        can_return = emitted_reasons(sql_of(spec))
+        if not can_return:
+            continue  # no `reason` column: there is no promise of this shape to keep
+        vocabulary |= can_return
+    for name, spec in sorted(MANIFEST.get("queries", {}).items()):
+        can_return = emitted_reasons(sql_of(spec))
+        if not can_return:
+            continue
+        description = describes(spec)
+        for word in sorted(vocabulary - can_return):
+            if re.search(rf"\b{re.escape(word)}\b", description):
+                fail(
+                    f"`{name}` tells the assistant it answers `{word}`, but its `CASE ... END AS "
+                    f"reason` can only return {sorted(can_return)}. The tool description is the "
+                    "contract the assistant plans with, so it will ask this query about something "
+                    "it cannot see and read the empty answer as «fine»"
+                )
+
+
+def check_the_assistant_is_not_told_we_cross_the_hours_authority() -> None:
+    """Naming `schedules` bare is a claim to take it into account, and only an operation that
+    actually reaches it may make that claim. Pointing elsewhere is fine and useful — but then it
+    names the operation to ask (`schedules.business_hours.list`), which is what the assistant can
+    act on. Anything vaguer teaches it that this module crosses hours it never reads."""
+    for block in ("queries", "commands"):
+        for name, spec in sorted(MANIFEST.get(block, {}).items()):
+            description = describes(spec)
+            if not re.search(rf"\b{AUTHORITY}\b", description, re.IGNORECASE):
+                continue
+            if reads_the_authority(name, spec):
+                continue
+            if QUALIFIED_AUTHORITY.search(description):
+                continue
+            fail(
+                f"`{name}` tells the assistant it takes `{AUTHORITY}` into account, but it neither "
+                f"reads a `{AUTHORITY}_*` table nor declares a `reads` on the authority. Say which "
+                f"operation to ask instead (`{AUTHORITY}.business_hours.list`) or stop naming it: "
+                "since appointments#118 nothing of this module's SQL knows the opening hours"
+            )
+
+
 def main() -> int:
     check_the_scanner_finds_the_positive()
     check_no_published_operation_writes_the_hours()
-    check_only_the_fallback_reads_the_hours()
-    check_the_fallback_is_not_offered_to_the_assistant()
+    check_nobody_reads_the_hours()
+    check_the_contract_migration_retires_the_tables()
     check_the_retired_operations_are_gone()
     check_setup_does_not_ask_for_our_hours()
     check_the_docs_do_not_offer_them()
+    check_the_reason_readers_find_the_positive()
+    check_the_assistant_is_not_promised_a_reason_the_query_cannot_return()
+    check_the_assistant_is_not_told_we_cross_the_hours_authority()
     if failures:
         print(f"FAIL ({len(failures)}):")
         for f in sorted(set(failures)):
             print(f"  - {f}")
         return 1
-    print("OK: the opening hours are configured in `schedules` and nowhere else")
+    print(
+        "OK: the opening hours live in `schedules` and nowhere else — this module neither "
+        "writes, reads nor keeps them"
+    )
     return 0
 
 

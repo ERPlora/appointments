@@ -323,9 +323,9 @@ describe('erp-appointments-request-booking', () => {
       'y pregunta por LA fecha del selector',
     ).toBe(lastSlotsQuery().params.date);
     expect(
-      lastSlotsQuery().params.schedules_answers,
-      'con la autoridad respondiendo, el filtro por las tablas propias del módulo se APAGA',
-    ).toBe(1);
+      'schedules_answers' in lastSlotsQuery().params,
+      'appointments#118: el crucero se fue con las tablas propias que apagaba',
+    ).toBe(false);
     expect(
       offeredTimes(el),
       'las 10:00 caen fuera del tramo que la puerta resolvió para esa fecha: ofrecerlas es mentir',
@@ -344,18 +344,18 @@ describe('erp-appointments-request-booking', () => {
     ).toContain('ui.bookingDayClosed');
   });
 
-  it('keeps today’s behaviour when the authority carries no rule for the date', async () => {
-    // `source: "own"` = la autoridad calla y el SQL YA filtró con los tramos propios del módulo.
-    // Volver a filtrar aquí borraría el día entero al hub que todavía no ha movido sus horas.
-    commandAnswers['appointments.availability.day_opening'] = { source: 'own', spans: [] };
+  it('offers the whole day when the authority carries no rule for the date', async () => {
+    // `source: "unset"` = la autoridad calla, y entonces la puerta no rechaza NADA (appointments
+    // #118). Filtrar aquí borraría el día entero de una agenda que `create` habría aceptado.
+    commandAnswers['appointments.availability.day_opening'] = { source: 'unset', spans: [] };
     const el = await mount();
     await pickService(el);
 
-    expect(offeredTimes(el), 'el hub que aún guarda sus horas aquí no puede quedarse sin agenda').toEqual(['10:00', '11:00']);
+    expect(offeredTimes(el), 'un hub sin horario configurado no puede quedarse sin agenda').toEqual(['10:00', '11:00']);
     expect(
-      lastSlotsQuery().params.schedules_answers,
-      'sin autoridad que responda, el bind no se manda y la query filtra como siempre',
-    ).toBeUndefined();
+      shadow(el).textContent,
+      'y no es un día CERRADO: nadie ha dicho que el negocio esté cerrado',
+    ).not.toContain('ui.bookingDayClosed');
   });
 
   it('drops the last slot of the day when it would run PAST closing time', async () => {
@@ -392,7 +392,6 @@ describe('erp-appointments-request-booking', () => {
       offeredTimes(el),
       'no poder preguntar es peor lista, no LA LISTA VACÍA: reservar no puede depender de este permiso',
     ).toEqual(['10:00', '11:00']);
-    expect(lastSlotsQuery().params.schedules_answers).toBeUndefined();
     expect(
       shadow(el).textContent,
       'un rol sin `view_schedule` es un ROL, no una avería: no se le grita al operador por ello',

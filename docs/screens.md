@@ -88,8 +88,8 @@ cancelling — it keeps the record.
 > module used to carry a second timetable of its own — its own screen, its own operations and its
 > own first-run step — and a salon that changed the hours in one place kept being answered by the
 > other. Now the agenda READS the hours, bank holidays and overrides of Schedules and offers only
-> what fits inside them; a business that already had hours stored here keeps being served by them
-> while Schedules has no rule reaching the date, but nothing writes them any more.
+> what fits inside them. The old rows stopped being written then and were retired altogether in
+> appointments#118, so there is nothing left here to disagree with Schedules.
 
 ## Blocked time
 

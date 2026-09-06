@@ -29,7 +29,7 @@ versión instalada y cita la de TU versión, no la de la última publicada. En i
 | ---- | ------ | ------- |
 | query | `appointments.appointments.list` / `.get` / `.history` / `.conflicting` | `view_appointment` |
 | query | `appointments.availability.slots` / `.check` (motor autoritativo, Tier 0) | `view_schedule` |
-| query | `appointments.blocked_times.list` · `appointments.schedules.active_timeslots` (respaldo transitorio: las horas se configuran en `schedules` — appointments#117/#118) | `view_schedule` |
+| query | `appointments.blocked_times.list` | `view_schedule` |
 | query | `appointments.recurring.list` · `.settings.get` | `view_appointment` |
 | command | `appointments.appointments.create` (WASM, `reads` → `conflicting`) / `.bulk_create` (WASM) | `add_appointment` |
 | command | `confirm` / `start` / `complete` / `cancel` / `no_show` / `reschedule` / `update` (todas con `expect_rows` + código de dominio) | `change_appointment` |
