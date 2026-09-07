@@ -15,10 +15,14 @@ because a handler whose reads or intentions do not resolve fails at runtime, not
 
   2. PAYLOAD. `schemas/appointment_cancel.json` accepts the `channel` discriminator
      (`staff` | `customer`, default `staff`) — the agenda screen keeps sending only
-     `{appointment_id, reason}` and stays on the staff path.
+     `{appointment_id, reason}` and stays on the staff path — AND the `customer_id` the customer
+     channel identifies itself with (appointments#140). `additionalProperties` is false, so a
+     field the schema does not declare never reaches the handler that checks it: the identity
+     gate would be dead code behind a rejected payload.
 
-  3. I18N. The three domain codes the handler can answer with have an English source string and
-     its Spanish translation under `errors` in `locales/{en,es}.json` (ADR-0055).
+  3. I18N. The four domain codes the handler can answer with have an English source string and
+     its Spanish translation under `errors` in `locales/{en,es}.json` (ADR-0055), and every one
+     of them is declared in the manifest's `errors` block.
 
   4. REAL POSTGRES. The two intentions run against a scratch database built from this module's
      migrations: the row flips to `cancelled` with its reason, and the history line records the
@@ -46,6 +50,8 @@ DOMAIN_CODES = (
     "appointments.cannot_cancel",
     "appointments.cancellation_notice_required",
     "appointments.customer_cancellation_disabled",
+    # appointments#140: the cancellation is not this customer's to make.
+    "appointments.customer_mismatch",
 )
 
 CONTAINER = os.environ.get("APPOINTMENTS_TEST_PG_CONTAINER", "erplora-test-pg-5433")
@@ -153,6 +159,25 @@ def check_schema() -> None:
             f"{rel}: channel must NOT be required — existing callers send only appointment_id"
         )
 
+    # appointments#140. The handler refuses a `channel: customer` cancellation that does not name
+    # the customer it belongs to — but it only ever sees the field if the schema declares it:
+    # `additionalProperties: false` rejects the payload before the handler runs.
+    customer = (schema.get("properties") or {}).get("customer_id")
+    if not isinstance(customer, dict):
+        fail(
+            f"{rel}: no `customer_id` property — with additionalProperties false the customer "
+            f"channel cannot say whose appointment it is and the identity gate is unreachable"
+        )
+    elif customer.get("type") != "string":
+        fail(f"{rel}: customer_id.type must be 'string', got {customer.get('type')!r}")
+    if "customer_id" in schema.get("required", []):
+        fail(
+            f"{rel}: customer_id must NOT be required at schema level — the agenda screen cancels "
+            f"on the staff channel without one; the customer channel is bound by the handler"
+        )
+    if schema.get("additionalProperties") is not False:
+        fail(f"{rel}: additionalProperties must stay false — the payload is a closed contract")
+
 
 # ── Layer 3: i18n of the domain codes ────────────────────────────────────────────────────
 
@@ -178,6 +203,11 @@ def check_i18n() -> None:
                 fail(
                     f"locales/en.json: errors[{code!r}] carries non-ASCII text — English is the source"
                 )
+
+    declared = MANIFEST.get("errors") or {}
+    for code in DOMAIN_CODES:
+        if code not in declared:
+            fail(f"module.json errors: {code!r} is not declared")
 
 
 # ── Layer 4: the two intentions against a real Postgres ──────────────────────────────────

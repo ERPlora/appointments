@@ -11,7 +11,12 @@
       "type": "string",
       "enum": ["staff", "customer"],
       "default": "staff",
-      "description": "Who is cancelling: `staff` (someone operating the hub, the default) or `customer` (the client through an external channel, subject to allow_customer_cancellation and cancellation_notice_hours)."
+      "description": "Who is cancelling: `staff` (someone operating the hub, the default) or `customer` (the client through an external channel, subject to allow_customer_cancellation and cancellation_notice_hours, and bound to say who they are with `customer_id`)."
+    },
+    "customer_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Who is asking, on the `customer` channel (appointments#140): the id of that client in `customers`, as the external channel resolved them (the WhatsApp automation looks the client up by phone before listing anything). The cancellation is refused when the appointment belongs to somebody else. MANDATORY whenever `channel` is `customer`, and applied by the handler rather than here: it is a rule about two fields at once, decided against the appointment row this schema cannot see. The staff channel never sends it."
     }
   }
 }

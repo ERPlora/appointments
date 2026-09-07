@@ -15,6 +15,7 @@
     "appointments.cannot_start": {},
     "appointments.catalog_unavailable": {},
     "appointments.customer_cancellation_disabled": {},
+    "appointments.customer_mismatch": {},
     "appointments.customer_not_found": {},
     "appointments.invalid_start": {},
     "appointments.outside_schedule": {},
@@ -663,7 +664,7 @@
         "appointments.appointment.cancelled"
       ],
       "ai": {
-        "description": "Cancels an appointment with a specified cancellation reason. Staff can always cancel; a cancellation on behalf of the customer (channel=customer) is subject to the cancellation policy (allow_customer_cancellation, cancellation_notice_hours)."
+        "description": "Cancels an appointment with a specified cancellation reason. Staff can always cancel; a cancellation on behalf of the customer (channel=customer) must carry that customer's `customer_id`, is refused when the appointment belongs to somebody else, and is subject to the cancellation policy (allow_customer_cancellation, cancellation_notice_hours)."
       }
     },
     "appointments.appointments.complete": {
