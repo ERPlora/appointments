@@ -3,7 +3,7 @@
   "title": "appointments.appointments.reschedule",
   "type": "object",
   "additionalProperties": false,
-  "description": "Moves an appointment to another slot. Since appointments#10 the caller says WHEN and, if it wants, for how long — nothing else: the end of the slot is computed by the handler (start + duration), the current duration and the professional come from the appointment's own row, and the move is refused when it lands on a blocked period or breaks the hub's minimum notice / maximum advance. `end_datetime` is gone: an end that did not match its own duration was a row nobody could explain.",
+  "description": "Moves an appointment to another slot. Since appointments#10 the caller says WHEN and, if it wants, for how long — nothing else: the end of the slot is computed by the handler (start + duration), the current duration and the professional come from the appointment's own row, and the move is refused when it lands on a blocked period or breaks the hub's minimum notice / maximum advance. `end_datetime` is gone: an end that did not match its own duration was a row nobody could explain. Since appointments#142 it also carries WHO is asking (`channel`, and `customer_id` on the customer channel): moving an appointment on behalf of a client is refused when that appointment belongs to somebody else.",
   "required": ["appointment_id", "start_datetime"],
   "properties": {
     "appointment_id": { "type": "string", "minLength": 1 },
@@ -12,6 +12,17 @@
       "type": "integer",
       "minimum": 1,
       "description": "Optional. When omitted the appointment keeps the length it already had."
+    },
+    "channel": {
+      "type": "string",
+      "enum": ["staff", "customer"],
+      "default": "staff",
+      "description": "Who is moving the appointment: `staff` (someone operating the hub, the default \u2014 the agenda screen sends no channel and keeps moving any appointment: it is its own agenda) or `customer` (the client through an external channel, bound to say who they are with `customer_id`)."
+    },
+    "customer_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Who is asking, on the `customer` channel (appointments#142): the id of that client in `customers`, as the external channel resolved them (the WhatsApp automation looks the client up by phone before listing anything). The move is refused when the appointment belongs to somebody else. MANDATORY whenever `channel` is `customer`, and applied by the handler rather than here: it is a rule about two fields at once, decided against the appointment row this schema cannot see. The staff channel never sends it."
     }
   }
 }

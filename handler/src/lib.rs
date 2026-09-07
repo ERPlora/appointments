@@ -1893,27 +1893,69 @@ fn prepare_appointment(
 
 // ───────────────────────────── funciones puras por command ─────────────────────────────
 
-/// Who is asking to cancel (appointments#6). `staff` = someone operating the hub (the default:
-/// the agenda screen never sends a channel); `customer` = the client herself through an
-/// external channel (online booking, a flow acting on her behalf).
+/// Who is asking (appointments#6 for `cancel`, appointments#142 for `reschedule`). `staff` =
+/// someone operating the hub (the default: the agenda screen never sends a channel); `customer`
+/// = the client herself through an external channel (online booking, a flow acting on her
+/// behalf).
 #[derive(Clone, Copy, PartialEq, Debug)]
-enum CancelChannel {
+enum CallerChannel {
     Staff,
     Customer,
 }
 
-/// The refusal a cancellation gets when it does not belong to the customer asking for it
-/// (appointments#140).
+/// The refusal an operation gets when the appointment does not belong to the customer asking for
+/// it (appointments#140 for `cancel`, appointments#142 for `reschedule`).
 const CUSTOMER_MISMATCH: &str = "appointments.customer_mismatch";
 
-fn cancel_channel(payload: &Value) -> Result<CancelChannel, String> {
+fn caller_channel(payload: &Value) -> Result<CallerChannel, String> {
     match payload.get("channel").map(as_str).as_deref() {
-        None | Some("") | Some("staff") => Ok(CancelChannel::Staff),
-        Some("customer") => Ok(CancelChannel::Customer),
+        None | Some("") | Some("staff") => Ok(CallerChannel::Staff),
+        Some("customer") => Ok(CallerChannel::Customer),
         Some(other) => Err(format!(
             "invalid_payload: channel `{other}` is not one of staff|customer"
         )),
     }
+}
+
+/// WHOSE appointment is it? The gate `cancel` grew in appointments#140 and `reschedule` reuses
+/// unchanged in appointments#142 — one rule, one code, one place: two copies of «is this yours»
+/// is how one of them ends up drifting open again.
+///
+/// `Ok(None)` = the caller may go on; `Ok(Some(refusal))` = the appointment is somebody else's;
+/// `Err` = the payload itself is broken. It is asked BEFORE the state and the business policy, so
+/// a caller holding an id that is not theirs always gets the same answer — «not yours» — instead
+/// of a refusal that tells them whether that id exists, what state it is in and when it starts.
+fn customer_identity_refusal(
+    channel: CallerChannel,
+    payload: &Value,
+    row: &Value,
+) -> Result<Option<Output>, String> {
+    // Only the customer channel is bound: the staff channel is the receptionist, who owns the
+    // whole agenda and never acts on anyone else's behalf. A `customer_id` she happens to send is
+    // not an identity claim — reading it as one would let a mistyped id refuse her own work.
+    if channel != CallerChannel::Customer {
+        return Ok(None);
+    }
+    let asking = str_or(payload, "customer_id", "");
+    if asking.is_empty() {
+        // A payload contract bug, not a business refusal — the same treatment as a missing
+        // `appointment_id`. A `channel: customer` that names nobody proves nothing, so it fails
+        // closed and LOUDLY: an external channel wired without the customer must be fixed, not
+        // answered with a sentence the customer is told to act on.
+        return Err(
+            "invalid_payload: customer_id is required when channel is `customer`".to_string(),
+        );
+    }
+    // `row.customer_id` is the appointment's own link, from the authoritative read — never from
+    // the payload. Empty (a walk-in the counter typed with no customer attached) matches nobody:
+    // `asking` is non-empty by the check above.
+    if as_str(row.get("customer_id").unwrap_or(&Value::Null)) != asking {
+        return Ok(Some(refuse(
+            CUSTOMER_MISMATCH,
+            "This appointment belongs to a different customer, so it cannot be managed on their behalf.",
+        )));
+    }
+    Ok(None)
 }
 
 /// The appointment row the runtime pre-loaded via `reads` (`appointments.appointments.get`,
@@ -1943,7 +1985,7 @@ fn refuse(code: &str, message: &str) -> Output {
 pub fn cancel_appointment_pure(input: Value) -> Result<Output, String> {
     let payload = input.get("payload").cloned().unwrap_or(Value::Null);
     let ctx = host_ctx(&input)?;
-    let channel = cancel_channel(&payload)?;
+    let channel = caller_channel(&payload)?;
     let appointment_id = str_or(&payload, "appointment_id", "");
     if appointment_id.is_empty() {
         return Err("invalid_payload: appointment_id is required".to_string());
@@ -1956,31 +1998,9 @@ pub fn cancel_appointment_pure(input: Value) -> Result<Output, String> {
             "This appointment can no longer be cancelled in its current state.",
         ));
     };
-    // appointments#140: WHOSE appointment is it? Decided BEFORE the state and the policy, so a
-    // caller holding an id that is not theirs always gets the same answer — «not yours» — instead
-    // of a refusal that tells them whether that id exists, what state it is in and how soon it
-    // starts. Only the customer channel is bound: the staff channel is the receptionist, who owns
-    // the whole agenda and never cancels on anyone else's behalf.
-    if channel == CancelChannel::Customer {
-        let asking = str_or(&payload, "customer_id", "");
-        if asking.is_empty() {
-            // A payload contract bug, not a business refusal — the same treatment as a missing
-            // `appointment_id`. A `channel: customer` that names nobody proves nothing, so it
-            // fails closed and LOUDLY: an external channel wired without the customer must be
-            // fixed, not answered with a sentence the customer is told to act on.
-            return Err(
-                "invalid_payload: customer_id is required when channel is `customer`".to_string(),
-            );
-        }
-        // `row.customer_id` is the appointment's own link, from the authoritative read — never
-        // from the payload. Empty (a walk-in the counter typed with no customer attached) matches
-        // nobody: `asking` is non-empty by the check above.
-        if as_str(row.get("customer_id").unwrap_or(&Value::Null)) != asking {
-            return Ok(refuse(
-                CUSTOMER_MISMATCH,
-                "This appointment belongs to a different customer, so it cannot be cancelled on their behalf.",
-            ));
-        }
+    // appointments#140: WHOSE appointment is it? Decided BEFORE the state and the policy.
+    if let Some(refusal) = customer_identity_refusal(channel, &payload, &row)? {
+        return Ok(refusal);
     }
 
     let status = as_str(row.get("status").unwrap_or(&Value::Null));
@@ -1991,7 +2011,7 @@ pub fn cancel_appointment_pure(input: Value) -> Result<Output, String> {
         ));
     }
 
-    if channel == CancelChannel::Customer {
+    if channel == CallerChannel::Customer {
         let settings = settings_from(&input);
         let allowed = settings
             .get("allow_customer_cancellation")
@@ -2023,8 +2043,8 @@ pub fn cancel_appointment_pure(input: Value) -> Result<Output, String> {
     }
 
     let channel_label = match channel {
-        CancelChannel::Staff => "staff",
-        CancelChannel::Customer => "customer",
+        CallerChannel::Staff => "staff",
+        CallerChannel::Customer => "customer",
     };
     let mut cancel = Map::new();
     cancel.insert("appointment_id".into(), json!(appointment_id));
@@ -2067,6 +2087,7 @@ pub fn cancel_appointment_pure(input: Value) -> Result<Output, String> {
 pub fn reschedule_appointment_pure(input: Value) -> Result<Output, String> {
     let payload = input.get("payload").cloned().unwrap_or(Value::Null);
     let ctx = host_ctx(&input)?;
+    let channel = caller_channel(&payload)?;
     let appointment_id = str_or(&payload, "appointment_id", "");
     if appointment_id.is_empty() {
         return Err("invalid_payload: appointment_id is required".to_string());
@@ -2080,6 +2101,14 @@ pub fn reschedule_appointment_pure(input: Value) -> Result<Output, String> {
             "This appointment can no longer be moved in its current state.",
         ));
     };
+    // appointments#142: the other half of the door appointments#140 closed for `cancel`. Same
+    // gate, same code, asked in the same place — before the state, the notice and the agenda —
+    // so a stranger who guesses an id cannot move a chair that is not hers, nor use the refusals
+    // to find out anything about it.
+    if let Some(refusal) = customer_identity_refusal(channel, &payload, &row)? {
+        return Ok(refusal);
+    }
+
     let status = as_str(row.get("status").unwrap_or(&Value::Null));
     if !matches!(status.as_str(), "pending" | "confirmed") {
         return Ok(refuse(
@@ -6569,6 +6598,206 @@ mod tests {
                 "appointments._gate_clear",
             ]
         );
+    }
+
+    // ── appointments#142: whose appointment is being MOVED? ─────────────────────────────────
+    //
+    // `cancel` learned this in appointments#140 and `reschedule` was left out of that fix, so the
+    // other half of the same door stayed open: the payload carried an appointment id and nothing
+    // else, and anyone who saw or guessed an id moved a stranger's chair to another hour — she
+    // turns up to a slot that no longer exists, the person who really owns it loses hers, and the
+    // salon loses the seat. The caller that speaks for a customer (the WhatsApp automation
+    // resolves her by phone before it lists anything) must say WHO is asking, and the appointment
+    // row decides. Same table of cases #140 left for `cancel`.
+
+    /// The customer `booked_row` links its appointment to.
+    const ROW_CUSTOMER: &str = "c1";
+
+    /// The same fixture row, belonging to whoever the case needs (including nobody: a walk-in the
+    /// counter typed with no customer attached).
+    fn booked_row_of(customer_id: &str, start: &str, minutes: i64, status: &str) -> Value {
+        let mut row = booked_row(start, minutes, status);
+        row["customer_id"] = json!(customer_id);
+        row
+    }
+
+    /// A move as an external channel composes it: `channel`, and — on the customer channel — WHO
+    /// is asking. `asking_customer: None` is the payload every caller sent before this gate
+    /// existed.
+    fn move_asked_by(start: &str, channel: Option<&str>, asking_customer: Option<&str>) -> Value {
+        let mut p = move_to(start, Some(30));
+        if let Some(c) = channel {
+            p["channel"] = json!(c);
+        }
+        if let Some(c) = asking_customer {
+            p["customer_id"] = json!(c);
+        }
+        p
+    }
+
+    /// 🔴 The hole: an appointment that belongs to `c1`, a move asked by `cus-eve`. Refused with
+    /// its own code, and NOTHING is written — no state assert, no UPDATE, no history line.
+    #[test]
+    fn reschedule_by_customer_of_someone_elses_appointment_is_refused() {
+        let out = reschedule_appointment_pure(reschedule_input(
+            move_asked_by("2026-07-31T15:00:00Z", Some("customer"), Some("cus-eve")),
+            booked_row_of(ROW_CUSTOMER, "2026-07-31T11:00:00Z", 60, "confirmed"),
+            None,
+        ))
+        .unwrap();
+        assert_eq!(
+            domain_code(&out).as_deref(),
+            Some(CUSTOMER_MISMATCH),
+            "a stranger moved someone else's appointment: {:?}",
+            op_commands(&out)
+        );
+        assert!(
+            out.operations.is_empty(),
+            "nothing may be written for an appointment that is not the caller's: {:?}",
+            op_commands(&out)
+        );
+    }
+
+    /// The same door with no customer at all: a `channel: customer` payload that names nobody
+    /// proves nothing. It is a caller contract bug (the shape of the payload), not a business
+    /// refusal — the same treatment as a missing `appointment_id`, and the same `cancel` gives.
+    #[test]
+    fn reschedule_by_customer_without_saying_who_asks_is_a_payload_error() {
+        let err = reschedule_appointment_pure(reschedule_input(
+            move_asked_by("2026-07-31T15:00:00Z", Some("customer"), None),
+            booked_row_of(ROW_CUSTOMER, "2026-07-31T11:00:00Z", 60, "confirmed"),
+            None,
+        ))
+        .unwrap_err();
+        assert!(err.starts_with("invalid_payload:"), "{err}");
+        assert!(err.contains("customer_id"), "{err}");
+    }
+
+    /// A walk-in typed at the counter has no customer linked. Nobody can claim it through the
+    /// customer channel: the check fails CLOSED, it does not fall through to «no owner, anyone».
+    #[test]
+    fn reschedule_by_customer_of_an_appointment_with_no_customer_is_refused() {
+        let out = reschedule_appointment_pure(reschedule_input(
+            move_asked_by("2026-07-31T15:00:00Z", Some("customer"), Some("cus-eve")),
+            booked_row_of("", "2026-07-31T11:00:00Z", 60, "confirmed"),
+            None,
+        ))
+        .unwrap();
+        assert_eq!(domain_code(&out).as_deref(), Some(CUSTOMER_MISMATCH));
+        assert!(out.operations.is_empty());
+    }
+
+    /// Her own appointment still moves: the check binds the caller, it does not close the channel.
+    #[test]
+    fn reschedule_by_customer_of_her_own_appointment_is_allowed() {
+        let out = reschedule_appointment_pure(reschedule_input(
+            move_asked_by("2026-07-31T15:00:00Z", Some("customer"), Some(ROW_CUSTOMER)),
+            booked_row_of(ROW_CUSTOMER, "2026-07-31T11:00:00Z", 60, "confirmed"),
+            None,
+        ))
+        .unwrap();
+        assert!(out.error.is_none(), "{:?}", out.error);
+        assert_eq!(
+            op_commands(&out),
+            vec![
+                "appointments._reschedule_state_assert",
+                "appointments._reschedule_row",
+                "appointments._appointment_overlap_assert",
+                "appointments._history_reschedule",
+                "appointments._gate_clear",
+            ]
+        );
+    }
+
+    /// The agenda screen is untouched: staff drag a block by id, with no customer in the payload,
+    /// on the appointment of whoever. The receptionist owns the agenda — that is her job.
+    #[test]
+    fn reschedule_by_staff_needs_no_customer_id() {
+        let out = reschedule_appointment_pure(reschedule_input(
+            move_to("2026-07-31T15:00:00Z", Some(30)),
+            booked_row_of(ROW_CUSTOMER, "2026-07-31T11:00:00Z", 60, "confirmed"),
+            None,
+        ))
+        .unwrap();
+        assert!(out.error.is_none(), "{:?}", out.error);
+        assert_eq!(
+            op_commands(&out).first().map(String::as_str),
+            Some("appointments._reschedule_state_assert")
+        );
+    }
+
+    /// A `customer_id` in a STAFF move is not an identity claim and is not checked: the staff
+    /// channel never had one, and reading it as one would let a mistyped id start refusing the
+    /// receptionist's own moves.
+    #[test]
+    fn a_customer_id_sent_on_the_staff_reschedule_channel_is_ignored() {
+        let out = reschedule_appointment_pure(reschedule_input(
+            move_asked_by("2026-07-31T15:00:00Z", None, Some("cus-eve")),
+            booked_row_of(ROW_CUSTOMER, "2026-07-31T11:00:00Z", 60, "confirmed"),
+            None,
+        ))
+        .unwrap();
+        assert!(out.error.is_none(), "{:?}", out.error);
+    }
+
+    /// A channel the contract does not have is a payload bug, not a silent fall back to `staff` —
+    /// which is what «anything that is not `customer`» would mean: a typo would reopen the door.
+    #[test]
+    fn reschedule_with_an_unknown_channel_is_a_payload_error() {
+        let err = reschedule_appointment_pure(reschedule_input(
+            move_asked_by("2026-07-31T15:00:00Z", Some("whatsapp"), Some("cus-eve")),
+            booked_row_of(ROW_CUSTOMER, "2026-07-31T11:00:00Z", 60, "confirmed"),
+            None,
+        ))
+        .unwrap_err();
+        assert!(err.starts_with("invalid_payload:"), "{err}");
+        assert!(err.contains("channel"), "{err}");
+    }
+
+    /// Identity is decided BEFORE the state, the notice and the agenda, so a stranger's guess
+    /// learns the same thing whatever the row says: not yours. Otherwise the refusals themselves
+    /// answer «is there an appointment under id X, in what state, and is that hour free?» to
+    /// anyone who asks — the probe #140 closed for `cancel`.
+    #[test]
+    fn a_strangers_guess_never_learns_anything_about_the_appointment_it_tried_to_move() {
+        let cases: Vec<(&str, &str, Value, Option<Value>)> = vec![
+            // Terminal state → would have been `cannot_reschedule`.
+            ("cancelled", "2026-07-31T15:00:00Z", json!(30), None),
+            // Inside the minimum notice → would have been `too_soon`.
+            (
+                "confirmed",
+                "2026-07-31T10:30:00Z",
+                json!(30),
+                Some(lead_time(60, 0)),
+            ),
+            // Onto a blocked period → would have been `blocked`.
+            (
+                "confirmed",
+                "2026-07-31T15:00:00Z",
+                json!(30),
+                Some(blocks(json!([
+                    { "id": "b1", "title": "Formación", "staff_id": "s1", "all_day": 0,
+                      "start_datetime": "2026-07-31T14:00:00Z",
+                      "end_datetime": "2026-07-31T18:00:00Z" }
+                ]))),
+            ),
+            // A start that is not an instant → would have been `invalid_start`.
+            ("confirmed", "nope", json!(30), None),
+        ];
+        for (status, start, _minutes, reads) in cases {
+            let out = reschedule_appointment_pure(reschedule_input(
+                move_asked_by(start, Some("customer"), Some("cus-eve")),
+                booked_row_of(ROW_CUSTOMER, "2026-07-31T11:00:00Z", 60, status),
+                reads,
+            ))
+            .unwrap();
+            assert_eq!(
+                domain_code(&out).as_deref(),
+                Some(CUSTOMER_MISMATCH),
+                "status {status} at {start} leaked a different refusal"
+            );
+            assert!(out.operations.is_empty(), "status {status} wrote something");
+        }
     }
 
     // ── appointments#10 · a hub that never opened the Settings tab can still book ──
