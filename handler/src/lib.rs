@@ -1902,6 +1902,10 @@ enum CancelChannel {
     Customer,
 }
 
+/// The refusal a cancellation gets when it does not belong to the customer asking for it
+/// (appointments#140).
+const CUSTOMER_MISMATCH: &str = "appointments.customer_mismatch";
+
 fn cancel_channel(payload: &Value) -> Result<CancelChannel, String> {
     match payload.get("channel").map(as_str).as_deref() {
         None | Some("") | Some("staff") => Ok(CancelChannel::Staff),
@@ -1952,6 +1956,33 @@ pub fn cancel_appointment_pure(input: Value) -> Result<Output, String> {
             "This appointment can no longer be cancelled in its current state.",
         ));
     };
+    // appointments#140: WHOSE appointment is it? Decided BEFORE the state and the policy, so a
+    // caller holding an id that is not theirs always gets the same answer — «not yours» — instead
+    // of a refusal that tells them whether that id exists, what state it is in and how soon it
+    // starts. Only the customer channel is bound: the staff channel is the receptionist, who owns
+    // the whole agenda and never cancels on anyone else's behalf.
+    if channel == CancelChannel::Customer {
+        let asking = str_or(&payload, "customer_id", "");
+        if asking.is_empty() {
+            // A payload contract bug, not a business refusal — the same treatment as a missing
+            // `appointment_id`. A `channel: customer` that names nobody proves nothing, so it
+            // fails closed and LOUDLY: an external channel wired without the customer must be
+            // fixed, not answered with a sentence the customer is told to act on.
+            return Err(
+                "invalid_payload: customer_id is required when channel is `customer`".to_string(),
+            );
+        }
+        // `row.customer_id` is the appointment's own link, from the authoritative read — never
+        // from the payload. Empty (a walk-in the counter typed with no customer attached) matches
+        // nobody: `asking` is non-empty by the check above.
+        if as_str(row.get("customer_id").unwrap_or(&Value::Null)) != asking {
+            return Ok(refuse(
+                CUSTOMER_MISMATCH,
+                "This appointment belongs to a different customer, so it cannot be cancelled on their behalf.",
+            ));
+        }
+    }
+
     let status = as_str(row.get("status").unwrap_or(&Value::Null));
     if status == "cancelled" || status == "completed" {
         return Ok(refuse(
@@ -4106,19 +4137,48 @@ mod tests {
 
     // ── appointments#6: cancellation policy (`now` in the fixture is 2026-07-31T10:00Z) ──────
 
-    fn cancel_input(channel: Option<&str>, start: &str, status: &str, settings: Value) -> Value {
+    /// The customer the fixture's appointment belongs to (appointments#140).
+    const APT_CUSTOMER: &str = "cus-ada";
+
+    /// The cancellation as a caller composes it: `channel`, and — when the channel is the
+    /// customer's — WHO is asking (appointments#140), against an appointment that belongs to
+    /// `row_customer`. `asking_customer: None` is a payload that says nothing about whose
+    /// appointment it is, which is what every caller sent before the identity check existed.
+    fn cancel_input_asked_by(
+        channel: Option<&str>,
+        asking_customer: Option<&str>,
+        row_customer: &str,
+        start: &str,
+        status: &str,
+        settings: Value,
+    ) -> Value {
         let mut payload = json!({ "appointment_id": "apt-1", "reason": "sick" });
         if let Some(c) = channel {
             payload["channel"] = json!(c);
         }
+        if let Some(customer_id) = asking_customer {
+            payload["customer_id"] = json!(customer_id);
+        }
         let reads = json!({
             "appointments.appointments.get": [
                 { "id": "apt-1", "appointment_number": "APT-1", "status": status,
+                  "customer_id": row_customer,
                   "start_datetime": start, "end_datetime": start }
             ],
             "appointments.settings.get": settings,
         });
         input(payload, Some(reads))
+    }
+
+    /// The happy shape of the policy tests: the customer channel cancelling HER OWN appointment
+    /// (the staff channel never says whose it is — the agenda screen sends only the id and the
+    /// reason).
+    fn cancel_input(channel: Option<&str>, start: &str, status: &str, settings: Value) -> Value {
+        let asking = match channel {
+            Some("customer") => Some(APT_CUSTOMER),
+            _ => None,
+        };
+        cancel_input_asked_by(channel, asking, APT_CUSTOMER, start, status, settings)
     }
 
     fn policy(allow_customer: i64, notice_hours: i64) -> Value {
@@ -4292,6 +4352,166 @@ mod tests {
         ))
         .unwrap_err();
         assert!(err.starts_with("invalid_payload:"), "{err}");
+    }
+
+    // ── appointments#140: whose appointment is it? ───────────────────────────────────────────
+    //
+    // The customer channel applied the salon's policy to a cancellation it never checked BELONGED
+    // to the person asking: the payload carried an appointment id and nothing else, so anyone who
+    // saw or guessed an id could cancel a stranger's chair through the same door — with
+    // `channel: customer`, so the salon's own rules signed it off as hers. The caller that has a
+    // customer at all (the WhatsApp automation resolves her by phone before it lists anything)
+    // must now say who is asking, and the appointment row decides.
+
+    /// 🔴 The hole: an appointment that belongs to `cus-ada`, a cancellation asked by `cus-eve`.
+    /// Refused with its own code, and NOTHING is written — no row update, no history line.
+    #[test]
+    fn cancel_by_customer_of_someone_elses_appointment_is_refused() {
+        let out = cancel_appointment_pure(cancel_input_asked_by(
+            Some("customer"),
+            Some("cus-eve"),
+            APT_CUSTOMER,
+            "2026-08-10T10:00:00Z",
+            "confirmed",
+            policy(1, 24),
+        ))
+        .unwrap();
+        assert_eq!(
+            out.error.as_ref().map(|e| e.code.as_str()),
+            Some(CUSTOMER_MISMATCH),
+            "a stranger cancelled Ada's appointment: {:?}",
+            out.operations
+        );
+        assert!(
+            out.operations.is_empty(),
+            "nothing may be written for an appointment that is not the caller's: {:?}",
+            out.operations
+        );
+    }
+
+    /// The same door with no customer at all: a `channel: customer` payload that names nobody
+    /// proves nothing, so it cannot cancel either. It is a caller contract bug (the shape of the
+    /// payload), not a business refusal — same treatment as a missing `appointment_id`.
+    #[test]
+    fn cancel_by_customer_without_saying_who_asks_is_a_payload_error() {
+        let err = cancel_appointment_pure(cancel_input_asked_by(
+            Some("customer"),
+            None,
+            APT_CUSTOMER,
+            "2026-08-10T10:00:00Z",
+            "confirmed",
+            policy(1, 24),
+        ))
+        .unwrap_err();
+        assert!(err.starts_with("invalid_payload:"), "{err}");
+        assert!(err.contains("customer_id"), "{err}");
+    }
+
+    /// A walk-in typed at the counter has no customer linked. Nobody can claim it through the
+    /// customer channel: the check fails CLOSED, it does not fall through to «no owner, anyone».
+    #[test]
+    fn cancel_by_customer_of_an_appointment_with_no_customer_is_refused() {
+        let out = cancel_appointment_pure(cancel_input_asked_by(
+            Some("customer"),
+            Some("cus-eve"),
+            "",
+            "2026-08-10T10:00:00Z",
+            "confirmed",
+            policy(1, 24),
+        ))
+        .unwrap();
+        assert_eq!(
+            out.error.as_ref().map(|e| e.code.as_str()),
+            Some(CUSTOMER_MISMATCH)
+        );
+        assert!(out.operations.is_empty());
+    }
+
+    /// Her own appointment still cancels: the check binds the caller, it does not close the
+    /// channel (appointments#6 stays exactly as it was).
+    #[test]
+    fn cancel_by_customer_of_her_own_appointment_is_allowed() {
+        let out = cancel_appointment_pure(cancel_input_asked_by(
+            Some("customer"),
+            Some(APT_CUSTOMER),
+            APT_CUSTOMER,
+            "2026-08-10T10:00:00Z",
+            "confirmed",
+            policy(1, 24),
+        ))
+        .unwrap();
+        assert!(out.error.is_none(), "{:?}", out.error);
+        assert_eq!(
+            op_commands(&out),
+            vec!["appointments._cancel_row", "appointments._history_cancel"]
+        );
+    }
+
+    /// The agenda screen is untouched: staff cancel by id, with no customer in the payload, on an
+    /// appointment of whoever. The receptionist owns the agenda — that is appointments#6.
+    #[test]
+    fn cancel_by_staff_needs_no_customer_id() {
+        let out = cancel_appointment_pure(cancel_input_asked_by(
+            None,
+            None,
+            APT_CUSTOMER,
+            "2026-07-31T13:00:00Z",
+            "confirmed",
+            policy(1, 24),
+        ))
+        .unwrap();
+        assert!(out.error.is_none(), "{:?}", out.error);
+        assert_eq!(
+            op_commands(&out),
+            vec!["appointments._cancel_row", "appointments._history_cancel"]
+        );
+    }
+
+    /// A `customer_id` in a STAFF cancellation is not an identity claim and is not checked: the
+    /// staff channel never had one, and reading it as one would let a mistyped id start refusing
+    /// the receptionist's own cancellations.
+    #[test]
+    fn a_customer_id_sent_on_the_staff_channel_is_ignored() {
+        let out = cancel_appointment_pure(cancel_input_asked_by(
+            None,
+            Some("cus-eve"),
+            APT_CUSTOMER,
+            "2026-07-31T13:00:00Z",
+            "confirmed",
+            policy(1, 24),
+        ))
+        .unwrap();
+        assert!(out.error.is_none(), "{:?}", out.error);
+    }
+
+    /// Identity is decided BEFORE the state and the policy, so a stranger's guess learns the same
+    /// thing whatever the row says: not yours. Otherwise the refusals themselves answer «is there
+    /// an appointment under id X, and is it soon?» to anyone who asks.
+    #[test]
+    fn a_strangers_guess_never_learns_the_state_of_the_appointment() {
+        for (status, start, settings) in [
+            // Already cancelled → would have been `cannot_cancel`.
+            ("cancelled", "2026-08-10T10:00:00Z", policy(1, 24)),
+            // Inside the notice window → would have been `cancellation_notice_required`.
+            ("confirmed", "2026-07-31T13:00:00Z", policy(1, 24)),
+            // Policy off → would have been `customer_cancellation_disabled`.
+            ("confirmed", "2026-08-10T10:00:00Z", policy(0, 24)),
+        ] {
+            let out = cancel_appointment_pure(cancel_input_asked_by(
+                Some("customer"),
+                Some("cus-eve"),
+                APT_CUSTOMER,
+                start,
+                status,
+                settings,
+            ))
+            .unwrap();
+            assert_eq!(
+                out.error.as_ref().map(|e| e.code.as_str()),
+                Some(CUSTOMER_MISMATCH),
+                "status {status} leaked a different refusal"
+            );
+        }
     }
 
     // ── appointments#13 / appointments#10 · the availability boundary ────────────────────────
