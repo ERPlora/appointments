@@ -846,7 +846,7 @@
         "appointments.appointment.rescheduled"
       ],
       "ai": {
-        "description": "Moves an appointment to another date and time. The end of the slot is computed from the start and the duration, and the move is refused when it lands on a blocked period or breaks the hub's minimum notice or maximum advance. The professional is the appointment's own; this command does not change it."
+        "description": "Moves an appointment to another date and time. Staff can move any appointment; a move on behalf of the customer (channel=customer) must carry that customer's `customer_id` and is refused when the appointment belongs to somebody else. The end of the slot is computed from the start and the duration, and the move is refused when it lands on a blocked period or breaks the hub's minimum notice or maximum advance. The professional is the appointment's own; this command does not change it."
       },
       "reads": [
         {

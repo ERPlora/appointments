@@ -188,7 +188,7 @@
     "appointments.cannot_cancel": "Esta cita ya no se puede cancelar en su estado actual.",
     "appointments.cancellation_notice_required": "Esta cita solo se puede cancelar online con la antelación requerida. Contacta con el negocio.",
     "appointments.customer_cancellation_disabled": "La cancelación online no está disponible. Contacta con el negocio.",
-    "appointments.customer_mismatch": "Esta cita es de otro cliente, así que no se puede cancelar en su nombre.",
+    "appointments.customer_mismatch": "Esta cita es de otro cliente, así que no se puede gestionar en su nombre.",
     "appointments.catalog_unavailable": "No se pudo leer el catálogo de clientes, servicios o profesionales; la cita no se ha reservado.",
     "appointments.customer_not_found": "Ese cliente no existe en este negocio.",
     "appointments.invalid_start": "Esa fecha y hora de inicio no es válida, o ya ha pasado.",
