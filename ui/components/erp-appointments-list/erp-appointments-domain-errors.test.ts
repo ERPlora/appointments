@@ -53,7 +53,7 @@ class DomainRefusal extends Error {
 
 const APPOINTMENT = {
   id: 'a1', appointment_number: 'APT-1', customer_id: 'c1', customer_name: 'Ana López',
-  customer_phone: '600111222', service_id: 'sv1', service_name: 'Haircut', service_price: 2000,
+  service_id: 'sv1', service_name: 'Haircut', service_price: 2000,
   staff_id: 's1', staff_name: 'Eva Pro', duration_minutes: 30, status: 'confirmed',
   start_datetime: new Date(2026, 7, 7, 10, 0).toISOString(),
   end_datetime: new Date(2026, 7, 7, 10, 30).toISOString(),

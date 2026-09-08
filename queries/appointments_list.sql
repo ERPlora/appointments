@@ -8,11 +8,21 @@
 -- tipo deja el parámetro `$n` sin tipo resoluble → 42P08 "could not determine data type of parameter".
 -- `COALESCE(CAST(:p AS text), '')` fija el tipo del bind a TEXT en ambos dialectos y normaliza el
 -- NULL a '' (mismo efecto que el `:p = ''` histórico, sin romper la resolución de tipos del driver).
--- Los IDs viajan con la fila (appointments#21): `staff_id` es lo que agrupa la vista por
--- profesional (una fila del timeline por profesional), y `customer_id`/`service_id`/
--- `service_price` son lo que encadena la cita con la venta sin re-teclear. Sin ellos la vista
--- sabía QUIÉN atendía solo por un nombre denormalizado, imposible de agrupar de forma fiable.
-SELECT id, appointment_number, customer_id, customer_name, customer_phone, customer_email,
+-- The ids travel with the row (appointments#21): `staff_id` is what groups the view by
+-- professional (one timeline row per professional), and `customer_id`/`service_id`/
+-- `service_price` are what chain the appointment to the sale without retyping. Without them the
+-- view knew WHO was attending only by a denormalized name, impossible to group reliably.
+--
+-- NO `customer_phone` / `customer_email` here (appointments#146). This query carries an `ai`
+-- block, so it is offered as a TOOL to the assistant and to the `ai` step of any flow granted it
+-- — including the unattended WhatsApp recipe, where a stranger's message decides the arguments.
+-- It asks for a whole DAY, and a read cannot be narrowed to «the person writing» (a `query` grant
+-- pins only the name, ERPlora/hub#1662), so one prompt would have returned the day's contact
+-- sheet. `customer_name` stays: it is identity, not a channel, and the agenda column, the
+-- calendar title, the search keys and the assistant's «who have I got at ten?» all need it.
+-- The counter reads the full row —phone and email included— through `appointments.appointments.get`,
+-- which has no `ai` block. Pinned by `tests/model_readable_columns.contract.test.py`.
+SELECT id, appointment_number, customer_id, customer_name,
        service_id, service_name, service_price, staff_id, staff_name,
        start_datetime, end_datetime,
        -- `converted_sale_id` (sales#89): la venta que nació de esta cita. Lo escribe el listener

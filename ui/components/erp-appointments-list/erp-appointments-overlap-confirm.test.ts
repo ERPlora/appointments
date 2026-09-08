@@ -29,7 +29,6 @@ const BOOKED = {
   appointment_number: 'APT-20260817-0001',
   customer_id: 'c1',
   customer_name: 'Ana López',
-  customer_phone: '600111222',
   service_id: 'sv1',
   service_name: 'Corte',
   service_price: 2000,
