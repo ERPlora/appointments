@@ -18,7 +18,7 @@ rows, differing only in the projection:
   * `…list_for_customer_with_notes` — the COUNTER's door, which the slot filler reads. Same rows,
     plus `notes` / `internal_notes`, and deliberately NO `ai` block.
 
-Whether a model can reach the notes is pinned by `tests/private_notes.contract.test.py`, as a
+Whether a model can reach the notes is pinned by `tests/model_readable_columns.contract.test.py`, as a
 table over the whole manifest. What THIS file pins is that the split did not cost the sheet its
 history:
 
@@ -132,7 +132,7 @@ def check_manifest() -> dict | None:
 def check_counter_manifest() -> dict | None:
     """The counter's door: same contract, carries the notes, and is NOT a tool.
 
-    Its `ai` block is checked by `tests/private_notes.contract.test.py`; what matters here is
+    Its `ai` block is checked by `tests/model_readable_columns.contract.test.py`; what matters here is
     that the door the customer sheet reads actually exists and is gated like its sibling.
     """
     q = MANIFEST.get("queries", {}).get(COUNTER_QUERY)

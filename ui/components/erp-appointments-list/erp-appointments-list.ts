@@ -49,7 +49,6 @@ interface Appointment {
   appointment_number: string;
   customer_id: string | null;
   customer_name: string;
-  customer_phone: string;
   service_id: string | null;
   service_name: string;
   service_price: number;

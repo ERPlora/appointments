@@ -49,7 +49,6 @@ beforeEach(() => {
               appointment_number: 'A-001',
               customer_id: 'c1',
               customer_name: 'Ana',
-              customer_phone: '600',
               service_id: 'sv1',
               service_name: 'Corte',
               staff_id: 's1',

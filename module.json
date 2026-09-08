@@ -142,7 +142,7 @@
       "permission": "appointments.view_appointment",
       "sql": "queries/appointments_list.sql",
       "ai": {
-        "description": "Lists scheduled appointments with their status and associated customer and service data."
+        "description": "Lists scheduled appointments for a day window with their status, service, professional, and the customer's name and id. Contact details (phone, email) are deliberately not included."
       }
     },
     "appointments.appointments.get": {
