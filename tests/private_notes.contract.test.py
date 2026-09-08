@@ -25,7 +25,9 @@ when, what, with whom, in what state — and never the notes; the counter keeps 
 The contract this file pins, as a TABLE over the manifest so a query added tomorrow cannot
 reopen the door:
 
-  1. No query with an `ai` block SELECTs `notes` or `internal_notes`.
+  1. No query with an `ai` block NAMES `notes` or `internal_notes` — in any clause, not just
+     the projection (a WHERE on them is an oracle; a CTE hides the real projection from a
+     first-SELECT scan).
   2. `list_for_customer` is still the delegated door (`ai` + `expose_api`): the fix narrows what
      it returns, it does not withdraw the tool the WhatsApp recipe already builds on.
   3. `list_for_customer_with_notes` is the counter's door: it carries both note columns, keeps
@@ -69,18 +71,23 @@ def sql_without_comments(rel: str) -> str:
     return "\n".join(re.sub(r"--.*$", "", line) for line in raw.splitlines())
 
 
-def selects_column(rel: str, column: str) -> bool:
-    """Does this SQL return `column` to the caller?
+def mentions_column(rel: str, column: str) -> bool:
+    """Does this SQL name `column` ANYWHERE the engine reads it?
 
-    Only the projection counts: `internal_notes` in a WHERE or in an UPDATE target is not a
-    column that reaches whoever called the query. The SELECT list is everything between the
-    first `SELECT` and its `FROM`.
+    Deliberately NOT "does the projection return it". For a query a model can call, the projection
+    is not the only way out: a column in a WHERE is an oracle (`internal_notes LIKE :x` lets the
+    caller probe the notes one guess at a time), and a CTE or a scalar subquery puts the SELECT that
+    reaches the caller AFTER the first `SELECT … FROM`, where a projection-only scan never looks.
+    Measured on this file's first cut (appointments#147 review): an `ai` query with a CTE whose
+    outer SELECT returned `internal_notes`, and one filtering on `internal_notes`, both passed a
+    projection-only scan. So the rule is the simple one that fails closed: a query with an `ai`
+    block does not NAME the salon's notes, in any clause. Two `ai` queries of this module already
+    use CTEs (`availability_check.sql`, `availability_slots.sql`), so the shape is not hypothetical.
     """
-    sql = sql_without_comments(rel)
-    m = re.search(r"\bSELECT\b(.*?)\bFROM\b", sql, re.IGNORECASE | re.DOTALL)
-    if not m:
-        return False
-    return re.search(rf"\b{re.escape(column)}\b", m.group(1), re.IGNORECASE) is not None
+    return (
+        re.search(rf"\b{re.escape(column)}\b", sql_without_comments(rel), re.IGNORECASE)
+        is not None
+    )
 
 
 def query_sql(name: str) -> str | None:
@@ -113,12 +120,13 @@ for name, q in sorted(ai_queries.items()):
         fail(f"{name}.sql: {rel!r} is not in the package")
         continue
     for column in PRIVATE_COLUMNS:
-        if selects_column(rel, column):
+        if mentions_column(rel, column):
             fail(
-                f"{name} has an `ai` block and SELECTs {column!r} ({rel}): the assistant and the "
+                f"{name} has an `ai` block and names {column!r} ({rel}): the assistant and the "
                 f"`ai` steps of a flow are offered this query as a tool, so the salon's private "
                 f"notes would be composed into an answer a model writes for whoever is on the "
-                f"other side. Drop the column from the projection, or drop the `ai` block."
+                f"other side — or probed through a WHERE. Take the column out of the query "
+                f"entirely, or drop the `ai` block."
             )
 
 # ── 2. The delegated door is still there, just narrower ──────────────────────────────────
@@ -163,9 +171,9 @@ else:
         fail(f"{COUNTER}.sql: not declared or not in the package")
     else:
         for column in PRIVATE_COLUMNS:
-            if not selects_column(rel, column):
+            if not mentions_column(rel, column):
                 fail(
-                    f"{COUNTER} does not SELECT {column!r} ({rel}): the counter's door has to "
+                    f"{COUNTER} does not name {column!r} ({rel}): the counter's door has to "
                     f"return what the delegated one gave up, otherwise the customer sheet lost "
                     f"the formula instead of protecting it — and this guard would be scanning "
                     f"for a column no query has, which passes for the wrong reason"
