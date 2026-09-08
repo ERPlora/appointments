@@ -1,7 +1,7 @@
 {
   "id": "appointments",
   "name": "Appointments",
-  "version": "1.1.75",
+  "version": "1.1.76",
   "errors": {
     "appointments.availability_unavailable": {},
     "appointments.blocked": {},
@@ -1286,7 +1286,7 @@
         "appointments.settings.updated"
       ],
       "ai": {
-        "description": "Turns on or off whether an appointment the customer booked herself \u2014 online or through an automation such as WhatsApp \u2014 is created already confirmed. It changes that single setting and leaves every other appointments setting exactly as the business left it."
+        "description": "Turns on or off whether an appointment the customer booked herself — online or through an automation such as WhatsApp — is created already confirmed. It changes that single setting and leaves every other appointments setting exactly as the business left it."
       }
     },
     "appointments.settings.upsert": {
