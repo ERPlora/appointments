@@ -13,6 +13,7 @@
     "appointments.cannot_mark_no_show": {},
     "appointments.cannot_reschedule": {},
     "appointments.cannot_start": {},
+    "appointments.cannot_update_settings": {},
     "appointments.catalog_unavailable": {},
     "appointments.customer_cancellation_disabled": {},
     "appointments.customer_mismatch": {},
@@ -1267,6 +1268,26 @@
           "required": true
         }
       ]
+    },
+    "appointments.settings.set_auto_confirm_online": {
+      "permission": "appointments.manage_settings",
+      "transaction": true,
+      "sql": [
+        "commands/settings_set_auto_confirm_online.sql"
+      ],
+      "schema": "schemas/settings_set_auto_confirm_online.json",
+      "expect_rows": {
+        "op": "min",
+        "n": 1,
+        "error": "appointments.cannot_update_settings",
+        "message": "The booking settings could not be changed: this business has no settings in use right now."
+      },
+      "emit": [
+        "appointments.settings.updated"
+      ],
+      "ai": {
+        "description": "Turns on or off whether an appointment the customer booked herself \u2014 online or through an automation such as WhatsApp \u2014 is created already confirmed. It changes that single setting and leaves every other appointments setting exactly as the business left it."
+      }
     },
     "appointments.settings.upsert": {
       "permission": "appointments.manage_settings",
