@@ -2581,7 +2581,7 @@ var ErpAppointmentsCustomerHistory = class extends i3 {
     this.loading = true;
     this.error = "";
     try {
-      const result = await erplora().query("appointments.appointments.list_for_customer", {
+      const result = await erplora().query("appointments.appointments.list_for_customer_with_notes", {
         customer_id: customerId,
         limit: LAST_N
       });

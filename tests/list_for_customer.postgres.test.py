@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""`appointments.appointments.list_for_customer` — the visit history a customer sheet shows.
+"""The visit history a customer sheet shows — through BOTH of its doors.
 
 Why this file exists (appointments#46, decided in ERPlora/pm#9): «the stylist needs the last
 formula and the allergy note at the chair, in two taps». The formula is a note OF THE VISIT
@@ -9,17 +9,29 @@ must NOT depend on `appointments` (a corner shop has customers and no agenda): t
 public query of THIS module and a `provides_slots` filler on the `customers.detail` host
 (ADR-0043 §3bis).
 
-The contract this file pins:
+Since appointments#143 that history is served by TWO queries with the same params and the same
+rows, differing only in the projection:
 
-  1. MANIFEST. The query exists, is gated by `appointments.view_appointment`, is NOT a paginated
-     `list` (the sheet asks for "the last N", not for pages), validates its params with a closed
-     schema that requires `customer_id`, is exposed to the assistant, AND the module declares the
-     `customers.detail` slot filler with the same permission.
+  * `…list_for_customer` — the DELEGATED door. Carries an `ai` block, so it is assembled as a
+    tool for the assistant and for the `ai` steps of a flow, where a model composes the arguments
+    while reading a stranger's message. It returns the visit and NOT the salon's notes.
+  * `…list_for_customer_with_notes` — the COUNTER's door, which the slot filler reads. Same rows,
+    plus `notes` / `internal_notes`, and deliberately NO `ai` block.
 
-  2. REAL POSTGRES. Against a scratch database built from this module's own migrations, the query
-     returns the appointments of THAT customer in THIS hub, newest first, with notes,
-     internal_notes, service and professional; not deleted; capped by `limit` (default 20 when
-     omitted). Other customers and OTHER HUBS (a live neighbour) are out.
+Whether a model can reach the notes is pinned by `tests/private_notes.contract.test.py`, as a
+table over the whole manifest. What THIS file pins is that the split did not cost the sheet its
+history:
+
+  1. MANIFEST. Both queries exist, are gated by `appointments.view_appointment`, are NOT paginated
+     `list`s (the sheet asks for "the last N", not for pages), validate their params with a closed
+     schema that requires `customer_id`; the delegated one is exposed to the assistant, AND the
+     module declares the `customers.detail` slot filler with the same permission.
+
+  2. REAL POSTGRES. Against a scratch database built from this module's own migrations, BOTH
+     queries return the appointments of THAT customer in THIS hub, newest first, with service and
+     professional; not deleted; capped by `limit` (default 20 when omitted). Other customers and
+     OTHER HUBS (a live neighbour) are out. The counter's door carries the notes; the delegated
+     one does not hand them out under any name.
 
 Usage: tests/list_for_customer.postgres.test.py   (exit 0 = green)
   Uses the `erplora-test-pg-5433` container (override: ERPLORA_TEST_PG_CONTAINER). Creates a
@@ -38,6 +50,8 @@ MODULE_DIR = pathlib.Path(__file__).resolve().parent.parent
 MANIFEST = json.loads((MODULE_DIR / "module.json").read_text())
 
 QUERY = "appointments.appointments.list_for_customer"
+COUNTER_QUERY = "appointments.appointments.list_for_customer_with_notes"
+PRIVATE_COLUMNS = ("notes", "internal_notes")
 PERMISSION = "appointments.view_appointment"
 SLOT = "customers.detail"
 FILLER = "erp-appointments-customer-history"
@@ -112,6 +126,37 @@ def check_manifest() -> dict | None:
             fail(
                 f"provides_slots[{SLOT}].permission is {f.get('permission')!r}, expected {PERMISSION!r}"
             )
+    return q
+
+
+def check_counter_manifest() -> dict | None:
+    """The counter's door: same contract, carries the notes, and is NOT a tool.
+
+    Its `ai` block is checked by `tests/private_notes.contract.test.py`; what matters here is
+    that the door the customer sheet reads actually exists and is gated like its sibling.
+    """
+    q = MANIFEST.get("queries", {}).get(COUNTER_QUERY)
+    if not isinstance(q, dict):
+        fail(f"{COUNTER_QUERY}: not declared in module.json")
+        return None
+    if q.get("permission") != PERMISSION:
+        fail(
+            f"{COUNTER_QUERY}.permission is {q.get('permission')!r}, expected {PERMISSION!r}"
+        )
+    if "list" in q:
+        fail(f"{COUNTER_QUERY}: must be a plain query (last N rows), not a paginated `list`")
+    sql_rel = q.get("sql")
+    if not sql_rel or not (MODULE_DIR / sql_rel).exists():
+        fail(f"{COUNTER_QUERY}.sql: {sql_rel!r} is not in the package")
+    schema_rel = q.get("schema")
+    if not schema_rel or not (MODULE_DIR / schema_rel).exists():
+        fail(f"{COUNTER_QUERY}.schema: {schema_rel!r} is not in the package")
+    else:
+        schema = json.loads((MODULE_DIR / schema_rel).read_text())
+        if "customer_id" not in schema.get("required", []):
+            fail(f"{schema_rel}: `customer_id` must be required")
+        if schema.get("additionalProperties") is not False:
+            fail(f"{schema_rel}: must be a closed contract (additionalProperties: false)")
     return q
 
 
@@ -203,7 +248,7 @@ def insert(
     )
 
 
-def check_against_postgres(q: dict) -> None:
+def check_against_postgres(q: dict, counter: dict | None) -> None:
     if failures:
         return
     if not docker_available():
@@ -264,9 +309,21 @@ def check_against_postgres(q: dict) -> None:
             fail(f"{QUERY}: expected Ada's live visits newest first, got {ids!r}")
         if rows:
             newest = next((r for r in rows if r.get("id") == "v-new"), {})
+            # appointments#143: the salon's notes are not in this answer under ANY name. Asserted
+            # over the whole row, not over two known keys, so aliasing `internal_notes AS note`
+            # back into the projection would be caught too.
+            leaked = [
+                k
+                for k, v in newest.items()
+                if isinstance(v, str) and v in ("Formula 6.3 + 20 vol", "Wants it shorter next time")
+            ]
+            if leaked:
+                fail(
+                    f"{QUERY}: the delegated door handed out the salon's notes in {leaked!r}. "
+                    f"This query is offered to a model as a tool; the notes belong to "
+                    f"{COUNTER_QUERY}."
+                )
             for col, want in (
-                ("notes", "Wants it shorter next time"),
-                ("internal_notes", "Formula 6.3 + 20 vol"),
                 ("service_name", "Colour"),
                 ("staff_name", "Bea"),
                 ("status", "completed"),
@@ -318,21 +375,55 @@ def check_against_postgres(q: dict) -> None:
             fail(
                 f"{QUERY}: the neighbour hub must see only its own visit, got {[r.get('id') for r in rows]!r}"
             )
+
+        # ── The COUNTER's door: same visits, and the formula the stylist opened the sheet for.
+        # This is also the positive control of the assertion above: if the notes stopped being
+        # written or read at all, the delegated door would look clean for the wrong reason.
+        if counter is not None:
+            rows = run_query(
+                counter["sql"], {**base, "customer_id": "cus-ada", "limit": 20}
+            )
+            ids = [r.get("id") for r in rows]
+            if ids != ["v-upcoming", "v-new", "v-mid", "v-old"]:
+                fail(
+                    f"{COUNTER_QUERY}: expected the same live visits newest first, got {ids!r}"
+                )
+            newest = next((r for r in rows if r.get("id") == "v-new"), {})
+            for col, want in (
+                ("notes", "Wants it shorter next time"),
+                ("internal_notes", "Formula 6.3 + 20 vol"),
+            ):
+                if newest.get(col) != want:
+                    fail(
+                        f"{COUNTER_QUERY}: row v-new.{col} is {newest.get(col)!r}, expected "
+                        f"{want!r} — the counter's door is the ONLY one that still carries the "
+                        f"salon's notes, so losing them here means the sheet lost the formula"
+                    )
+            rows = run_query(
+                counter["sql"],
+                {**base, "hub_id": OTHER_HUB, "customer_id": "cus-ada", "limit": 20},
+            )
+            if [r.get("id") for r in rows] != ["v-other-hub"]:
+                fail(
+                    f"{COUNTER_QUERY}: the neighbour hub must see only its own visit, got "
+                    f"{[r.get('id') for r in rows]!r}"
+                )
     finally:
         psql(["-c", f'DROP DATABASE IF EXISTS "{DB}"'])
 
 
 def main() -> int:
     q = check_manifest()
+    counter = check_counter_manifest()
     if q is not None:
-        check_against_postgres(q)
+        check_against_postgres(q, counter)
     for note in notes:
         print(f"note: {note}")
     if failures:
         for f in failures:
             print(f"FAIL: {f}")
         return 1
-    print(f"ok: {QUERY} — manifest wiring + slot filler + real Postgres")
+    print(f"ok: {QUERY} + {COUNTER_QUERY} — manifest wiring + slot filler + real Postgres")
     return 0
 
 

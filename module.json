@@ -147,10 +147,7 @@
     },
     "appointments.appointments.get": {
       "permission": "appointments.view_appointment",
-      "sql": "queries/appointment_get.sql",
-      "ai": {
-        "description": "Retrieves the full detail of an appointment by its identifier."
-      }
+      "sql": "queries/appointment_get.sql"
     },
     "appointments.appointments.history": {
       "permission": "appointments.view_appointment",
@@ -173,8 +170,14 @@
       "sql": "queries/appointments_list_for_customer.sql",
       "schema": "schemas/list_for_customer.json",
       "ai": {
-        "description": "Lists the most recent appointments of one customer (newest first) with service, professional, status and the visit notes — the visit history the customer sheet shows. Public read used by the `customers.detail` slot."
+        "description": "Lists the most recent appointments of one customer (newest first) with service, professional, status and times — what is needed to find a visit and act on it. Does NOT include the salon's private appointment notes: those stay on the counter's own read."
       },
+      "expose_api": true
+    },
+    "appointments.appointments.list_for_customer_with_notes": {
+      "permission": "appointments.view_appointment",
+      "sql": "queries/appointments_list_for_customer_with_notes.sql",
+      "schema": "schemas/list_for_customer_with_notes.json",
       "expose_api": true
     },
     "appointments.availability.own_slots": {
