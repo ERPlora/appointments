@@ -1,11 +1,14 @@
--- The last N appointments of ONE customer — the visit history the customer sheet shows
+-- The last N appointments of ONE customer — WHEN, WHAT, with WHOM and in what state.
 -- (appointments#46, decided in ERPlora/pm#9). Runtime injects :hub_id.
 --
--- «The stylist needs the last formula and the allergy note at the chair, in two taps.» The
--- formula is a note OF THE VISIT (Phorest's split: client notes are stable, appointment notes carry
--- the colour formula and products used, dated), so it lives here in `notes` / `internal_notes` and
--- the sheet of `customers` reads it through THIS public query + a `customers.detail` slot filler
--- (ADR-0043). `customers` never depends on `appointments`.
+-- This is the DELEGATED door: it carries an `ai` block, so the assistant and the `ai` steps of a
+-- flow are offered it as a tool (the shipped `appointment-from-whatsapp*` recipes list it in
+-- `book_appointment`), which means a model composes its arguments while reading a message from
+-- whoever is on the other side. So it returns the visit and NOT the salon's notes
+-- (appointments#143): the colour formula, the products used and whatever the salon writes down
+-- for itself are business-side data in Fresha, Vagaro and Booksy alike, and they never cross to a
+-- client-facing surface. The counter reads the whole row through
+-- `appointments.appointments.list_for_customer_with_notes`, which no model is ever offered.
 --
 -- Newest first (upcoming ones on top, then the past), live rows only. Cancelled / no-show visits
 -- ARE history (they tell the salon something), so status is returned, not filtered.
@@ -15,7 +18,6 @@ SELECT id, appointment_number, customer_id,
        service_id, service_name, service_price,
        staff_id, staff_name,
        start_datetime, end_datetime, duration_minutes, status,
-       notes, internal_notes,
        converted_sale_id, cancelled_at, cancellation_reason
 FROM appointments_appointment
 WHERE hub_id = :hub_id

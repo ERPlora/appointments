@@ -88,11 +88,20 @@ describe('erp-appointments-customer-history (filler of customers.detail)', () =>
     expect(consultas, 'no customer, no query').toEqual([]);
   });
 
-  it('asks THIS module public query for the last visits of that customer, newest first', async () => {
+  it('asks the COUNTER door — the one that still carries the notes — for the last visits', async () => {
     const el = await mount();
     await open(el, 'cus-ada');
-    const q = consultas.find((c) => c.name === 'appointments.appointments.list_for_customer');
-    expect(q, 'reads through appointments.appointments.list_for_customer').toBeTruthy();
+    // appointments#143: the sheet must read `..._with_notes`. Its sibling `list_for_customer` is
+    // the door a model can be offered as a tool and no longer returns the formula, so a sheet
+    // wired to it would silently lose what the stylist opened it for.
+    const q = consultas.find(
+      (c) => c.name === 'appointments.appointments.list_for_customer_with_notes',
+    );
+    expect(q, 'reads through appointments.appointments.list_for_customer_with_notes').toBeTruthy();
+    expect(
+      consultas.find((c) => c.name === 'appointments.appointments.list_for_customer'),
+      'must NOT fall back to the delegated door, which carries no notes',
+    ).toBeFalsy();
     expect(q!.params).toMatchObject({ customer_id: 'cus-ada' });
     expect(Number(q!.params!.limit), 'asks for the last N, not the whole life').toBeGreaterThan(0);
   });

@@ -5,7 +5,7 @@
     "queries": [
       "appointments.appointments.conflicting",
       "appointments.appointments.list",
-      "appointments.appointments.list_for_customer",
+      "appointments.appointments.list_for_customer_with_notes",
       "appointments.recurring.get",
       "appointments.recurring.list",
       "appointments.recurring.occurrences",

@@ -17,10 +17,13 @@ const CATALOG: Record<string, unknown> = { es: esLocale, en: enLocale };
 // `customers` never learns what an appointment is (a corner shop has customers and no agenda): if
 // this module is not installed, the sheet simply has no history block.
 //
-// What it shows: the last N appointments of the customer (this module's PUBLIC query
-// `appointments.appointments.list_for_customer`), newest first, each with service, professional,
-// status and its notes. The internal note is where the salon writes the colour formula (Phorest's
-// split: client notes = stable, appointment notes = per visit), so it is the first thing on the line.
+// What it shows: the last N appointments of the customer (this module's counter-side query
+// `appointments.appointments.list_for_customer_with_notes`), newest first, each with service,
+// professional, status and its notes. The internal note is where the salon writes the colour
+// formula (Phorest's split: client notes = stable, appointment notes = per visit), so it is the
+// first thing on the line — and it is why this sheet reads the door that still carries the notes
+// instead of the delegated `list_for_customer`, which a model can be offered as a tool
+// (appointments#143).
 //
 // Reachable at the chair in two taps: open the customer, read. No buttons, no forms here.
 
@@ -149,7 +152,11 @@ export class ErpAppointmentsCustomerHistory extends LitElement {
     this.loading = true;
     this.error = '';
     try {
-      const result = await erplora().query('appointments.appointments.list_for_customer', {
+      // The counter's door, not the delegated one (appointments#143): this sheet exists to put
+      // the last formula in front of the stylist, and `..._with_notes` is the only read that
+      // still carries `notes` / `internal_notes`. Its sibling `list_for_customer` is the query a
+      // model can be offered as a tool, so it stops at the visit itself.
+      const result = await erplora().query('appointments.appointments.list_for_customer_with_notes', {
         customer_id: customerId,
         limit: LAST_N,
       });
