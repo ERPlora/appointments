@@ -38,8 +38,9 @@ question it exists to answer — «who have I got at ten?» — and buy nothing:
 
 Anchored in BOTH directions on purpose. A scanner that quietly stopped matching would turn every
 control here into a green that proves nothing, so the same scanner has to KEEP finding each
-family's columns on its counter query (control 3), the `ai` table has to be non-empty, and the
-delegated day agenda has to keep returning the name (control 4).
+family's columns on its counter query (control 3), the `ai` table has to be non-empty, the
+delegated day agenda has to keep returning the name (control 4), and — because a name scanner only
+sees what the SQL spells out — no `ai` query may project `*` or pack the row into JSON (control 5).
 
 Usage: tests/model_readable_columns.contract.test.py   (exit 0 = green). No container, no Postgres.
 """
@@ -234,6 +235,49 @@ elif not mentions_column(agenda_sql, "customer_name"):
         f"without it. Contact details were what had to go, not the customer's identity."
     )
 
+# ── 5. A model-callable query NAMES its columns: no `*` projection, no whole-row JSON ─────
+#
+# Controls 1-4 look for column NAMES, so they can only see what the SQL spells out. An `ai` query
+# that projects `*` (or `alias.*`), or that packs the row with `to_jsonb(alias)` /
+# `row_to_json(alias)`, returns every column of the table — phone, email, notes included —
+# without naming a single one, and the table above stays green. Measured on this file's second
+# cut (appointments#148 review): `SELECT * FROM appointments_appointment …` and
+# `SELECT to_jsonb(a) AS row FROM appointments_appointment a` on an `ai` query both passed
+# controls 1-4. `COUNT(*)` and arithmetic (`start_hour * 60`) are not projections and are left
+# alone: the star only counts right after `SELECT [DISTINCT]` or after a comma in a select list.
+
+STAR_PROJECTION = re.compile(r"(?:\bSELECT\s+(?:DISTINCT\s+)?|,\s*)(?:\w+\.)?\*", re.IGNORECASE)
+WHOLE_ROW_JSON = re.compile(r"\b(?:to_jsonb|to_json|row_to_json)\s*\(", re.IGNORECASE)
+
+# The scanner has to see the positive and leave the negatives alone, or every green below is
+# a green for the wrong reason.
+for positive in ("SELECT * FROM t", "SELECT DISTINCT * FROM t", "SELECT a.id,\n  b.* FROM a, b"):
+    if not STAR_PROJECTION.search(positive):
+        fail(f"STAR_PROJECTION does not match {positive!r}: the star scanner is blind")
+for negative in ("SELECT COUNT(*) AS n FROM t", "SELECT start_hour * 60 FROM cfg", "SELECT a, b * 2 FROM t"):
+    if STAR_PROJECTION.search(negative):
+        fail(f"STAR_PROJECTION matches {negative!r}: the star scanner would refuse a closed door")
+if not WHOLE_ROW_JSON.search("SELECT to_jsonb(a) AS row FROM t a"):
+    fail("WHOLE_ROW_JSON does not match `to_jsonb(a)`: the whole-row scanner is blind")
+
+for name, q in sorted(ai_queries.items()):
+    rel = q.get("sql")
+    if not rel or not (MODULE_DIR / rel).exists():
+        continue  # already reported by control 1
+    sql = sql_without_comments(rel)
+    if STAR_PROJECTION.search(sql):
+        fail(
+            f"{name} has an `ai` block and projects `*` ({rel}): every column of the row — the "
+            f"salon's notes and the customer's contact details included — would reach a model "
+            f"without this guard seeing a single name. Spell the columns out."
+        )
+    if WHOLE_ROW_JSON.search(sql):
+        fail(
+            f"{name} has an `ai` block and packs a whole row into JSON ({rel}): `to_jsonb` / "
+            f"`row_to_json` return every column without naming one, and are not portable SQL "
+            f"anyway. Spell the columns out."
+        )
+
 if failures:
     print(f"✗ model-readable columns: {len(failures)} failure(s)\n")
     for f in failures:
@@ -242,5 +286,6 @@ if failures:
 
 print(
     f"✓ model-readable columns: {len(ai_queries)} `ai` queries carry neither the salon's notes "
-    f"nor the customer's contact details; the counter keeps both, and the day agenda keeps the name"
+    f"nor the customer's contact details, and none of them projects `*`; the counter keeps both, "
+    f"and the day agenda keeps the name"
 )
