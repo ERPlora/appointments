@@ -24,7 +24,10 @@ What this file pins, and why each control is here:
   1. MANIFEST. `appointments.appointments.get` is still a plain SQL query (not a `list`) and still
      carries NO `ai` block. It projects `customer_phone`/`customer_email`, so it is the COUNTER
      door of appointments#146: adding readable columns must not turn it into a model tool.
-  2. REAL POSTGRES, against a scratch database built from this module's own migrations:
+  2. THE LANGUAGE CATALOGUE IS ONE. Every `locales/*.json` the module publishes has its own
+     branch in the label's name tables, so a new language cannot land on the screens and leave
+     the confirmed appointment speaking English.
+  3. REAL POSTGRES, against a scratch database built from this module's own migrations:
      · the labels come out in the business language and the business ZONE;
      · the zone wins over whatever offset the stored text happens to carry — a row at rest in UTC
        `Z` still reads 10:30 in Madrid, and a row that crosses midnight is filed on the LOCAL day,
@@ -98,6 +101,35 @@ def check_manifest() -> str | None:
         fail(f"{GET}.sql: {rel!r} is not in the package")
         return None
     return rel
+
+
+# ── Layer 1b: the SQL language table and locales/ are ONE catalogue ──────────────────────
+
+
+def check_language_catalogue(sql_rel: str) -> None:
+    """Every language this module publishes has to be a branch of the label (ADR-0055).
+
+    The day and month names are an ARRAY table inside the SQL, because `to_char(..., 'TMDay')`
+    resolves against `lc_time` — a SESSION setting of the server — and is not portable anyway.
+    That leaves the module carrying TWO catalogues: `locales/*.json` for its screens, and that
+    table for the sentence a CUSTOMER reads. Nothing links them, so dropping a `locales/fr.json`
+    in would paint the agenda in French and keep confirming appointments «Tuesday, 15 September»
+    — half a translation, in the half nobody thinks to look at. This is the link.
+
+    English needs no branch: it is the SOURCE language and it is the `ELSE`.
+    """
+    sql = (MODULE_DIR / sql_rel).read_text()
+    published = sorted(path.stem for path in (MODULE_DIR / "locales").glob("*.json"))
+    if "en" not in published:
+        fail("locales/: the module must publish `en`, the source language (ADR-0055)")
+    for lang in published:
+        if lang == "en" or f"WHEN '{lang}'" in sql:
+            continue
+        fail(
+            f"{sql_rel}: locales/{lang}.json is published but the readable label has no "
+            f"`WHEN '{lang}'` branch — a hub in {lang} would read its agenda translated and "
+            "get its appointments confirmed in English"
+        )
 
 
 # ── Layer 2: real Postgres ───────────────────────────────────────────────────────────────
@@ -346,6 +378,7 @@ def check_against_postgres(sql_rel: str) -> None:
 def main() -> int:
     sql_rel = check_manifest()
     if sql_rel:
+        check_language_catalogue(sql_rel)
         check_against_postgres(sql_rel)
     for note in notes:
         print(f"note: {note}")
