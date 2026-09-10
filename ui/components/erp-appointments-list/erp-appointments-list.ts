@@ -264,6 +264,12 @@ export class ErpAppointmentsList extends LitElement {
 
   @state() error = '';
 
+  /** appointments#155 — el rechazo de un FORMULARIO se pinta dentro del formulario. `error` vive
+   *  en la plantilla de la lista, y el panel del «+» (`slot="create"` de `ok-data-table`) la tapa
+   *  entera: el alta rechazada dejaba el botón volviendo a «Añadir cita» sin una sola señal, y el
+   *  aviso aparecía al CERRAR el panel, cuando la recepcionista ya había pulsado tres veces. */
+  @state() formError = '';
+
   @state() saving = false;
 
   @state() day = todayISO();
@@ -531,6 +537,19 @@ export class ErpAppointmentsList extends LitElement {
       | null;
   }
 
+  /** ¿La hora elegida ya ha pasado? Se pregunta sobre el reloj del SALÓN, que es el que decide
+   *  (appointments#12/#76): el aparato puede estar en otro huso y la respuesta cambiaría con él.
+   *  Es un aviso, no una puerta — quien decide si se guarda es el hub, y desde appointments#155
+   *  dice que sí. Una hora a medio teclear no es un instante: no se avisa de nada. */
+  private get newStartIsPast(): boolean {
+    if (!this.newStart) return false;
+    try {
+      return new Date(wallToBusinessIso(this.newStart)).getTime() < Date.now();
+    } catch {
+      return false;
+    }
+  }
+
   private async createAppointment(ev: Event) {
     ev.preventDefault();
     const customer = this.customers.find((c) => c.id === this.newCustomerId);
@@ -541,6 +560,7 @@ export class ErpAppointmentsList extends LitElement {
     if (!customer || !service || !staff || !this.newStart) return;
     this.saving = true;
     this.error = '';
+    this.formError = '';
     try {
       // El input datetime-local da 'YYYY-MM-DDTHH:MM'; se normaliza a ISO con la PARED local y
       // su offset (appointments#76): el instante es el elegido y el texto guardado dice la hora
@@ -562,6 +582,13 @@ export class ErpAppointmentsList extends LitElement {
         staff_name: staff.full_name,
         start_datetime: startIso,
         duration_minutes: this.effectiveDuration,
+        // appointments#155 — la declaración del MOSTRADOR. Este formulario es el mostrador: hay
+        // una persona con la agenda delante que acaba de leer el aviso de arriba, así que puede
+        // apuntar la walk-in que ya está en la silla. Va SIEMPRE y no mira el reloj del navegador
+        // a propósito: la hora que decide es la del hub, y por un segundo de desfase volvería el
+        // rechazo mudo que originó la issue. Solo excusa el pasado — una hora futura la sigue
+        // juzgando `min_booking_notice`. Las demás puertas (bandeja, lote, serie) nunca la envían.
+        allow_past: true,
       });
       this.newCustomerId = '';
       this.newServiceId = '';
@@ -571,7 +598,10 @@ export class ErpAppointmentsList extends LitElement {
       this.dataTable()?.close(); // el panel del «+» taparía la tabla y la cita recién creada
       await this.refresh();
     } catch (e) {
-      this.error = domainErrorText(e, 'ui.errCreate');
+      // Donde está la persona (dentro del panel) Y en el toast, que es lo que ya hacía el camino
+      // de mover la cita y sobrevive a cerrar el formulario (appointments#155).
+      this.formError = domainErrorText(e, 'ui.errCreate');
+      erplora().notify?.({ type: 'error', message: this.formError });
     } finally {
       this.saving = false;
     }
@@ -747,6 +777,7 @@ export class ErpAppointmentsList extends LitElement {
   }
 
   private clearReschedule(): void {
+    this.formError = '';
     this.rescheduleId = '';
     this.rescheduleStart = '';
     this.rescheduleDuration = '';
@@ -850,8 +881,8 @@ export class ErpAppointmentsList extends LitElement {
       await this.refresh(); // la posición optimista se descarta: manda la fila del servidor
     } catch (e) {
       revert();
-      this.error = domainErrorText(e, 'ui.errReschedule');
-      erplora().notify?.({ type: 'error', message: this.error });
+      this.formError = domainErrorText(e, 'ui.errReschedule');
+      erplora().notify?.({ type: 'error', message: this.formError });
     }
   }
 
@@ -1118,6 +1149,9 @@ export class ErpAppointmentsList extends LitElement {
       <p class="ctx">${t('ui.fieldStaff')}: <strong>${this.rescheduleStaffName || '—'}</strong></p>
       <ion-input data-role="reschedule-start" fill="outline" label-placement="floating" label=${t('ui.fieldStart')} type="datetime-local" .value=${this.rescheduleStart} @ionInput=${(e: any) => (this.rescheduleStart = e.target.value)}></ion-input>
       <ion-input data-role="reschedule-duration" fill="outline" label-placement="floating" label=${t('ui.fieldMinutes')} type="number" min="1" .value=${this.rescheduleDuration} @ionInput=${(e: any) => (this.rescheduleDuration = e.target.value)}></ion-input>
+      ${this.formError
+        ? html`<ok-inline-feedback tone="danger" icon="alert-circle-outline">${this.formError}</ok-inline-feedback>`
+        : nothing}
       <div class="actions">
         <ion-button type="button" size="small" fill="clear" @click=${() => { this.clearReschedule(); this.dataTable()?.close(); }}>${t('ui.cancelReschedule')}</ion-button>
         <ion-button type="submit" size="small" ?disabled=${this.saving || !this.rescheduleStart || !this.rescheduleDuration}>${this.saving ? t('ui.saving') : t('ui.confirmReschedule')}</ion-button>
@@ -1146,6 +1180,16 @@ export class ErpAppointmentsList extends LitElement {
                  reserva va a tener tiene que estar EN PANTALLA; se teclea solo para excepciones
                  (una clienta que necesita más tiempo). -->
             <ion-input data-role="duration" fill="outline" label-placement="floating" label=${t('ui.fieldMinutes')} type="number" min="1" .value=${this.newDuration} @ionInput=${(e: any) => (this.newDuration = e.target.value)}></ion-input>
+            <!-- appointments#155 — el aviso y el rechazo, JUNTO AL BOTÓN. Aquí es donde está
+                 mirando la persona; el `ok-inline-feedback` de la lista lo tapa este mismo panel.
+                 El aviso de pasado es informativo (Acuity: avisa y no lo impide); solo se pinta
+                 con una hora ya pasada, porque un aviso permanente no lo lee nadie. -->
+            ${this.newStartIsPast
+              ? html`<ok-inline-feedback tone="warning" icon="time-outline">${t('ui.pastStartNotice')}</ok-inline-feedback>`
+              : nothing}
+            ${this.formError
+              ? html`<ok-inline-feedback tone="danger" icon="alert-circle-outline">${this.formError}</ok-inline-feedback>`
+              : nothing}
             <ion-button type="submit" size="small" ?disabled=${this.saving || !this.newCustomerId || !this.newServiceId || !this.newStaffId || !this.newStart}>${this.saving ? t('ui.saving') : t('ui.addAppointment')}</ion-button>
           </form>`;
   }

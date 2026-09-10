@@ -86,6 +86,7 @@
     "empty": "Sin citas para este día.",
     "errLoad": "Error cargando citas",
     "errCreate": "No se pudo crear la cita",
+    "pastStartNotice": "Esta cita empieza en el pasado. Se guardará como ya iniciada.",
     "errAction": "No se pudo ejecutar la acción",
     "actionNoShow": "No-show",
     "fieldStaff": "Profesional",

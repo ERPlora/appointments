@@ -85,6 +85,7 @@
     "empty": "No appointments for this day.",
     "errLoad": "Error loading appointments",
     "errCreate": "Could not create the appointment",
+    "pastStartNotice": "This appointment starts in the past. It will be saved as already begun.",
     "errAction": "Could not perform the action",
     "actionNoShow": "No-show",
     "fieldStaff": "Professional",
