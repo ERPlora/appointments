@@ -275,3 +275,117 @@ describe('hora de la cita (se guarda en UTC, se pinta en LOCAL)', () => {
     expect(pintada, 'la agenda pinta la hora en UTC, no en la hora del salón').toBe(esperada);
   });
 });
+
+// ── appointments#155 · el aviso donde está la persona, y la walk-in que YA está en la silla ────
+//
+// La recepcionista apuntaba la clienta que acababa de entrar, pulsaba «Añadir cita», el botón
+// decía «Guardando…» y volvía a «Añadir cita» sin más: el rechazo se pintaba en el
+// `ok-inline-feedback` de la LISTA, que el panel del «+» tapa entero, y el camino de crear ni
+// siquiera lanzaba un toast. Se veía al cerrar el formulario, cuando ya había pulsado tres veces.
+//
+// Y el rechazo en sí era el segundo problema: en un salón se apunta a diario lo que ya ha
+// empezado. Decidido con el mercado (Mindbody/Booker trae el interruptor con ese nombre —«Allow
+// Appointments in the Past»—, Acuity AVISA sin impedirlo, y donde está bloqueado —Calendly,
+// GoHighLevel— es la queja de siempre): el mostrador declara `allow_past` y la cita se guarda.
+describe('el rechazo del alta se ve DENTRO del formulario (appointments#155)', () => {
+  const rechazar = (code: string) => {
+    (globalThis as Record<string, any>).erplora.command = async (
+      name: string,
+      payload: Record<string, unknown>,
+    ) => {
+      comandos.push({ name, payload });
+      throw Object.assign(new Error('refused'), { code });
+    };
+  };
+
+  const rellenarYEnviar = async (el: HTMLElement & { shadowRoot: ShadowRoot }, start = '2026-07-13T10:00') => {
+    const wc = el as unknown as {
+      newCustomerId: string;
+      newServiceId: string;
+      newStaffId: string;
+      newStart: string;
+      updateComplete: Promise<unknown>;
+      createAppointment: (ev: Event) => Promise<void>;
+    };
+    wc.newCustomerId = 'c1';
+    wc.newServiceId = 'sv1';
+    wc.newStaffId = 's1';
+    wc.newStart = start;
+    await wc.createAppointment(new Event('submit'));
+    await wc.updateComplete;
+  };
+
+  it('pinta el mensaje DENTRO del panel de alta, no en la lista de detrás', async () => {
+    const el = await montar();
+    tabla(el)?.open('create');
+    rechazar('appointments.invalid_start');
+    await rellenarYEnviar(el);
+    const dentro = el.shadowRoot.querySelector('form[data-mode="create"] ok-inline-feedback[tone="danger"]');
+    expect(dentro, 'el rechazo del alta se sigue pintando detrás del formulario').toBeTruthy();
+  });
+
+  it('además avisa con un toast, igual que el camino de mover la cita', async () => {
+    const avisos: { type?: string; message?: string }[] = [];
+    (globalThis as Record<string, any>).erplora.notify = (a: { type?: string; message?: string }) =>
+      avisos.push(a);
+    const el = await montar();
+    tabla(el)?.open('create');
+    rechazar('appointments.invalid_start');
+    await rellenarYEnviar(el);
+    expect(avisos.map((a) => a.type), 'el alta rechazada no notifica nada').toContain('error');
+  });
+
+  it('el mensaje se va al reintentar, no se queda pegado del intento anterior', async () => {
+    const el = await montar();
+    tabla(el)?.open('create');
+    rechazar('appointments.invalid_start');
+    await rellenarYEnviar(el);
+    (globalThis as Record<string, any>).erplora.command = async (
+      name: string,
+      payload: Record<string, unknown>,
+    ) => {
+      comandos.push({ name, payload });
+      return {};
+    };
+    await rellenarYEnviar(el);
+    expect(
+      el.shadowRoot.querySelector('form[data-mode="create"] ok-inline-feedback[tone="danger"]'),
+      'el aviso del intento anterior sobrevive al alta que sí funcionó',
+    ).toBeFalsy();
+  });
+
+  it('el mostrador DECLARA `allow_past`: la walk-in que ya está en la silla se guarda', async () => {
+    const el = await montar();
+    tabla(el)?.open('create');
+    await rellenarYEnviar(el);
+    const alta = comandos.find((c) => c.name === 'appointments.appointments.create');
+    expect(
+      alta?.payload.allow_past,
+      'sin la declaración del mostrador el hub rechaza la hora que acaba de pasar',
+    ).toBe(true);
+  });
+
+  it('avisa en el formulario cuando la hora elegida YA ha pasado', async () => {
+    const el = await montar();
+    tabla(el)?.open('create');
+    const wc = el as unknown as { newStart: string; updateComplete: Promise<unknown> };
+    wc.newStart = '2020-01-01T10:00';
+    await wc.updateComplete;
+    expect(
+      el.shadowRoot.querySelector('form[data-mode="create"] ok-inline-feedback[tone="warning"]'),
+      'la cita se guardará en el pasado y el formulario no lo dice',
+    ).toBeTruthy();
+  });
+
+  it('con una hora futura no avisa de nada', async () => {
+    const el = await montar();
+    tabla(el)?.open('create');
+    const wc = el as unknown as { newStart: string; updateComplete: Promise<unknown> };
+    wc.newStart = '2099-01-01T10:00';
+    await wc.updateComplete;
+    expect(
+      el.shadowRoot.querySelector('form[data-mode="create"] ok-inline-feedback[tone="warning"]'),
+      'un aviso permanente es un aviso que nadie lee',
+    ).toBeFalsy();
+  });
+});

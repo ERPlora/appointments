@@ -1706,6 +1706,7 @@ fn prepare_appointment(
     appointment_id: &str,
     history_description: &str,
     series: Option<&SeriesStamp>,
+    allow_past: bool,
 ) -> Result<Vec<Operation>, PrepareError> {
     let customer_name = resolved.customer_name.clone();
     if customer_name.is_empty() {
@@ -1727,7 +1728,17 @@ fn prepare_appointment(
             "That start date and time is not a valid instant.",
         )));
     };
-    if cmp_secs(&start, now) < 0 {
+    // appointments#155: the past is a DECLARATION, not a wall. A salon writes down the walk-in
+    // who is already in the chair, and the start the receptionist picked is a minute old by the
+    // time the form is filled — the most ordinary booking of the counter was the one refused.
+    // Mindbody/Booker ships the switch by name («Allow Appointments in the Past»); Acuity lets an
+    // admin pick a slot outside availability with a WARNING that «doesn't prevent you from
+    // scheduling the appointment». Where it stays blocked (Calendly, GoHighLevel) it is the
+    // standing complaint. So `allow_past` opens it — and ONLY for the caller that sets it, which
+    // is the counter screen, the one place with a person who saw the warning. Every other door
+    // (an approval from the inbox, a batch, a series occurrence) reaches here with `false`.
+    let starts_in_past = cmp_secs(&start, now) < 0;
+    if starts_in_past && !allow_past {
         return Err(PrepareError::Domain(DomainError::new(
             "appointments.invalid_start",
             "An appointment cannot start in the past.",
@@ -1746,8 +1757,15 @@ fn prepare_appointment(
         .unwrap_or(catalogue_dur);
     let end = start.add_minutes(duration);
 
-    if let Some(refusal) = lead_time_refusal(settings, &start, now) {
-        return Err(PrepareError::Domain(refusal));
+    // The booking window is measured from `now` FORWARD, so it has nothing to say about a start
+    // that already happened: `min_booking_notice` defaults to 60 in the schema, and applying it
+    // here would answer `too_soon` to every backdated walk-in — the same shut door under a
+    // different code (appointments#155). A start still to come is judged as always, declared or
+    // not: the declaration excuses the past, never the window.
+    if !starts_in_past {
+        if let Some(refusal) = lead_time_refusal(settings, &start, now) {
+            return Err(PrepareError::Domain(refusal));
+        }
     }
     // appointments#89: opening hours before blocked time, the same order `availability_check.sql`
     // reports its `reason` in — the screen and the door must not rank the same refusals differently.
@@ -2263,6 +2281,11 @@ pub fn create_appointment_pure(input: Value) -> Result<Output, String> {
         &appointment_id,
         "Cita creada",
         None,
+        // appointments#155: the counter screen declares a start it knows has already begun, and
+        // only it can. `_book_from_request` delegates here with the event payload WHOLE and its
+        // schema is `additionalProperties: true` by design, so the key is stripped there before
+        // it can arrive as anything but the counter's own word.
+        as_bool(payload.get("allow_past").unwrap_or(&Value::Null)),
     ) {
         Ok(ops) => ops,
         Err(PrepareError::Domain(refusal)) => return Ok(Output::new().with_error(refusal)),
@@ -2386,6 +2409,15 @@ pub fn book_from_request_pure(input: Value) -> Result<Output, String> {
         .cloned()
         .ok_or_else(|| "context.new_ids vacío (lo inyecta el host)".to_string())?;
 
+    // appointments#155: the counter's declaration does not travel. This listener hands the event
+    // payload to `create` WHOLE, and `book_from_request.json` is `additionalProperties: true` on
+    // purpose (the runtime stamps its own system params on every event payload), so an
+    // `allow_past` riding in an approval would reach `create` as if a person had typed it. A
+    // message that books itself into yesterday is exactly what that wall is there to stop.
+    let mut input = input;
+    if let Some(Value::Object(p)) = input.get_mut("payload") {
+        p.remove("allow_past");
+    }
     let booked = match create_appointment_pure(input) {
         Ok(out) => out,
         // What is left here is NOT a business refusal any more: appointments#70 gave the overlap —
@@ -2530,6 +2562,7 @@ pub fn bulk_create_pure(input: Value) -> Result<Output, String> {
             id,
             "Cita creada (lote)",
             None,
+            false,
         ) {
             Ok(item_ops) => {
                 ops.extend(item_ops);
@@ -3304,6 +3337,7 @@ pub fn materialize_recurring_pure(input: Value) -> Result<Output, String> {
             id,
             &desc,
             Some(&stamp),
+            false,
         ) {
             Ok(item_ops) => {
                 ops.extend(item_ops);
@@ -6468,6 +6502,96 @@ mod tests {
             Some("appointments.invalid_start")
         );
         assert!(out.operations.is_empty());
+    }
+
+    // ── appointments#155 · the counter records what has ALREADY started ────────────────────────
+    //
+    // The receptionist writes down the walk-in who is already in the chair, and by the time she
+    // has picked customer, service and professional the start she chose is a minute old. Refusing
+    // that is refusing the salon's most ordinary booking — and the market says so, unanimously in
+    // the products whose users ARE salons:
+    //
+    //   · Mindbody/Booker ships the toggle by name — «Allow Appointments in the Past».
+    //   · Acuity lets an admin pick a slot outside availability: a WARNING appears, and it «doesn't
+    //     prevent you from scheduling the appointment»; its API says `admin=true` disables the
+    //     availability validations outright.
+    //   · Where it IS blocked (Calendly, GoHighLevel) it is the standing complaint, open for years.
+    //
+    // So the past stops being a wall and becomes a DECLARATION: the counter says «yes, this one
+    // already started» and the booking happens. The declaration is what keeps every OTHER door
+    // shut — an approval arriving from the inbox, a batch, a series occurrence — because those
+    // have nobody in front of them to have seen the warning.
+    #[test]
+    fn create_books_a_start_in_the_past_when_the_counter_declares_it() {
+        let mut payload = item("2026-07-30T10:00:00Z", 30, "s1");
+        payload["allow_past"] = json!(true);
+        let out = create_appointment_pure(input(payload, Some(lead_time(0, 0)))).unwrap();
+        assert_eq!(domain_code(&out), None, "the counter's booking was refused");
+        assert!(!out.operations.is_empty(), "nothing was written");
+    }
+
+    /// And the minimum notice cannot refuse it in its place. `min_booking_notice` defaults to
+    /// **60** in the schema, so a hub that never touched its settings would answer `too_soon` to
+    /// every backdated walk-in and the door would still be shut — with a different code. The
+    /// notice is the window for whoever books from OUTSIDE; a start that already happened is not
+    /// inside any window.
+    #[test]
+    fn a_backdated_counter_booking_is_not_refused_for_being_too_soon() {
+        let mut payload = item("2026-07-31T09:00:00Z", 30, "s1");
+        payload["allow_past"] = json!(true);
+        let out = create_appointment_pure(input(payload, Some(lead_time(60, 0)))).unwrap();
+        assert_eq!(domain_code(&out), None, "the minimum notice took over the wall");
+    }
+
+    /// The other half of the same rule: the declaration only excuses the PAST. A start still to
+    /// come is judged by the notice like any other, or the counter would have a flag that turns
+    /// the booking window off for good.
+    #[test]
+    fn the_minimum_notice_still_applies_to_a_future_start_the_counter_flagged() {
+        let mut payload = item("2026-07-31T10:30:00Z", 30, "s1");
+        payload["allow_past"] = json!(true);
+        let out = create_appointment_pure(input(payload, Some(lead_time(60, 0)))).unwrap();
+        assert_eq!(
+            domain_code(&out).as_deref(),
+            Some("appointments.too_soon"),
+            "the flag opened the booking window instead of just the past"
+        );
+    }
+
+    /// 🔴 The declaration is the COUNTER's, and nobody else can borrow it. `_book_from_request`
+    /// hands its event payload to `create` whole, and its schema is `additionalProperties: true`
+    /// on purpose (the runtime stamps its own system params on every event payload), so an
+    /// `allow_past` riding in that payload would reach `create` unfiltered. A message that books
+    /// itself into yesterday is exactly what the wall is there to stop.
+    #[test]
+    fn an_approved_request_cannot_borrow_the_counters_declaration() {
+        let mut payload = request_payload("2026-07-30T10:00:00Z");
+        payload["allow_past"] = json!(true);
+        let out = book_from_request_pure(input(payload, None)).unwrap();
+        assert!(out.operations.is_empty(), "the inbox booked into the past");
+        let answer = event(&out, "appointments.booking_request.failed").expect("failure answer");
+        assert_eq!(
+            answer.payload.get("reason_code"),
+            Some(&json!("appointments.invalid_start"))
+        );
+    }
+
+    /// Same for a batch: `bulk_create` books N slots for one customer, and its items are the
+    /// caller's. The declaration is not a field the batch can carry.
+    #[test]
+    fn a_batch_item_cannot_borrow_the_counters_declaration() {
+        let mut past = slot("2026-07-30T10:00:00Z");
+        past["allow_past"] = json!(true);
+        let out = bulk_create_pure(batch_input(batch(json!([past])), Some(lead_time(0, 0))))
+            .expect("the batch reports per item, it does not abort");
+        assert!(
+            out.operations.is_empty(),
+            "a batch item booked itself into the past"
+        );
+        assert_eq!(
+            domain_code(&out).as_deref(),
+            Some("appointments.invalid_start")
+        );
     }
 
     #[test]

@@ -80,6 +80,11 @@
       "type": "boolean",
       "default": false
     },
+    "allow_past": {
+      "type": "boolean",
+      "default": false,
+      "description": "appointments#155 — the COUNTER's declaration that this booking has already started: the walk-in who is in the chair, or the slot the receptionist picked a minute ago while she filled the rest of the form. Only the counter screen sets it, and it excuses the PAST alone: a start still to come is judged by `min_booking_notice` like any other. It does not travel: `_book_from_request` strips it from the approval payload before delegating here, so an approved message cannot book itself into yesterday."
+    },
     "service": {
       "description": "Ignored since appointments#11 (kept for older callers): the service row comes from the `services.services.get` read.",
       "type": [

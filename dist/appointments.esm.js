@@ -1969,6 +1969,7 @@ var es_default = {
     empty: "Sin citas para este d\xEDa.",
     errLoad: "Error cargando citas",
     errCreate: "No se pudo crear la cita",
+    pastStartNotice: "Esta cita empieza en el pasado. Se guardar\xE1 como ya iniciada.",
     errAction: "No se pudo ejecutar la acci\xF3n",
     actionNoShow: "No-show",
     fieldStaff: "Profesional",
@@ -2194,6 +2195,7 @@ var en_default = {
     empty: "No appointments for this day.",
     errLoad: "Error loading appointments",
     errCreate: "Could not create the appointment",
+    pastStartNotice: "This appointment starts in the past. It will be saved as already begun.",
     errAction: "Could not perform the action",
     actionNoShow: "No-show",
     fieldStaff: "Professional",
@@ -6015,6 +6017,7 @@ var ErpAppointmentsList = class extends i3 {
     this.items = [];
     this.loading = true;
     this.error = "";
+    this.formError = "";
     this.saving = false;
     this.day = todayISO();
     this.statusFilter = "";
@@ -6275,6 +6278,18 @@ var ErpAppointmentsList = class extends i3 {
   dataTable() {
     return this.renderRoot.querySelector("ok-data-table");
   }
+  /** Has the chosen time already passed? Asked against the SALON clock, which is the one that
+   *  decides (appointments#12/#76): the device may sit in another timezone and the answer would
+   *  change with it. This is a warning, not a gate — the hub decides whether it is stored, and
+   *  since appointments#155 it says yes. A half-typed time is not an instant: warn about nothing. */
+  get newStartIsPast() {
+    if (!this.newStart) return false;
+    try {
+      return new Date(wallToBusinessIso(this.newStart)).getTime() < Date.now();
+    } catch {
+      return false;
+    }
+  }
   async createAppointment(ev) {
     ev.preventDefault();
     const customer = this.customers.find((c5) => c5.id === this.newCustomerId);
@@ -6283,6 +6298,7 @@ var ErpAppointmentsList = class extends i3 {
     if (!customer || !service || !staff || !this.newStart) return;
     this.saving = true;
     this.error = "";
+    this.formError = "";
     try {
       const startIso = wallToBusinessIso(this.newStart);
       if (!await this.overlapAccepted(startIso, this.effectiveDuration, staff.id)) return;
@@ -6298,7 +6314,15 @@ var ErpAppointmentsList = class extends i3 {
         staff_id: staff.id,
         staff_name: staff.full_name,
         start_datetime: startIso,
-        duration_minutes: this.effectiveDuration
+        duration_minutes: this.effectiveDuration,
+        // appointments#155 — the COUNTER's declaration. This form IS the counter: a person with
+        // the agenda in front of them has just read the warning above, so they may book the
+        // walk-in already sitting in the chair. Sent ALWAYS, and deliberately without consulting
+        // the browser clock: the deciding clock is the hub's, and one second of drift would bring
+        // back the silent refusal this issue is about. It only excuses the past — a future time is
+        // still judged by `min_booking_notice`. The other doors (inbox, batch, series) never send
+        // it.
+        allow_past: true
       });
       this.newCustomerId = "";
       this.newServiceId = "";
@@ -6308,7 +6332,8 @@ var ErpAppointmentsList = class extends i3 {
       this.dataTable()?.close();
       await this.refresh();
     } catch (e5) {
-      this.error = domainErrorText(e5, "ui.errCreate");
+      this.formError = domainErrorText(e5, "ui.errCreate");
+      erplora3().notify?.({ type: "error", message: this.formError });
     } finally {
       this.saving = false;
     }
@@ -6461,6 +6486,7 @@ var ErpAppointmentsList = class extends i3 {
     this.dataTable()?.open("create");
   }
   clearReschedule() {
+    this.formError = "";
     this.rescheduleId = "";
     this.rescheduleStart = "";
     this.rescheduleDuration = "";
@@ -6819,6 +6845,12 @@ var ErpAppointmentsList = class extends i3 {
                  reserva va a tener tiene que estar EN PANTALLA; se teclea solo para excepciones
                  (una clienta que necesita más tiempo). -->
             <ion-input data-role="duration" fill="outline" label-placement="floating" label=${t5("ui.fieldMinutes")} type="number" min="1" .value=${this.newDuration} @ionInput=${(e5) => this.newDuration = e5.target.value}></ion-input>
+            <!-- appointments#155 - the warning and the refusal, NEXT TO THE BUTTON. This is
+                 where the person is looking; the list's inline feedback is covered by this very
+                 panel. The past-start warning is informative (Acuity warns without blocking) and
+                 is painted only once the chosen time has passed: a permanent notice goes unread. -->
+            ${this.newStartIsPast ? b2`<ok-inline-feedback tone="warning" icon="time-outline">${t5("ui.pastStartNotice")}</ok-inline-feedback>` : A}
+            ${this.formError ? b2`<ok-inline-feedback tone="danger" icon="alert-circle-outline">${this.formError}</ok-inline-feedback>` : A}
             <ion-button type="submit" size="small" ?disabled=${this.saving || !this.newCustomerId || !this.newServiceId || !this.newStaffId || !this.newStart}>${this.saving ? t5("ui.saving") : t5("ui.addAppointment")}</ion-button>
           </form>`;
   }
@@ -6832,6 +6864,9 @@ __decorateClass([
 __decorateClass([
   r5()
 ], ErpAppointmentsList.prototype, "error", 2);
+__decorateClass([
+  r5()
+], ErpAppointmentsList.prototype, "formError", 2);
 __decorateClass([
   r5()
 ], ErpAppointmentsList.prototype, "saving", 2);

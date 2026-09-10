@@ -83,6 +83,7 @@ type Wc = HTMLElement & {
   columns: { key: string; format?: (r: Record<string, unknown>) => string }[];
   schedulerEvents: { start: string; end: string }[];
   error: string;
+  formError: string;
   refresh: () => Promise<void>;
   createAppointment: (e: Event) => Promise<void>;
 };
@@ -162,9 +163,17 @@ describe('the agenda WRITES the salon clock', () => {
     await el.createAppointment(new Event('submit'));
 
     expect(commands.find((c) => c.name === 'appointments.appointments.create')).toBeFalsy();
-    expect(el.error, 'the refusal must be readable, not a raw stack').toBe(
+    // Since appointments#155 a CREATE refusal is painted inside the create form, not in the list
+    // banner behind it: the panel covers the list, so `error` was a message nobody read. The
+    // sentence is the same one; what moved is where it is shown.
+    expect(el.formError, 'the refusal must be readable, not a raw stack').toBe(
       'Esa hora no existe en el reloj del negocio: el cambio de hora la salta. Elige otra.',
     );
+    await el.updateComplete;
+    expect(
+      el.shadowRoot.querySelector('form[data-mode="create"] ok-inline-feedback[tone="danger"]'),
+      'the refusal must be painted where the receptionist is looking: inside the form',
+    ).toBeTruthy();
   });
 });
 

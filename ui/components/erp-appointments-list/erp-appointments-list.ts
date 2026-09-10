@@ -264,6 +264,13 @@ export class ErpAppointmentsList extends LitElement {
 
   @state() error = '';
 
+  /** appointments#155 — a FORM refusal is painted inside the form. `error` lives in the list
+   *  template, and the «+» panel (`slot="create"` of `ok-data-table`) covers it whole: a rejected
+   *  create left the button going back to «Add appointment» without a single signal, and the
+   *  notice only showed on CLOSING the panel, by which time the receptionist had pressed three
+   *  times. */
+  @state() formError = '';
+
   @state() saving = false;
 
   @state() day = todayISO();
@@ -531,6 +538,19 @@ export class ErpAppointmentsList extends LitElement {
       | null;
   }
 
+  /** Has the chosen time already passed? Asked against the SALON clock, which is the one that
+   *  decides (appointments#12/#76): the device may sit in another timezone and the answer would
+   *  change with it. This is a warning, not a gate — the hub decides whether it is stored, and
+   *  since appointments#155 it says yes. A half-typed time is not an instant: warn about nothing. */
+  private get newStartIsPast(): boolean {
+    if (!this.newStart) return false;
+    try {
+      return new Date(wallToBusinessIso(this.newStart)).getTime() < Date.now();
+    } catch {
+      return false;
+    }
+  }
+
   private async createAppointment(ev: Event) {
     ev.preventDefault();
     const customer = this.customers.find((c) => c.id === this.newCustomerId);
@@ -541,6 +561,7 @@ export class ErpAppointmentsList extends LitElement {
     if (!customer || !service || !staff || !this.newStart) return;
     this.saving = true;
     this.error = '';
+    this.formError = '';
     try {
       // El input datetime-local da 'YYYY-MM-DDTHH:MM'; se normaliza a ISO con la PARED local y
       // su offset (appointments#76): el instante es el elegido y el texto guardado dice la hora
@@ -562,6 +583,14 @@ export class ErpAppointmentsList extends LitElement {
         staff_name: staff.full_name,
         start_datetime: startIso,
         duration_minutes: this.effectiveDuration,
+        // appointments#155 — the COUNTER's declaration. This form IS the counter: a person with
+        // the agenda in front of them has just read the warning above, so they may book the
+        // walk-in already sitting in the chair. Sent ALWAYS, and deliberately without consulting
+        // the browser clock: the deciding clock is the hub's, and one second of drift would bring
+        // back the silent refusal this issue is about. It only excuses the past — a future time is
+        // still judged by `min_booking_notice`. The other doors (inbox, batch, series) never send
+        // it.
+        allow_past: true,
       });
       this.newCustomerId = '';
       this.newServiceId = '';
@@ -571,7 +600,10 @@ export class ErpAppointmentsList extends LitElement {
       this.dataTable()?.close(); // el panel del «+» taparía la tabla y la cita recién creada
       await this.refresh();
     } catch (e) {
-      this.error = domainErrorText(e, 'ui.errCreate');
+      // Where the person is (inside the panel) AND in the toast, which is what the reschedule
+      // path already did and what survives closing the form (appointments#155).
+      this.formError = domainErrorText(e, 'ui.errCreate');
+      erplora().notify?.({ type: 'error', message: this.formError });
     } finally {
       this.saving = false;
     }
@@ -747,6 +779,7 @@ export class ErpAppointmentsList extends LitElement {
   }
 
   private clearReschedule(): void {
+    this.formError = '';
     this.rescheduleId = '';
     this.rescheduleStart = '';
     this.rescheduleDuration = '';
@@ -1146,6 +1179,16 @@ export class ErpAppointmentsList extends LitElement {
                  reserva va a tener tiene que estar EN PANTALLA; se teclea solo para excepciones
                  (una clienta que necesita más tiempo). -->
             <ion-input data-role="duration" fill="outline" label-placement="floating" label=${t('ui.fieldMinutes')} type="number" min="1" .value=${this.newDuration} @ionInput=${(e: any) => (this.newDuration = e.target.value)}></ion-input>
+            <!-- appointments#155 - the warning and the refusal, NEXT TO THE BUTTON. This is
+                 where the person is looking; the list's inline feedback is covered by this very
+                 panel. The past-start warning is informative (Acuity warns without blocking) and
+                 is painted only once the chosen time has passed: a permanent notice goes unread. -->
+            ${this.newStartIsPast
+              ? html`<ok-inline-feedback tone="warning" icon="time-outline">${t('ui.pastStartNotice')}</ok-inline-feedback>`
+              : nothing}
+            ${this.formError
+              ? html`<ok-inline-feedback tone="danger" icon="alert-circle-outline">${this.formError}</ok-inline-feedback>`
+              : nothing}
             <ion-button type="submit" size="small" ?disabled=${this.saving || !this.newCustomerId || !this.newServiceId || !this.newStaffId || !this.newStart}>${this.saving ? t('ui.saving') : t('ui.addAppointment')}</ion-button>
           </form>`;
   }
