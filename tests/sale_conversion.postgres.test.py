@@ -85,6 +85,8 @@ SALE = "sale-7742"
 
 failures: list[str] = []
 notes: list[str] = []
+postgres_ran = False
+list_sql: str | None = None
 
 
 def fail(msg: str) -> None:
@@ -156,6 +158,31 @@ def check_binds() -> None:
             "nothing is raised: the booking would stay unpaid in silence. If `sales` renamed a "
             "field, this chain is broken on BOTH sides — fix the emitter too"
         )
+
+
+def check_the_agenda_read_is_declared() -> None:
+    """Resolves the agenda read THROUGH the manifest — never by filename.
+
+    The counter asks the hub for `appointments.appointments.list`; which file answers it is the
+    manifest's business. Opening `queries/appointments_list.sql` by hand would leave this battery
+    green with the query repointed at another file, or gone: the counter would get no column and
+    the button would stay lit, which is sales#89 one level up.
+    """
+    global list_sql
+    entry = (MANIFEST.get("queries") or {}).get(LIST_QUERY)
+    if not entry:
+        fail(
+            f"queries[{LIST_QUERY}] does not exist: the agenda has no read to ask for, so nothing "
+            "can hand the counter back the sale a booking was charged with"
+        )
+        return
+    sql = entry.get("sql") if isinstance(entry, dict) else entry
+    if isinstance(sql, list):
+        sql = sql[0] if sql else None
+    if not sql or not (MODULE_DIR / sql).exists():
+        fail(f"{LIST_QUERY}.sql points at {sql!r}, which is not a file of this module")
+        return
+    list_sql = sql
 
 
 def check_sales_is_not_a_dependency() -> None:
@@ -304,8 +331,10 @@ def check_the_agenda_sees_it_charged() -> None:
             "would close the ones charged in advance, before the customer even arrived"
         )
 
+    if list_sql is None:
+        return  # the manifest does not declare the read; already reported by layer 1
     rows = run_query(
-        "queries/appointments_list.sql",
+        list_sql,
         {
             "hub_id": HUB,
             "day_start": DAY_START,
@@ -378,10 +407,19 @@ def check_deleted_and_unknown_are_no_ops() -> None:
 
 
 def check_against_postgres() -> None:
+    global postgres_ran
     if not docker_available():
-        notes.append(
-            f"SKIPPED Postgres layer: container {CONTAINER!r} is not running "
-            "(the wiring layer above still ran)"
+        # `SKIPPED:` VERBATIM AND AT COLUMN 0. That exact shape is what the gate reads
+        # (`run-batteries.mjs::looksSkipped`, module-toolkit#57) to tell «the battery skipped
+        # itself» from a note inside a section, and it is the only thing standing between an
+        # unreachable container and a green that verified nothing. `erplora test` hands the
+        # container name over WITHOUT checking it answers, so a Postgres that died after
+        # starting reaches here — and printed as an indented note this file would exit 0
+        # claiming the whole chain is guarded while tenancy, soft-delete and the agenda read
+        # never ran.
+        print(
+            f"SKIPPED: no Postgres in container {CONTAINER} (nothing of the Postgres layer was "
+            "verified; the wiring layer above did run)"
         )
         return
 
@@ -397,6 +435,7 @@ def check_against_postgres() -> None:
         check_the_agenda_sees_it_charged()
         check_other_hub_is_never_touched()
         check_deleted_and_unknown_are_no_ops()
+        postgres_ran = True
     finally:
         psql(["-c", f'DROP DATABASE IF EXISTS "{DB}"'])
 
@@ -408,6 +447,7 @@ def main() -> int:
     check_listener()
     check_command()
     check_binds()
+    check_the_agenda_read_is_declared()
     check_sales_is_not_a_dependency()
     check_against_postgres()
 
@@ -421,6 +461,13 @@ def main() -> int:
         for f in failures:
             print(f"  - {f}")
         return 1
+    if not postgres_ran:
+        print(
+            f"WIRING ONLY — appointments v{MANIFEST.get('version')}: the event reaches a command "
+            "of this module and its binds match the payload. Nothing was proved about the write "
+            "or the agenda read (see SKIPPED above)"
+        )
+        return 0
     print(
         f"PASS — appointments v{MANIFEST.get('version')}: a sale born from a booking reaches this "
         "module, marks that booking and only that booking, and the agenda reads it back as charged"
