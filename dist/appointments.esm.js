@@ -1290,6 +1290,7 @@ var rawClose = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path f
 var rawCloseOutline = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="M368 368L144 144m224 0L144 368"/></svg>';
 var rawCloudUploadOutline = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="M320 367.79h76c55 0 100-29.21 100-83.6s-53-81.47-96-83.6c-8.89-85.06-71-136.8-144-136.8c-69 0-113.44 45.79-128 91.2c-60 5.7-112 43.88-112 106.4s54 106.4 120 106.4h56"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="m320 255.79l-64-64l-64 64m64 192.42V207.79"/></svg>';
 var rawCreateOutline = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="M384 224v184a40 40 0 0 1-40 40H104a40 40 0 0 1-40-40V168a40 40 0 0 1 40-40h167.48"/><path fill="currentColor" d="M459.94 53.25a16.06 16.06 0 0 0-23.22-.56L424.35 65a8 8 0 0 0 0 11.31l11.34 11.32a8 8 0 0 0 11.34 0l12.06-12c6.1-6.09 6.67-16.01.85-22.38M399.34 90L218.82 270.2a9 9 0 0 0-2.31 3.93L208.16 299a3.91 3.91 0 0 0 4.86 4.86l24.85-8.35a9 9 0 0 0 3.93-2.31L422 112.66a9 9 0 0 0 0-12.66l-9.95-10a9 9 0 0 0-12.71 0"/></svg>';
+var rawContractOutline = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="M304 416V304h112m-101.8 10.23L432 432M208 96v112H96m101.8-10.23L80 80m336 128H304V96m10.23 101.8L432 80M96 304h112v112m-10.23-101.8L80 432"/></svg>';
 var rawDocumentAttachOutline = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="M208 64h66.75a32 32 0 0 1 22.62 9.37l141.26 141.26a32 32 0 0 1 9.37 22.62V432a48 48 0 0 1-48 48H192a48 48 0 0 1-48-48V304"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="M288 72v120a32 32 0 0 0 32 32h120"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-miterlimit="10" stroke-width="32" d="M160 80v152a23.69 23.69 0 0 1-24 24c-12 0-24-9.1-24-24V88c0-30.59 16.57-56 48-56s48 24.8 48 55.38v138.75c0 43-27.82 77.87-72 77.87s-72-34.86-72-77.87V144"/></svg>';
 var rawDocumentOutline = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-linejoin="round" stroke-width="32" d="M416 221.25V416a48 48 0 0 1-48 48H144a48 48 0 0 1-48-48V96a48 48 0 0 1 48-48h98.75a32 32 0 0 1 22.62 9.37l141.26 141.26a32 32 0 0 1 9.37 22.62Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="M256 56v120a32 32 0 0 0 32 32h120"/></svg>';
 var rawDocumentTextOutline = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-linejoin="round" stroke-width="32" d="M416 221.25V416a48 48 0 0 1-48 48H144a48 48 0 0 1-48-48V96a48 48 0 0 1 48-48h98.75a32 32 0 0 1 22.62 9.37l141.26 141.26a32 32 0 0 1 9.37 22.62Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="M256 56v120a32 32 0 0 0 32 32h120m-232 80h160m-160 80h160"/></svg>';
@@ -1339,6 +1340,7 @@ var iconCloseOutline = bake(rawCloseOutline);
 var iconCloudUploadOutline = bake(rawCloudUploadOutline);
 var iconCreateOutline = bake(rawCreateOutline);
 var iconDocumentAttachOutline = bake(rawDocumentAttachOutline);
+var iconContractOutline = bake(rawContractOutline);
 var iconDocumentOutline = bake(rawDocumentOutline);
 var iconDocumentTextOutline = bake(rawDocumentTextOutline);
 var iconDownloadOutline = bake(rawDownloadOutline);
@@ -1385,6 +1387,7 @@ var BY_NAME = {
   "cloud-upload-outline": iconCloudUploadOutline,
   "create-outline": iconCreateOutline,
   "document-attach-outline": iconDocumentAttachOutline,
+  "contract-outline": iconContractOutline,
   "document-outline": iconDocumentOutline,
   "document-text-outline": iconDocumentTextOutline,
   "download-outline": iconDownloadOutline,
@@ -2623,7 +2626,7 @@ var ErpAppointmentsCustomerHistory = class extends i3 {
     const t5 = (k2) => erplora().t(CATALOG, k2);
     return b2`
       <h3>${t5("ui.historyTitle")}</h3>
-      ${this.error ? b2`<ok-inline-feedback tone="danger" icon="alert-circle-outline">${this.error}</ok-inline-feedback>` : A}
+      ${this.error ? b2`<ok-inline-feedback data-testid="appointments-customer-history-error" tone="danger" icon="alert-circle-outline">${this.error}</ok-inline-feedback>` : A}
       ${this.loading && !this.visits.length ? b2`<p class="loading">${t5("ui.loading")}</p>` : A}
       ${!this.loading && !this.error && !this.visits.length ? b2`<p class="empty">${t5("ui.historyEmpty")}</p>` : A}
       ${this.visits.length ? b2`<ok-timeline .items=${this.items()}></ok-timeline>` : A}
@@ -2840,6 +2843,16 @@ var __decorateClass4 = (decorators, target, key, kind) => {
   if (result) __defProp4(target, key, result);
   return result;
 };
+function decideRowActionsFit(input) {
+  const { containerWidth, contentWidth, collapsed, decidedAtWidth } = input;
+  if (!(containerWidth > 0)) return { collapsed, decidedAtWidth };
+  if (containerWidth !== decidedAtWidth) {
+    if (collapsed) return { collapsed: false, decidedAtWidth: containerWidth };
+    return { collapsed: contentWidth > containerWidth, decidedAtWidth: containerWidth };
+  }
+  if (!collapsed && contentWidth > containerWidth) return { collapsed: true, decidedAtWidth };
+  return { collapsed, decidedAtWidth };
+}
 var DEFAULT_LABELS2 = {
   search: "Search\u2026",
   empty: "No results",
@@ -2959,14 +2972,22 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
     this.viewChosenByUser = false;
     this.isMobile = false;
     this.xOverflow = false;
+    this.actionsTrackPx = 0;
+    this.rowActionsCollapsed = false;
+    this.fitDecidedAtWidth = -1;
+    this.rowMenuOpen = false;
     this.hiddenKeys = /* @__PURE__ */ new Set();
     this.internalSelection = /* @__PURE__ */ new Set();
     this.menuOpen = false;
     this.onLocaleChanged = () => this.requestUpdate();
-    this.onWindowResize = () => this.measureXOverflow();
+    this.onWindowResize = () => {
+      this.measureXOverflow();
+      this.measureRowActionsFit();
+    };
     this.onSearch = (ev) => {
       const value = ev.target.value ?? "";
       if (this.serverSide) {
+        this.q = value;
         this.emit("searchChange", value);
       } else {
         this.q = value;
@@ -3111,8 +3132,13 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
     .primary-btn { --background: var(--primary); --color: var(--primary-contrast); }
     /* #76 — El alta en MÓVIL: botón primario CON etiqueta y área táctil de 44px, en vez del «+»
        icónico de 36px al final de la barra. Fresha/Square/Shopify POS ponen la acción primaria
-       de la lista como botón visible con texto (o FAB), nunca como icono anónimo. */
-    .add-btn { min-height: 44px; --border-radius: 10px; --padding-start: 0.9rem; --padding-end: 1rem; margin: 0; font-weight: 600; }
+       de la lista como botón visible con texto (o FAB), nunca como icono anónimo.
+       #113 — Y en ESCRITORIO igual: Odoo («New»), Business Central, Shopify («Add product»),
+       WooCommerce, Lightspeed y Fresha rotulan y rellenan la acción principal de un listado; NN/g
+       reserva el botón sin rótulo para lo universal (buscar, cerrar). Aquí solo cambia la ALTURA:
+       36px para alinear con .toolbtn y el buscador, y los 44px táctiles vuelven abajo con el
+       resto de objetivos de puntero grueso. */
+    .add-btn { min-height: 36px; --border-radius: 10px; --padding-start: 0.9rem; --padding-end: 1rem; margin: 0; font-weight: 600; }
     .add-btn ion-icon { margin-inline-end: 0.35rem; }
 
     /* Selects de la toolbar: fondo + borde visibles (como el buscador y la pastilla de fechas) para
@@ -3152,7 +3178,14 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
     .scroll::-webkit-scrollbar-track { background: transparent; }
     .scroll::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--color) 25%, transparent); border-radius: 6px; }
     .scroll::-webkit-scrollbar-thumb:hover { background: color-mix(in srgb, var(--color) 40%, transparent); }
-    .grid { min-width: max-content; font-size: 14px; }
+    /* #120 - The grid floor is the SUM OF THE COLUMN MINIMUMS (min-content), not its maximum
+       size. With max-content the grid sizes itself to what the widest column asks for and, in
+       doing so, every 1fr track ends up as wide AS THAT ONE: at 834px each column measured
+       148.86px for content asking between 10px (a "4") and 100px ("Familia Perez"). The table
+       always overflowed and the pinned actions column sat on top of Pax and Estado. With
+       min-content the grid fits its container as long as the minimums fit, and 1fr shares out the
+       leftover space; horizontal scroll shows up only when not even the minimums fit. */
+    .grid { min-width: min-content; font-size: 14px; }
     .grow { display: grid; align-items: center; gap: 0.5rem; padding: 0 1rem; }
     .ghead { position: sticky; top: 0; z-index: 2; border-bottom: 1px solid var(--border-color);
       background: var(--header-background); padding-top: 0.55rem; padding-bottom: 0.55rem; }
@@ -3160,17 +3193,24 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
     .gcell > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .gcell.right { justify-content: flex-end; text-align: right; }
     .gcell.center { justify-content: center; text-align: center; }
-    /* #67 — COLUMNA DE ACCIONES FIJADA. Con seis columnas o más la rejilla desborda por diseño
-       (min-width: max-content) y el botón que abre el registro se iba fuera de la pantalla: a
-       1440px quedaba a 335px del borde, sin nada que lo delatara. Se queda pegada al borde
-       derecho, como en Zendesk/Freshdesk/Shopify. Con background:inherit la hereda de la fila (que
-       por eso es opaca), así conserva hover y selección sin que se lea nada por debajo. */
+    /* #67 - PINNED ACTIONS COLUMN. When the grid overflows (since #120 only when not even the
+       column minimums fit; before that it happened with six columns and room to spare) the button
+       that opens the record went off screen: at 1440px it sat 335px past the edge with nothing to
+       give it away. It stays stuck to the right edge, like Zendesk/Freshdesk/Shopify. With
+       background:inherit it takes the row background (which is opaque for this very reason), so it
+       keeps hover and selection without anything showing through. */
     .gcell.actions-col { position: sticky; right: 0; z-index: 1; background: inherit;
       margin-right: -1rem; padding-right: 1rem; }
     /* La sombra solo aparece cuando de verdad hay algo escondido a la izquierda (clase x-overflow);
        si la tabla cabe entera no se pinta nada. */
     .scroll.x-overflow .gcell.actions-col { box-shadow: -10px 0 10px -10px color-mix(in srgb, var(--color) 45%, transparent); }
-    .ghead .gcell.actions-col { z-index: 3; }
+    /* #120 - The pinned header has to be OPAQUE. background:inherit took --header-background,
+       which is a 4% alpha TINT (measured rgba(24,24,27,0.04)): when the grid overflows the
+       "Acciones" header went see-through and "PAX" and "ESTADO" could be read through it - the
+       "PAXCIONESTAD" of the issue. It now sits on the opaque table background with the tint laid
+       back on top, the same way .grow-data:hover does. */
+    .ghead .gcell.actions-col { z-index: 3;
+      background: linear-gradient(var(--header-background), var(--header-background)), var(--background); }
     .gh { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--color-muted); }
     .gh.sortable { cursor: pointer; user-select: none; white-space: nowrap; transition: background-color var(--ok-transition, 150ms ease), color var(--ok-transition, 150ms ease), box-shadow var(--ok-transition, 150ms ease), transform 120ms ease; }
     @media (hover: hover) {
@@ -3234,17 +3274,39 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
     .rrow .rv { font-weight: 500; text-align: right; color: var(--color); }
     /* Barra de acciones (Ionic no trae "card actions"): pie alineado a la derecha, fondo transparente. */
     .ractions { display: flex; justify-content: flex-end; gap: 0.25rem; padding: 0 0.5rem 0.5rem; }
+    /* ERPlora/appointments#154 - a card's action row must NEVER clip.
+       The assumption was that they always fit across the card. With the eight actions an
+       appointment carries they do not: on a 411dp phone the card leaves 363px and the buttons ask
+       for 380px (8 x 44px of tap floor + 7 gaps of 4px). Without wrapping, justify-content:
+       flex-end takes that difference off the START side, so the FIRST button - Cobrar - hung off
+       the left edge of the card, clipped, with no scrollbar and nothing to say it was there.
+       The wrap is scoped to the card on purpose: the LIST view's row is measured by its
+       scrollWidth to pin the column track (#121), and a row that wraps changes width with the
+       track it is measured against, which is the loop that measure avoids. */
+    .ractions .actions { flex-wrap: wrap; }
 
     /* ── Estado vacío ────────────────────────────────────────────────────────────────────── */
     .empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.75rem; padding: 3.5rem 1rem; text-align: center; color: var(--color-muted); }
     .empty .empty-ic { display: grid; place-items: center; width: 3.25rem; height: 3.25rem; border-radius: 999px; background: var(--header-background); font-size: 26px; }
 
     .actions { display: flex; gap: 0.25rem; justify-content: flex-end; }
+    /* #121 - The buttons NEVER shrink. Their track is pinned to the width measured here
+       (the scrollWidth of .actions); if they could shrink, a narrow track would shrink the
+       measurement, which would shrink the track again. flex: 0 0 auto is what makes the
+       measurement a property of the CONTENT instead of a property of the current layout. */
+    .actions ion-button { flex: 0 0 auto; }
+    /* #122 - Header of the actions column while the buttons are folded into the menu. "ACCIONES"
+       measures 62.83px and the folded track is 44px: painted, it spills out of its own cell and
+       over "Estado" - the very thing the issue is about. The column keeps its name for assistive
+       tech and paints nothing. */
+    .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden;
+      clip-path: inset(50%); white-space: nowrap; border: 0; }
     /* Las acciones de fila son icon-only y de tamaño small en escritorio. En tablet/móvil se
      * amplía el host completo (no solo el icono) para que el área táctil alcance 44×44 px. */
     @media (pointer: coarse), (max-width: 834px) {
       .actions ion-button { min-width: 44px; min-height: 44px; margin: 0; }
       .toolbtn { width: 44px; height: 44px; }
+      .add-btn { min-height: 44px; }
       .pager .nav ion-button { min-width: 44px; min-height: 44px; margin: 0; }
     }
     /* Spinner de acción en curso (loading): contenido dentro del ion-button small (Ionic lo fija
@@ -3306,12 +3368,45 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
     const overflow = !!scroll && scroll.scrollWidth > scroll.clientWidth;
     if (this.xOverflow !== overflow) this.xOverflow = overflow;
   }
+  /** #121 — Ancho natural de los botones de acción de una fila, para clavar su pista en px.
+   *
+   * Se lee del `scrollWidth` de `.actions`, que es el ancho de SU CONTENIDO: como los botones
+   * llevan `flex: 0 0 auto` nunca se encogen, así que la medida no depende de lo ancha que sea la
+   * pista en ese momento. Eso es lo que la hace estable: clavar la pista al ancho natural no
+   * cambia el ancho natural, así que la siguiente medida sale igual y no hay bucle. */
+  measureActionsTrack() {
+    if (!this.actions.length) {
+      if (this.actionsTrackPx !== 0) this.actionsTrackPx = 0;
+      return;
+    }
+    const el = this.renderRoot?.querySelector?.(".grow-data .gcell.actions-col .actions");
+    const width = el ? Math.ceil(el.scrollWidth) : 0;
+    if (width > 0 && width !== this.actionsTrackPx) this.actionsTrackPx = width;
+  }
+  /** #122 — Decide si los botones de acción de la fila caben o se pliegan en el menú «⋮».
+   *  El criterio y la garantía de que no oscila viven en `decideRowActionsFit`. */
+  measureRowActionsFit() {
+    const scroll = this.renderRoot?.querySelector?.(".scroll");
+    if (!scroll) return;
+    const next = decideRowActionsFit({
+      containerWidth: scroll.clientWidth,
+      contentWidth: scroll.scrollWidth,
+      collapsed: this.rowActionsCollapsed,
+      decidedAtWidth: this.fitDecidedAtWidth
+    });
+    this.fitDecidedAtWidth = next.decidedAtWidth;
+    if (this.rowActionsCollapsed !== next.collapsed) this.rowActionsCollapsed = next.collapsed;
+  }
   /** Engancha el observador al contenedor de scroll del render actual (cambia entre vistas). */
   observeXOverflow() {
     if (typeof ResizeObserver === "undefined") return;
     const scroll = this.renderRoot?.querySelector?.(".scroll");
     if (!scroll) return;
-    this.xObserver ??= new ResizeObserver(() => this.measureXOverflow());
+    this.xObserver ??= new ResizeObserver(() => {
+      this.measureXOverflow();
+      this.measureActionsTrack();
+      this.measureRowActionsFit();
+    });
     this.xObserver.disconnect();
     this.xObserver.observe(scroll);
     const grid = scroll.querySelector(".grid");
@@ -3320,6 +3415,11 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
   updated(changed) {
     this.observeXOverflow();
     this.measureXOverflow();
+    if (changed.has("columns") || changed.has("actions") || changed.has("hiddenKeys") || changed.has("selectable")) {
+      this.fitDecidedAtWidth = -1;
+    }
+    this.measureActionsTrack();
+    this.measureRowActionsFit();
     if (changed.has("panel")) this.syncSheetTop();
   }
   /** #75 — Where the mobile sheet starts. `position: fixed; inset: 0` painted it from y=0 and the
@@ -3407,6 +3507,13 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
     if (typeof this.rowKey === "function") return String(this.rowKey(row) ?? "");
     if (typeof this.rowKey === "string") return String(row[this.rowKey] ?? "");
     return String(row[this.rowKeyField] ?? "");
+  }
+  /** #143 — `<prefix>-<suffix>`, or `nothing` (= the attribute is not painted) when the host gave
+   *  no prefix. A blank prefix counts as absent: `" "` would leave dangling `-add` hooks, identical
+   *  on every table of the screen, which is exactly what the prefix prevents. */
+  tid(suffix) {
+    const prefix = this.testid?.trim();
+    return prefix ? `${prefix}-${suffix}` : A;
   }
   get selection() {
     return this.selectedKeys ?? this.internalSelection;
@@ -3761,6 +3868,61 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
     this.menuEv = ev;
     this.menuOpen = true;
   }
+  /** #122 — Abre el menú «⋮» de UNA fila. Un solo popover para toda la tabla (uno por fila serían
+   *  tantos como filas), anclado por evento porque `trigger` no resuelve dentro de Shadow DOM. */
+  openRowMenu(ev, row) {
+    ev.stopPropagation();
+    this.rowMenuEv = ev;
+    this.rowMenuRow = row;
+    this.rowMenuOpen = true;
+  }
+  /** #122 — Las mismas acciones de la fila, como lista. Respeta `disabled`/`loading` por fila: una
+   *  acción que no se puede pulsar en su botón tampoco se puede pulsar aquí. */
+  renderRowMenu() {
+    const row = this.rowMenuRow;
+    if (!this.actions.length || !row) return A;
+    const key = this.keyOf(row);
+    return b2`
+      <ion-popover
+        class="row-menu"
+        .isOpen=${this.rowMenuOpen}
+        .event=${this.rowMenuEv}
+        dismiss-on-select="true"
+        @didDismiss=${() => this.rowMenuOpen = false}
+      >
+        <ion-content>
+          <ion-list lines="none">
+            ${this.actions.map((a3) => {
+      const disabled = a3.loading?.(row) === true || a3.disabled?.(row) === true;
+      const label = typeof a3.label === "function" ? a3.label(row) : a3.label;
+      return b2`
+                <!-- #143 — The action is named the SAME collapsed or not, so one spec works at any
+                     width. It carries the hook only while the direct buttons are NOT there: the
+                     popover survives its dismissal («rowMenuRow» is not cleared), and if the table
+                     widened again there would be TWO elements with the hook and «getByTestId»
+                     would pick one at random. -->
+                <ion-item
+                  button
+                  data-testid=${this.rowActionsCollapsed ? this.tid(`row-${key}-${a3.id}`) : A}
+                  ?disabled=${disabled}
+                  aria-disabled=${disabled ? "true" : A}
+                  .detail=${false}
+                  @click=${() => {
+        if (disabled) return;
+        this.rowMenuOpen = false;
+        this.emit("rowAction", { actionId: a3.id, row });
+      }}
+                >
+                  ${a3.icon ? b2`<ion-icon slot="start" .icon=${okIcon(a3.icon)} color=${a3.color ?? A}></ion-icon>` : A}
+                  <ion-label color=${a3.color ?? A}>${label}</ion-label>
+                </ion-item>
+              `;
+    })}
+          </ion-list>
+        </ion-content>
+      </ion-popover>
+    `;
+  }
   // Aplica la vista inicial declarada (`default-view`) una sola vez, tras el primer render. Es la
   // forma robusta de arrancar en tarjetas sin depender de fijar `viewMode` por referencia (que
   // falla si la tabla monta detrás de un `v-if`/loading y el ref aún es null).
@@ -3782,6 +3944,13 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
   willUpdate(changed) {
     this.applyInitialView();
     if (changed.has("filterValues")) this.serverFilters = { ...this.filterValues ?? {} };
+    if (changed.has("search") && this.search !== void 0) {
+      this.q = this.search;
+      if (!this.serverSide) {
+        this.clientPage = 0;
+        this.mobileShown = 0;
+      }
+    }
     if (!this.serverSide && changed.has("rows") && this.mobileShown !== 0) this.mobileShown = 0;
   }
   applyInitialView() {
@@ -3937,9 +4106,38 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
       </ion-popover>
     `;
   }
-  // Botones de acción de una fila (compartido por vista tabla y tarjetas).
-  actionButtons(row) {
+  // Row action buttons, shared by the table and the card views.
+  //
+  // `collapsible` = the LIST view, the only one that folds its buttons into a "⋮" menu when the
+  // columns leave it no width (#122). The CARD view does not fold; it WRAPS instead, see
+  // `.ractions .actions` in the stylesheet.
+  //
+  // This comment used to claim that a card's actions "always fit across the card". They do not,
+  // and nobody had measured it (#132 / ERPlora/appointments#154): with the eight actions an
+  // appointment carries, the row asks for 380px and the card gives 379px at 411dp, 237px at 768px
+  // and 272px at 1440px — so the first button hung off the card at ALL THREE widths, not just on
+  // a phone. If you add a view that lays these buttons out, MEASURE it.
+  actionButtons(row, collapsible = false) {
     if (!this.actions.length) return A;
+    const key = this.keyOf(row);
+    if (collapsible && this.rowActionsCollapsed) {
+      return b2`
+        <div class="actions">
+          <ion-button
+            size="small"
+            fill="clear"
+            color="medium"
+            data-testid=${this.tid(`row-${key}-menu`)}
+            aria-label=${this.t.moreActions}
+            title=${this.t.moreActions}
+            aria-haspopup="menu"
+            @click=${(e5) => this.openRowMenu(e5, row)}
+          >
+            <ion-icon slot="icon-only" .icon=${okIcon(iconEllipsisVertical)}></ion-icon>
+          </ion-button>
+        </div>
+      `;
+    }
     return b2`
       <div class="actions">
         ${this.actions.map(
@@ -3952,6 +4150,7 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
               size="small"
               fill="clear"
               color=${a3.color ?? "medium"}
+              data-testid=${this.tid(`row-${key}-${a3.id}`)}
               ?disabled=${disabled}
               aria-disabled=${disabled ? "true" : A}
               aria-label=${label}
@@ -3968,9 +4167,9 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
   }
   // Botón de barra icon-only (filtros / alta / conmutador de vista). `on` = estado activo.
   // `badge` opcional → contador (p.ej. nº de filtros activos), look del Hub.
-  toolButton(icon, on, onClick, label, badge) {
+  toolButton(icon, on, onClick, label, badge, testid = A) {
     return b2`
-      <ion-button class="toolbtn" size="small" fill=${on ? "solid" : "outline"} title=${label} aria-label=${label} @click=${onClick}>
+      <ion-button class="toolbtn" size="small" fill=${on ? "solid" : "outline"} data-testid=${testid} title=${label} aria-label=${label} @click=${onClick}>
         <ion-icon slot="icon-only" .icon=${okIcon(icon)}></ion-icon>
         ${badge && badge > 0 ? b2`<span class="badge">${badge}</span>` : A}
       </ion-button>
@@ -3980,8 +4179,22 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
   gridTemplate() {
     return [
       this.selectable ? "2.75rem" : null,
-      ...this.visibleColumns.map((c5) => c5.width ?? "minmax(8rem,1fr)"),
-      this.actions.length ? "auto" : null
+      // #120 - 5.5rem (88px) is the narrowest a data column can be and stay readable: ~11
+      // characters at 14px, plus the ellipsis `.gcell > span` already applies. With the previous
+      // floor (8rem = 128px) the six columns of a bookings list did not fit the counter tablet
+      // (128x6 + 188 for actions + gaps = 1036px against 834) and the pinned column ended up on
+      // top of the data. With 5.5rem they fit (796px) and `1fr` stretches them to 94px each.
+      ...this.visibleColumns.map((c5) => c5.width ?? "minmax(5.5rem,1fr)"),
+      // #121 - a LENGTH, not `max-content`. The header and every row are separate grids that
+      // share this string, and a content-sized track is not a length: each grid resolves it
+      // against ITS OWN content - the word "ACCIONES" (62.83px) in the header, four buttons
+      // (188px) in the row. The leftover the `1fr` columns share then differed between the two,
+      // and the header slid right, up to 125px by the last column (measured at 834px).
+      // `actionsTrackPx` is the width of the buttons MEASURED on screen, so it also keeps #120's
+      // contract: the track never shrinks under its content (an `auto` track collapsed to 16px
+      // and the buttons spilled over the neighbouring column). Until the first measurement lands
+      // - one frame - `max-content` reserves the same room it always did.
+      this.actions.length ? this.actionsTrackPx > 0 ? `${this.actionsTrackPx}px` : "max-content" : null
     ].filter(Boolean).join(" ");
   }
   /** Lista de páginas a mostrar en el pager numerado (1-based): primera, última, vecinas de la
@@ -4037,7 +4250,7 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
         this.mobileShown = 0;
       }
     };
-    const searchbar = this.serverSide ? b2`<ion-searchbar class="ion-no-border" placeholder=${this.effSearchPlaceholder} debounce="250" @ionInput=${this.onSearch}></ion-searchbar>` : b2`<ion-searchbar class="ion-no-border" .value=${this.q} placeholder=${this.effSearchPlaceholder} debounce="250" @ionInput=${this.onSearch}></ion-searchbar>`;
+    const searchbar = b2`<ion-searchbar class="ion-no-border" data-testid=${this.tid("search")} .value=${this.q} placeholder=${this.effSearchPlaceholder} debounce="250" @ionInput=${this.onSearch}></ion-searchbar>`;
     const selCount = this.selection.size;
     const showTopbar = !!this.title || this.hasSearch || this.viewToggle || this.effColumnPicker || this.effExport || this.effImport || this.hasFilterRow || this.addable || !!this.primaryAction;
     return b2`
@@ -4082,27 +4295,32 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
                     ${this.hasFilterRow && !this.inlineFilters ? this.toolButton("funnel-outline", this.panel === "filters" || this.activeFilterCount > 0, () => this.toggle("filters"), this.t.filters, this.activeFilterCount) : A}
                     ${this.effImport ? b2`
                           ${this.toolButton("cloud-upload-outline", false, () => this.renderRoot.querySelector(".tk-file")?.click(), this.t.importCsv)}
-                          <input class="tk-file" type="file" accept=".csv,text/csv" hidden @change=${(e5) => this.onImportFile(e5)} />
+                          <!-- #143 — The import hook goes on the INPUT, not on the button that
+                               triggers it: what a spec drives is «setInputFiles», and nobody opens
+                               the button's native dialog from a test. Same criterion as
+                               «GrantFilePicker.vue» in the Hub (the hook goes on the control, not
+                               on its disguise). -->
+                          <input class="tk-file" data-testid=${this.tid("csv-import")} type="file" accept=".csv,text/csv" hidden @change=${(e5) => this.onImportFile(e5)} />
                         ` : A}
-                    ${this.effExport ? this.toolButton("download-outline", false, () => this.exportCsv(), this.t.exportCsv) : A}
-                    ${this.addable ? this.isMobile ? b2`
-                            <ion-button class="primary-btn add-btn" size="small" @click=${() => this.toggle("create")}>
-                              <ion-icon slot="start" .icon=${okIcon("add")}></ion-icon>${this.t.add}
-                            </ion-button>
-                          ` : this.toolButton("add", this.panel === "create", () => this.toggle("create"), this.t.add) : A}
+                    ${this.effExport ? this.toolButton("download-outline", false, () => this.exportCsv(), this.t.exportCsv, void 0, this.tid("csv-export")) : A}
+                    <!-- #113 — Mismo botón en los dos viewports: la acción principal de la pantalla
+                         se lee, no se adivina. En escritorio era un «+» de 36px idéntico a los
+                         iconos de vista/filtrar/exportar, y era el último de cuatro. -->
+                    ${this.addable ? b2`
+                          <ion-button class="primary-btn add-btn" data-testid=${this.tid("add")} size="small" @click=${() => this.toggle("create")}>
+                            <ion-icon slot="start" .icon=${okIcon("add")}></ion-icon>${this.t.add}
+                          </ion-button>
+                        ` : A}
                     ${this.renderOverflowMenu()}
-                    ${this.primaryAction ? this.isMobile ? b2`
-                            <ion-button class="primary-btn add-btn" size="small" @click=${() => this.emit("primaryAction", {})}>
-                              <ion-icon slot="start" .icon=${okIcon(this.primaryAction.icon ?? "add")}></ion-icon>${this.primaryAction.label}
-                            </ion-button>
-                          ` : b2`
-                          <ion-button
-                            class="primary-btn"
-                            size="small"
-                            title=${this.primaryAction.label}
-                            aria-label=${this.primaryAction.label}
-                            @click=${() => this.emit("primaryAction", {})}
-                          ><ion-icon slot="icon-only" .icon=${okIcon(this.primaryAction.icon ?? "add")}></ion-icon></ion-button>
+                    ${this.primaryAction ? b2`
+                          <!-- #143 — Its own hook and NOT «-add»: «addable» and «primaryAction» are
+                               two different buttons that may coexist, and both are really used
+                               («addable» in the modules, «primaryAction» in the SaaS screens).
+                               Sharing the name would give two elements with the same hook as soon
+                               as a screen declared both. -->
+                          <ion-button class="primary-btn add-btn" data-testid=${this.tid("primary-action")} size="small" @click=${() => this.emit("primaryAction", {})}>
+                            <ion-icon slot="start" .icon=${okIcon(this.primaryAction.icon ?? "add")}></ion-icon>${this.primaryAction.label}
+                          </ion-button>
                         ` : A}
                     <!-- El módulo proyecta aquí acciones globales adicionales. -->
                     <slot name="toolbar"></slot>
@@ -4133,13 +4351,13 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
                         </select>
                       ` : A}
                 </div>
-                ${this.isMobile ? canLoadMore ? b2`<ion-button class="load-more" size="small" @click=${loadMore}>${this.t.loadMore}</ion-button>` : A : pages > 1 ? b2`
+                ${this.isMobile ? canLoadMore ? b2`<ion-button class="load-more" data-testid=${this.tid("load-more")} size="small" @click=${loadMore}>${this.t.loadMore}</ion-button>` : A : pages > 1 ? b2`
                       <div class="nav">
-                        <ion-button size="small" fill="clear" ?disabled=${current === 0} @click=${() => goTo(current - 1)}><ion-icon slot="icon-only" .icon=${iconChevronBack}></ion-icon></ion-button>
+                        <ion-button size="small" fill="clear" data-testid=${this.tid("page-prev")} ?disabled=${current === 0} @click=${() => goTo(current - 1)}><ion-icon slot="icon-only" .icon=${iconChevronBack}></ion-icon></ion-button>
                         ${this.pageList(current + 1, pages).map(
       (p4) => p4 === "\u2026" ? b2`<span class="pgap">…</span>` : b2`<button class=${`pnum${p4 === current + 1 ? " on" : ""}`} @click=${() => goTo(p4 - 1)}>${p4}</button>`
     )}
-                        <ion-button size="small" fill="clear" ?disabled=${current >= pages - 1} @click=${() => goTo(current + 1)}><ion-icon slot="icon-only" .icon=${iconChevronForward}></ion-icon></ion-button>
+                        <ion-button size="small" fill="clear" data-testid=${this.tid("page-next")} ?disabled=${current >= pages - 1} @click=${() => goTo(current + 1)}><ion-icon slot="icon-only" .icon=${iconChevronForward}></ion-icon></ion-button>
                       </div>
                     ` : A}
               </div>
@@ -4251,7 +4469,9 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
                 </div>
               `;
     })}
-            ${this.actions.length ? b2`<div class="gcell gh right actions-col" role="columnheader">${this.t.actions}</div>` : A}
+            ${this.actions.length ? b2`<div class="gcell gh right actions-col" role="columnheader">
+                  ${this.rowActionsCollapsed ? b2`<span class="sr-only">${this.t.actions}</span>` : b2`<span>${this.t.actions}</span>`}
+                </div>` : A}
           </div>
 
           <!-- Filas -->
@@ -4265,6 +4485,7 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
                 <div
                   class=${`grow grow-data${selected ? " selected" : ""}${this.rowClickable ? " clickable" : ""}`}
                   role="row"
+                  data-testid=${this.tid(`row-${key}`)}
                   style=${o6(tpl)}
                   tabindex=${this.rowClickable ? "0" : A}
                   @click=${this.rowClickable ? () => this.emit("rowClick", { row }) : A}
@@ -4274,13 +4495,14 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
                   ${cols.map(
           (c5) => b2`<div class=${`gcell ${alignCls(c5.align)}${c5.pinned === "end" ? " actions-col" : ""}`} role="cell">${c5.render ? c5.render(row) : b2`<span>${this.cell(c5, row)}</span>`}</div>`
         )}
-                  ${this.actions.length ? b2`<div class="gcell right actions-col" role="cell" @click=${(e5) => e5.stopPropagation()}>${this.actionButtons(row)}</div>` : A}
+                  ${this.actions.length ? b2`<div class="gcell right actions-col" role="cell" @click=${(e5) => e5.stopPropagation()}>${this.actionButtons(row, true)}</div>` : A}
                 </div>
               `;
       }
     )}
         </div>
       </div>
+      ${this.renderRowMenu()}
     `;
   }
   renderCards(visible) {
@@ -4298,6 +4520,7 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
         return b2`
               <ion-card
                 class=${`rcard${selected ? " selected" : ""}${this.rowClickable ? " clickable" : ""}`}
+                data-testid=${this.tid(`row-${key}`)}
                 role=${this.rowClickable ? "button" : A}
                 tabindex=${this.rowClickable ? "0" : A}
                 @click=${this.rowClickable ? () => this.emit("rowClick", { row }) : A}
@@ -4386,6 +4609,9 @@ __decorateClass4([
 ], _OkDataTable.prototype, "searchable");
 __decorateClass4([
   n4({ type: String })
+], _OkDataTable.prototype, "search");
+__decorateClass4([
+  n4({ type: String })
 ], _OkDataTable.prototype, "sort");
 __decorateClass4([
   n4({ attribute: "sort-dir" })
@@ -4442,6 +4668,9 @@ __decorateClass4([
   n4({ attribute: false })
 ], _OkDataTable.prototype, "renderCard");
 __decorateClass4([
+  n4({ type: String })
+], _OkDataTable.prototype, "testid");
+__decorateClass4([
   r5()
 ], _OkDataTable.prototype, "q");
 __decorateClass4([
@@ -4480,6 +4709,15 @@ __decorateClass4([
 __decorateClass4([
   r5()
 ], _OkDataTable.prototype, "xOverflow");
+__decorateClass4([
+  r5()
+], _OkDataTable.prototype, "actionsTrackPx");
+__decorateClass4([
+  r5()
+], _OkDataTable.prototype, "rowActionsCollapsed");
+__decorateClass4([
+  r5()
+], _OkDataTable.prototype, "rowMenuOpen");
 __decorateClass4([
   r5()
 ], _OkDataTable.prototype, "hiddenKeys");
@@ -5815,6 +6053,7 @@ var ErpAppointmentsSeries = class extends i3 {
         // opening anything. Disabled while a change is in flight: that is its loading state.
         render: (r6) => b2`
           <ion-toggle
+            data-testid=${`appointments-series-active-${String(r6.id)}`}
             aria-label=${t5("ui.seriesActive")}
             ?checked=${!!r6.is_active}
             ?disabled=${!!this.busySeriesId}
@@ -5835,8 +6074,9 @@ var ErpAppointmentsSeries = class extends i3 {
   render() {
     const t5 = (k2, p4) => erplora2().t(CATALOG2, k2, p4);
     return b2`<div class="page">
-      ${this.error ? b2`<ok-inline-feedback tone="danger" icon="alert-circle-outline">${this.error}</ok-inline-feedback>` : A}
+      ${this.error ? b2`<ok-inline-feedback data-testid="appointments-series-error" tone="danger" icon="alert-circle-outline">${this.error}</ok-inline-feedback>` : A}
       <ok-data-table
+        testid="appointments-series-table"
         .fill=${true}
         .views=${true}
         .cardTitle=${(row) => String(row.customer_name ?? "")}
@@ -5858,13 +6098,13 @@ var ErpAppointmentsSeries = class extends i3 {
     if (!tmpl) return A;
     const { upcoming, invoiced } = this.affected;
     const booked = this.occurrences.length;
-    return b2`<form slot="create" data-mode="series-edit" class="form" @submit=${(e5) => this.submitEdit(e5)}>
+    return b2`<form slot="create" data-testid="appointments-series-form" data-mode="series-edit" class="form" @submit=${(e5) => this.submitEdit(e5)}>
       <p class="ctx" data-role="series-context">
         <strong>${tmpl.customer_name}</strong> · ${tmpl.service_name} · ${tmpl.staff_name || "\u2014"}
       </p>
       <!-- Una serie PARTIDA son dos mitades encadenadas, y decirlo es la mitad de poder entenderla:
            sin esto, la mitad nueva parece una serie que apareció de la nada. -->
-      ${tmpl.split_from_id ? b2`<ok-inline-feedback data-role="split-from" tone="info" icon="git-branch-outline"
+      ${tmpl.split_from_id ? b2`<ok-inline-feedback data-testid="appointments-series-split-from" data-role="split-from" tone="info" icon="git-branch-outline"
             >${t5("ui.seriesSplitFrom", { id: tmpl.split_from_id })}</ok-inline-feedback
           >` : A}
       <p class="ctx" data-role="series-counts">
@@ -5872,11 +6112,12 @@ var ErpAppointmentsSeries = class extends i3 {
       </p>
       <!-- EL RECUENTO ANTES DE CONFIRMAR. Mover el día de una serie le cambia TODAS las citas a la
            clienta; un aviso genérico no basta, y lo que ya está cobrado no se toca — se nombra. -->
-      ${invoiced > 0 ? b2`<ok-inline-feedback data-role="series-locked" tone="warning" icon="lock-closed-outline"
+      ${invoiced > 0 ? b2`<ok-inline-feedback data-testid="appointments-series-locked" data-role="series-locked" tone="warning" icon="lock-closed-outline"
             >${t5("ui.seriesLockedInvoiced", { invoiced })}</ok-inline-feedback
           >` : A}
       <div class="grid">
         <ion-select
+          data-testid="appointments-series-frequency"
           data-role="series-frequency"
           label=${t5("ui.fieldFrequency")}
           label-placement="floating"
@@ -5886,6 +6127,7 @@ var ErpAppointmentsSeries = class extends i3 {
           ${FREQUENCIES.map((f3) => b2`<ion-select-option .value=${f3}>${t5(FREQUENCY_KEYS[f3])}</ion-select-option>`)}
         </ion-select>
         ${ALIGNS_TO_WEEKDAY.includes(this.editFrequency) ? b2`<ion-select
+              data-testid="appointments-series-day"
               data-role="series-day"
               label=${t5("ui.fieldWeekday")}
               label-placement="floating"
@@ -5896,6 +6138,7 @@ var ErpAppointmentsSeries = class extends i3 {
               ${WEEKDAY_KEYS.map((k2, i7) => b2`<ion-select-option .value=${String(i7)}>${t5(k2)}</ion-select-option>`)}
             </ion-select>` : A}
         <ion-input
+          data-testid="appointments-series-time"
           data-role="series-time"
           label=${t5("ui.fieldTime")}
           label-placement="floating"
@@ -5904,6 +6147,7 @@ var ErpAppointmentsSeries = class extends i3 {
           @ionInput=${(e5) => this.editTime = e5.target.value}
         ></ion-input>
         <ion-input
+          data-testid="appointments-series-duration"
           data-role="series-duration"
           label=${t5("ui.fieldMinutes")}
           label-placement="floating"
@@ -5913,10 +6157,10 @@ var ErpAppointmentsSeries = class extends i3 {
           @ionInput=${(e5) => this.editDuration = e5.target.value}
         ></ion-input>
       </div>
-      <ok-inline-feedback tone="info" icon="information-circle-outline"
+      <ok-inline-feedback data-testid="appointments-series-scope-hint" tone="info" icon="information-circle-outline"
         >${t5("ui.seriesScopeHint", { from: this.fromOccurrence })}</ok-inline-feedback
       >
-      <ion-button type="submit" expand="block" .disabled=${this.saving}>${t5("ui.seriesSave")}</ion-button>
+      <ion-button data-testid="appointments-series-submit" type="submit" expand="block" .disabled=${this.saving}>${t5("ui.seriesSave")}</ion-button>
     </form>`;
   }
 };
@@ -6692,18 +6936,18 @@ var ErpAppointmentsList = class extends i3 {
                y la lista no. Sin etiqueta flotante: en un móvil son ~20 px de alto para decir
                «Día» encima de una fecha, y el nombre accesible viaja en aria-label. -->
           <div class="daynav">
-            <ion-button data-role="prev-day" fill="clear" aria-label=${t5("ui.prevDay")} @click=${() => this.stepDay(-1)}>
+            <ion-button data-testid="appointments-list-prev-day" data-role="prev-day" fill="clear" aria-label=${t5("ui.prevDay")} @click=${() => this.stepDay(-1)}>
               <ion-icon slot="icon-only" name="chevron-back-outline"></ion-icon>
             </ion-button>
-            <ion-input data-role="day" aria-label=${t5("ui.fieldDate")} type="date" .value=${this.day} @ionInput=${(e5) => {
+            <ion-input data-testid="appointments-list-day" data-role="day" aria-label=${t5("ui.fieldDate")} type="date" .value=${this.day} @ionInput=${(e5) => {
       this.day = e5.target.value;
       this.refresh();
     }}></ion-input>
-            <ion-button data-role="next-day" fill="clear" aria-label=${t5("ui.nextDay")} @click=${() => this.stepDay(1)}>
+            <ion-button data-testid="appointments-list-next-day" data-role="next-day" fill="clear" aria-label=${t5("ui.nextDay")} @click=${() => this.stepDay(1)}>
               <ion-icon slot="icon-only" name="chevron-forward-outline"></ion-icon>
             </ion-button>
           </div>
-          <ion-select data-role="status" aria-label=${t5("ui.filterStatus")} placeholder=${t5("ui.allStatuses")} .value=${this.statusFilter} @ionChange=${(e5) => {
+          <ion-select data-testid="appointments-list-status-filter" data-role="status" aria-label=${t5("ui.filterStatus")} placeholder=${t5("ui.allStatuses")} .value=${this.statusFilter} @ionChange=${(e5) => {
       this.statusFilter = e5.target.value;
       this.refresh();
     }}>
@@ -6713,18 +6957,18 @@ var ErpAppointmentsList = class extends i3 {
           <!-- El día y el estado son el ALCANCE de la consulta de la agenda; en la vista de series
                no filtran nada, así que se retiran en vez de quedarse prometiendo un filtro que no
                existe. El conmutador se queda: es lo único que sigue significando lo mismo. -->
-          <ion-segment .value=${this.view} @ionChange=${(e5) => this.view = e5.target.value}>
-            <ion-segment-button value="list" aria-label=${t5("ui.viewList")}>
+          <ion-segment data-testid="appointments-list-view" .value=${this.view} @ionChange=${(e5) => this.view = e5.target.value}>
+            <ion-segment-button data-testid="appointments-list-view-list" value="list" aria-label=${t5("ui.viewList")}>
               <ion-icon name="list-outline"></ion-icon>
               <ion-label>${t5("ui.viewList")}</ion-label>
             </ion-segment-button>
-            <ion-segment-button value="staff" aria-label=${t5("ui.viewStaff")}>
+            <ion-segment-button data-testid="appointments-list-view-staff" value="staff" aria-label=${t5("ui.viewStaff")}>
               <ion-icon name="people-outline"></ion-icon>
               <ion-label>${t5("ui.viewStaff")}</ion-label>
             </ion-segment-button>
             <!-- appointments#91: la tercera puerta. Sin ella una serie sin ocurrencias
                  materializadas no tiene NINGUNA fila desde la que abrirse. -->
-            <ion-segment-button value="series" aria-label=${t5("ui.viewSeries")}>
+            <ion-segment-button data-testid="appointments-list-view-series" value="series" aria-label=${t5("ui.viewSeries")}>
               <ion-icon name="repeat-outline"></ion-icon>
               <ion-label>${t5("ui.viewSeries")}</ion-label>
             </ion-segment-button>
@@ -6735,15 +6979,16 @@ var ErpAppointmentsList = class extends i3 {
              el patrón que Square acabó adoptando tras años de citas movidas por el huso del
              dispositivo. Con los dos relojes de acuerdo no se pinta nada: un aviso permanente es
              un aviso que nadie lee. -->
-        ${deviceZoneDiffers() ? b2`<ok-inline-feedback tone="warning" icon="globe-outline"
+        ${deviceZoneDiffers() ? b2`<ok-inline-feedback data-testid="appointments-list-device-zone-notice" tone="warning" icon="globe-outline"
               >${t5("ui.deviceZoneNotice")} ${businessTimezone()}</ok-inline-feedback
             >` : A}
-        ${this.error ? b2`<ok-inline-feedback tone="danger" icon="alert-circle-outline">${this.error}</ok-inline-feedback>` : A}
+        ${this.error ? b2`<ok-inline-feedback data-testid="appointments-list-error" tone="danger" icon="alert-circle-outline">${this.error}</ok-inline-feedback>` : A}
         <!-- appointments#15 — la pregunta del ALCANCE. Radios en un alert y no una action sheet
              (que es más nativa en móvil) por una razón concreta: la action sheet no puede llevar
              el AVISO de qué se va a pisar, y ese aviso es el contrato entero de la decisión. El
              botón primario nombra la acción; «OK» no dice qué va a pasar. -->
         ${this.askingSeriesScope ? b2`<ion-alert
+              data-testid="appointments-list-series-scope"
               .isOpen=${true}
               .header=${t5("ui.seriesScopeTitle")}
               .message=${`${t5("ui.seriesScopeMessage")} ${t5("ui.seriesScopeMoved")} ${t5("ui.seriesScopeCancelledKept")}`}
@@ -6774,6 +7019,7 @@ var ErpAppointmentsList = class extends i3 {
              pasar («Reservar igual»), y el de salida ofrece la alternativa real («Elegir otra
              hora») en vez de un «Cancelar» que no dice qué queda después. -->
         ${this.overlapPrompt ? b2`<ion-alert
+              data-testid="appointments-list-overlap-confirm"
               data-role="overlap-confirm"
               .isOpen=${true}
               .header=${t5("ui.overlapTitle")}
@@ -6801,7 +7047,7 @@ var ErpAppointmentsList = class extends i3 {
               @ok-slot-click=${(e5) => this.onSlotClick(e5)}
               @ok-event-click=${(e5) => this.onEventClick(e5)}
               @ok-event-move=${(e5) => this.onEventMove(e5)}
-            ></ok-scheduler>` : b2`<ok-data-table .fill=${true} .primaryAction=${{ label: t5("ui.addAppointment"), icon: "add" }} @primaryAction=${() => this.openCreate()} .labels=${this.rescheduleId ? { newRecord: t5("ui.rescheduleTitle") } : {}} .views=${true} .cardTitle=${(row) => String(row.appointment_number ?? row.customer_name ?? "")} .columns=${this.columns} .rows=${this.items} .searchKeys=${["appointment_number", "customer_name", "service_name", "staff_name"]} .searchPlaceholder=${t5("ui.searchPlaceholder")} .actions=${this.rowActions} @rowAction=${(e5) => this.onRowAction(e5)} .emptyMessage=${this.loading ? t5("ui.loading") : t5("ui.empty")}>
+            ></ok-scheduler>` : b2`<ok-data-table testid="appointments-list-table" .fill=${true} .primaryAction=${{ label: t5("ui.addAppointment"), icon: "add" }} @primaryAction=${() => this.openCreate()} .labels=${this.rescheduleId ? { newRecord: t5("ui.rescheduleTitle") } : {}} .views=${true} .cardTitle=${(row) => String(row.appointment_number ?? row.customer_name ?? "")} .columns=${this.columns} .rows=${this.items} .searchKeys=${["appointment_number", "customer_name", "service_name", "staff_name"]} .searchPlaceholder=${t5("ui.searchPlaceholder")} .actions=${this.rowActions} @rowAction=${(e5) => this.onRowAction(e5)} .emptyMessage=${this.loading ? t5("ui.loading") : t5("ui.empty")}>
           <!-- El panel es UNO: alta si no hay cita en curso, mover si la hay (appointments#42). -->
           ${this.rescheduleId ? this.renderRescheduleForm(t5) : this.renderCreateForm(t5)}
         </ok-data-table>`}
@@ -6810,17 +7056,17 @@ var ErpAppointmentsList = class extends i3 {
   /** Mover la cita: solo el hueco. Cliente y servicio no se pintan porque `reschedule` no los
    *  toca — enseñarlos editables prometería un cambio que el command descarta. */
   renderRescheduleForm(t5) {
-    return b2`<form slot="create" data-mode="reschedule" class="form" @submit=${(e5) => this.submitReschedule(e5)}>
-      <ok-inline-feedback tone="info" icon="information-circle-outline">${t5("ui.rescheduleHint")}</ok-inline-feedback>
+    return b2`<form slot="create" data-testid="appointments-list-reschedule-form" data-mode="reschedule" class="form" @submit=${(e5) => this.submitReschedule(e5)}>
+      <ok-inline-feedback data-testid="appointments-list-reschedule-hint" tone="info" icon="information-circle-outline">${t5("ui.rescheduleHint")}</ok-inline-feedback>
       <p class="ctx">${t5("ui.fieldStaff")}: <strong>${this.rescheduleStaffName || "\u2014"}</strong></p>
-      <ion-input data-role="reschedule-start" fill="outline" label-placement="floating" label=${t5("ui.fieldStart")} type="datetime-local" .value=${this.rescheduleStart} @ionInput=${(e5) => this.rescheduleStart = e5.target.value}></ion-input>
-      <ion-input data-role="reschedule-duration" fill="outline" label-placement="floating" label=${t5("ui.fieldMinutes")} type="number" min="1" .value=${this.rescheduleDuration} @ionInput=${(e5) => this.rescheduleDuration = e5.target.value}></ion-input>
+      <ion-input data-testid="appointments-list-reschedule-start" data-role="reschedule-start" fill="outline" label-placement="floating" label=${t5("ui.fieldStart")} type="datetime-local" .value=${this.rescheduleStart} @ionInput=${(e5) => this.rescheduleStart = e5.target.value}></ion-input>
+      <ion-input data-testid="appointments-list-reschedule-duration" data-role="reschedule-duration" fill="outline" label-placement="floating" label=${t5("ui.fieldMinutes")} type="number" min="1" .value=${this.rescheduleDuration} @ionInput=${(e5) => this.rescheduleDuration = e5.target.value}></ion-input>
       <div class="actions">
-        <ion-button type="button" size="small" fill="clear" @click=${() => {
+        <ion-button data-testid="appointments-list-reschedule-cancel" type="button" size="small" fill="clear" @click=${() => {
       this.clearReschedule();
       this.dataTable()?.close();
     }}>${t5("ui.cancelReschedule")}</ion-button>
-        <ion-button type="submit" size="small" ?disabled=${this.saving || !this.rescheduleStart || !this.rescheduleDuration}>${this.saving ? t5("ui.saving") : t5("ui.confirmReschedule")}</ion-button>
+        <ion-button data-testid="appointments-list-reschedule-submit" type="submit" size="small" ?disabled=${this.saving || !this.rescheduleStart || !this.rescheduleDuration}>${this.saving ? t5("ui.saving") : t5("ui.confirmReschedule")}</ion-button>
       </div>
     </form>`;
   }
@@ -6830,28 +7076,28 @@ var ErpAppointmentsList = class extends i3 {
    *  texto libre la cita no se podía agrupar por profesional, ni casar con la
    *  disponibilidad, ni pasar a la venta sin re-teclear. */
   renderCreateForm(t5) {
-    return b2`<form slot="create" data-mode="create" class="form" @submit=${(e5) => this.createAppointment(e5)}>
-            <ion-select data-role="customer" fill="outline" label-placement="floating" label=${t5("ui.fieldCustomer")} placeholder=${t5("ui.pickCustomer")} .value=${this.newCustomerId} @ionChange=${(e5) => this.newCustomerId = e5.target.value}>
+    return b2`<form slot="create" data-testid="appointments-list-form" data-mode="create" class="form" @submit=${(e5) => this.createAppointment(e5)}>
+            <ion-select data-testid="appointments-list-customer" data-role="customer" fill="outline" label-placement="floating" label=${t5("ui.fieldCustomer")} placeholder=${t5("ui.pickCustomer")} .value=${this.newCustomerId} @ionChange=${(e5) => this.newCustomerId = e5.target.value}>
               ${this.customers.map((c5) => b2`<ion-select-option .value=${c5.id}>${c5.name}</ion-select-option>`)}
             </ion-select>
-            <ion-select data-role="service" fill="outline" label-placement="floating" label=${t5("ui.fieldService")} placeholder=${t5("ui.pickService")} .value=${this.newServiceId} @ionChange=${(e5) => this.onServiceChange(e5.target.value)}>
+            <ion-select data-testid="appointments-list-service" data-role="service" fill="outline" label-placement="floating" label=${t5("ui.fieldService")} placeholder=${t5("ui.pickService")} .value=${this.newServiceId} @ionChange=${(e5) => this.onServiceChange(e5.target.value)}>
               ${this.services.map((s5) => b2`<ion-select-option .value=${s5.id}>${s5.name}</ion-select-option>`)}
             </ion-select>
-            <ion-select data-role="staff" fill="outline" label-placement="floating" label=${t5("ui.fieldStaff")} placeholder=${t5("ui.pickStaff")} .value=${this.newStaffId} @ionChange=${(e5) => this.newStaffId = e5.target.value}>
+            <ion-select data-testid="appointments-list-staff" data-role="staff" fill="outline" label-placement="floating" label=${t5("ui.fieldStaff")} placeholder=${t5("ui.pickStaff")} .value=${this.newStaffId} @ionChange=${(e5) => this.newStaffId = e5.target.value}>
               ${this.bookableStaff.map((m4) => b2`<ion-select-option .value=${m4.id}>${m4.full_name}</ion-select-option>`)}
             </ion-select>
-            <ion-input fill="outline" label-placement="floating" label=${t5("ui.fieldStart")} type="datetime-local" .value=${this.newStart} @ionInput=${(e5) => this.newStart = e5.target.value}></ion-input>
+            <ion-input data-testid="appointments-list-start" fill="outline" label-placement="floating" label=${t5("ui.fieldStart")} type="datetime-local" .value=${this.newStart} @ionInput=${(e5) => this.newStart = e5.target.value}></ion-input>
             <!-- Minutos se PRERRELLENA al elegir servicio (appointments#75): la duración que la
                  reserva va a tener tiene que estar EN PANTALLA; se teclea solo para excepciones
                  (una clienta que necesita más tiempo). -->
-            <ion-input data-role="duration" fill="outline" label-placement="floating" label=${t5("ui.fieldMinutes")} type="number" min="1" .value=${this.newDuration} @ionInput=${(e5) => this.newDuration = e5.target.value}></ion-input>
+            <ion-input data-testid="appointments-list-duration" data-role="duration" fill="outline" label-placement="floating" label=${t5("ui.fieldMinutes")} type="number" min="1" .value=${this.newDuration} @ionInput=${(e5) => this.newDuration = e5.target.value}></ion-input>
             <!-- appointments#155 - the warning and the refusal, NEXT TO THE BUTTON. This is
                  where the person is looking; the list's inline feedback is covered by this very
                  panel. The past-start warning is informative (Acuity warns without blocking) and
                  is painted only once the chosen time has passed: a permanent notice goes unread. -->
-            ${this.newStartIsPast ? b2`<ok-inline-feedback tone="warning" icon="time-outline">${t5("ui.pastStartNotice")}</ok-inline-feedback>` : A}
-            ${this.formError ? b2`<ok-inline-feedback tone="danger" icon="alert-circle-outline">${this.formError}</ok-inline-feedback>` : A}
-            <ion-button type="submit" size="small" ?disabled=${this.saving || !this.newCustomerId || !this.newServiceId || !this.newStaffId || !this.newStart}>${this.saving ? t5("ui.saving") : t5("ui.addAppointment")}</ion-button>
+            ${this.newStartIsPast ? b2`<ok-inline-feedback data-testid="appointments-list-past-start-notice" tone="warning" icon="time-outline">${t5("ui.pastStartNotice")}</ok-inline-feedback>` : A}
+            ${this.formError ? b2`<ok-inline-feedback data-testid="appointments-list-form-error" tone="danger" icon="alert-circle-outline">${this.formError}</ok-inline-feedback>` : A}
+            <ion-button data-testid="appointments-list-submit" type="submit" size="small" ?disabled=${this.saving || !this.newCustomerId || !this.newServiceId || !this.newStaffId || !this.newStart}>${this.saving ? t5("ui.saving") : t5("ui.addAppointment")}</ion-button>
           </form>`;
   }
 };
@@ -7281,7 +7527,7 @@ var ErpAppointmentsRequestBooking = class extends i3 {
         <label>${t5("ui.bookingCustomer")}</label>
         <div class="actions">
           <strong>${this.customerLabel || this.customerId}</strong>
-          <ion-button size="small" fill="clear"
+          <ion-button data-testid="appointments-request-booking-customer-change" size="small" fill="clear"
             @click=${() => {
         this.customerId = "";
         this.customerLabel = "";
@@ -7294,17 +7540,18 @@ var ErpAppointmentsRequestBooking = class extends i3 {
     }
     return b2`<div>
       <label for="cust">${t5("ui.bookingCustomer")}</label>
-      <input id="cust" .value=${this.search} placeholder=${t5("ui.bookingCustomerSearch")}
+      <input data-testid="appointments-request-booking-customer-search" id="cust" .value=${this.search} placeholder=${t5("ui.bookingCustomerSearch")}
         @input=${(e5) => {
       this.search = e5.target.value;
       void this.searchCustomers();
     }} />
       <div class="matches">
         ${this.matches.map((c5) => b2`<button type="button" class="match"
+          data-testid=${`appointments-request-booking-customer-match-${c5.id}`}
           aria-pressed=${this.customerId === c5.id ? "true" : "false"}
           @click=${() => this.pickCustomer(c5)}>${c5.name}${c5.phone ? b2` · ${c5.phone}` : A}</button>`)}
       </div>
-      ${can("customers.add_customer") ? b2`<ion-button size="small" fill="outline" ?disabled=${this.busy}
+      ${can("customers.add_customer") ? b2`<ion-button data-testid="appointments-request-booking-create-customer" size="small" fill="outline" ?disabled=${this.busy}
         @click=${() => this.createCustomer()}>${t5("ui.bookingCreateCustomer")}</ion-button>` : A}
     </div>`;
   }
@@ -7313,13 +7560,13 @@ var ErpAppointmentsRequestBooking = class extends i3 {
     if (!this.open) return A;
     return b2`<div class="panel">
       ${this.open.raw_summary ? b2`<p class="said">“${this.open.raw_summary}”</p>` : A}
-      ${this.error ? b2`<ok-inline-feedback tone="danger">${this.error}</ok-inline-feedback>` : A}
+      ${this.error ? b2`<ok-inline-feedback data-testid="appointments-request-booking-error" tone="danger">${this.error}</ok-inline-feedback>` : A}
 
       ${this.renderCustomer()}
 
       <div>
         <label for="svc">${t5("ui.bookingService")}</label>
-        <select id="svc"
+        <select data-testid="appointments-request-booking-service" id="svc"
           @change=${(e5) => {
       this.serviceId = e5.target.value;
       void this.loadSlots();
@@ -7331,7 +7578,7 @@ var ErpAppointmentsRequestBooking = class extends i3 {
 
       <div>
         <label for="stf">${t5("ui.bookingStaff")}</label>
-        <select id="stf"
+        <select data-testid="appointments-request-booking-staff" id="stf"
           @change=${(e5) => {
       this.staffId = e5.target.value;
       void this.loadSlots();
@@ -7343,7 +7590,7 @@ var ErpAppointmentsRequestBooking = class extends i3 {
 
       <div>
         <label for="day">${t5("ui.bookingDay")}</label>
-        <input id="day" type="date" .value=${this.date}
+        <input data-testid="appointments-request-booking-day" id="day" type="date" .value=${this.date}
           @change=${(e5) => {
       this.date = e5.target.value;
       void this.loadSlots();
@@ -7353,10 +7600,11 @@ var ErpAppointmentsRequestBooking = class extends i3 {
       <div>
         <label>${t5("ui.bookingSlot")}</label>
         ${this.holdUntil ? b2`<p class="hold">${t5("ui.holdCountdown").replace("{mins}", String(Math.floor(this.holdLeft / 6e4))).replace("{secs}", String(Math.floor(this.holdLeft % 6e4 / 1e3)).padStart(2, "0"))}</p>` : A}
-        ${this.holdExpired ? b2`<ok-inline-feedback tone="warning" icon="time-outline">${t5("ui.holdExpired")}</ok-inline-feedback>` : A}
-        ${this.openingUnknown ? b2`<ok-inline-feedback tone="warning" icon="alert-circle-outline">${t5("ui.openingUnknown")}</ok-inline-feedback>` : A}
+        ${this.holdExpired ? b2`<ok-inline-feedback data-testid="appointments-request-booking-hold-expired" tone="warning" icon="time-outline">${t5("ui.holdExpired")}</ok-inline-feedback>` : A}
+        ${this.openingUnknown ? b2`<ok-inline-feedback data-testid="appointments-request-booking-opening-unknown" tone="warning" icon="alert-circle-outline">${t5("ui.openingUnknown")}</ok-inline-feedback>` : A}
         ${this.slots.length === 0 ? b2`<p class="said">${t5(this.dayClosed ? "ui.bookingDayClosed" : "ui.bookingNoSlots")}</p>` : b2`<div class="slots">
               ${this.slots.map((s5) => b2`<button type="button" class="slot"
+                data-testid=${`appointments-request-booking-slot-${s5.slot_start}`}
                 aria-pressed=${this.startDatetime === s5.slot_start ? "true" : "false"}
                 @click=${() => {
       void this.pickSlot(s5);
@@ -7365,10 +7613,10 @@ var ErpAppointmentsRequestBooking = class extends i3 {
       </div>
 
       <div class="actions go">
-        <ion-button ?disabled=${!this.ready || this.busy} @click=${() => this.confirm()}>
+        <ion-button data-testid="appointments-request-booking-confirm" ?disabled=${!this.ready || this.busy} @click=${() => this.confirm()}>
           ${t5("ui.bookingConfirm")}
         </ion-button>
-        <span class="cancel"><ion-button fill="clear" color="medium"
+        <span class="cancel"><ion-button data-testid="appointments-request-booking-cancel" fill="clear" color="medium"
           @click=${() => void this.cancel()}>${t5("ui.bookingCancel")}</ion-button></span>
       </div>
     </div>`;

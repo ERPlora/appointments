@@ -419,6 +419,7 @@ export class ErpAppointmentsSeries extends LitElement {
         // opening anything. Disabled while a change is in flight: that is its loading state.
         render: (r) => html`
           <ion-toggle
+            data-testid=${`appointments-series-active-${String(r.id)}`}
             aria-label=${t('ui.seriesActive')}
             ?checked=${!!r.is_active}
             ?disabled=${!!this.busySeriesId}
@@ -443,9 +444,10 @@ export class ErpAppointmentsSeries extends LitElement {
     const t = (k: string, p?: Record<string, unknown>): string => erplora().t(CATALOG, k, p);
     return html`<div class="page">
       ${this.error
-        ? html`<ok-inline-feedback tone="danger" icon="alert-circle-outline">${this.error}</ok-inline-feedback>`
+        ? html`<ok-inline-feedback data-testid="appointments-series-error" tone="danger" icon="alert-circle-outline">${this.error}</ok-inline-feedback>`
         : nothing}
       <ok-data-table
+        testid="appointments-series-table"
         .fill=${true}
         .views=${true}
         .cardTitle=${(row: Record<string, unknown>) => String(row.customer_name ?? '')}
@@ -468,14 +470,14 @@ export class ErpAppointmentsSeries extends LitElement {
     if (!tmpl) return nothing;
     const { upcoming, invoiced } = this.affected;
     const booked = this.occurrences.length;
-    return html`<form slot="create" data-mode="series-edit" class="form" @submit=${(e: Event) => this.submitEdit(e)}>
+    return html`<form slot="create" data-testid="appointments-series-form" data-mode="series-edit" class="form" @submit=${(e: Event) => this.submitEdit(e)}>
       <p class="ctx" data-role="series-context">
         <strong>${tmpl.customer_name}</strong> · ${tmpl.service_name} · ${tmpl.staff_name || '—'}
       </p>
       <!-- Una serie PARTIDA son dos mitades encadenadas, y decirlo es la mitad de poder entenderla:
            sin esto, la mitad nueva parece una serie que apareció de la nada. -->
       ${tmpl.split_from_id
-        ? html`<ok-inline-feedback data-role="split-from" tone="info" icon="git-branch-outline"
+        ? html`<ok-inline-feedback data-testid="appointments-series-split-from" data-role="split-from" tone="info" icon="git-branch-outline"
             >${t('ui.seriesSplitFrom', { id: tmpl.split_from_id })}</ok-inline-feedback
           >`
         : nothing}
@@ -485,12 +487,13 @@ export class ErpAppointmentsSeries extends LitElement {
       <!-- EL RECUENTO ANTES DE CONFIRMAR. Mover el día de una serie le cambia TODAS las citas a la
            clienta; un aviso genérico no basta, y lo que ya está cobrado no se toca — se nombra. -->
       ${invoiced > 0
-        ? html`<ok-inline-feedback data-role="series-locked" tone="warning" icon="lock-closed-outline"
+        ? html`<ok-inline-feedback data-testid="appointments-series-locked" data-role="series-locked" tone="warning" icon="lock-closed-outline"
             >${t('ui.seriesLockedInvoiced', { invoiced })}</ok-inline-feedback
           >`
         : nothing}
       <div class="grid">
         <ion-select
+          data-testid="appointments-series-frequency"
           data-role="series-frequency"
           label=${t('ui.fieldFrequency')}
           label-placement="floating"
@@ -501,6 +504,7 @@ export class ErpAppointmentsSeries extends LitElement {
         </ion-select>
         ${ALIGNS_TO_WEEKDAY.includes(this.editFrequency)
           ? html`<ion-select
+              data-testid="appointments-series-day"
               data-role="series-day"
               label=${t('ui.fieldWeekday')}
               label-placement="floating"
@@ -512,6 +516,7 @@ export class ErpAppointmentsSeries extends LitElement {
             </ion-select>`
           : nothing}
         <ion-input
+          data-testid="appointments-series-time"
           data-role="series-time"
           label=${t('ui.fieldTime')}
           label-placement="floating"
@@ -520,6 +525,7 @@ export class ErpAppointmentsSeries extends LitElement {
           @ionInput=${(e: any) => (this.editTime = e.target.value)}
         ></ion-input>
         <ion-input
+          data-testid="appointments-series-duration"
           data-role="series-duration"
           label=${t('ui.fieldMinutes')}
           label-placement="floating"
@@ -529,10 +535,10 @@ export class ErpAppointmentsSeries extends LitElement {
           @ionInput=${(e: any) => (this.editDuration = e.target.value)}
         ></ion-input>
       </div>
-      <ok-inline-feedback tone="info" icon="information-circle-outline"
+      <ok-inline-feedback data-testid="appointments-series-scope-hint" tone="info" icon="information-circle-outline"
         >${t('ui.seriesScopeHint', { from: this.fromOccurrence })}</ok-inline-feedback
       >
-      <ion-button type="submit" expand="block" .disabled=${this.saving}>${t('ui.seriesSave')}</ion-button>
+      <ion-button data-testid="appointments-series-submit" type="submit" expand="block" .disabled=${this.saving}>${t('ui.seriesSave')}</ion-button>
     </form>`;
   }
 }
