@@ -197,7 +197,7 @@ export class ErpAppointmentsCustomerHistory extends LitElement {
     const t = (k: string): string => erplora().t(CATALOG, k);
     return html`
       <h3>${t('ui.historyTitle')}</h3>
-      ${this.error ? html`<ok-inline-feedback tone="danger" icon="alert-circle-outline">${this.error}</ok-inline-feedback>` : nothing}
+      ${this.error ? html`<ok-inline-feedback data-testid="appointments-customer-history-error" tone="danger" icon="alert-circle-outline">${this.error}</ok-inline-feedback>` : nothing}
       ${this.loading && !this.visits.length ? html`<p class="loading">${t('ui.loading')}</p>` : nothing}
       ${!this.loading && !this.error && !this.visits.length ? html`<p class="empty">${t('ui.historyEmpty')}</p>` : nothing}
       ${this.visits.length ? html`<ok-timeline .items=${this.items()}></ok-timeline>` : nothing}

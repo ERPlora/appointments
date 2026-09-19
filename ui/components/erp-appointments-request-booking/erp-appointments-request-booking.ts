@@ -495,7 +495,7 @@ export class ErpAppointmentsRequestBooking extends LitElement {
         <label>${t('ui.bookingCustomer')}</label>
         <div class="actions">
           <strong>${this.customerLabel || this.customerId}</strong>
-          <ion-button size="small" fill="clear"
+          <ion-button data-testid="appointments-request-booking-customer-change" size="small" fill="clear"
             @click=${() => { this.customerId = ''; this.customerLabel = ''; void this.searchCustomers(); }}>
             ${t('ui.bookingChange')}
           </ion-button>
@@ -504,14 +504,15 @@ export class ErpAppointmentsRequestBooking extends LitElement {
     }
     return html`<div>
       <label for="cust">${t('ui.bookingCustomer')}</label>
-      <input id="cust" .value=${this.search} placeholder=${t('ui.bookingCustomerSearch')}
+      <input data-testid="appointments-request-booking-customer-search" id="cust" .value=${this.search} placeholder=${t('ui.bookingCustomerSearch')}
         @input=${(e: Event) => { this.search = (e.target as HTMLInputElement).value; void this.searchCustomers(); }} />
       <div class="matches">
         ${this.matches.map((c) => html`<button type="button" class="match"
+          data-testid=${`appointments-request-booking-customer-match-${c.id}`}
           aria-pressed=${this.customerId === c.id ? 'true' : 'false'}
           @click=${() => this.pickCustomer(c)}>${c.name}${c.phone ? html` · ${c.phone}` : nothing}</button>`)}
       </div>
-      ${can('customers.add_customer') ? html`<ion-button size="small" fill="outline" ?disabled=${this.busy}
+      ${can('customers.add_customer') ? html`<ion-button data-testid="appointments-request-booking-create-customer" size="small" fill="outline" ?disabled=${this.busy}
         @click=${() => this.createCustomer()}>${t('ui.bookingCreateCustomer')}</ion-button>` : nothing}
     </div>`;
   }
@@ -521,13 +522,13 @@ export class ErpAppointmentsRequestBooking extends LitElement {
     if (!this.open) return nothing;
     return html`<div class="panel">
       ${this.open.raw_summary ? html`<p class="said">“${this.open.raw_summary}”</p>` : nothing}
-      ${this.error ? html`<ok-inline-feedback tone="danger">${this.error}</ok-inline-feedback>` : nothing}
+      ${this.error ? html`<ok-inline-feedback data-testid="appointments-request-booking-error" tone="danger">${this.error}</ok-inline-feedback>` : nothing}
 
       ${this.renderCustomer()}
 
       <div>
         <label for="svc">${t('ui.bookingService')}</label>
-        <select id="svc"
+        <select data-testid="appointments-request-booking-service" id="svc"
           @change=${(e: Event) => { this.serviceId = (e.target as HTMLSelectElement).value; void this.loadSlots(); }}>
           <option value="">${t('ui.bookingPick')}</option>
           ${this.services.map((s) => html`<option value=${s.id} ?selected=${s.id === this.serviceId}>${s.name}</option>`)}
@@ -536,7 +537,7 @@ export class ErpAppointmentsRequestBooking extends LitElement {
 
       <div>
         <label for="stf">${t('ui.bookingStaff')}</label>
-        <select id="stf"
+        <select data-testid="appointments-request-booking-staff" id="stf"
           @change=${(e: Event) => { this.staffId = (e.target as HTMLSelectElement).value; void this.loadSlots(); }}>
           <option value="">${t('ui.bookingPick')}</option>
           ${this.staffMembers.map((s) => html`<option value=${s.id} ?selected=${s.id === this.staffId}>${s.full_name}</option>`)}
@@ -545,7 +546,7 @@ export class ErpAppointmentsRequestBooking extends LitElement {
 
       <div>
         <label for="day">${t('ui.bookingDay')}</label>
-        <input id="day" type="date" .value=${this.date}
+        <input data-testid="appointments-request-booking-day" id="day" type="date" .value=${this.date}
           @change=${(e: Event) => { this.date = (e.target as HTMLInputElement).value; void this.loadSlots(); }} />
       </div>
 
@@ -557,25 +558,26 @@ export class ErpAppointmentsRequestBooking extends LitElement {
               .replace('{secs}', String(Math.floor((this.holdLeft % 60000) / 1000)).padStart(2, '0'))}</p>`
           : nothing}
         ${this.holdExpired
-          ? html`<ok-inline-feedback tone="warning" icon="time-outline">${t('ui.holdExpired')}</ok-inline-feedback>`
+          ? html`<ok-inline-feedback data-testid="appointments-request-booking-hold-expired" tone="warning" icon="time-outline">${t('ui.holdExpired')}</ok-inline-feedback>`
           : nothing}
         ${this.openingUnknown
-          ? html`<ok-inline-feedback tone="warning" icon="alert-circle-outline">${t('ui.openingUnknown')}</ok-inline-feedback>`
+          ? html`<ok-inline-feedback data-testid="appointments-request-booking-opening-unknown" tone="warning" icon="alert-circle-outline">${t('ui.openingUnknown')}</ok-inline-feedback>`
           : nothing}
         ${this.slots.length === 0
           ? html`<p class="said">${t(this.dayClosed ? 'ui.bookingDayClosed' : 'ui.bookingNoSlots')}</p>`
           : html`<div class="slots">
               ${this.slots.map((s) => html`<button type="button" class="slot"
+                data-testid=${`appointments-request-booking-slot-${s.slot_start}`}
                 aria-pressed=${this.startDatetime === s.slot_start ? 'true' : 'false'}
                 @click=${() => { void this.pickSlot(s); }}>${s.start_time}</button>`)}
             </div>`}
       </div>
 
       <div class="actions go">
-        <ion-button ?disabled=${!this.ready || this.busy} @click=${() => this.confirm()}>
+        <ion-button data-testid="appointments-request-booking-confirm" ?disabled=${!this.ready || this.busy} @click=${() => this.confirm()}>
           ${t('ui.bookingConfirm')}
         </ion-button>
-        <span class="cancel"><ion-button fill="clear" color="medium"
+        <span class="cancel"><ion-button data-testid="appointments-request-booking-cancel" fill="clear" color="medium"
           @click=${() => void this.cancel()}>${t('ui.bookingCancel')}</ion-button></span>
       </div>
     </div>`;
