@@ -266,6 +266,20 @@ describe('erp-appointments-request-booking', () => {
     expect(released[0].payload).toMatchObject({ source: 'whatsapp_inbox', source_ref: 'req-1' });
   });
 
+  it('paints the clear «Cancel» in the medium tone from its own styles, not through color= (pm#392)', async () => {
+    const el = await mount();
+    await bindUpTo(el);
+    const btn = shadow(el).querySelector('.cancel ion-button');
+    expect(btn, 'the panel offers «Cancel»').not.toBeNull();
+    expect(btn!.hasAttribute('color'), 'color= does not reach inside a shadow root').toBe(false);
+    expect(btn!.getAttribute('fill')).toBe('clear');
+    expect(btn!.classList.contains('tone-medium')).toBe(true);
+    const css = (el.constructor as unknown as { elementStyles: { cssText: string }[] }).elementStyles
+      .map((s) => s.cssText).join('\n').replace(/\s+/g, ' ');
+    expect(css).toContain('ion-button.tone-medium[fill] {');
+    expect(css).toContain('--color: var(--ion-color-medium, #636469)');
+  });
+
   it('does not release on confirm — the booking CONSUMES the hold, server-side', async () => {
     const el = await mount();
     await bindUpTo(el);

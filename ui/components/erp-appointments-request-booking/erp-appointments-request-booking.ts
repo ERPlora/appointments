@@ -95,6 +95,9 @@ export class ErpAppointmentsRequestBooking extends LitElement {
       border:1px solid var(--ion-color-step-200, #d8d5d0); border-radius:.4rem;
       background: var(--ion-background-color, #fff); color: inherit; font: inherit; }
     .actions { display:flex; gap:.4rem; align-items:center; flex-wrap:wrap; }
+    /* pm#392: color= is a document-level rule Ionic cannot apply inside this shadow root; the
+       tone is read from the theme token here instead. */
+    ion-button.tone-medium[fill] { --color: var(--ion-color-medium, #636469); }
     .slots { display:flex; flex-wrap:wrap; gap:.35rem; }
     .slot { min-height:44px; min-width:72px; padding:0 .7rem; border-radius:.4rem; cursor:pointer;
       border:1px solid var(--ion-color-step-200, #d8d5d0); background: var(--ion-background-color, #fff);
@@ -577,7 +580,7 @@ export class ErpAppointmentsRequestBooking extends LitElement {
         <ion-button data-testid="appointments-request-booking-confirm" ?disabled=${!this.ready || this.busy} @click=${() => this.confirm()}>
           ${t('ui.bookingConfirm')}
         </ion-button>
-        <span class="cancel"><ion-button data-testid="appointments-request-booking-cancel" fill="clear" color="medium"
+        <span class="cancel"><ion-button data-testid="appointments-request-booking-cancel" fill="clear" class="tone-medium"
           @click=${() => void this.cancel()}>${t('ui.bookingCancel')}</ion-button></span>
       </div>
     </div>`;
