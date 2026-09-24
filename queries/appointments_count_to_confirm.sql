@@ -1,7 +1,10 @@
 -- Appointments waiting for the business to confirm them — the bell counter (appointments#169).
 --
 -- With «I review them first» on (`auto_confirm_online = 0`), a booking the customer made herself
--- (online, or through WhatsApp via `_book_from_request`) is born `pending` and waits for the salon.
+-- (online, or the unattended WhatsApp flow, whose grant pins `booked_online = true` on `create`,
+-- hub#1623) is born `pending` and waits for the salon. An approval through `_book_from_request`
+-- carries no flag (its payload is `whatsapp_inbox.request.approved`, closed, without
+-- `booked_online`) and is NOT counted: the salon already reviewed that one when it approved it.
 -- The shell's bell runs this query for `bell["appointments.to_confirm"]` (hub#1678) and shows a row
 -- while `count` is above zero; it clears itself once they are confirmed or cancelled.
 --
