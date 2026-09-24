@@ -1899,7 +1899,8 @@ var es_default = {
         label: "Duraci\xF3n por defecto (minutos)"
       },
       min_booking_notice: {
-        label: "Antelaci\xF3n m\xEDnima para reservar (minutos)"
+        label: "Antelaci\xF3n m\xEDnima para reservar (minutos)",
+        description: "Se aplica a las reservas que hace el propio cliente: online, WhatsApp, solicitudes de cita. Desde el mostrador siempre puedes dar hora para ya mismo."
       },
       max_advance_booking: {
         label: "Reservar como m\xE1ximo con esta antelaci\xF3n (d\xEDas)"
@@ -2125,7 +2126,8 @@ var en_default = {
         label: "Default duration (minutes)"
       },
       min_booking_notice: {
-        label: "Minimum booking notice (minutes)"
+        label: "Minimum booking notice (minutes)",
+        description: "Applies to the bookings customers make themselves \u2014 online, WhatsApp, booking requests. From the front desk you can always book for right now."
       },
       max_advance_booking: {
         label: "Book at most this far ahead (days)"
@@ -6563,10 +6565,13 @@ var ErpAppointmentsList = class extends i3 {
         // the agenda in front of them has just read the warning above, so they may book the
         // walk-in already sitting in the chair. Sent ALWAYS, and deliberately without consulting
         // the browser clock: the deciding clock is the hub's, and one second of drift would bring
-        // back the silent refusal this issue is about. It only excuses the past — a future time is
-        // still judged by `min_booking_notice`. The other doors (inbox, batch, series) never send
-        // it.
-        allow_past: true
+        // back the silent refusal this issue is about. The other doors (inbox, batch, series) never
+        // send it.
+        allow_past: true,
+        // appointments#157 — and the minimum notice is the CUSTOMER's window (online, WhatsApp):
+        // the receptionist booking «half an hour from now» is the person who sees the agenda.
+        // Only the minimum steps aside; the maximum advance, the hours and the overlap still judge.
+        allow_short_notice: true
       });
       this.newCustomerId = "";
       this.newServiceId = "";

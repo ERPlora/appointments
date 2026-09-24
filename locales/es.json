@@ -13,7 +13,8 @@
         "label": "Duración por defecto (minutos)"
       },
       "min_booking_notice": {
-        "label": "Antelación mínima para reservar (minutos)"
+        "label": "Antelación mínima para reservar (minutos)",
+        "description": "Se aplica a las reservas que hace el propio cliente: online, WhatsApp, solicitudes de cita. Desde el mostrador siempre puedes dar hora para ya mismo."
       },
       "max_advance_booking": {
         "label": "Reservar como máximo con esta antelación (días)"
