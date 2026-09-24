@@ -77,6 +77,10 @@ a warning before saving, not a wall. Opening hours, blocked time, the maximum ad
 still apply. A client moving her own appointment through WhatsApp keeps the minimum notice. If the
 move is refused, the reason shows inside the panel and in a notification.
 
+Dragging the block on the staff agenda is the front desk too: it can drop an appointment into the
+next half hour (appointments#167). It **cannot** drop it into a time that has already passed — a
+block dropped there by mistake gets no warning first — so moving to the past stays in the panel.
+
 Requires `appointments.change_appointment`.
 
 ### See the detail and the history

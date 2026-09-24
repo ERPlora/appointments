@@ -218,12 +218,39 @@ describe('the agenda wires the drag of ok-scheduler (appointments#74)', () => {
     ).toBe(new Date('2026-08-07T12:00').getTime());
     expect(String(sent!.payload.start_datetime).slice(0, 16), 'the sent WALL clock shifted').toBe('2026-08-07T12:00');
     expect(sent!.payload.duration_minutes, 'the grid preserves the length; the row is the truth').toBe(30);
+    // appointments#167 — the only extra key is the counter's short-notice declaration; the
+    // schema is additionalProperties:false, so anything else would reject the whole payload.
     expect(Object.keys(sent!.payload).sort(), 'the schema is additionalProperties:false').toEqual([
+      'allow_short_notice',
       'appointment_id',
       'duration_minutes',
       'start_datetime',
     ]);
     expect(wasReverted(), 'an accepted move does not go back').toBe(false);
+  });
+
+  it('the drag is the counter: it declares allow_short_notice, never allow_past (appointments#167)', async () => {
+    const el = await mount();
+    const scheduler = await staffView(el);
+    el.day = '2026-08-07';
+    await el.updateComplete;
+    await drop(scheduler, {
+      id: 'a1',
+      resourceId: 's1',
+      start: '12:00',
+      end: '12:30',
+      from: { resourceId: 's1', start: '10:00', end: '10:30' },
+    });
+
+    const sent = rescheduleSent();
+    expect(
+      sent?.payload.allow_short_notice,
+      'the minimum notice is the customer window: the panel already moves inside it, the drag must too',
+    ).toBe(true);
+    expect(
+      'allow_past' in (sent?.payload ?? {}),
+      'a block dropped into the past by mistake carries no prior warning: the drag never excuses the past',
+    ).toBe(false);
   });
 
   it('refreshes the day after the move lands', async () => {
