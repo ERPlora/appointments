@@ -40,7 +40,7 @@ name, phone and price. There are no cross-module foreign keys.
 
 | Event | When |
 |---|---|
-| `appointments.appointment.created` | a booking is made |
+| `appointments.appointment.created` | a booking is made — one per appointment, also for each appointment of a batch booking |
 | `appointments.appointment.updated` | its details change |
 | `appointments.appointment.confirmed` / `.started` / `.completed` | it advances |
 | `appointments.appointment.cancelled` / `.no_show` | it ends badly |
