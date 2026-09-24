@@ -2109,6 +2109,11 @@ var es_default = {
     "appointments.cannot_start": "Esta cita no se puede iniciar: no est\xE1 confirmada.",
     "appointments.cannot_update_settings": "No se han podido cambiar los ajustes de reserva: este negocio no tiene ajustes en uso ahora mismo.",
     "appointments.schedule_unavailable": "Ese horario no est\xE1 disponible: no existe en este negocio o se ha eliminado."
+  },
+  bell: {
+    "appointments.to_confirm": {
+      label: "Citas por confirmar"
+    }
   }
 };
 
@@ -2337,6 +2342,11 @@ var en_default = {
     "appointments.cannot_start": "This appointment cannot be started: it is not confirmed.",
     "appointments.cannot_update_settings": "The booking settings could not be changed: this business has no settings in use right now.",
     "appointments.schedule_unavailable": "That schedule is not available: it does not exist in this business or it has been deleted."
+  },
+  bell: {
+    "appointments.to_confirm": {
+      label: "Appointments to confirm"
+    }
   }
 };
 
