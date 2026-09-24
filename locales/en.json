@@ -222,5 +222,10 @@
     "appointments.cannot_start": "This appointment cannot be started: it is not confirmed.",
     "appointments.cannot_update_settings": "The booking settings could not be changed: this business has no settings in use right now.",
     "appointments.schedule_unavailable": "That schedule is not available: it does not exist in this business or it has been deleted."
+  },
+  "bell": {
+    "appointments.to_confirm": {
+      "label": "Appointments to confirm"
+    }
   }
 }

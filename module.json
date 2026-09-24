@@ -95,6 +95,15 @@
       "component": "erp-appointments-list"
     }
   ],
+  "bell": {
+    "appointments.to_confirm": {
+      "label": "Appointments to confirm",
+      "icon": "calendar-outline",
+      "query": "appointments.appointments.count_to_confirm",
+      "nav": "appointments",
+      "permission": "appointments.view_appointment"
+    }
+  },
   "provides_slots": [
     {
       "slot": "customers.detail",
@@ -370,6 +379,14 @@
       "sql": "queries/slot_holds_upcoming.sql",
       "ai": {
         "description": "Loads every live slot hold still ahead, used by the batch and recurring handlers, which span several days and cannot express one day per read (runtime reads)."
+      }
+    },
+    "appointments.appointments.count_to_confirm": {
+      "permission": "appointments.view_appointment",
+      "sql": "queries/appointments_count_to_confirm.sql",
+      "schema": "schemas/count_to_confirm.json",
+      "ai": {
+        "description": "Counts the upcoming appointments the customer booked (online or WhatsApp) that are still pending, waiting for the business to confirm them. Feeds the «Appointments to confirm» bell counter."
       }
     }
   },

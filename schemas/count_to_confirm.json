@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "appointments.appointments.count_to_confirm params",
+  "description": "Params of queries/appointments_count_to_confirm.sql. `hub_id` and `now` are injected by the runtime (§2.5), never sent. It takes no params. Closed contract.",
+  "type": "object",
+  "properties": {},
+  "additionalProperties": false
+}
