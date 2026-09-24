@@ -12,7 +12,8 @@
         "label": "Default duration (minutes)"
       },
       "min_booking_notice": {
-        "label": "Minimum booking notice (minutes)"
+        "label": "Minimum booking notice (minutes)",
+        "description": "Applies to the bookings customers make themselves — online, WhatsApp, booking requests. From the front desk you can always book for right now."
       },
       "max_advance_booking": {
         "label": "Book at most this far ahead (days)"

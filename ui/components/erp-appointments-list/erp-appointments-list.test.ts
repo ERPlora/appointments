@@ -365,6 +365,20 @@ describe('el rechazo del alta se ve DENTRO del formulario (appointments#155)', (
     ).toBe(true);
   });
 
+  // appointments#157: la antelación mínima es la ventana del CLIENTE (Fresha/Booksy la archivan en
+  // la reserva online; Square/Mindbody la acotan al canal de cliente). La recepcionista que da hora
+  // «para dentro de media hora» la declara y el hub no le contesta `too_soon`.
+  it('el mostrador DECLARA `allow_short_notice`: da hora para dentro de media hora', async () => {
+    const el = await montar();
+    tabla(el)?.open('create');
+    await rellenarYEnviar(el);
+    const alta = comandos.find((c) => c.name === 'appointments.appointments.create');
+    expect(
+      alta?.payload.allow_short_notice,
+      'sin la declaración del mostrador el hub aplica la antelación de la reserva online',
+    ).toBe(true);
+  });
+
   it('avisa en el formulario cuando la hora elegida YA ha pasado', async () => {
     const el = await montar();
     tabla(el)?.open('create');

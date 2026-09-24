@@ -164,7 +164,7 @@ The module keeps a per-hub settings row read with `appointments.settings.get` an
 |---|---|
 | **Allow overlapping** | Off by default. Turning it **on disables the overlap check entirely** — the agenda still asks for confirmation before booking on top of somebody (appointments#86) |
 | Default duration | Used when the service does not decide |
-| Minimum booking notice | How soon before the slot a booking is still allowed. Measured on the **business clock** (appointments#88): a hub in Madrid counts from the salon's wall time, not from the server's UTC |
+| Minimum booking notice | How soon before the slot a booking is still allowed. Measured on the **business clock** (appointments#88): a hub in Madrid counts from the salon's wall time, not from the server's UTC. It governs the bookings customers make themselves (online, WhatsApp, booking requests); the front desk can always book for right now (appointments#157) |
 | Maximum advance booking | How far ahead you may book |
 | Calendar start and end hour | The window the agenda paints |
 | Slot interval | The step between offered slots |

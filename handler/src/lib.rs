@@ -680,14 +680,22 @@ fn default_duration_of(settings: &Value) -> i64 {
 /// zero must never mean "nothing can be booked".
 ///
 /// The boundary is inclusive: with a 60 minute notice, booking exactly 60 minutes ahead is valid.
-fn lead_time_refusal(settings: &Value, start: &Dt, now: &Dt) -> Option<DomainError> {
+///
+/// `waive_min_notice` is the counter's declaration (appointments#157): the minimum notice is the
+/// customer's window, so it steps aside; the maximum advance does not.
+fn lead_time_refusal(
+    settings: &Value,
+    start: &Dt,
+    now: &Dt,
+    waive_min_notice: bool,
+) -> Option<DomainError> {
     let ahead = cmp_secs(start, now);
 
     let notice_min = settings
         .get("min_booking_notice")
         .map(|v| as_i64(v, 0))
         .unwrap_or(0);
-    if notice_min > 0 && ahead < notice_min * 60 {
+    if !waive_min_notice && notice_min > 0 && ahead < notice_min * 60 {
         return Some(DomainError::new(
             "appointments.too_soon",
             &format!("This appointment must be booked at least {notice_min} minutes in advance."),
@@ -1681,6 +1689,31 @@ impl From<PrepareError> for String {
     }
 }
 
+/// What the COUNTER screen declares about the booking it sends — and only it can: every other
+/// door (an approval from the inbox, a batch, a series occurrence) passes
+/// [`CounterDeclaration::NONE`].
+#[derive(Clone, Copy)]
+struct CounterDeclaration {
+    /// appointments#155: the start has already begun (the walk-in in the chair).
+    past: bool,
+    /// appointments#157: book inside `min_booking_notice`, which is the customer's window.
+    short_notice: bool,
+}
+
+impl CounterDeclaration {
+    const NONE: Self = Self {
+        past: false,
+        short_notice: false,
+    };
+
+    fn from_payload(payload: &Value) -> Self {
+        Self {
+            past: as_bool(payload.get("allow_past").unwrap_or(&Value::Null)),
+            short_notice: as_bool(payload.get("allow_short_notice").unwrap_or(&Value::Null)),
+        }
+    }
+}
+
 /// Valida un ítem de cita y devuelve sus 3 intenciones (`_bump_counter` +
 /// `_insert_appointment` + `_insert_history`). Añade la cita aceptada a
 /// `candidates` para que el solape también se valide dentro del lote.
@@ -1706,7 +1739,7 @@ fn prepare_appointment(
     appointment_id: &str,
     history_description: &str,
     series: Option<&SeriesStamp>,
-    allow_past: bool,
+    counter: CounterDeclaration,
 ) -> Result<Vec<Operation>, PrepareError> {
     let customer_name = resolved.customer_name.clone();
     if customer_name.is_empty() {
@@ -1738,7 +1771,7 @@ fn prepare_appointment(
     // is the counter screen, the one place with a person who saw the warning. Every other door
     // (an approval from the inbox, a batch, a series occurrence) reaches here with `false`.
     let starts_in_past = cmp_secs(&start, now) < 0;
-    if starts_in_past && !allow_past {
+    if starts_in_past && !counter.past {
         return Err(PrepareError::Domain(DomainError::new(
             "appointments.invalid_start",
             "An appointment cannot start in the past.",
@@ -1761,9 +1794,16 @@ fn prepare_appointment(
     // that already happened: `min_booking_notice` defaults to 60 in the schema, and applying it
     // here would answer `too_soon` to every backdated walk-in — the same shut door under a
     // different code (appointments#155). A start still to come is judged as always, declared or
-    // not: the declaration excuses the past, never the window.
+    // not by `allow_past`: that declaration excuses the past, never the window.
+    //
+    // appointments#157: the window itself is the CUSTOMER's. The notice keeps an online booking
+    // from landing at 10:58 for 11:00 with nobody looking; the receptionist booking «half an hour
+    // from now» IS the person looking. Fresha and Booksy file the minimum lead time under online
+    // booking, Square and Mindbody scope it to the client channel, Acuity's admin booking skips
+    // it. So the counter's own `allow_short_notice` excuses the MINIMUM notice — only that: the
+    // maximum advance, the hours, the blocked time and the overlap still judge its booking.
     if !starts_in_past {
-        if let Some(refusal) = lead_time_refusal(settings, &start, now) {
+        if let Some(refusal) = lead_time_refusal(settings, &start, now, counter.short_notice) {
             return Err(PrepareError::Domain(refusal));
         }
     }
@@ -2174,7 +2214,8 @@ pub fn reschedule_appointment_pure(input: Value) -> Result<Output, String> {
         .unwrap_or(current);
     let end = start.add_minutes(duration);
 
-    if let Some(refusal) = lead_time_refusal(&settings, &start, &ctx.now) {
+    // Reschedule has no counter declaration yet: appointments#165.
+    if let Some(refusal) = lead_time_refusal(&settings, &start, &ctx.now, false) {
         return Ok(Output::new().with_error(refusal));
     }
     // The professional is the appointment's own, read from the row: this command moves the hour,
@@ -2281,11 +2322,12 @@ pub fn create_appointment_pure(input: Value) -> Result<Output, String> {
         &appointment_id,
         "Cita creada",
         None,
-        // appointments#155: the counter screen declares a start it knows has already begun, and
-        // only it can. `_book_from_request` delegates here with the event payload WHOLE and its
-        // schema is `additionalProperties: true` by design, so the key is stripped there before
-        // it can arrive as anything but the counter's own word.
-        as_bool(payload.get("allow_past").unwrap_or(&Value::Null)),
+        // appointments#155/#157: the counter screen declares a start it knows has already begun,
+        // or one inside the minimum notice, and only it can. `_book_from_request` delegates here
+        // with the event payload WHOLE and its schema is `additionalProperties: true` by design,
+        // so both keys are stripped there before they can arrive as anything but the counter's
+        // own word.
+        CounterDeclaration::from_payload(&payload),
     ) {
         Ok(ops) => ops,
         Err(PrepareError::Domain(refusal)) => return Ok(Output::new().with_error(refusal)),
@@ -2417,6 +2459,9 @@ pub fn book_from_request_pure(input: Value) -> Result<Output, String> {
     let mut input = input;
     if let Some(Value::Object(p)) = input.get_mut("payload") {
         p.remove("allow_past");
+        // appointments#157: nor its short notice — an approval is the customer's own booking
+        // arriving late, the very case the minimum notice is for.
+        p.remove("allow_short_notice");
     }
     let booked = match create_appointment_pure(input) {
         Ok(out) => out,
@@ -2562,7 +2607,7 @@ pub fn bulk_create_pure(input: Value) -> Result<Output, String> {
             id,
             "Cita creada (lote)",
             None,
-            false,
+            CounterDeclaration::NONE,
         ) {
             Ok(item_ops) => {
                 ops.extend(item_ops);
@@ -3337,7 +3382,7 @@ pub fn materialize_recurring_pure(input: Value) -> Result<Output, String> {
             id,
             &desc,
             Some(&stamp),
-            false,
+            CounterDeclaration::NONE,
         ) {
             Ok(item_ops) => {
                 ops.extend(item_ops);
@@ -6592,6 +6637,90 @@ mod tests {
             domain_code(&out).as_deref(),
             Some("appointments.invalid_start")
         );
+    }
+
+    // ── appointments#157 · the minimum notice is the CUSTOMER's window, not the counter's ─────
+    //
+    // A customer walks in and asks for «half an hour from now». The receptionist, with the agenda
+    // in front of her, books it — and the hub answered `too_soon`, because `min_booking_notice`
+    // (60 by default) applied to every door. The notice exists so that nobody books ONLINE at
+    // 10:58 for 11:00 without anyone seeing it; the person at the counter is exactly who sees it.
+    // Fresha and Booksy file the minimum lead time under ONLINE booking settings, Square and
+    // Mindbody scope it to the client-facing channel, and Acuity's `admin=true` disables the
+    // availability validations outright. So the counter declares `allow_short_notice` and the
+    // notice steps aside — for that caller alone. A separate declaration from `allow_past`
+    // (#155), on purpose: excusing the past and excusing the window are different decisions.
+
+    #[test]
+    fn the_counter_books_inside_the_minimum_notice_when_it_declares_it() {
+        let mut payload = item("2026-07-31T10:30:00Z", 30, "s1");
+        payload["allow_short_notice"] = json!(true);
+        let out = create_appointment_pure(input(payload, Some(lead_time(60, 0)))).unwrap();
+        assert_eq!(
+            domain_code(&out),
+            None,
+            "the counter's half-hour booking was refused"
+        );
+        assert!(!out.operations.is_empty(), "nothing was written");
+    }
+
+    /// The declaration opens the MINIMUM notice only: the far end of the window is another
+    /// setting with another reason, and it stays where it was.
+    #[test]
+    fn the_counters_short_notice_does_not_open_the_maximum_advance() {
+        let mut payload = item("2026-09-30T10:00:00Z", 30, "s1");
+        payload["allow_short_notice"] = json!(true);
+        let out = create_appointment_pure(input(payload, Some(lead_time(60, 30)))).unwrap();
+        assert_eq!(domain_code(&out).as_deref(), Some("appointments.too_far"));
+    }
+
+    /// Nor does it excuse anything after the window: a slot inside the notice AND outside the
+    /// opening hours is still refused — now for being shut, the reason that is left.
+    #[test]
+    fn the_counters_short_notice_does_not_open_the_opening_hours() {
+        let mut payload = item("2026-07-31T10:30:00Z", 30, "s1");
+        payload["allow_short_notice"] = json!(true);
+        let mut reads = lead_time(60, 0);
+        // Friday 2026-07-31 opens at 16:00 business time; 10:30Z is 12:30 in Madrid.
+        reads["schedules.business_hours.list"] = json!([bh(4, "16:00", "20:00")]);
+        let out = create_appointment_pure(input(payload, Some(reads))).unwrap();
+        assert_eq!(
+            domain_code(&out).as_deref(),
+            Some("appointments.outside_schedule")
+        );
+    }
+
+    /// 🔴 The declaration is the counter's and nobody else's. An approval from the inbox is the
+    /// customer's own booking arriving late: it hands its payload to `create` whole, so the key
+    /// has to be stripped there or a message would book itself inside the notice.
+    #[test]
+    fn an_approved_request_cannot_borrow_the_counters_short_notice() {
+        let mut payload = request_payload("2026-07-31T10:30:00Z");
+        payload["allow_short_notice"] = json!(true);
+        let out = book_from_request_pure(input(payload, Some(lead_time(60, 0)))).unwrap();
+        assert!(
+            out.operations.is_empty(),
+            "the inbox booked inside the notice"
+        );
+        let answer = event(&out, "appointments.booking_request.failed").expect("failure answer");
+        assert_eq!(
+            answer.payload.get("reason_code"),
+            Some(&json!("appointments.too_soon"))
+        );
+    }
+
+    /// Same for a batch item: the batch is not the counter's single booking.
+    #[test]
+    fn a_batch_item_cannot_borrow_the_counters_short_notice() {
+        let mut soon = slot("2026-07-31T10:30:00Z");
+        soon["allow_short_notice"] = json!(true);
+        let out = bulk_create_pure(batch_input(batch(json!([soon])), Some(lead_time(60, 0))))
+            .expect("the batch reports per item, it does not abort");
+        assert!(
+            out.operations.is_empty(),
+            "a batch item booked inside the notice"
+        );
+        assert_eq!(domain_code(&out).as_deref(), Some("appointments.too_soon"));
     }
 
     #[test]
