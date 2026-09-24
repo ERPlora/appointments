@@ -223,5 +223,10 @@
     "appointments.cannot_start": "Esta cita no se puede iniciar: no está confirmada.",
     "appointments.cannot_update_settings": "No se han podido cambiar los ajustes de reserva: este negocio no tiene ajustes en uso ahora mismo.",
     "appointments.schedule_unavailable": "Ese horario no está disponible: no existe en este negocio o se ha eliminado."
+  },
+  "bell": {
+    "appointments.to_confirm": {
+      "label": "Citas por confirmar"
+    }
   }
 }
