@@ -105,6 +105,7 @@
     "historyError": "The visit history could not be loaded.",
     "actionReschedule": "Reschedule",
     "rescheduleTitle": "Move appointment",
+    "reschedulePastNotice": "This time has already passed. The appointment will be moved to when it really took place.",
     "rescheduleHint": "Pick the new slot. The customer, the service and the professional stay as they are.",
     "confirmReschedule": "Move appointment",
     "cancelReschedule": "Cancel",

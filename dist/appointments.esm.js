@@ -1992,6 +1992,7 @@ var es_default = {
     historyError: "No se pudo cargar el historial de visitas.",
     actionReschedule: "Reprogramar",
     rescheduleTitle: "Mover la cita",
+    reschedulePastNotice: "Esta hora ya ha pasado. La cita quedar\xE1 en la hora en que de verdad se atendi\xF3.",
     rescheduleHint: "Elige el nuevo hueco. La clienta, el servicio y el profesional se quedan como est\xE1n.",
     confirmReschedule: "Mover la cita",
     cancelReschedule: "Cancelar",
@@ -2219,6 +2220,7 @@ var en_default = {
     historyError: "The visit history could not be loaded.",
     actionReschedule: "Reschedule",
     rescheduleTitle: "Move appointment",
+    reschedulePastNotice: "This time has already passed. The appointment will be moved to when it really took place.",
     rescheduleHint: "Pick the new slot. The customer, the service and the professional stay as they are.",
     confirmReschedule: "Move appointment",
     cancelReschedule: "Cancel",
@@ -6249,6 +6251,14 @@ function domainErrorText(e5, fallbackKey) {
   }
   return message || erplora3().t(CATALOG3, fallbackKey);
 }
+function wallIsPast(wall) {
+  if (!wall) return false;
+  try {
+    return new Date(wallToBusinessIso(wall)).getTime() < Date.now();
+  } catch {
+    return false;
+  }
+}
 function rows3(r6) {
   if (Array.isArray(r6)) return r6;
   if (r6 && typeof r6 === "object" && Array.isArray(r6.rows)) {
@@ -6529,12 +6539,11 @@ var ErpAppointmentsList = class extends i3 {
    *  change with it. This is a warning, not a gate — the hub decides whether it is stored, and
    *  since appointments#155 it says yes. A half-typed time is not an instant: warn about nothing. */
   get newStartIsPast() {
-    if (!this.newStart) return false;
-    try {
-      return new Date(wallToBusinessIso(this.newStart)).getTime() < Date.now();
-    } catch {
-      return false;
-    }
+    return wallIsPast(this.newStart);
+  }
+  /** appointments#156 — the same warning on the move panel: the hour she was really seen. */
+  get rescheduleStartIsPast() {
+    return wallIsPast(this.rescheduleStart);
   }
   async createAppointment(ev) {
     ev.preventDefault();
@@ -6879,6 +6888,7 @@ var ErpAppointmentsList = class extends i3 {
     const minutes = Math.trunc(Number(this.rescheduleDuration));
     this.saving = true;
     this.error = "";
+    this.formError = "";
     try {
       if (scope === "this_and_following") {
         await erplora3().command("appointments.recurring.update", {
@@ -6899,14 +6909,22 @@ var ErpAppointmentsList = class extends i3 {
         await erplora3().command("appointments.appointments.reschedule", {
           appointment_id: this.rescheduleId,
           start_datetime: startIso,
-          duration_minutes: minutes
+          duration_minutes: minutes,
+          // appointments#165 / #156 — this panel IS the counter, so it declares what the create
+          // form declares (#155, #157): the client seen at 11:30 instead of 11:00, and the one who
+          // arrived early and fits in half an hour. Sent ALWAYS, without consulting the browser
+          // clock: the deciding clock is the hub's. The customer channel cannot borrow them (the
+          // handler ignores them there), and the drag on the timeline does not send them.
+          allow_past: true,
+          allow_short_notice: true
         });
       }
       this.clearReschedule();
       this.dataTable()?.close();
       await this.refresh();
     } catch (e5) {
-      this.error = domainErrorText(e5, "ui.errReschedule");
+      this.formError = domainErrorText(e5, "ui.errReschedule");
+      erplora3().notify?.({ type: "error", message: this.formError });
     } finally {
       this.saving = false;
     }
@@ -7066,6 +7084,8 @@ var ErpAppointmentsList = class extends i3 {
       <p class="ctx">${t5("ui.fieldStaff")}: <strong>${this.rescheduleStaffName || "\u2014"}</strong></p>
       <ion-input data-testid="appointments-list-reschedule-start" data-role="reschedule-start" fill="outline" label-placement="floating" label=${t5("ui.fieldStart")} type="datetime-local" .value=${this.rescheduleStart} @ionInput=${(e5) => this.rescheduleStart = e5.target.value}></ion-input>
       <ion-input data-testid="appointments-list-reschedule-duration" data-role="reschedule-duration" fill="outline" label-placement="floating" label=${t5("ui.fieldMinutes")} type="number" min="1" .value=${this.rescheduleDuration} @ionInput=${(e5) => this.rescheduleDuration = e5.target.value}></ion-input>
+      ${this.rescheduleStartIsPast ? b2`<ok-inline-feedback data-testid="appointments-list-reschedule-past-notice" tone="warning" icon="time-outline">${t5("ui.reschedulePastNotice")}</ok-inline-feedback>` : A}
+      ${this.formError ? b2`<ok-inline-feedback data-testid="appointments-list-reschedule-error" tone="danger" icon="alert-circle-outline">${this.formError}</ok-inline-feedback>` : A}
       <div class="actions">
         <ion-button data-testid="appointments-list-reschedule-cancel" type="button" size="small" fill="clear" @click=${() => {
       this.clearReschedule();

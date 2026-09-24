@@ -173,6 +173,22 @@ def check_schema() -> None:
             f"{rel}: customer_id must NOT be required at schema level — the agenda screen moves "
             f"appointments on the staff channel without one; the customer channel is bound by the handler"
         )
+    # appointments#165 / #156: the move panel is the counter and declares what `create` lets it
+    # declare. Undeclared here, the handler never sees them: the whole payload is rejected.
+    for flag in ("allow_past", "allow_short_notice"):
+        prop = properties.get(flag)
+        if not isinstance(prop, dict):
+            fail(
+                f"{rel}: no `{flag}` property — the counter cannot declare it when it moves an "
+                f"appointment, and additionalProperties false rejects the whole payload"
+            )
+            continue
+        if prop.get("type") != "boolean":
+            fail(f"{rel}: {flag}.type must be 'boolean', got {prop.get('type')!r}")
+        if prop.get("default") is not False:
+            fail(f"{rel}: {flag}.default must be false — only the counter screen declares it")
+        if flag in required:
+            fail(f"{rel}: {flag} must NOT be required — the customer channel never sends it")
     if schema.get("additionalProperties") is not False:
         fail(f"{rel}: additionalProperties must stay false — the payload is a closed contract")
 

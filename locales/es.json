@@ -106,6 +106,7 @@
     "historyError": "No se pudo cargar el historial de visitas.",
     "actionReschedule": "Reprogramar",
     "rescheduleTitle": "Mover la cita",
+    "reschedulePastNotice": "Esta hora ya ha pasado. La cita quedará en la hora en que de verdad se atendió.",
     "rescheduleHint": "Elige el nuevo hueco. La clienta, el servicio y el profesional se quedan como están.",
     "confirmReschedule": "Mover la cita",
     "cancelReschedule": "Cancelar",

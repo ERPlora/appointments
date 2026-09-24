@@ -215,7 +215,8 @@ describe('answering the question', () => {
     el.seriesScope = 'this_and_following';
     await el.confirmSeriesScope();
     await el.updateComplete;
-    expect((el as unknown as { error: string }).error).toBeTruthy();
+    // appointments#156: inside the panel, where the person is looking.
+    expect((el as unknown as { formError: string }).formError).toBeTruthy();
     expect(el.rescheduleId).toBe('a1');
   });
 });

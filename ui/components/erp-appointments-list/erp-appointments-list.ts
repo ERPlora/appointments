@@ -191,6 +191,17 @@ function domainErrorText(e: unknown, fallbackKey: string): string {
 
 
 /** Filas de una query: el motor paginado devuelve `{rows,total,…}`; las simples, un array. */
+/** Has this `datetime-local` wall reading (in the salon's clock) already passed? Only to WARN:
+ *  the deciding clock is the hub's (appointments#155). */
+function wallIsPast(wall: string): boolean {
+  if (!wall) return false;
+  try {
+    return new Date(wallToBusinessIso(wall)).getTime() < Date.now();
+  } catch {
+    return false;
+  }
+}
+
 function rows<T>(r: unknown): T[] {
   if (Array.isArray(r)) return r as T[];
   if (r && typeof r === 'object' && Array.isArray((r as { rows?: T[] }).rows)) {
@@ -543,12 +554,12 @@ export class ErpAppointmentsList extends LitElement {
    *  change with it. This is a warning, not a gate — the hub decides whether it is stored, and
    *  since appointments#155 it says yes. A half-typed time is not an instant: warn about nothing. */
   private get newStartIsPast(): boolean {
-    if (!this.newStart) return false;
-    try {
-      return new Date(wallToBusinessIso(this.newStart)).getTime() < Date.now();
-    } catch {
-      return false;
-    }
+    return wallIsPast(this.newStart);
+  }
+
+  /** appointments#156 — the same warning on the move panel: the hour she was really seen. */
+  private get rescheduleStartIsPast(): boolean {
+    return wallIsPast(this.rescheduleStart);
   }
 
   private async createAppointment(ev: Event) {
@@ -945,6 +956,7 @@ export class ErpAppointmentsList extends LitElement {
     const minutes = Math.trunc(Number(this.rescheduleDuration));
     this.saving = true;
     this.error = '';
+    this.formError = '';
     try {
       if (scope === 'this_and_following') {
         await erplora().command('appointments.recurring.update', {
@@ -972,6 +984,13 @@ export class ErpAppointmentsList extends LitElement {
           appointment_id: this.rescheduleId,
           start_datetime: startIso,
           duration_minutes: minutes,
+          // appointments#165 / #156 — this panel IS the counter, so it declares what the create
+          // form declares (#155, #157): the client seen at 11:30 instead of 11:00, and the one who
+          // arrived early and fits in half an hour. Sent ALWAYS, without consulting the browser
+          // clock: the deciding clock is the hub's. The customer channel cannot borrow them (the
+          // handler ignores them there), and the drag on the timeline does not send them.
+          allow_past: true,
+          allow_short_notice: true,
         });
       }
       this.clearReschedule();
@@ -981,7 +1000,11 @@ export class ErpAppointmentsList extends LitElement {
       // El solape lo rechaza el SERVIDOR (`_appointment_overlap_assert.sql`), y el festivo, la
       // antelación y el estado terminal los rechaza el handler con su código de dominio. El panel
       // se queda abierto con lo tecleado: la recepcionista elige otro hueco sin volver a empezar.
-      this.error = domainErrorText(e, 'ui.errReschedule');
+      // appointments#156 — the refusal goes where the person is: inside the panel (which covers
+      // the list's own feedback entirely) and in the toast. The DRAG path keeps `this.error`:
+      // there is no panel open there.
+      this.formError = domainErrorText(e, 'ui.errReschedule');
+      erplora().notify?.({ type: 'error', message: this.formError });
     } finally {
       this.saving = false;
     }
@@ -1156,6 +1179,12 @@ export class ErpAppointmentsList extends LitElement {
       <p class="ctx">${t('ui.fieldStaff')}: <strong>${this.rescheduleStaffName || '—'}</strong></p>
       <ion-input data-testid="appointments-list-reschedule-start" data-role="reschedule-start" fill="outline" label-placement="floating" label=${t('ui.fieldStart')} type="datetime-local" .value=${this.rescheduleStart} @ionInput=${(e: any) => (this.rescheduleStart = e.target.value)}></ion-input>
       <ion-input data-testid="appointments-list-reschedule-duration" data-role="reschedule-duration" fill="outline" label-placement="floating" label=${t('ui.fieldMinutes')} type="number" min="1" .value=${this.rescheduleDuration} @ionInput=${(e: any) => (this.rescheduleDuration = e.target.value)}></ion-input>
+      ${this.rescheduleStartIsPast
+        ? html`<ok-inline-feedback data-testid="appointments-list-reschedule-past-notice" tone="warning" icon="time-outline">${t('ui.reschedulePastNotice')}</ok-inline-feedback>`
+        : nothing}
+      ${this.formError
+        ? html`<ok-inline-feedback data-testid="appointments-list-reschedule-error" tone="danger" icon="alert-circle-outline">${this.formError}</ok-inline-feedback>`
+        : nothing}
       <div class="actions">
         <ion-button data-testid="appointments-list-reschedule-cancel" type="button" size="small" fill="clear" @click=${() => { this.clearReschedule(); this.dataTable()?.close(); }}>${t('ui.cancelReschedule')}</ion-button>
         <ion-button data-testid="appointments-list-reschedule-submit" type="submit" size="small" ?disabled=${this.saving || !this.rescheduleStart || !this.rescheduleDuration}>${this.saving ? t('ui.saving') : t('ui.confirmReschedule')}</ion-button>
