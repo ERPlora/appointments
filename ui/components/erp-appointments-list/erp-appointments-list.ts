@@ -893,6 +893,11 @@ export class ErpAppointmentsList extends LitElement {
         appointment_id: id,
         start_datetime: startIso,
         duration_minutes: appointment.duration_minutes,
+        // appointments#167 — the agenda is the counter too: the minimum notice is the customer's
+        // window, so dropping the early client into half an hour must behave like the panel.
+        // `allow_past` is NOT declared: a block dropped into the past by mistake carries no prior
+        // warning, so a past start keeps being refused on this path.
+        allow_short_notice: true,
       });
       await this.refresh(); // la posición optimista se descarta: manda la fila del servidor
     } catch (e) {
@@ -908,9 +913,9 @@ export class ErpAppointmentsList extends LitElement {
     erplora().notify?.({ type: 'error', message: this.error });
   }
 
-  /** Mueve la cita. Solo viajan las TRES claves del esquema
-   *  (`schemas/appointment_reschedule.json` es `additionalProperties: false`: una clave de más
-   *  y el payload entero se rechaza).
+  /** Moves the appointment. Only keys the schema declares travel
+   *  (`schemas/appointment_reschedule.json` is `additionalProperties: false`: one extra key and
+   *  the whole payload is rejected).
    *
    *  `end_datetime` ya NO se manda (appointments#10): el fin es aritmética —inicio + duración— y
    *  la hace el handler. Mandarlo desde aquí era una segunda opinión que podía no cuadrar con la
@@ -988,7 +993,8 @@ export class ErpAppointmentsList extends LitElement {
           // form declares (#155, #157): the client seen at 11:30 instead of 11:00, and the one who
           // arrived early and fits in half an hour. Sent ALWAYS, without consulting the browser
           // clock: the deciding clock is the hub's. The customer channel cannot borrow them (the
-          // handler ignores them there), and the drag on the timeline does not send them.
+          // handler ignores them there), and the drag on the timeline sends only the short notice
+          // (appointments#167).
           allow_past: true,
           allow_short_notice: true,
         });
