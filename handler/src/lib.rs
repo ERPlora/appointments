@@ -1690,8 +1690,8 @@ impl From<PrepareError> for String {
 }
 
 /// What the COUNTER screen declares about the booking it sends — and only it can: every other
-/// door (an approval from the inbox, a batch, a series occurrence) passes
-/// [`CounterDeclaration::NONE`].
+/// door (an approval from the inbox, a batch, a series occurrence, the customer channel of
+/// `reschedule`) passes [`CounterDeclaration::NONE`].
 #[derive(Clone, Copy)]
 struct CounterDeclaration {
     /// appointments#155: the start has already begun (the walk-in in the chair).
@@ -2194,7 +2194,16 @@ pub fn reschedule_appointment_pure(input: Value) -> Result<Output, String> {
             "That start date and time is not a valid instant.",
         ));
     };
-    if cmp_secs(&start, &ctx.now) < 0 {
+    // appointments#165 / #156: the move panel IS the counter, so it carries the same two
+    // declarations `create` does (#155, #157) — the client seen at 11:30 instead of 11:00, the
+    // one who arrived early and fits in half an hour. The customer channel (appointments#142)
+    // cannot borrow them: its window is exactly what the minimum notice protects.
+    let counter = match channel {
+        CallerChannel::Staff => CounterDeclaration::from_payload(&payload),
+        CallerChannel::Customer => CounterDeclaration::NONE,
+    };
+    let starts_in_past = cmp_secs(&start, &ctx.now) < 0;
+    if starts_in_past && !counter.past {
         return Ok(refuse(
             "appointments.invalid_start",
             "An appointment cannot start in the past.",
@@ -2214,9 +2223,14 @@ pub fn reschedule_appointment_pure(input: Value) -> Result<Output, String> {
         .unwrap_or(current);
     let end = start.add_minutes(duration);
 
-    // Reschedule has no counter declaration yet: appointments#165.
-    if let Some(refusal) = lead_time_refusal(&settings, &start, &ctx.now, false) {
-        return Ok(Output::new().with_error(refusal));
+    // Same rule as `prepare_appointment`: the window is measured from `now` forward, so a start
+    // that already happened has nothing to say about it; `allow_short_notice` excuses only the
+    // minimum — the maximum advance, the hours, blocked time and overlap still judge the move.
+    if !starts_in_past {
+        if let Some(refusal) = lead_time_refusal(&settings, &start, &ctx.now, counter.short_notice)
+        {
+            return Ok(Output::new().with_error(refusal));
+        }
     }
     // The professional is the appointment's own, read from the row: this command moves the hour,
     // it does not hand the caller back the identity appointments#11 took away from `create`.
@@ -7005,6 +7019,154 @@ mod tests {
         .unwrap_err();
         assert!(err.starts_with("invalid_payload:"), "{err}");
         assert!(err.contains("channel"), "{err}");
+    }
+
+    // ── appointments#165 / #156 · the counter's declarations reach the MOVE too ───────────────
+    //
+    // appointments#155 and #157 gave the counter two declarations on `create`: `allow_past` (the
+    // walk-in already in the chair) and `allow_short_notice` (the minimum notice is the CUSTOMER's
+    // window). Moving an appointment is booking it again, and the panel that moves it is the same
+    // counter: the client of 13:00 who arrives early and can be seen in half an hour, or the one
+    // who arrived late and was seen at 11:30 instead of 11:00. The customer channel (WhatsApp,
+    // appointments#142) keeps both walls: it cannot borrow the counter's declarations.
+
+    fn counter_move_to(start: &str, past: bool, short_notice: bool) -> Value {
+        let mut p = move_to(start, Some(30));
+        if past {
+            p["allow_past"] = json!(true);
+        }
+        if short_notice {
+            p["allow_short_notice"] = json!(true);
+        }
+        p
+    }
+
+    #[test]
+    fn the_counter_moves_an_appointment_inside_the_minimum_notice_when_it_declares_it() {
+        let out = reschedule_appointment_pure(reschedule_input(
+            counter_move_to("2026-07-31T10:30:00Z", false, true),
+            booked_row("2026-07-31T11:00:00Z", 60, "confirmed"),
+            Some(lead_time(60, 0)),
+        ))
+        .unwrap();
+        assert_eq!(domain_code(&out), None);
+        let p = op_params(&out, "_reschedule_row");
+        assert_eq!(
+            p.get("start_datetime"),
+            Some(&json!("2026-07-31T10:30:00+00:00"))
+        );
+    }
+
+    /// It excuses the MINIMUM notice alone: the maximum advance still judges the move.
+    #[test]
+    fn the_counters_short_notice_does_not_open_the_maximum_advance_on_a_move() {
+        let out = reschedule_appointment_pure(reschedule_input(
+            counter_move_to("2026-08-10T10:00:00Z", false, true),
+            booked_row("2026-07-31T11:00:00Z", 60, "confirmed"),
+            Some(lead_time(60, 3)),
+        ))
+        .unwrap();
+        assert_eq!(domain_code(&out).as_deref(), Some("appointments.too_far"));
+    }
+
+    /// Nor the opening hours: inside the notice AND shut is refused for being shut.
+    #[test]
+    fn the_counters_short_notice_does_not_open_the_opening_hours_on_a_move() {
+        let mut reads = lead_time(60, 0);
+        // Friday 2026-07-31 opens at 16:00 business time; 10:30Z is 12:30 in Madrid.
+        reads["schedules.business_hours.list"] = json!([bh(4, "16:00", "20:00")]);
+        let out = reschedule_appointment_pure(reschedule_input(
+            counter_move_to("2026-07-31T10:30:00Z", false, true),
+            booked_row("2026-07-31T11:00:00Z", 60, "confirmed"),
+            Some(reads),
+        ))
+        .unwrap();
+        assert_eq!(
+            domain_code(&out).as_deref(),
+            Some("appointments.outside_schedule")
+        );
+    }
+
+    /// 🔴 The client moving her own appointment through WhatsApp keeps the notice, whatever keys
+    /// the external channel sends along.
+    #[test]
+    fn the_customer_channel_cannot_borrow_the_counters_short_notice() {
+        let mut payload =
+            move_asked_by("2026-07-31T10:30:00Z", Some("customer"), Some(ROW_CUSTOMER));
+        payload["allow_short_notice"] = json!(true);
+        let out = reschedule_appointment_pure(reschedule_input(
+            payload,
+            booked_row_of(ROW_CUSTOMER, "2026-07-31T11:00:00Z", 60, "confirmed"),
+            Some(lead_time(60, 0)),
+        ))
+        .unwrap();
+        assert_eq!(domain_code(&out).as_deref(), Some("appointments.too_soon"));
+        assert!(out.operations.is_empty());
+    }
+
+    /// appointments#156: the client was seen at 09:30, half an hour ago — the agenda tells the
+    /// truth. A start that already happened has nothing to say about the forward window either.
+    #[test]
+    fn the_counter_moves_an_appointment_to_the_hour_it_was_really_attended() {
+        let out = reschedule_appointment_pure(reschedule_input(
+            counter_move_to("2026-07-31T09:30:00Z", true, false),
+            booked_row("2026-07-31T09:00:00Z", 60, "confirmed"),
+            Some(lead_time(60, 0)),
+        ))
+        .unwrap();
+        assert_eq!(domain_code(&out), None);
+        let p = op_params(&out, "_reschedule_row");
+        assert_eq!(
+            p.get("start_datetime"),
+            Some(&json!("2026-07-31T09:30:00+00:00"))
+        );
+    }
+
+    /// `allow_past` excuses the past and only the past: a start still to come keeps the notice.
+    #[test]
+    fn the_counters_past_declaration_alone_does_not_open_the_minimum_notice_on_a_move() {
+        let out = reschedule_appointment_pure(reschedule_input(
+            counter_move_to("2026-07-31T10:30:00Z", true, false),
+            booked_row("2026-07-31T11:00:00Z", 60, "confirmed"),
+            Some(lead_time(60, 0)),
+        ))
+        .unwrap();
+        assert_eq!(domain_code(&out).as_deref(), Some("appointments.too_soon"));
+    }
+
+    /// 🔴 Nor can the customer channel move her appointment into yesterday.
+    #[test]
+    fn the_customer_channel_cannot_borrow_the_counters_past_declaration() {
+        let mut payload =
+            move_asked_by("2026-07-30T10:00:00Z", Some("customer"), Some(ROW_CUSTOMER));
+        payload["allow_past"] = json!(true);
+        let out = reschedule_appointment_pure(reschedule_input(
+            payload,
+            booked_row_of(ROW_CUSTOMER, "2026-07-31T11:00:00Z", 60, "confirmed"),
+            Some(lead_time(0, 0)),
+        ))
+        .unwrap();
+        assert_eq!(
+            domain_code(&out).as_deref(),
+            Some("appointments.invalid_start")
+        );
+        assert!(out.operations.is_empty());
+    }
+
+    /// A past start still has to fit the agenda: blocked time keeps judging the declared move.
+    #[test]
+    fn the_counters_past_declaration_does_not_open_blocked_time_on_a_move() {
+        let reads = blocks(json!([
+            { "id": "b1", "title": "Formación", "staff_id": "s1", "all_day": 0,
+              "start_datetime": "2026-07-31T08:00:00Z", "end_datetime": "2026-07-31T10:00:00Z" }
+        ]));
+        let out = reschedule_appointment_pure(reschedule_input(
+            counter_move_to("2026-07-31T09:00:00Z", true, false),
+            booked_row("2026-07-31T11:00:00Z", 60, "confirmed"),
+            Some(reads),
+        ))
+        .unwrap();
+        assert_eq!(domain_code(&out).as_deref(), Some("appointments.blocked"));
     }
 
     /// Identity is decided BEFORE the state, the notice and the agenda, so a stranger's guess

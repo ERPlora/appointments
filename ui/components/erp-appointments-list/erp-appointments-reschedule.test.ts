@@ -33,6 +33,7 @@ process.env.TZ = 'Europe/Madrid';
 
 const commands: { name: string; payload: Record<string, unknown> }[] = [];
 let commandFails: string | null = null;
+const toasts: { type: string; message: string }[] = [];
 
 const DAY_APPOINTMENTS = [
   {
@@ -72,6 +73,7 @@ const DAY_APPOINTMENTS = [
 beforeEach(() => {
   commands.length = 0;
   commandFails = null;
+  toasts.length = 0;
   (globalThis as Record<string, unknown>).erplora = {
     // The business timezone the runtime resolved (hub#1022) — what `erplora.timezone` carries.
     timezone: 'Europe/Madrid',
@@ -103,6 +105,7 @@ beforeEach(() => {
       return {};
     },
     on: () => () => {},
+    notify: (n: { type: string; message: string }) => toasts.push(n),
     locale: 'es',
     t: (_catalog: unknown, key: string) => key,
   };
@@ -123,6 +126,7 @@ type Wc = HTMLElement & {
   shadowRoot: ShadowRoot;
   view: string;
   error: string;
+  formError: string;
   rescheduleId: string;
   rescheduleStart: string;
   rescheduleDuration: string;
@@ -214,6 +218,8 @@ describe('the row bar can move an appointment', () => {
     // the schema no longer accepts it, and `additionalProperties:false` rejects the whole payload.
     expect(p.end_datetime, 'the end is computed server-side, not sent').toBeUndefined();
     expect(Object.keys(p).sort(), 'the payload schema is additionalProperties:false').toEqual([
+      'allow_past',
+      'allow_short_notice',
       'appointment_id',
       'duration_minutes',
       'start_datetime',
@@ -237,9 +243,82 @@ describe('the row bar can move an appointment', () => {
     await el.submitReschedule(new Event('submit'));
     await el.updateComplete;
 
-    expect(el.error, 'a double booking must be visible, not swallowed').toContain('appointment_no_overlap');
+    expect(el.formError, 'a double booking must be visible, not swallowed').toContain('appointment_no_overlap');
     expect(el.rescheduleId, 'the panel stays open so she can pick another slot').toBe('a1');
-    expect(el.shadowRoot.querySelector('ok-inline-feedback'), 'the error is painted').toBeTruthy();
+    // appointments#156 — painted INSIDE the panel, which covers the list's own feedback entirely,
+    // and in a toast too: before, the receptionist pressed «Save» and saw nothing at all.
+    const form = el.shadowRoot.querySelector('form[data-mode="reschedule"]')!;
+    const painted = form.querySelector('[data-testid="appointments-list-reschedule-error"]');
+    expect(painted, 'the refusal is painted where the person is looking').toBeTruthy();
+    expect(painted!.textContent).toContain('appointment_no_overlap');
+    expect(toasts.map((n) => n.type), 'and it also reaches the toast').toEqual(['error']);
+  });
+
+  it('does not keep painting the previous refusal while the next move is on its way', async () => {
+    const el = await mount();
+    await fireRowAction(el, 'reschedule', DAY_APPOINTMENTS[0]);
+    commandFails = 'appointment_no_overlap';
+    await el.submitReschedule(new Event('submit'));
+    commandFails = null;
+    let land!: () => void;
+    const api = (globalThis as unknown as { erplora: { command: unknown } }).erplora;
+    api.command = (name: string, payload: Record<string, unknown>) => {
+      commands.push({ name, payload });
+      return new Promise<void>((r) => (land = r));
+    };
+    const pending = el.submitReschedule(new Event('submit'));
+    await el.updateComplete;
+    expect(el.formError, 'the old refusal would describe a slot she has already changed').toBe('');
+    land();
+    await pending;
+  });
+
+  // `formError` is shared with the create form (appointments#155): a refusal the move panel
+  // leaves behind when it is cancelled would be painted under «New appointment» as if that
+  // booking had already failed. Closing the panel must forget it.
+  it('forgets the previous refusal when the panel is closed', async () => {
+    const el = await mount();
+    await fireRowAction(el, 'reschedule', DAY_APPOINTMENTS[0]);
+    commandFails = 'appointment_no_overlap';
+    await el.submitReschedule(new Event('submit'));
+    await el.updateComplete;
+    expect(el.formError, 'the refusal is there to forget').toContain('appointment_no_overlap');
+    (el.shadowRoot.querySelector('[data-testid="appointments-list-reschedule-cancel"]') as HTMLElement).click();
+    await el.updateComplete;
+    expect(el.rescheduleId, 'the panel is closed').toBe('');
+    expect(el.formError, 'a stale refusal would lie about the next move').toBe('');
+    expect(
+      el.shadowRoot.querySelector('[data-testid="appointments-list-form-error"]'),
+      'the create form must not inherit the refusal of a move that was abandoned',
+    ).toBeNull();
+  });
+
+  // appointments#165 / #156 — the panel IS the counter. It declares, always, the two things
+  // `create` lets the counter declare (#155, #157): the client seen at 11:30 instead of 11:00
+  // (a start in the past) and the one who arrived early and fits in half an hour (inside the
+  // minimum notice). Sent without consulting the browser clock: the deciding clock is the hub's.
+  it('declares the counter: a move to the past or inside the minimum notice is the receptionist deciding', async () => {
+    const el = await mount();
+    await fireRowAction(el, 'reschedule', DAY_APPOINTMENTS[0]);
+    await el.submitReschedule(new Event('submit'));
+    const p = commands.find((c) => c.name === 'appointments.appointments.reschedule')!.payload;
+    expect(p.allow_past, 'the agenda must be able to tell the hour she was really seen').toBe(true);
+    expect(p.allow_short_notice, 'the minimum notice is the customer window, not the counter').toBe(true);
+  });
+
+  it('warns, without blocking, when the new start has already passed', async () => {
+    const el = await mount();
+    await fireRowAction(el, 'reschedule', DAY_APPOINTMENTS[0]);
+    const notice = () =>
+      el.shadowRoot.querySelector('form[data-mode="reschedule"] [data-testid="appointments-list-reschedule-past-notice"]');
+    el.rescheduleStart = localInput(new Date(Date.now() + 2 * 3_600_000));
+    await el.updateComplete;
+    expect(notice(), 'a permanent notice goes unread').toBeNull();
+    el.rescheduleStart = localInput(new Date(Date.now() - 2 * 3_600_000));
+    await el.updateComplete;
+    expect(notice(), 'the past start is said out loud before saving').toBeTruthy();
+    const submit = el.shadowRoot.querySelector('[data-testid="appointments-list-reschedule-submit"]')!;
+    expect(submit.hasAttribute('disabled'), 'a warning, not a wall').toBe(false);
   });
 
   it('never dispatches a move for an appointment the command would refuse', async () => {

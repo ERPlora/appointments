@@ -97,7 +97,8 @@ beforeEach(() => {
 });
 
 type Wc = HTMLElement & {
-  error: string;
+  // appointments#156: the move panel paints its refusal INSIDE the panel (`formError`).
+  formError: string;
   rescheduleId: string;
   rescheduleStart: string;
   onRowAction: (ev: CustomEvent<{ actionId: string; row: Record<string, unknown> }>) => Promise<void>;
@@ -135,26 +136,26 @@ describe('appointments#70 · the agenda translates the refusal CODE', () => {
       ),
     );
 
-    expect(el.error).toBe(SPANISH['appointments.overlapping_appointment']);
-    expect(el.error).toContain('Ese profesional ya tiene una cita');
+    expect(el.formError).toBe(SPANISH['appointments.overlapping_appointment']);
+    expect(el.formError).toContain('Ese profesional ya tiene una cita');
   });
 
   it('keeps the handler sentence for a code the catalog has not learned', async () => {
     const el = await mount();
     await moveOnto(el, new DomainRefusal('appointments.some_future_refusal', 'A brand new no.'));
-    expect(el.error, 'an untranslated code must never paint a raw i18n key').toBe('A brand new no.');
+    expect(el.formError, 'an untranslated code must never paint a raw i18n key').toBe('A brand new no.');
   });
 
   it('does not swallow a plain failure that carries no code', async () => {
     const el = await mount();
     await moveOnto(el, new Error('connection reset'));
-    expect(el.error).toBe('connection reset');
+    expect(el.formError).toBe('connection reset');
     expect(el.shadowRoot.querySelector('ok-inline-feedback'), 'the error is painted').toBeTruthy();
   });
 
   it('never translates another module code with this module catalog', async () => {
     const el = await mount();
     await moveOnto(el, new DomainRefusal('sales.till_closed', 'The till is closed.'));
-    expect(el.error).toBe('The till is closed.');
+    expect(el.formError).toBe('The till is closed.');
   });
 });

@@ -70,6 +70,13 @@ moving it by ten minutes does not report a clash with its own old slot.
 Rescheduling an appointment that is already finished, cancelled or a no-show **fails** — it does not
 silently pretend to work.
 
+The panel is the front desk, so it can move an appointment to **right now** — the minimum notice is
+for the bookings customers make themselves (appointments#165) — and to a time that **has already
+passed**, so the agenda shows when the client was really seen (appointments#156). A past time shows
+a warning before saving, not a wall. Opening hours, blocked time, the maximum advance and overlaps
+still apply. A client moving her own appointment through WhatsApp keeps the minimum notice. If the
+move is refused, the reason shows inside the panel and in a notification.
+
 Requires `appointments.change_appointment`.
 
 ### See the detail and the history
