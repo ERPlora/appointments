@@ -273,15 +273,24 @@ describe('the row bar can move an appointment', () => {
     await pending;
   });
 
+  // `formError` is shared with the create form (appointments#155): a refusal the move panel
+  // leaves behind when it is cancelled would be painted under «New appointment» as if that
+  // booking had already failed. Closing the panel must forget it.
   it('forgets the previous refusal when the panel is closed', async () => {
     const el = await mount();
     await fireRowAction(el, 'reschedule', DAY_APPOINTMENTS[0]);
     commandFails = 'appointment_no_overlap';
     await el.submitReschedule(new Event('submit'));
-    commandFails = null;
-    await el.submitReschedule(new Event('submit'));
     await el.updateComplete;
+    expect(el.formError, 'the refusal is there to forget').toContain('appointment_no_overlap');
+    (el.shadowRoot.querySelector('[data-testid="appointments-list-reschedule-cancel"]') as HTMLElement).click();
+    await el.updateComplete;
+    expect(el.rescheduleId, 'the panel is closed').toBe('');
     expect(el.formError, 'a stale refusal would lie about the next move').toBe('');
+    expect(
+      el.shadowRoot.querySelector('[data-testid="appointments-list-form-error"]'),
+      'the create form must not inherit the refusal of a move that was abandoned',
+    ).toBeNull();
   });
 
   // appointments#165 / #156 — the panel IS the counter. It declares, always, the two things
