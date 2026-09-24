@@ -2603,6 +2603,7 @@ pub fn bulk_create_pure(input: Value) -> Result<Output, String> {
         return Ok(Output::new().with_error(availability_unavailable()));
     };
     let mut ops: Vec<Operation> = Vec::new();
+    let mut events: Vec<erplora_guest_sdk::Event> = Vec::new();
     let mut errors: Vec<String> = Vec::new();
     let mut created = 0usize;
 
@@ -2625,6 +2626,28 @@ pub fn bulk_create_pure(input: Value) -> Result<Output, String> {
         ) {
             Ok(item_ops) => {
                 ops.extend(item_ops);
+                // appointments#138: every booked slot is announced like a one-by-one booking —
+                // one `created` per appointment, because what listens (a flow confirming to the
+                // customer, a reminder) reacts to an appointment, not to a batch. The declarative
+                // `emit` of the command cannot do this: it fires once per call, not per row.
+                events.push(erplora_guest_sdk::Event::new(
+                    "appointments.appointment.created",
+                    json!({
+                        "appointment_id": id,
+                        "customer_id": resolved.customer_id,
+                        "service_id": resolved.service_id,
+                        "staff_id": resolved.staff_id,
+                        "start_datetime": str_or(item, "start_datetime", ""),
+                    }),
+                ));
+                // appointments#136: a slot born confirmed announces that too, decided by the same
+                // `born_confirmed` that set the row's status — the event and the row cannot differ.
+                if born_confirmed(&input, item, &settings) {
+                    events.push(erplora_guest_sdk::Event::new(
+                        "appointments.appointment.confirmed",
+                        json!({ "appointment_id": id }),
+                    ));
+                }
                 created += 1;
             }
             // A DOMAIN refusal is the hub saying no to a slot — the whole batch stops with the
@@ -2646,7 +2669,7 @@ pub fn bulk_create_pure(input: Value) -> Result<Output, String> {
     }
     Ok(Output {
         operations: ops,
-        events: vec![],
+        events,
         ..Default::default()
     })
 }
@@ -9031,6 +9054,101 @@ mod tests {
             born.iter().all(|s| *s == &json!("pending")),
             "a batch typed at the counter is the salon's own booking: {born:?}"
         );
+    }
+
+    // appointments#138: a batch books N appointments and must ANNOUNCE N appointments. Whatever
+    // listens to `appointments.appointment.created` — a flow sending the confirmation, a reminder,
+    // a KPI counting new bookings — used to see the one-by-one booking and not the batch, so the
+    // same appointment reached the customer or not depending on the door it came in by.
+
+    /// The batch every test below books: two slots for the same customer, service and
+    /// professional, with the ids the host hands the handler.
+    fn two_slot_batch(second: Value, settings: Value) -> Value {
+        let mut batch = json!({
+            "customer_id": "c1",
+            "service_id": "s-corte",
+            "staff_id": "s1",
+            "appointments": [ { "start_datetime": "2026-07-31T11:00:00Z" }, second ]
+        });
+        binder_applied_defaults(BULK_CREATE_SCHEMA, &mut batch);
+        let mut bulk_input = input(batch, Some(settings));
+        bulk_input["context"]["new_ids"] = json!(["apt-1", "apt-2"]);
+        bulk_input
+    }
+
+    fn events_named<'a>(out: &'a Output, name: &str) -> Vec<&'a erplora_guest_sdk::Event> {
+        out.events.iter().filter(|e| e.name == name).collect()
+    }
+
+    /// One `created` per appointment of the batch, carrying the same fields the other doors
+    /// announce: which appointment, for whom, what, with whom and when.
+    #[test]
+    fn a_batch_announces_every_appointment_it_books() {
+        let out = bulk_create_pure(two_slot_batch(
+            json!({ "start_datetime": "2026-07-31T12:00:00Z" }),
+            settings_auto_confirm(false),
+        ))
+        .unwrap();
+        assert!(out.error.is_none(), "{:?}", out.error);
+        let created = events_named(&out, "appointments.appointment.created");
+        assert_eq!(created.len(), 2, "one announcement per booked appointment: {:?}", out.events);
+        for (ev, (id, start)) in created.iter().zip([
+            ("apt-1", "2026-07-31T11:00:00Z"),
+            ("apt-2", "2026-07-31T12:00:00Z"),
+        ]) {
+            assert_eq!(ev.payload.get("appointment_id"), Some(&json!(id)));
+            assert_eq!(ev.payload.get("start_datetime"), Some(&json!(start)));
+            assert_eq!(ev.payload.get("customer_id"), Some(&json!("c1")));
+            assert_eq!(ev.payload.get("service_id"), Some(&json!("s-corte")));
+            assert_eq!(ev.payload.get("staff_id"), Some(&json!("s1")));
+        }
+        assert!(
+            events_named(&out, "appointments.appointment.confirmed").is_empty(),
+            "nothing in this batch was confirmed: {:?}",
+            out.events
+        );
+    }
+
+    /// Since appointments#136 a batch slot marked `booked_online` can be born confirmed. It then
+    /// announces BOTH — never a confirmation of an appointment that was not announced as
+    /// created — and only for that slot: the other one stays pending and silent about it.
+    #[test]
+    fn a_batch_slot_born_confirmed_announces_created_and_confirmed() {
+        let out = bulk_create_pure(two_slot_batch(
+            json!({ "start_datetime": "2026-07-31T12:00:00Z", "booked_online": true }),
+            settings_auto_confirm(true),
+        ))
+        .unwrap();
+        assert!(out.error.is_none(), "{:?}", out.error);
+        assert_eq!(events_named(&out, "appointments.appointment.created").len(), 2);
+        let confirmed = events_named(&out, "appointments.appointment.confirmed");
+        assert_eq!(confirmed.len(), 1, "only the online slot: {:?}", out.events);
+        assert_eq!(confirmed[0].payload.get("appointment_id"), Some(&json!("apt-2")));
+        // The event and the row can never disagree: the confirmed one is the one born confirmed.
+        let statuses: Vec<(&Value, &Value)> = insert_ops(&out)
+            .iter()
+            .map(|op| (&op.params["appointment_id"], &op.params["status"]))
+            .collect();
+        assert!(
+            statuses.contains(&(&json!("apt-2"), &json!("confirmed"))),
+            "{statuses:?}"
+        );
+    }
+
+    /// A batch the hub refuses books nothing, so it announces nothing.
+    #[test]
+    fn a_refused_batch_announces_nothing() {
+        let mut refused = two_slot_batch(
+            json!({ "start_datetime": "2026-07-31T12:00:00Z" }),
+            settings_auto_confirm(false),
+        );
+        refused["context"]["reads"]
+            .as_object_mut()
+            .unwrap()
+            .remove("appointments.settings.get");
+        let out = bulk_create_pure(refused).unwrap();
+        assert!(out.error.is_some(), "the batch must be refused: {:?}", out.operations);
+        assert!(out.events.is_empty(), "{:?}", out.events);
     }
 
     /// A recurring series the salon set up is the salon's own booking, whatever the switch says:
