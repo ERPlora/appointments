@@ -1706,18 +1706,12 @@ impl CounterDeclaration {
         short_notice: false,
     };
 
-    /// What the payload declares, if a PERSON of the team is calling (appointments#177). A flow
-    /// (`flow:<id>`) or an integration behind an API key (`apikey:<id>`) has nobody in front of
-    /// the agenda who saw the warning, so it keeps both walls whatever its payload says; the
-    /// runtime puts that identity in `context.current_user_id` and the caller cannot forge it.
+    /// What the payload declares, if a PERSON of the team is calling (appointments#177). A flow,
+    /// an integration behind an API key, a scheduled task or a listener run by the outbox relay
+    /// has nobody in front of the agenda who saw the warning, so it keeps both walls whatever its
+    /// payload says.
     fn from_request(input: &Value, payload: &Value) -> Self {
-        let caller = as_str(
-            input
-                .get("context")
-                .and_then(|c| c.get("current_user_id"))
-                .unwrap_or(&Value::Null),
-        );
-        if AUTOMATION_CALLERS.iter().any(|p| caller.starts_with(p)) {
+        if !Self::a_person_is_calling(input.get("context").unwrap_or(&Value::Null)) {
             return Self::NONE;
         }
         Self {
@@ -1725,10 +1719,24 @@ impl CounterDeclaration {
             short_notice: as_bool(payload.get("allow_short_notice").unwrap_or(&Value::Null)),
         }
     }
+
+    /// appointments#180: the hub TELLS who is calling in `context.principal` (hub#2113), and it is
+    /// an allow-list — only `human` is a person, so a kind of caller the hub grows tomorrow is out
+    /// by default. A hub older than that field sends none: then, and only then, the shape of
+    /// `current_user_id` decides, as it did in #177.
+    fn a_person_is_calling(context: &Value) -> bool {
+        match context.get("principal") {
+            Some(Value::Null) | None => {
+                let caller = as_str(context.get("current_user_id").unwrap_or(&Value::Null));
+                !AUTOMATION_CALLERS.iter().any(|p| caller.starts_with(p))
+            }
+            Some(principal) => principal.as_str() == Some("human"),
+        }
+    }
 }
 
-/// The `current_user_id` prefixes the runtime gives a caller that is not a person: a flow run
-/// (ADR-0283) and a hub API key.
+/// The `current_user_id` prefixes an older hub (without `context.principal`) gives a caller that
+/// is not a person: a flow run (ADR-0283) and a hub API key.
 const AUTOMATION_CALLERS: [&str; 2] = ["flow:", "apikey:"];
 
 /// Valida un ítem de cita y devuelve sus 3 intenciones (`_bump_counter` +
@@ -6920,6 +6928,112 @@ mod tests {
         ))
         .unwrap();
         assert_eq!(domain_code(&out), None, "the counter's short notice was refused");
+    }
+
+    // ── appointments#180 · the HUB says who is calling, and only a person gets the counter ──────
+    //
+    // Since hub#2113 the runtime puts `context.principal` (`human` | `machine`) in every handler
+    // context. It is an allow-list: only `human` keeps the two declarations, so a kind of caller
+    // the hub grows tomorrow — whatever the shape of its `current_user_id` — is out by default.
+    // An older hub that does not send the field falls back to the prefix list of #177.
+
+    /// The same guest input, with the hub telling the handler `principal` about `caller`.
+    fn called_by_principal(input: Value, caller: &str, principal: Value) -> Value {
+        let mut input = called_by(input, caller);
+        input["context"]["principal"] = principal;
+        input
+    }
+
+    /// A counter booking (past AND short notice) from `caller` / `principal`.
+    fn counter_booking_by(caller: &str, principal: Value) -> [Option<String>; 2] {
+        let mut past = item("2026-07-31T09:00:00Z", 30, "s1");
+        past["allow_past"] = json!(true);
+        let past = create_appointment_pure(called_by_principal(
+            input(past, Some(lead_time(0, 0))),
+            caller,
+            principal.clone(),
+        ))
+        .unwrap();
+        let mut soon = item("2026-07-31T10:30:00Z", 30, "s1");
+        soon["allow_short_notice"] = json!(true);
+        let soon = create_appointment_pure(called_by_principal(
+            input(soon, Some(lead_time(60, 0))),
+            caller,
+            principal,
+        ))
+        .unwrap();
+        [domain_code(&past), domain_code(&soon)]
+    }
+
+    const A_PERSON_LIKE_ID: &str = "0b7c1a52-6f7e-4d1c-9a51-2f0f6f2e8d11";
+    /// Both walls stood: the past start and the short notice were refused.
+    fn refused() -> [Option<String>; 2] {
+        [
+            Some("appointments.invalid_start".to_string()),
+            Some("appointments.too_soon".to_string()),
+        ]
+    }
+
+    /// 🔴 The relay of the outbox runs a listener with the id of the PERSON who emitted the event,
+    /// and the scheduler with an empty id: neither has a `flow:`/`apikey:` shape, both are
+    /// machines for the hub. The prefix list let them through; the principal does not.
+    #[test]
+    fn a_machine_with_a_person_like_id_cannot_borrow_the_counter() {
+        assert_eq!(
+            counter_booking_by(A_PERSON_LIKE_ID, json!("machine")),
+            refused()
+        );
+        assert_eq!(counter_booking_by("", json!("machine")), refused());
+    }
+
+    /// 🔴 Allow-list, not deny-list: a principal the module does not know yet is not a person.
+    #[test]
+    fn an_unknown_kind_of_caller_cannot_borrow_the_counter() {
+        assert_eq!(
+            counter_booking_by(A_PERSON_LIKE_ID, json!("service")),
+            refused()
+        );
+        assert_eq!(
+            counter_booking_by(A_PERSON_LIKE_ID, json!(true)),
+            refused()
+        );
+    }
+
+    /// Control: the hub says a person is calling → both declarations stand.
+    #[test]
+    fn a_person_the_hub_vouches_for_keeps_the_counter() {
+        assert_eq!(
+            counter_booking_by(A_PERSON_LIKE_ID, json!("human")),
+            [None, None]
+        );
+    }
+
+    /// An older hub sends no principal: the prefix list of #177 still keeps flows out and lets the
+    /// team in, exactly as before.
+    #[test]
+    fn without_a_principal_the_prefix_list_still_decides() {
+        assert_eq!(counter_booking_by("flow:f-1", Value::Null), refused());
+        assert_eq!(
+            counter_booking_by(A_PERSON_LIKE_ID, Value::Null),
+            [None, None]
+        );
+    }
+
+    /// The same allow-list on a move through the staff channel of `reschedule`.
+    #[test]
+    fn a_machine_cannot_borrow_the_counters_short_notice_on_a_move() {
+        let out = reschedule_appointment_pure(called_by_principal(
+            reschedule_input(
+                counter_move_to("2026-07-31T10:30:00Z", false, true),
+                booked_row("2026-07-31T11:00:00Z", 60, "confirmed"),
+                Some(lead_time(60, 0)),
+            ),
+            A_PERSON_LIKE_ID,
+            json!("machine"),
+        ))
+        .unwrap();
+        assert_eq!(domain_code(&out).as_deref(), Some("appointments.too_soon"));
+        assert!(out.operations.is_empty());
     }
 
     /// Same for a batch item: the batch is not the counter's single booking.
