@@ -15,12 +15,14 @@ fleet never has:
      `ALTER TABLE t RENAME TO _deprecated_t`, so the rows are set aside, not destroyed. A battery
      that applies the file raw DESTROYS what the hub only sets aside.
 
-🔴 Ported character for character from `crates/runtime/src/migration_guard.rs`, flaws included. In
-particular the translation matches `DROP TABLE ` at the START of the statement text while the
-splitter keeps a preceding comment INSIDE the statement it precedes — so prose above a `DROP`
-makes the translation miss in silence (ERPlora/hub#1137). A mirror that quietly behaves better
-than the thing it mirrors is how a battery comes out green over a migration that destroys data in
-production; `slot_hold_storage_retired.postgres.test.py` is what refuses the prose.
+🔴 Ported from `crates/runtime/src/migration_guard.rs` as it was BEFORE hub#1148: the translation
+matches `DROP TABLE ` at the START of the statement text while the splitter keeps a preceding
+comment INSIDE the statement it precedes — so prose above a `DROP` makes the translation miss in
+silence (ERPlora/hub#1137). The runtime shipped in v1.1.29 and in develop strips that leading
+prose first (`leading_prose`, ADR-0387), so today this mirror is STRICTER than the thing it
+mirrors, on purpose: `slot_hold_storage_retired.postgres.test.py` is what refuses the prose, and a
+migration must not depend on which image a hub runs. The mirror also skips the runtime's
+one-name-per-statement check (`DropsMoreThanOne`); the battery pins the exact statements instead.
 
 Copied from `ERPlora/kitchen` (`tests/module_migrations.py`): each module is its own repository, so
 the mirror travels with the battery that needs it.
