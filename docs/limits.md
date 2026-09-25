@@ -12,7 +12,7 @@
 | Slot not available — `overlap` | That professional is already booked | Pick another time or another professional |
 | Slot not available — `outside_schedule` | You are not open then — your **Schedules** hours, special days and overrides, read on the business clock and refused by every door, not just the screen. Since appointments#105 the booking screen no longer offers those times at all | Fix it in **Schedules** (a bank holiday there closes the agenda too); a hub with no hours anywhere still books at any hour |
 | Slot not available — `blocked` | Holiday, vacation, break or maintenance | Remove the block or book elsewhere |
-| Slot not available — `too_soon` / `too_far` | Breaks the minimum notice or the maximum advance. The front desk is never refused as `too_soon`, neither when it books nor when it moves an appointment: the minimum notice applies to customer bookings only (appointments#157, #165) | Adjust the booking or the settings |
+| Slot not available — `too_soon` / `too_far` | Breaks the minimum notice or the maximum advance. The front desk is never refused as `too_soon`, neither when it books nor when it moves an appointment: the minimum notice applies to customer bookings only (appointments#157, #165). An automation (a flow or an API key) is not the front desk: it always keeps the minimum notice and can never book or move into the past (appointments#177) | Adjust the booking or the settings |
 | Slot not available — `invalid_start` | The start is in the past or malformed. The front desk may book or move an appointment into the past (appointments#155, #156); customer channels may not | Pick a valid future time |
 | Reschedule refused | The appointment is already finished, cancelled or a no-show | Create a new appointment instead |
 

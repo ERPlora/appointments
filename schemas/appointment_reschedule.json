@@ -27,12 +27,12 @@
     "allow_past": {
       "type": "boolean",
       "default": false,
-      "description": "appointments#156 — the COUNTER's declaration that the new start has already happened: the client who arrived late and was seen at 11:30 instead of 11:00, so the agenda tells the truth. It excuses the PAST alone (a start still to come keeps `min_booking_notice` unless `allow_short_notice` is declared too); opening hours, blocked time and overlap still judge the move. Ignored on the `customer` channel: the client cannot move her appointment into yesterday."
+      "description": "appointments#156 — the COUNTER's declaration that the new start has already happened: the client who arrived late and was seen at 11:30 instead of 11:00, so the agenda tells the truth. It excuses the PAST alone (a start still to come keeps `min_booking_notice` unless `allow_short_notice` is declared too); opening hours, blocked time and overlap still judge the move. Ignored on the `customer` channel: the client cannot move her appointment into yesterday. Ignored too when the caller is an automation (a flow or an API key, appointments#177)."
     },
     "allow_short_notice": {
       "type": "boolean",
       "default": false,
-      "description": "appointments#165 — the COUNTER's declaration that it moves the appointment inside `min_booking_notice`: the client of 13:00 who arrived early and can be seen in half an hour. The minimum notice is the window of the CUSTOMER's booking; the receptionist with the agenda in front of her is who it protects. It excuses the minimum notice ALONE: `max_advance_booking`, the opening hours, blocked time and overlap still apply. Ignored on the `customer` channel, which keeps the notice."
+      "description": "appointments#165 — the COUNTER's declaration that it moves the appointment inside `min_booking_notice`: the client of 13:00 who arrived early and can be seen in half an hour. The minimum notice is the window of the CUSTOMER's booking; the receptionist with the agenda in front of her is who it protects. It excuses the minimum notice ALONE: `max_advance_booking`, the opening hours, blocked time and overlap still apply. Ignored on the `customer` channel, which keeps the notice, and when the caller is an automation (a flow or an API key, appointments#177)."
     }
   }
 }
