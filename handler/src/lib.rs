@@ -9227,6 +9227,8 @@ mod tests {
                 assert_eq!(ev.payload.get("service_id"), Some(&json!("s-corte")));
                 assert_eq!(ev.payload.get("staff_id"), Some(&json!("s1")));
                 assert_eq!(ev.payload.get("recurring_id"), Some(&json!("r1")));
+                // A series is the salon's own booking, never the approval of a WhatsApp request.
+                assert_eq!(ev.payload.get("request_id"), Some(&Value::Null));
                 (
                     ev.payload.get("appointment_id").cloned().unwrap_or(Value::Null),
                     ev.payload.get("start_datetime").cloned().unwrap_or(Value::Null),
