@@ -186,10 +186,8 @@
     "appointments.recurring_inactive": "That recurring appointment is switched off; reactivate it to book its occurrences.",
     "appointments.recurring_mismatch": "The recurring appointment does not match the customer, service or professional sent; nothing was booked.",
     "appointments.cannot_reschedule": "This appointment can no longer be moved in its current state.",
-    "appointments.request_not_bound": "The request was approved without choosing a customer, a service, a professional and a time, so there was nothing to book. Open it again, pick them, and approve.",
     "appointments.outside_schedule": "That time is outside the business opening hours.",
     "appointments.overlapping_appointment": "That professional already has an appointment in that slot. Pick another time or another professional.",
-    "appointments.booking_refused": "The appointment could not be booked from that request.",
     "appointments.slot_on_hold": "That slot is being held for a pending request. It frees itself in a few minutes, or pick another time.",
     "appointments.invalid_local_time": "That time does not exist on the business clock: the daylight saving change skips it. Pick another one.",
     "appointments.series_locked": "Some appointments of this series could not be changed: they are already invoiced.",
@@ -197,8 +195,7 @@
     "appointments.cannot_confirm": "This appointment can no longer be confirmed: it is not pending any more.",
     "appointments.cannot_mark_no_show": "This appointment cannot be marked as a no-show in its current state.",
     "appointments.cannot_start": "This appointment cannot be started: it is not confirmed.",
-    "appointments.cannot_update_settings": "The booking settings could not be changed: this business has no settings in use right now.",
-    "appointments.schedule_unavailable": "That schedule is not available: it does not exist in this business or it has been deleted."
+    "appointments.cannot_update_settings": "The booking settings could not be changed: this business has no settings in use right now."
   },
   "bell": {
     "appointments.to_confirm": {

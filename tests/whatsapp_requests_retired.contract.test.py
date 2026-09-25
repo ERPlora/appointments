@@ -18,9 +18,10 @@ old branch. Each piece is checked where it would be declared or shipped:
   3. the answer events `appointments.booking_request.*`;
   4. the panel that filled the `whatsapp_inbox.request.booking` slot, in the manifest, in the
      sources and in the built bundle a hub downloads;
-  5. the strings only that panel painted, in `en` and `es`; the error codes only that door
-     produced are marked `deprecated` (ADR-0398 retires a published code in two releases: mark it,
-     then delete it) and keep their `en`/`es` text until the second release deletes them;
+  5. the strings only that panel painted, in `en` and `es`, and the error codes only that door
+     produced: ADR-0398 retires a published code in two releases — 1.1.90 marked them
+     `deprecated`, the next release deleted them (appointments#186), so they are gone from the
+     manifest and from both catalogs;
   6. the handler export (`book_from_request`) in the Rust source and in the built `handler.wasm`.
 
 And that what STAYS is still there: the count of appointments to confirm and the confirm command,
@@ -128,17 +129,16 @@ def check_slot() -> None:
 def check_locales() -> None:
     declared = MANIFEST.get("errors") or {}
     for code in RETIRED_ERRORS:
-        decl = declared.get(code)
-        if not isinstance(decl, dict) or not isinstance(decl.get("deprecated"), str):
+        if code in declared:
             fail(
-                f"module.json: errors.{code} is not marked `deprecated` — ADR-0398 retires a "
-                "published code in two releases, and this is the first"
+                f"module.json: errors.{code} is still declared — 1.1.90 deprecated it and the "
+                "next release deletes it (ADR-0398)"
             )
     for lang in ("en", "es"):
         catalog = json.loads((MODULE_DIR / "locales" / f"{lang}.json").read_text())
         for code in RETIRED_ERRORS:
-            if code in declared and code not in (catalog.get("errors") or {}):
-                fail(f"locales/{lang}.json: errors.{code} — a declared code needs its text")
+            if code in (catalog.get("errors") or {}):
+                fail(f"locales/{lang}.json: errors.{code} — the code is retired, so is its text")
         for key in RETIRED_UI_KEYS:
             if key in (catalog.get("ui") or {}):
                 fail(f"locales/{lang}.json: ui.{key} — only the retired panel painted it")
@@ -159,7 +159,7 @@ def check_handler() -> None:
         fail(f"handler/src/lib.rs: still names {RETIRED_EVENT_PREFIX}*")
     for code in RETIRED_ERRORS:
         if f'"{code}"' in source:
-            fail(f"handler/src/lib.rs: still produces the deprecated {code!r}")
+            fail(f"handler/src/lib.rs: still produces the retired {code!r}")
     wasm = MODULE_DIR / "dist" / "handler.wasm"
     if wasm.exists() and RETIRED_HANDLER_EXPORT.encode() in wasm.read_bytes():
         fail(
