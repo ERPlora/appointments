@@ -633,11 +633,6 @@ export class ErpAppointmentsList extends LitElement {
   // no sabe —ni debe— de reglas de negocio. El aviso es del módulo.
   //
   // 🔴 Lo que NO pregunta, y por qué:
-  //  · `appointments._book_from_request` (el listener de `whatsapp_inbox.request.approved`) corre
-  //    en el servidor y no tiene a quién preguntar. Su confirmación humana YA ocurrió —alguien
-  //    aprobó la petición en la bandeja, sobre huecos que `availability.slots` había ofrecido— así
-  //    que reserva directamente, con el mismo gate de servidor que el resto. Un aviso ahí sería
-  //    una pregunta sin interlocutor que dejaría la petición aprobada sin cita.
   //  · Mover una SERIE entera (`recurring.update`, alcance «esta y las siguientes») no es un hueco:
   //    son N ocurrencias que el servidor recoloca. Queda fuera con su issue.
 

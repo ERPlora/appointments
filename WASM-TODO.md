@@ -108,10 +108,11 @@ Origen: `Appointment.reschedule` / `update` (recalculan `end = start + duration`
 - `conflicts_with` (BlockedTime) y `Schedule.is_available_at` son helpers de este mismo motor.
 
 ## 9. Integración WhatsApp (whatsapp.py: `create_from_request`, `get_context_for_bot`)
-- Integración externa: crear cita desde una solicitud entrante de WhatsApp y exponer contexto
- para el bot. En hub esto es Tier 1/2 (mediated `http.fetch` + WASM) y/o un contrato de
- eventos con un futuro módulo `whatsapp_inbox`. Fuera del alcance del CRUD declarativo;
- se documenta aquí para no perder la funcionalidad al migrar.
+- Resuelto sin puerta propia: una reserva que llega por WhatsApp entra por
+ `appointments.appointments.create` con `booked_online: true` (las recetas de `whatsapp_inbox`)
+ y, si el salón revisa antes de aceptar, espera en «Por confirmar». La antigua puerta de
+ solicitudes (`_book_from_request`, escucha de `whatsapp_inbox.request.approved`) se retiró en
+ appointments#183 junto con la de WhatsApp (whatsapp_inbox#206).
 
 ## 10. Recordatorios (settings.send_reminders / reminder_hours_before)
 Origen: campos `reminder_sent`/`reminder_sent_at` + settings de recordatorio.

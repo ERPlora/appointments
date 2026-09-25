@@ -24,16 +24,11 @@
       "appointments.appointments.no_show",
       "appointments.appointments.reschedule",
       "appointments.appointments.start",
-      "appointments.availability.day_opening",
-      "appointments.availability.slots",
       "appointments.recurring.activate",
       "appointments.recurring.deactivate",
       "appointments.recurring.delete",
       "appointments.recurring.materialize",
-      "appointments.recurring.update",
-      "appointments.slots.hold",
-      "appointments.slots.release_hold",
-      "customers.create"
+      "appointments.recurring.update"
     ],
     "events": [
       "appointments.appointment.cancelled",

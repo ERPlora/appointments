@@ -1,11 +1,9 @@
 // No `ion-*` of this module takes its colour from `color=` (ERPlora/pm#392, module-toolkit#273).
 //
 // Ionic implements `color="medium"` with a GLOBAL rule of the document stylesheet
-// (`.ion-color-medium { --ion-color-base: … }`), which does not reach inside a shadow root. In the
-// booking panel of a WhatsApp request that meant the clear «Cancel» button fell back to primary
-// blue instead of the quiet medium grey. The button lives in the component's own shadow root, so
-// the tone is a `tone-*` class painted from its `static styles` (the render half of the contract is
-// pinned in erp-appointments-request-booking.test.ts).
+// (`.ion-color-medium { --ion-color-base: … }`), which does not reach inside a shadow root: a clear
+// «Cancel» button falls back to primary blue instead of the quiet medium grey. A button in a
+// component's own shadow root takes its tone from a `tone-*` class painted by its `static styles`.
 import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';

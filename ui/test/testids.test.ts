@@ -102,31 +102,6 @@ const COVERED: Record<
     ],
     tables: ['appointments-list-table'],
   },
-  // Booking what arrived by WhatsApp: the counter picks the customer, the service, the staff
-  // member, the day and — the step that matters — ONE free slot out of the ones the hold query
-  // returned. Both lists are walked by identity: the customer match by its id and the slot by the
-  // instant it starts. By position they would be unpredictable, because both lists are reloaded
-  // under the spec every time the day or the service changes.
-  'components/erp-appointments-request-booking/erp-appointments-request-booking.ts': {
-    prefix: 'appointments-request-booking-',
-    contract: [
-      'appointments-request-booking-cancel',
-      'appointments-request-booking-confirm',
-      'appointments-request-booking-create-customer',
-      'appointments-request-booking-customer-change',
-      'appointments-request-booking-customer-search',
-      'appointments-request-booking-day',
-      'appointments-request-booking-error',
-      'appointments-request-booking-hold-expired',
-      'appointments-request-booking-opening-unknown',
-      'appointments-request-booking-service',
-      'appointments-request-booking-staff',
-    ],
-    computed: [
-      'appointments-request-booking-customer-match-',
-      'appointments-request-booking-slot-',
-    ],
-  },
   // Recurring series (`/m/appointments/list`, the «series» view): the table of series plus the
   // panel that edits one from an occurrence onwards, with the two banners that say what the edit
   // is going to touch — the half it was split from and what is already invoiced and will not move.

@@ -23,12 +23,8 @@ until you accept. It is the shape the whole sector uses — Phorest prompts, Squ
 double-booking from the staff calendar, DaySmart ships it as *Warn* / *Don't Allow*, Fresha allows
 it in-store only and Vagaro behind an explicit *Double Book* action.
 
-Two places deliberately do **not** ask:
+One place deliberately does **not** ask:
 
-- **`appointments._book_from_request`**, the listener behind `whatsapp_inbox.request.approved`. It
-  runs on the server with nobody to ask, and its human confirmation already happened — somebody
-  approved that request in the inbox, over slots the availability engine offered. A prompt there
-  would leave an approved request with no appointment.
 - **Moving a whole series** (`appointments.recurring.update`, scope *this and following*). That is
   N occurrences the server relocates, not one slot.
 

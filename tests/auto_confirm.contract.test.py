@@ -1,27 +1,15 @@
 #!/usr/bin/env python3
-"""The marker that says «this booking is already committed» must stay unforgeable (appointments#136).
+"""The doors that decide «this booking is already committed» stay closed (appointments#136).
 
 WHAT THIS GUARDS. Since #136 an appointment is born `confirmed` instead of `pending` when the
-salon asked for it AND one of exactly two things is true (`born_confirmed`, `handler/src/lib.rs`):
-
-  1. the entry carries `booked_online` — the caller's own claim, the same one the row has always
-     stored; what is new is that the salon's setting decides what to do with it;
-  2. the payload carries a non-empty `request_id`, which the handler reads as «an automation
-     booked this», because `_book_from_request` is the ONLY door that carries one.
-
-Door 2 is a marker with no key behind it: nothing checks WHO put the `request_id` there. It is safe
-today only because of a property of the manifest — the doors a browser can reach are
-`additionalProperties: false` and none of them declares `request_id`, so a caller cannot smuggle
-one in, and the only command whose schema does declare it is `internal: true` (reachable from the
-event bus and the runtime, never from a client). That property is not enforced anywhere: it is four
-JSON files that happen to agree today.
-
-WHY A TEST AND NOT A COMMENT. If someone later adds `"request_id"` to `appointment_create.json` —
-to link a created appointment back to a request, which is a perfectly reasonable thing to want — or
-flips one of those schemas to `additionalProperties: true`, then ANY caller who can create an
-appointment can also decide it skips the salon's review. Nothing would fail: the Rust tests would
-stay green, the module would validate, and the hole would ship. This is the guardrail that turns
-that silent change into a red test (root CLAUDE.md, «cero regresiones»).
+salon asked for it AND the entry carries `booked_online` (`born_confirmed`, `handler/src/lib.rs`).
+Until appointments#183 there was a second door — a non-empty `request_id`, carried only by the
+WhatsApp requests listener `_book_from_request` — and this battery kept that marker out of every
+client-reachable schema. The listener is retired and `request_id` means nothing to the handler any
+more (`a_request_id_no_longer_confirms_a_booking_on_arrival` pins that in Rust), so what is left to
+guard here is the shape of the doors themselves: every door that decides a born status validates a
+CLOSED payload (`additionalProperties: false`), so nothing the handler might read as a marker in
+the future can be smuggled past its schema.
 
 It also pins the event name: `appointments.appointment.confirmed` is emitted from INSIDE the
 handler (the confirmation is conditional, so it cannot be declared as the command's `emit`), and
@@ -31,16 +19,12 @@ manifest and the confirmation goes silently missing at runtime, with every Rust 
 Usage: tests/auto_confirm.contract.test.py   (exit 0 = green)
 """
 
-import copy
 import json
 import pathlib
 import sys
 
 MODULE_DIR = pathlib.Path(__file__).resolve().parent.parent
 MANIFEST = json.loads((MODULE_DIR / "module.json").read_text())
-
-# The marker `born_confirmed` reads as «an automation booked this».
-AUTOMATION_MARKER = "request_id"
 
 # Emitted from inside the handler, so the manifest is the only place that declares it.
 CONFIRMED_EVENT = "appointments.appointment.confirmed"
@@ -52,7 +36,6 @@ BORN_STATUS_FUNCTIONS = {
     "create_appointment",
     "bulk_create",
     "materialize_recurring",
-    "book_from_request",
 }
 
 failures: list[str] = []
@@ -85,18 +68,6 @@ def load_schema(decl: dict) -> dict | None:
     return json.loads(path.read_text())
 
 
-def declares(node, key: str) -> bool:
-    """Does this schema declare `key` as a property, at ANY depth (arrays' items included)?"""
-    if isinstance(node, dict):
-        props = node.get("properties")
-        if isinstance(props, dict) and key in props:
-            return True
-        return any(declares(child, key) for child in node.values())
-    if isinstance(node, list):
-        return any(declares(child, key) for child in node)
-    return False
-
-
 def open_objects(node, path: str = "") -> list[str]:
     """Paths of every object in the schema that does NOT pin `additionalProperties: false`."""
     found: list[str] = []
@@ -119,28 +90,6 @@ def check_the_check_finds_the_positive() -> None:
 
     A contract test that only ever runs against a clean tree is green whether it works or not.
     """
-    smuggled = {
-        "type": "object",
-        "additionalProperties": False,
-        "properties": {"appointments": {"type": "array", "items": {
-            "type": "object",
-            "additionalProperties": False,
-            "properties": {AUTOMATION_MARKER: {"type": "string"}},
-        }}},
-    }
-    if not declares(smuggled, AUTOMATION_MARKER):
-        fail(
-            f"the reader no longer finds `{AUTOMATION_MARKER}` declared inside an array item: "
-            "this battery stopped checking the door it exists to watch"
-        )
-
-    if declares({"type": "object", "properties": {"customer_id": {"type": "string"}}}, AUTOMATION_MARKER):
-        fail(f"the reader reports `{AUTOMATION_MARKER}` on a schema that does not declare it")
-
-    # A property literally NAMED like the marker's value must not count — only a declaration does.
-    if declares({"type": "object", "properties": {"notes": {"default": AUTOMATION_MARKER}}}, AUTOMATION_MARKER):
-        fail("the reader confuses a default VALUE with a declared property")
-
     opened = {"type": "object", "properties": {"items": {"type": "array", "items": {"type": "object"}}}}
     reported = open_objects(opened)
     if "<root>" not in reported:
@@ -165,21 +114,6 @@ def check_every_born_status_door_is_accounted_for() -> None:
         )
 
 
-def check_only_an_internal_door_declares_the_marker() -> None:
-    """The marker means «an automation booked this». A client-reachable door must not accept it."""
-    for name, decl in sorted(commands_of(MANIFEST).items()):
-        schema = load_schema(decl)
-        if schema is None or not declares(schema, AUTOMATION_MARKER):
-            continue
-        if not decl.get("internal"):
-            fail(
-                f"`{name}` declares `{AUTOMATION_MARKER}` in {decl.get('schema')} and is NOT "
-                "`internal: true`: any caller that can run it can make the appointment skip the "
-                "salon's review, because `born_confirmed` reads that field as proof an automation "
-                "booked it"
-            )
-
-
 def check_the_public_doors_stay_closed() -> None:
     """`additionalProperties: false` is what stops a marker being smuggled past the schema."""
     for name, decl in sorted(born_status_doors(MANIFEST).items()):
@@ -192,8 +126,8 @@ def check_the_public_doors_stay_closed() -> None:
         for path in open_objects(schema):
             fail(
                 f"`{name}` ({decl.get('schema')}) leaves `{path}` open to extra properties: a "
-                f"caller could pass `{AUTOMATION_MARKER}` through it and be born confirmed without "
-                "the salon ever seeing the booking"
+                "caller could pass keys the schema never reviewed straight to the handler that "
+                "decides whether the booking skips the salon's review"
             )
 
 
@@ -211,7 +145,6 @@ def check_the_confirmation_event_is_declared() -> None:
 def main() -> int:
     check_the_check_finds_the_positive()
     check_every_born_status_door_is_accounted_for()
-    check_only_an_internal_door_declares_the_marker()
     check_the_public_doors_stay_closed()
     check_the_confirmation_event_is_declared()
     if failures:
@@ -220,8 +153,8 @@ def main() -> int:
             print(f"  - {f}")
         return 1
     print(
-        "OK: only an internal door declares the automation marker, the public ones stay closed, "
-        "and the confirmation event is declared"
+        "OK: every door that decides a born status stays closed, and the confirmation event is "
+        "declared"
     )
     return 0
 

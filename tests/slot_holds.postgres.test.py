@@ -20,8 +20,7 @@ El contrato que fija:
 
   1. MANIFEST. Las dos queries existen, están bajo `appointments.view_schedule` y no son `list`;
      `create` y `reschedule` las declaran como read `required` (una guarda cuya entrada puede
-     faltar es una guarda que se abre) y `_book_from_request` NO (dentro de un listener, una read
-     `required` que no resuelve es una fila de dead-letter que no lee nadie).
+     faltar es una guarda que se abre).
      La tarea programada existe y apunta a `appointments.slots.expire_holds`.
 
   2. POSTGRES REAL, sobre una BD de usar y tirar construida con las migraciones del módulo:
@@ -33,8 +32,8 @@ El contrato que fija:
      - `hold_minutes = 0` apaga la retención entera;
      - `expire_holds` marca `expired` (contabilidad) y `release_hold` marca `released`, que son
        cosas distintas a propósito;
-     - `_hold_consume` cierra la que acabó siendo cita, y NO puede degradar a `released` una ya
-       consumida;
+     - una retención ya `consumed` (las que dejó `_hold_consume` hasta que appointments#183
+       retiró la puerta de WhatsApp) NO se degrada a `released` ni a `expired`;
      - la retención de OTRO HUB no se ve jamás.
 
 Uso: tests/slot_holds.postgres.test.py   (exit 0 = verde)
@@ -60,7 +59,6 @@ PERMISSION = "appointments.view_schedule"
 HOLD = "appointments.slots.hold"
 RELEASE = "appointments.slots.release_hold"
 EXPIRE = "appointments.slots.expire_holds"
-CONSUME = "appointments._hold_consume"
 
 CONTAINER = os.environ.get("ERPLORA_TEST_PG_CONTAINER", "erplora-test-pg-5433")
 DB = f"appointments_slot_hold_test_{os.getpid()}"
@@ -107,7 +105,6 @@ def check_manifest() -> None:
         ("appointments.appointments.reschedule", LIVE, True),
         ("appointments.appointments.bulk_create", AHEAD, True),
         ("appointments.recurring.materialize", AHEAD, True),
-        ("appointments._book_from_request", LIVE, False),
     ):
         reads = commands.get(cmd, {}).get("reads", [])
         read = next((r for r in reads if r.get("query") == query), None)
@@ -121,19 +118,13 @@ def check_manifest() -> None:
                 f"{cmd}.reads[{query}]: tiene que ser `required` — una guarda cuya entrada "
                 "puede faltar es una guarda que se abre"
             )
-        if not required and read.get("required") is True:
-            fail(
-                f"{cmd}.reads[{query}]: NO puede ser `required` — dentro de un listener, una "
-                "read obligatoria que no resuelve aborta el command y la fila acaba en el "
-                "dead-letter, que es donde no la lee nadie (appointments#38)"
-            )
 
-    for cmd in (HOLD, RELEASE, EXPIRE, CONSUME):
+    for cmd in (HOLD, RELEASE, EXPIRE):
         c = commands.get(cmd)
         if not isinstance(c, dict):
             fail(f"{cmd}: no declarado en module.json")
             continue
-        if c.get("transaction") is not True and cmd != CONSUME:
+        if c.get("transaction") is not True:
             fail(
                 f"{cmd}: sin `transaction` — apartar y pintar tienen que ir juntos o nada"
             )
@@ -455,19 +446,20 @@ def check_against_postgres() -> None:
         if by_ref.get("req-suelta") != "released":
             fail(f"release_hold: dejó la retención en {by_ref.get('req-suelta')!r}")
 
+        # A `consumed` hold as `_hold_consume` left them until appointments#183 retired it: hubs
+        # keep those rows, so the sweeps below must still leave them alone.
         take_hold("req-consumida", SLOT_START, SLOT_END)
-        run_sql_file(
-            sql_of(CONSUME),
-            {
-                "hub_id": HUB,
-                "source_ref": "req-consumida",
-                "current_user_id": "u-1",
-                "now": NOW,
-            },
+        psql(
+            [
+                "-c",
+                "UPDATE appointments_slot_hold SET status = 'consumed' "
+                f"WHERE hub_id = {literal(HUB)} AND source_ref = 'req-consumida'",
+            ],
+            db=DB,
         )
         by_ref = {r["source_ref"]: r["status"] for r in holds()}
         if by_ref.get("req-consumida") != "consumed":
-            fail(f"_hold_consume: dejó la retención en {by_ref.get('req-consumida')!r}")
+            fail(f"seed: the consumed hold reads {by_ref.get('req-consumida')!r}")
 
         # Una ya consumida NO se degrada a `released`: perderíamos la única señal que dice si el
         # TTL está bien elegido (cuántas retenciones acabaron siendo cita).

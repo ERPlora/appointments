@@ -51,11 +51,10 @@ name, phone and price. There are no cross-module foreign keys.
 | `appointments.settings.updated` | the settings are saved |
 
 `appointments.appointment.created` has **one payload whatever the door** — one by one, a batch, a
-WhatsApp approval (appointments#174) — built from the row that was written: `appointment_id` (also
+recurring series (appointments#174) — built from the row that was written: `appointment_id` (also
 as `new_id`, its old name), `customer_id`/`customer_name`, `service_id`/`service_name`/
 `service_price` (cents), `staff_id`/`staff_name`, `start_datetime`/`end_datetime`,
-`duration_minutes`, `status`, `notes`, `booked_online`, `recurring_id` and `request_id` (the
-WhatsApp request, `null` elsewhere). Contact details and internal notes are not in it: read the
+`duration_minutes`, `status`, `notes`, `booked_online` and `recurring_id`. Contact details and internal notes are not in it: read the
 appointment.
 
 **Events it listens to** — none. Other modules react to appointments, not the other way round.
