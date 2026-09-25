@@ -9219,13 +9219,7 @@ mod tests {
 
     /// The same booking through the three doors: customer c1, «Corte» with Bea, 11:00, 30 min,
     /// under the same policy (no confirmation on arrival), so every field can be compared.
-    fn created_through_every_door() -> [(&'static str, Value); 3] {
-        let one = |out: Output, door: &str| -> Value {
-            assert!(out.error.is_none(), "{door}: {:?}", out.error);
-            let created = events_named(&out, "appointments.appointment.created");
-            assert_eq!(created.len(), 1, "{door} announces the appointment once: {:?}", out.events);
-            created[0].payload.clone()
-        };
+    fn booked_through_every_door() -> [(&'static str, Output); 3] {
         let single = create_appointment_pure(input(
             json!({
                 "customer_id": "c1", "service_id": "s-corte", "staff_id": "s1",
@@ -9248,11 +9242,47 @@ mod tests {
             Some(settings_auto_confirm(false)),
         ))
         .unwrap();
-        [
-            ("single", one(single, "single")),
-            ("batch", one(bulk, "batch")),
-            ("whatsapp", one(whatsapp, "whatsapp")),
-        ]
+        [("single", single), ("batch", bulk), ("whatsapp", whatsapp)]
+    }
+
+    /// The ONE `created` a door announces.
+    fn created_payload(out: &Output, door: &str) -> Value {
+        assert!(out.error.is_none(), "{door}: {:?}", out.error);
+        let created = events_named(out, "appointments.appointment.created");
+        assert_eq!(created.len(), 1, "{door} announces the appointment once: {:?}", out.events);
+        created[0].payload.clone()
+    }
+
+    fn created_through_every_door() -> [(&'static str, Value); 3] {
+        booked_through_every_door().map(|(door, out)| (door, created_payload(&out, door)))
+    }
+
+    /// The event says what the ROW says: every field of the payload is the value the door is
+    /// about to write in `_insert_appointment`, in every door. (Comparing the doors with each
+    /// other is not enough — a builder that read the wrong column would agree with itself.)
+    #[test]
+    fn the_created_event_says_what_the_row_says_in_every_door() {
+        for (door, out) in booked_through_every_door() {
+            let payload = created_payload(&out, door);
+            let rows = insert_ops(&out);
+            assert_eq!(rows.len(), 1, "{door} writes one appointment");
+            let row = &rows[0].params;
+            for field in [
+                "appointment_id", "customer_id", "customer_name", "service_id", "service_name",
+                "service_price", "staff_id", "staff_name", "start_datetime", "end_datetime",
+                "duration_minutes", "status", "notes", "recurring_id",
+            ] {
+                assert_eq!(payload.get(field), row.get(field), "{door}: `{field}` is not the row's");
+            }
+            assert_eq!(payload.get("new_id"), row.get("appointment_id"), "{door}: `new_id`");
+            assert_eq!(
+                payload.get("booked_online"),
+                Some(&json!(as_bool(&row["booked_online"]))),
+                "{door}: `booked_online`"
+            );
+            assert_eq!(payload["duration_minutes"], json!(30), "{door}");
+            assert_eq!(payload["service_price"], row["service_price"], "{door}");
+        }
     }
 
     #[test]
