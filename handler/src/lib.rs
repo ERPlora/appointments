@@ -2387,8 +2387,14 @@ fn book_appointment(input: Value, request_id: Option<&str>) -> Result<Output, St
         // or one inside the minimum notice, and only it can. `_book_from_request` delegates here
         // with the event payload WHOLE and its schema is `additionalProperties: true` by design,
         // so both keys are stripped there before they can arrive as anything but the counter's
-        // own word.
-        CounterDeclaration::from_payload(&payload),
+        // own word. A booking marked `booked_online` is not the counter either: it is the
+        // customer's, and the notice is her window (whatsapp_inbox#159 — the WhatsApp card pins
+        // `booked_online: true`, so its AI step cannot declare its way inside the notice).
+        if as_bool(payload.get("booked_online").unwrap_or(&Value::Null)) {
+            CounterDeclaration::NONE
+        } else {
+            CounterDeclaration::from_payload(&payload)
+        },
     ) {
         Ok(ops) => ops,
         Err(PrepareError::Domain(refusal)) => return Ok(Output::new().with_error(refusal)),
@@ -6774,6 +6780,41 @@ mod tests {
         assert_eq!(
             answer.payload.get("reason_code"),
             Some(&json!("appointments.too_soon"))
+        );
+    }
+
+    /// 🔴 whatsapp_inbox#159: an ONLINE booking is the customer's, and the notice is exactly her
+    /// window. The WhatsApp automation books through `create` itself, its grant pins
+    /// `booked_online: true`, and the AI step gets the whole schema as tool parameters — so a
+    /// model that also sends `allow_short_notice` must still meet the notice, whatever it declares.
+    #[test]
+    fn an_online_booking_cannot_borrow_the_counters_short_notice() {
+        let mut payload = item("2026-07-31T10:30:00Z", 30, "s1");
+        payload["booked_online"] = json!(true);
+        payload["allow_short_notice"] = json!(true);
+        let out = create_appointment_pure(input(payload, Some(lead_time(60, 0)))).unwrap();
+        assert!(
+            out.operations.is_empty(),
+            "an online booking landed inside the notice"
+        );
+        assert_eq!(domain_code(&out).as_deref(), Some("appointments.too_soon"));
+    }
+
+    /// Same wall for the past: the walk-in already in the chair is the counter's word, never an
+    /// online booking's.
+    #[test]
+    fn an_online_booking_cannot_borrow_the_counters_past() {
+        let mut payload = item("2026-07-31T09:00:00Z", 30, "s1");
+        payload["booked_online"] = json!(true);
+        payload["allow_past"] = json!(true);
+        let out = create_appointment_pure(input(payload, Some(lead_time(0, 0)))).unwrap();
+        assert!(
+            out.operations.is_empty(),
+            "an online booking booked itself into the past"
+        );
+        assert_eq!(
+            domain_code(&out).as_deref(),
+            Some("appointments.invalid_start")
         );
     }
 
