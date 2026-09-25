@@ -1883,7 +1883,7 @@ __decorateClass3([
 ], OkTimeline.prototype, "align");
 define("ok-timeline", OkTimeline);
 
-// locales/es.json
+// @erplora/module-appointments/locales/es.json
 var es_default = {
   name: "Citas",
   description: "Agenda las citas de tus clientes con sus servicios y profesionales, y s\xEDguelas desde que se reservan hasta que se completan.",
@@ -1999,7 +1999,6 @@ var es_default = {
     errReschedule: "No se ha podido mover la cita.",
     errDragStaffChange: "Cambiar de profesional arrastrando a\xFAn no se puede: la cita se queda con su profesional. Mueve la hora o usa el panel.",
     errDragNotMovable: "Esta cita ya no se puede mover (su estado es final).",
-    openingUnknown: "No se ha podido comprobar el horario de apertura, as\xED que puede que alguna de estas horas se rechace.",
     deviceZoneNotice: "Este dispositivo est\xE1 en otra zona horaria. La agenda siempre muestra el reloj del negocio:",
     seriesScopeTitle: "Editar cita peri\xF3dica",
     seriesScopeMessage: "Esta cita forma parte de una serie peri\xF3dica.",
@@ -2099,7 +2098,7 @@ var es_default = {
   }
 };
 
-// locales/en.json
+// @erplora/module-appointments/locales/en.json
 var en_default = {
   name: "Appointments",
   navigation: {
@@ -2214,7 +2213,6 @@ var en_default = {
     errReschedule: "The appointment could not be moved.",
     errDragStaffChange: "Changing professional by dragging is not available yet - the appointment stays with its professional. Use the time change or the panel.",
     errDragNotMovable: "This appointment can no longer be moved (its state is final).",
-    openingUnknown: "The opening hours could not be checked, so some of these times may be turned down.",
     deviceZoneNotice: "This device is on a different time zone. The agenda always shows the business clock:",
     seriesScopeTitle: "Edit repeating appointment",
     seriesScopeMessage: "This appointment is part of a repeating series.",
@@ -2314,7 +2312,7 @@ var en_default = {
   }
 };
 
-// ui/lib/business-time.ts
+// @erplora/module-appointments/ui/lib/business-time.ts
 var InvalidLocalTimeError = class extends Error {
   constructor(wall, timezone) {
     super(`invalid_local_time: ${wall} does not exist in ${timezone}`);
@@ -2481,7 +2479,7 @@ function deviceZoneDiffers(timezone = businessTimezone()) {
   return offsetMinutesAt(now, timezone) !== -new Date(now).getTimezoneOffset();
 }
 
-// ui/components/erp-appointments-customer-history/erp-appointments-customer-history.ts
+// @erplora/module-appointments/ui/components/erp-appointments-customer-history/erp-appointments-customer-history.ts
 var CATALOG = { es: es_default, en: en_default };
 function erplora() {
   const c5 = globalThis.erplora;
@@ -3486,13 +3484,6 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
     if (typeof this.rowKey === "string") return String(row[this.rowKey] ?? "");
     return String(row[this.rowKeyField] ?? "");
   }
-  /** #143 — `<prefix>-<suffix>`, or `nothing` (= the attribute is not painted) when the host gave
-   *  no prefix. A blank prefix counts as absent: `" "` would leave dangling `-add` hooks, identical
-   *  on every table of the screen, which is exactly what the prefix prevents. */
-  tid(suffix) {
-    const prefix = this.testid?.trim();
-    return prefix ? `${prefix}-${suffix}` : A;
-  }
   get selection() {
     return this.selectedKeys ?? this.internalSelection;
   }
@@ -3859,7 +3850,6 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
   renderRowMenu() {
     const row = this.rowMenuRow;
     if (!this.actions.length || !row) return A;
-    const key = this.keyOf(row);
     return b2`
       <ion-popover
         class="row-menu"
@@ -3874,14 +3864,8 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
       const disabled = a3.loading?.(row) === true || a3.disabled?.(row) === true;
       const label = typeof a3.label === "function" ? a3.label(row) : a3.label;
       return b2`
-                <!-- #143 — The action is named the SAME collapsed or not, so one spec works at any
-                     width. It carries the hook only while the direct buttons are NOT there: the
-                     popover survives its dismissal («rowMenuRow» is not cleared), and if the table
-                     widened again there would be TWO elements with the hook and «getByTestId»
-                     would pick one at random. -->
                 <ion-item
                   button
-                  data-testid=${this.rowActionsCollapsed ? this.tid(`row-${key}-${a3.id}`) : A}
                   ?disabled=${disabled}
                   aria-disabled=${disabled ? "true" : A}
                   .detail=${false}
@@ -4097,7 +4081,6 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
   // a phone. If you add a view that lays these buttons out, MEASURE it.
   actionButtons(row, collapsible = false) {
     if (!this.actions.length) return A;
-    const key = this.keyOf(row);
     if (collapsible && this.rowActionsCollapsed) {
       return b2`
         <div class="actions">
@@ -4105,7 +4088,6 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
             size="small"
             fill="clear"
             color="medium"
-            data-testid=${this.tid(`row-${key}-menu`)}
             aria-label=${this.t.moreActions}
             title=${this.t.moreActions}
             aria-haspopup="menu"
@@ -4128,7 +4110,6 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
               size="small"
               fill="clear"
               color=${a3.color ?? "medium"}
-              data-testid=${this.tid(`row-${key}-${a3.id}`)}
               ?disabled=${disabled}
               aria-disabled=${disabled ? "true" : A}
               aria-label=${label}
@@ -4145,9 +4126,9 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
   }
   // Botón de barra icon-only (filtros / alta / conmutador de vista). `on` = estado activo.
   // `badge` opcional → contador (p.ej. nº de filtros activos), look del Hub.
-  toolButton(icon, on, onClick, label, badge, testid = A) {
+  toolButton(icon, on, onClick, label, badge) {
     return b2`
-      <ion-button class="toolbtn" size="small" fill=${on ? "solid" : "outline"} data-testid=${testid} title=${label} aria-label=${label} @click=${onClick}>
+      <ion-button class="toolbtn" size="small" fill=${on ? "solid" : "outline"} title=${label} aria-label=${label} @click=${onClick}>
         <ion-icon slot="icon-only" .icon=${okIcon(icon)}></ion-icon>
         ${badge && badge > 0 ? b2`<span class="badge">${badge}</span>` : A}
       </ion-button>
@@ -4228,7 +4209,7 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
         this.mobileShown = 0;
       }
     };
-    const searchbar = b2`<ion-searchbar class="ion-no-border" data-testid=${this.tid("search")} .value=${this.q} placeholder=${this.effSearchPlaceholder} debounce="250" @ionInput=${this.onSearch}></ion-searchbar>`;
+    const searchbar = b2`<ion-searchbar class="ion-no-border" .value=${this.q} placeholder=${this.effSearchPlaceholder} debounce="250" @ionInput=${this.onSearch}></ion-searchbar>`;
     const selCount = this.selection.size;
     const showTopbar = !!this.title || this.hasSearch || this.viewToggle || this.effColumnPicker || this.effExport || this.effImport || this.hasFilterRow || this.addable || !!this.primaryAction;
     return b2`
@@ -4273,30 +4254,20 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
                     ${this.hasFilterRow && !this.inlineFilters ? this.toolButton("funnel-outline", this.panel === "filters" || this.activeFilterCount > 0, () => this.toggle("filters"), this.t.filters, this.activeFilterCount) : A}
                     ${this.effImport ? b2`
                           ${this.toolButton("cloud-upload-outline", false, () => this.renderRoot.querySelector(".tk-file")?.click(), this.t.importCsv)}
-                          <!-- #143 — The import hook goes on the INPUT, not on the button that
-                               triggers it: what a spec drives is «setInputFiles», and nobody opens
-                               the button's native dialog from a test. Same criterion as
-                               «GrantFilePicker.vue» in the Hub (the hook goes on the control, not
-                               on its disguise). -->
-                          <input class="tk-file" data-testid=${this.tid("csv-import")} type="file" accept=".csv,text/csv" hidden @change=${(e5) => this.onImportFile(e5)} />
+                          <input class="tk-file" type="file" accept=".csv,text/csv" hidden @change=${(e5) => this.onImportFile(e5)} />
                         ` : A}
-                    ${this.effExport ? this.toolButton("download-outline", false, () => this.exportCsv(), this.t.exportCsv, void 0, this.tid("csv-export")) : A}
+                    ${this.effExport ? this.toolButton("download-outline", false, () => this.exportCsv(), this.t.exportCsv) : A}
                     <!-- #113 — Mismo botón en los dos viewports: la acción principal de la pantalla
                          se lee, no se adivina. En escritorio era un «+» de 36px idéntico a los
                          iconos de vista/filtrar/exportar, y era el último de cuatro. -->
                     ${this.addable ? b2`
-                          <ion-button class="primary-btn add-btn" data-testid=${this.tid("add")} size="small" @click=${() => this.toggle("create")}>
+                          <ion-button class="primary-btn add-btn" size="small" @click=${() => this.toggle("create")}>
                             <ion-icon slot="start" .icon=${okIcon("add")}></ion-icon>${this.t.add}
                           </ion-button>
                         ` : A}
                     ${this.renderOverflowMenu()}
                     ${this.primaryAction ? b2`
-                          <!-- #143 — Its own hook and NOT «-add»: «addable» and «primaryAction» are
-                               two different buttons that may coexist, and both are really used
-                               («addable» in the modules, «primaryAction» in the SaaS screens).
-                               Sharing the name would give two elements with the same hook as soon
-                               as a screen declared both. -->
-                          <ion-button class="primary-btn add-btn" data-testid=${this.tid("primary-action")} size="small" @click=${() => this.emit("primaryAction", {})}>
+                          <ion-button class="primary-btn add-btn" size="small" @click=${() => this.emit("primaryAction", {})}>
                             <ion-icon slot="start" .icon=${okIcon(this.primaryAction.icon ?? "add")}></ion-icon>${this.primaryAction.label}
                           </ion-button>
                         ` : A}
@@ -4329,13 +4300,13 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
                         </select>
                       ` : A}
                 </div>
-                ${this.isMobile ? canLoadMore ? b2`<ion-button class="load-more" data-testid=${this.tid("load-more")} size="small" @click=${loadMore}>${this.t.loadMore}</ion-button>` : A : pages > 1 ? b2`
+                ${this.isMobile ? canLoadMore ? b2`<ion-button class="load-more" size="small" @click=${loadMore}>${this.t.loadMore}</ion-button>` : A : pages > 1 ? b2`
                       <div class="nav">
-                        <ion-button size="small" fill="clear" data-testid=${this.tid("page-prev")} ?disabled=${current === 0} @click=${() => goTo(current - 1)}><ion-icon slot="icon-only" .icon=${iconChevronBack}></ion-icon></ion-button>
+                        <ion-button size="small" fill="clear" ?disabled=${current === 0} @click=${() => goTo(current - 1)}><ion-icon slot="icon-only" .icon=${iconChevronBack}></ion-icon></ion-button>
                         ${this.pageList(current + 1, pages).map(
       (p4) => p4 === "\u2026" ? b2`<span class="pgap">…</span>` : b2`<button class=${`pnum${p4 === current + 1 ? " on" : ""}`} @click=${() => goTo(p4 - 1)}>${p4}</button>`
     )}
-                        <ion-button size="small" fill="clear" data-testid=${this.tid("page-next")} ?disabled=${current >= pages - 1} @click=${() => goTo(current + 1)}><ion-icon slot="icon-only" .icon=${iconChevronForward}></ion-icon></ion-button>
+                        <ion-button size="small" fill="clear" ?disabled=${current >= pages - 1} @click=${() => goTo(current + 1)}><ion-icon slot="icon-only" .icon=${iconChevronForward}></ion-icon></ion-button>
                       </div>
                     ` : A}
               </div>
@@ -4463,7 +4434,6 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
                 <div
                   class=${`grow grow-data${selected ? " selected" : ""}${this.rowClickable ? " clickable" : ""}`}
                   role="row"
-                  data-testid=${this.tid(`row-${key}`)}
                   style=${o6(tpl)}
                   tabindex=${this.rowClickable ? "0" : A}
                   @click=${this.rowClickable ? () => this.emit("rowClick", { row }) : A}
@@ -4498,7 +4468,6 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
         return b2`
               <ion-card
                 class=${`rcard${selected ? " selected" : ""}${this.rowClickable ? " clickable" : ""}`}
-                data-testid=${this.tid(`row-${key}`)}
                 role=${this.rowClickable ? "button" : A}
                 tabindex=${this.rowClickable ? "0" : A}
                 @click=${this.rowClickable ? () => this.emit("rowClick", { row }) : A}
@@ -4645,9 +4614,6 @@ __decorateClass4([
 __decorateClass4([
   n4({ attribute: false })
 ], _OkDataTable.prototype, "renderCard");
-__decorateClass4([
-  n4({ type: String })
-], _OkDataTable.prototype, "testid");
 __decorateClass4([
   r5()
 ], _OkDataTable.prototype, "q");
@@ -5732,7 +5698,7 @@ __decorateClass5([
 ], OkScheduler.prototype, "heldId");
 define("ok-scheduler", OkScheduler);
 
-// ui/components/erp-appointments-series/erp-appointments-series.ts
+// @erplora/module-appointments/ui/components/erp-appointments-series/erp-appointments-series.ts
 var CATALOG2 = { es: es_default, en: en_default };
 function erplora2() {
   const c5 = globalThis.erplora;
@@ -6183,7 +6149,7 @@ __decorateClass([
 ], ErpAppointmentsSeries.prototype, "editDuration", 2);
 define("erp-appointments-series", ErpAppointmentsSeries);
 
-// ui/components/erp-appointments-list/erp-appointments-list.ts
+// @erplora/module-appointments/ui/components/erp-appointments-list/erp-appointments-list.ts
 var CATALOG3 = { es: es_default, en: en_default };
 var STATUS_KEYS2 = {
   pending: "ui.statusPending",

@@ -67,6 +67,7 @@ RETIRED_UI_KEYS = (
     "holdCountdown",
     "holdExpired",
     "holdFailed",
+    "openingUnknown",
 )
 RETIRED_HANDLER_EXPORT = "book_from_request"
 
@@ -143,6 +144,13 @@ def check_locales() -> None:
                 fail(f"locales/{lang}.json: ui.{key} — only the retired panel painted it")
 
 
+def check_schemas() -> None:
+    """A schema description is contract text a hub author reads: it must not name the retired door."""
+    for schema in sorted((MODULE_DIR / "schemas").glob("*.json")):
+        if "_book_from_request" in schema.read_text():
+            fail(f"schemas/{schema.name}: still describes `_book_from_request`")
+
+
 def check_handler() -> None:
     source = (MODULE_DIR / "handler" / "src" / "lib.rs").read_text()
     if f"pub fn {RETIRED_HANDLER_EXPORT}(" in source:
@@ -164,6 +172,7 @@ def main() -> int:
     check_events()
     check_slot()
     check_locales()
+    check_schemas()
     check_handler()
     if failures:
         print("FAIL whatsapp_requests_retired:")

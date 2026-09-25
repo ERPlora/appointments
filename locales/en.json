@@ -112,7 +112,6 @@
     "errReschedule": "The appointment could not be moved.",
     "errDragStaffChange": "Changing professional by dragging is not available yet - the appointment stays with its professional. Use the time change or the panel.",
     "errDragNotMovable": "This appointment can no longer be moved (its state is final).",
-    "openingUnknown": "The opening hours could not be checked, so some of these times may be turned down.",
     "deviceZoneNotice": "This device is on a different time zone. The agenda always shows the business clock:",
     "seriesScopeTitle": "Edit repeating appointment",
     "seriesScopeMessage": "This appointment is part of a repeating series.",

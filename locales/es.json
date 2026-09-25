@@ -113,7 +113,6 @@
     "errReschedule": "No se ha podido mover la cita.",
     "errDragStaffChange": "Cambiar de profesional arrastrando aún no se puede: la cita se queda con su profesional. Mueve la hora o usa el panel.",
     "errDragNotMovable": "Esta cita ya no se puede mover (su estado es final).",
-    "openingUnknown": "No se ha podido comprobar el horario de apertura, así que puede que alguna de estas horas se rechace.",
     "deviceZoneNotice": "Este dispositivo está en otra zona horaria. La agenda siempre muestra el reloj del negocio:",
     "seriesScopeTitle": "Editar cita periódica",
     "seriesScopeMessage": "Esta cita forma parte de una serie periódica.",
