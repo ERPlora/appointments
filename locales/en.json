@@ -195,8 +195,7 @@
     "appointments.cannot_confirm": "This appointment can no longer be confirmed: it is not pending any more.",
     "appointments.cannot_mark_no_show": "This appointment cannot be marked as a no-show in its current state.",
     "appointments.cannot_start": "This appointment cannot be started: it is not confirmed.",
-    "appointments.cannot_update_settings": "The booking settings could not be changed: this business has no settings in use right now.",
-    "appointments.schedule_unavailable": "That schedule is not available: it does not exist in this business or it has been deleted."
+    "appointments.cannot_update_settings": "The booking settings could not be changed: this business has no settings in use right now."
   },
   "bell": {
     "appointments.to_confirm": {

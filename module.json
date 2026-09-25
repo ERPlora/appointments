@@ -24,9 +24,6 @@
     "appointments.recurring_mismatch": {},
     "appointments.recurring_not_found": {},
     "appointments.recurring_unavailable": {},
-    "appointments.schedule_unavailable": {
-      "deprecated": "1.1.65"
-    },
     "appointments.service_not_bookable": {},
     "appointments.service_not_found": {},
     "appointments.settings_unavailable": {},

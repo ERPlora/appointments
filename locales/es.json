@@ -196,8 +196,7 @@
     "appointments.cannot_confirm": "Esta cita ya no se puede confirmar: ya no está pendiente.",
     "appointments.cannot_mark_no_show": "Esta cita no se puede marcar como no presentada en su estado actual.",
     "appointments.cannot_start": "Esta cita no se puede iniciar: no está confirmada.",
-    "appointments.cannot_update_settings": "No se han podido cambiar los ajustes de reserva: este negocio no tiene ajustes en uso ahora mismo.",
-    "appointments.schedule_unavailable": "Ese horario no está disponible: no existe en este negocio o se ha eliminado."
+    "appointments.cannot_update_settings": "No se han podido cambiar los ajustes de reserva: este negocio no tiene ajustes en uso ahora mismo."
   },
   "bell": {
     "appointments.to_confirm": {
