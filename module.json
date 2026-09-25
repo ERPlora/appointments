@@ -5,7 +5,9 @@
   "errors": {
     "appointments.availability_unavailable": {},
     "appointments.blocked": {},
-    "appointments.booking_refused": {},
+    "appointments.booking_refused": {
+      "deprecated": "1.1.90"
+    },
     "appointments.cancellation_notice_required": {},
     "appointments.cannot_cancel": {},
     "appointments.cannot_complete": {},
@@ -25,7 +27,9 @@
     "appointments.recurring_mismatch": {},
     "appointments.recurring_not_found": {},
     "appointments.recurring_unavailable": {},
-    "appointments.request_not_bound": {},
+    "appointments.request_not_bound": {
+      "deprecated": "1.1.90"
+    },
     "appointments.schedule_unavailable": {
       "deprecated": "1.1.65"
     },
@@ -109,12 +113,6 @@
       "slot": "customers.detail",
       "component": "erp-appointments-customer-history",
       "permission": "appointments.view_appointment",
-      "priority": 100
-    },
-    {
-      "slot": "whatsapp_inbox.request.booking",
-      "component": "erp-appointments-request-booking",
-      "permission": "appointments.add_appointment",
       "priority": 100
     }
   ],
@@ -397,78 +395,6 @@
         "commands/_appointment_overlap_assert.sql"
       ]
     },
-    "appointments._book_from_request": {
-      "permission": "appointments.add_appointment",
-      "internal": true,
-      "schema": "schemas/book_from_request.json",
-      "handler": {
-        "type": "wasm",
-        "file": "dist/handler.wasm",
-        "function": "book_from_request"
-      },
-      "reads": [
-        {
-          "query": "appointments.settings.get"
-        },
-        {
-          "query": "customers.get",
-          "params": {
-            "customer_id": "payload.customer_id"
-          }
-        },
-        {
-          "query": "services.services.get",
-          "params": {
-            "service_id": "payload.service_id"
-          }
-        },
-        {
-          "query": "staff.members.get",
-          "params": {
-            "staff_id": "payload.staff_id"
-          }
-        },
-        {
-          "query": "staff.services.eligible_for_service",
-          "params": {
-            "service_id": "payload.service_id"
-          }
-        },
-        {
-          "query": "appointments.appointments.conflicting",
-          "params": {
-            "staff_id": "payload.staff_id",
-            "start_datetime": "payload.start_datetime"
-          }
-        },
-        {
-          "query": "appointments.blocked_times.overlapping",
-          "params": {
-            "staff_id": "payload.staff_id",
-            "start_datetime": "payload.start_datetime"
-          }
-        },
-        {
-          "query": "appointments.slot_holds.live",
-          "params": {
-            "staff_id": "payload.staff_id",
-            "start_datetime": "payload.start_datetime"
-          }
-        },
-        {
-          "query": "schedules.business_hours.list"
-        },
-        {
-          "query": "schedules.special_days.list"
-        },
-        {
-          "query": "schedules.overrides.list"
-        },
-        {
-          "query": "schedules.exception_intervals.list"
-        }
-      ]
-    },
     "appointments._bump_counter": {
       "permission": "appointments.add_appointment",
       "sql": [
@@ -497,13 +423,6 @@
       "permission": "appointments.change_appointment",
       "sql": [
         "commands/_history_reschedule.sql"
-      ]
-    },
-    "appointments._hold_consume": {
-      "permission": "appointments.add_appointment",
-      "internal": true,
-      "sql": [
-        "commands/_hold_consume.sql"
       ]
     },
     "appointments._insert_appointment": {
@@ -1360,9 +1279,6 @@
     "listen": {
       "sales.sale.created_from_appointment": {
         "command": "appointments._mark_converted"
-      },
-      "whatsapp_inbox.request.approved": {
-        "command": "appointments._book_from_request"
       }
     },
     "emits": [
@@ -1376,8 +1292,6 @@
       "appointments.appointment.started",
       "appointments.appointment.updated",
       "appointments.blocked_time.created",
-      "appointments.booking_request.failed",
-      "appointments.booking_request.fulfilled",
       "appointments.recurring.created",
       "appointments.recurring.updated",
       "appointments.settings.updated",

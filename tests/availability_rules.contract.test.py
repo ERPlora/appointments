@@ -96,14 +96,6 @@ BOOKING_COMMANDS = (
     "appointments.appointments.bulk_create",
     "appointments.recurring.materialize",
 )
-# PR#99 regression: `_book_from_request` (the `whatsapp_inbox.request.approved` listener) books
-# through `create_appointment_pure`, so it walks the SAME opening-hours gate — but the runtime
-# resolves the reads THIS command declares, not `create`'s. Without the read the gate fails
-# CLOSED and every approval answers `availability_unavailable`: the WhatsApp→appointment flow
-# dies. It is listed apart because its `required` semantics differ on purpose: all its reads are
-# graceful (no `required: true`) so a failed resolution becomes a `booking_refused` ANSWER the
-# inbox can show, instead of a runtime abort that retries into the dead-letter and answers nobody.
-LISTENER_BOOKING_COMMANDS = ("appointments._book_from_request",)
 # appointments#102 — the AUTHORITY. `appointments` owns the appointment and the agenda block; the
 # business opening hours belong to `schedules`, which ADR-0392 made the single answer of the
 # product to «are we open?». The gate resolves its precedence — exact special day > yearly special
@@ -318,20 +310,6 @@ def check_schedules_authority() -> None:
                     f"{command}: the {query!r} read is not `required: true` — a read that may fail "
                     "to resolve leaves the opening-hours gate deciding on a catalogue it cannot "
                     "tell apart from an empty one"
-                )
-    for command in LISTENER_BOOKING_COMMANDS:
-        reads = reads_of(command)
-        for query in SCHEDULES_READS:
-            read = reads.get(query)
-            if read is None:
-                fail(
-                    f"{command}: declares no read of {query!r} — it books through the same gate, "
-                    "and the runtime resolves the reads THIS command declares (appointments#100)"
-                )
-            elif read.get("required") is True:
-                fail(
-                    f"{command}: the {query!r} read must stay GRACEFUL, like every read of this "
-                    "listener — an abort retries into the dead-letter and answers nobody"
                 )
 
 

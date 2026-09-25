@@ -1,6 +1,6 @@
 -- Retenciones VIVAS del mismo día que :start_datetime (appointments#69).
 --
--- Read autoritativa (ADR-0069) de `create`, `reschedule` y `_book_from_request`: lo que el
+-- Read autoritativa (ADR-0069) de `create` y `reschedule`: lo que el
 -- mostrador no puede vender porque una decisión pendiente lo tiene apartado.
 --
 -- Trae las del DÍA entero, no las de la franja: `reads.params` solo admite `payload.<campo>`

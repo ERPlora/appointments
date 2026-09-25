@@ -1883,7 +1883,7 @@ __decorateClass3([
 ], OkTimeline.prototype, "align");
 define("ok-timeline", OkTimeline);
 
-// locales/es.json
+// @erplora/module-appointments/locales/es.json
 var es_default = {
   name: "Citas",
   description: "Agenda las citas de tus clientes con sus servicios y profesionales, y s\xEDguelas desde que se reservan hasta que se completan.",
@@ -1999,25 +1999,6 @@ var es_default = {
     errReschedule: "No se ha podido mover la cita.",
     errDragStaffChange: "Cambiar de profesional arrastrando a\xFAn no se puede: la cita se queda con su profesional. Mueve la hora o usa el panel.",
     errDragNotMovable: "Esta cita ya no se puede mover (su estado es final).",
-    bookingCustomer: "Cliente",
-    bookingCustomerSearch: "Busca por tel\xE9fono o nombre\u2026",
-    bookingCreateCustomer: "Crear este cliente",
-    bookingChange: "Cambiar",
-    bookingService: "Servicio",
-    bookingStaff: "Profesional",
-    bookingDay: "D\xEDa",
-    bookingSlot: "Hora",
-    bookingPick: "Elige\u2026",
-    bookingNoSlots: "No hay hueco libre ese d\xEDa. Prueba otro d\xEDa u otro profesional.",
-    bookingDayClosed: "El negocio est\xE1 cerrado ese d\xEDa. Elige otra fecha.",
-    openingUnknown: "No se ha podido comprobar el horario de apertura, as\xED que puede que alguna de estas horas se rechace.",
-    bookingConfirm: "Aprobar y reservar",
-    bookingCancel: "Cancelar",
-    errLoadSlots: "No se han podido leer los huecos libres",
-    errCreateCustomer: "No se ha podido crear el cliente",
-    holdCountdown: "Hueco apartado para ti \xB7 {mins}:{secs}",
-    holdExpired: "Se acab\xF3 el tiempo que ten\xEDamos apartado ese hueco y ha vuelto a la venta. Elige la hora otra vez.",
-    holdFailed: "No se ha podido apartar ese hueco; alguien puede reservarlo mientras decides.",
     deviceZoneNotice: "Este dispositivo est\xE1 en otra zona horaria. La agenda siempre muestra el reloj del negocio:",
     seriesScopeTitle: "Editar cita peri\xF3dica",
     seriesScopeMessage: "Esta cita forma parte de una serie peri\xF3dica.",
@@ -2117,7 +2098,7 @@ var es_default = {
   }
 };
 
-// locales/en.json
+// @erplora/module-appointments/locales/en.json
 var en_default = {
   name: "Appointments",
   navigation: {
@@ -2232,25 +2213,6 @@ var en_default = {
     errReschedule: "The appointment could not be moved.",
     errDragStaffChange: "Changing professional by dragging is not available yet - the appointment stays with its professional. Use the time change or the panel.",
     errDragNotMovable: "This appointment can no longer be moved (its state is final).",
-    bookingCustomer: "Customer",
-    bookingCustomerSearch: "Search by phone or name\u2026",
-    bookingCreateCustomer: "Create this customer",
-    bookingChange: "Change",
-    bookingService: "Service",
-    bookingStaff: "Professional",
-    bookingDay: "Day",
-    bookingSlot: "Time",
-    bookingPick: "Choose\u2026",
-    bookingNoSlots: "No free time that day. Try another day or another professional.",
-    bookingDayClosed: "The business is closed that day. Pick another date.",
-    openingUnknown: "The opening hours could not be checked, so some of these times may be turned down.",
-    bookingConfirm: "Approve and book",
-    bookingCancel: "Cancel",
-    errLoadSlots: "Could not read the free slots",
-    errCreateCustomer: "Could not create the customer",
-    holdCountdown: "Slot held for you \xB7 {mins}:{secs}",
-    holdExpired: "The hold on that slot lapsed, so it is back on sale. Pick a time again.",
-    holdFailed: "That slot could not be set aside; someone else may book it while you decide.",
     deviceZoneNotice: "This device is on a different time zone. The agenda always shows the business clock:",
     seriesScopeTitle: "Edit repeating appointment",
     seriesScopeMessage: "This appointment is part of a repeating series.",
@@ -2350,7 +2312,7 @@ var en_default = {
   }
 };
 
-// ui/lib/business-time.ts
+// @erplora/module-appointments/ui/lib/business-time.ts
 var InvalidLocalTimeError = class extends Error {
   constructor(wall, timezone) {
     super(`invalid_local_time: ${wall} does not exist in ${timezone}`);
@@ -2517,7 +2479,7 @@ function deviceZoneDiffers(timezone = businessTimezone()) {
   return offsetMinutesAt(now, timezone) !== -new Date(now).getTimezoneOffset();
 }
 
-// ui/components/erp-appointments-customer-history/erp-appointments-customer-history.ts
+// @erplora/module-appointments/ui/components/erp-appointments-customer-history/erp-appointments-customer-history.ts
 var CATALOG = { es: es_default, en: en_default };
 function erplora() {
   const c5 = globalThis.erplora;
@@ -3522,13 +3484,6 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
     if (typeof this.rowKey === "string") return String(row[this.rowKey] ?? "");
     return String(row[this.rowKeyField] ?? "");
   }
-  /** #143 — `<prefix>-<suffix>`, or `nothing` (= the attribute is not painted) when the host gave
-   *  no prefix. A blank prefix counts as absent: `" "` would leave dangling `-add` hooks, identical
-   *  on every table of the screen, which is exactly what the prefix prevents. */
-  tid(suffix) {
-    const prefix = this.testid?.trim();
-    return prefix ? `${prefix}-${suffix}` : A;
-  }
   get selection() {
     return this.selectedKeys ?? this.internalSelection;
   }
@@ -3603,17 +3558,17 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
       out.push(row);
     }
     const headers = out.shift() ?? [];
-    const rows5 = out.map((r6) => Object.fromEntries(headers.map((h4, i7) => [h4, r6[i7] ?? ""])));
-    return { headers, rows: rows5 };
+    const rows4 = out.map((r6) => Object.fromEntries(headers.map((h4, i7) => [h4, r6[i7] ?? ""])));
+    return { headers, rows: rows4 };
   }
   async onImportFile(ev) {
     const input = ev.target;
     const file = input.files?.[0];
     if (!file) return;
     const text = decodeCsvBuffer(await file.arrayBuffer());
-    const { headers, rows: rows5 } = this.parseCsv(text);
-    this.emit("csvImport", { headers, rows: rows5 });
-    this.emit("import", { headers, rows: rows5 });
+    const { headers, rows: rows4 } = this.parseCsv(text);
+    this.emit("csvImport", { headers, rows: rows4 });
+    this.emit("import", { headers, rows: rows4 });
     input.value = "";
   }
   toggle(p4) {
@@ -3895,7 +3850,6 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
   renderRowMenu() {
     const row = this.rowMenuRow;
     if (!this.actions.length || !row) return A;
-    const key = this.keyOf(row);
     return b2`
       <ion-popover
         class="row-menu"
@@ -3910,14 +3864,8 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
       const disabled = a3.loading?.(row) === true || a3.disabled?.(row) === true;
       const label = typeof a3.label === "function" ? a3.label(row) : a3.label;
       return b2`
-                <!-- #143 — The action is named the SAME collapsed or not, so one spec works at any
-                     width. It carries the hook only while the direct buttons are NOT there: the
-                     popover survives its dismissal («rowMenuRow» is not cleared), and if the table
-                     widened again there would be TWO elements with the hook and «getByTestId»
-                     would pick one at random. -->
                 <ion-item
                   button
-                  data-testid=${this.rowActionsCollapsed ? this.tid(`row-${key}-${a3.id}`) : A}
                   ?disabled=${disabled}
                   aria-disabled=${disabled ? "true" : A}
                   .detail=${false}
@@ -4133,7 +4081,6 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
   // a phone. If you add a view that lays these buttons out, MEASURE it.
   actionButtons(row, collapsible = false) {
     if (!this.actions.length) return A;
-    const key = this.keyOf(row);
     if (collapsible && this.rowActionsCollapsed) {
       return b2`
         <div class="actions">
@@ -4141,7 +4088,6 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
             size="small"
             fill="clear"
             color="medium"
-            data-testid=${this.tid(`row-${key}-menu`)}
             aria-label=${this.t.moreActions}
             title=${this.t.moreActions}
             aria-haspopup="menu"
@@ -4164,7 +4110,6 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
               size="small"
               fill="clear"
               color=${a3.color ?? "medium"}
-              data-testid=${this.tid(`row-${key}-${a3.id}`)}
               ?disabled=${disabled}
               aria-disabled=${disabled ? "true" : A}
               aria-label=${label}
@@ -4181,9 +4126,9 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
   }
   // Botón de barra icon-only (filtros / alta / conmutador de vista). `on` = estado activo.
   // `badge` opcional → contador (p.ej. nº de filtros activos), look del Hub.
-  toolButton(icon, on, onClick, label, badge, testid = A) {
+  toolButton(icon, on, onClick, label, badge) {
     return b2`
-      <ion-button class="toolbtn" size="small" fill=${on ? "solid" : "outline"} data-testid=${testid} title=${label} aria-label=${label} @click=${onClick}>
+      <ion-button class="toolbtn" size="small" fill=${on ? "solid" : "outline"} title=${label} aria-label=${label} @click=${onClick}>
         <ion-icon slot="icon-only" .icon=${okIcon(icon)}></ion-icon>
         ${badge && badge > 0 ? b2`<span class="badge">${badge}</span>` : A}
       </ion-button>
@@ -4264,7 +4209,7 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
         this.mobileShown = 0;
       }
     };
-    const searchbar = b2`<ion-searchbar class="ion-no-border" data-testid=${this.tid("search")} .value=${this.q} placeholder=${this.effSearchPlaceholder} debounce="250" @ionInput=${this.onSearch}></ion-searchbar>`;
+    const searchbar = b2`<ion-searchbar class="ion-no-border" .value=${this.q} placeholder=${this.effSearchPlaceholder} debounce="250" @ionInput=${this.onSearch}></ion-searchbar>`;
     const selCount = this.selection.size;
     const showTopbar = !!this.title || this.hasSearch || this.viewToggle || this.effColumnPicker || this.effExport || this.effImport || this.hasFilterRow || this.addable || !!this.primaryAction;
     return b2`
@@ -4309,30 +4254,20 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
                     ${this.hasFilterRow && !this.inlineFilters ? this.toolButton("funnel-outline", this.panel === "filters" || this.activeFilterCount > 0, () => this.toggle("filters"), this.t.filters, this.activeFilterCount) : A}
                     ${this.effImport ? b2`
                           ${this.toolButton("cloud-upload-outline", false, () => this.renderRoot.querySelector(".tk-file")?.click(), this.t.importCsv)}
-                          <!-- #143 — The import hook goes on the INPUT, not on the button that
-                               triggers it: what a spec drives is «setInputFiles», and nobody opens
-                               the button's native dialog from a test. Same criterion as
-                               «GrantFilePicker.vue» in the Hub (the hook goes on the control, not
-                               on its disguise). -->
-                          <input class="tk-file" data-testid=${this.tid("csv-import")} type="file" accept=".csv,text/csv" hidden @change=${(e5) => this.onImportFile(e5)} />
+                          <input class="tk-file" type="file" accept=".csv,text/csv" hidden @change=${(e5) => this.onImportFile(e5)} />
                         ` : A}
-                    ${this.effExport ? this.toolButton("download-outline", false, () => this.exportCsv(), this.t.exportCsv, void 0, this.tid("csv-export")) : A}
+                    ${this.effExport ? this.toolButton("download-outline", false, () => this.exportCsv(), this.t.exportCsv) : A}
                     <!-- #113 — Mismo botón en los dos viewports: la acción principal de la pantalla
                          se lee, no se adivina. En escritorio era un «+» de 36px idéntico a los
                          iconos de vista/filtrar/exportar, y era el último de cuatro. -->
                     ${this.addable ? b2`
-                          <ion-button class="primary-btn add-btn" data-testid=${this.tid("add")} size="small" @click=${() => this.toggle("create")}>
+                          <ion-button class="primary-btn add-btn" size="small" @click=${() => this.toggle("create")}>
                             <ion-icon slot="start" .icon=${okIcon("add")}></ion-icon>${this.t.add}
                           </ion-button>
                         ` : A}
                     ${this.renderOverflowMenu()}
                     ${this.primaryAction ? b2`
-                          <!-- #143 — Its own hook and NOT «-add»: «addable» and «primaryAction» are
-                               two different buttons that may coexist, and both are really used
-                               («addable» in the modules, «primaryAction» in the SaaS screens).
-                               Sharing the name would give two elements with the same hook as soon
-                               as a screen declared both. -->
-                          <ion-button class="primary-btn add-btn" data-testid=${this.tid("primary-action")} size="small" @click=${() => this.emit("primaryAction", {})}>
+                          <ion-button class="primary-btn add-btn" size="small" @click=${() => this.emit("primaryAction", {})}>
                             <ion-icon slot="start" .icon=${okIcon(this.primaryAction.icon ?? "add")}></ion-icon>${this.primaryAction.label}
                           </ion-button>
                         ` : A}
@@ -4365,13 +4300,13 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
                         </select>
                       ` : A}
                 </div>
-                ${this.isMobile ? canLoadMore ? b2`<ion-button class="load-more" data-testid=${this.tid("load-more")} size="small" @click=${loadMore}>${this.t.loadMore}</ion-button>` : A : pages > 1 ? b2`
+                ${this.isMobile ? canLoadMore ? b2`<ion-button class="load-more" size="small" @click=${loadMore}>${this.t.loadMore}</ion-button>` : A : pages > 1 ? b2`
                       <div class="nav">
-                        <ion-button size="small" fill="clear" data-testid=${this.tid("page-prev")} ?disabled=${current === 0} @click=${() => goTo(current - 1)}><ion-icon slot="icon-only" .icon=${iconChevronBack}></ion-icon></ion-button>
+                        <ion-button size="small" fill="clear" ?disabled=${current === 0} @click=${() => goTo(current - 1)}><ion-icon slot="icon-only" .icon=${iconChevronBack}></ion-icon></ion-button>
                         ${this.pageList(current + 1, pages).map(
       (p4) => p4 === "\u2026" ? b2`<span class="pgap">…</span>` : b2`<button class=${`pnum${p4 === current + 1 ? " on" : ""}`} @click=${() => goTo(p4 - 1)}>${p4}</button>`
     )}
-                        <ion-button size="small" fill="clear" data-testid=${this.tid("page-next")} ?disabled=${current >= pages - 1} @click=${() => goTo(current + 1)}><ion-icon slot="icon-only" .icon=${iconChevronForward}></ion-icon></ion-button>
+                        <ion-button size="small" fill="clear" ?disabled=${current >= pages - 1} @click=${() => goTo(current + 1)}><ion-icon slot="icon-only" .icon=${iconChevronForward}></ion-icon></ion-button>
                       </div>
                     ` : A}
               </div>
@@ -4499,7 +4434,6 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
                 <div
                   class=${`grow grow-data${selected ? " selected" : ""}${this.rowClickable ? " clickable" : ""}`}
                   role="row"
-                  data-testid=${this.tid(`row-${key}`)}
                   style=${o6(tpl)}
                   tabindex=${this.rowClickable ? "0" : A}
                   @click=${this.rowClickable ? () => this.emit("rowClick", { row }) : A}
@@ -4534,7 +4468,6 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
         return b2`
               <ion-card
                 class=${`rcard${selected ? " selected" : ""}${this.rowClickable ? " clickable" : ""}`}
-                data-testid=${this.tid(`row-${key}`)}
                 role=${this.rowClickable ? "button" : A}
                 tabindex=${this.rowClickable ? "0" : A}
                 @click=${this.rowClickable ? () => this.emit("rowClick", { row }) : A}
@@ -4681,9 +4614,6 @@ __decorateClass4([
 __decorateClass4([
   n4({ attribute: false })
 ], _OkDataTable.prototype, "renderCard");
-__decorateClass4([
-  n4({ type: String })
-], _OkDataTable.prototype, "testid");
 __decorateClass4([
   r5()
 ], _OkDataTable.prototype, "q");
@@ -5768,7 +5698,7 @@ __decorateClass5([
 ], OkScheduler.prototype, "heldId");
 define("ok-scheduler", OkScheduler);
 
-// ui/components/erp-appointments-series/erp-appointments-series.ts
+// @erplora/module-appointments/ui/components/erp-appointments-series/erp-appointments-series.ts
 var CATALOG2 = { es: es_default, en: en_default };
 function erplora2() {
   const c5 = globalThis.erplora;
@@ -5886,8 +5816,8 @@ var ErpAppointmentsSeries = class extends i3 {
       this.editDayOfWeek = tmpl.day_of_week === null || tmpl.day_of_week === void 0 ? "" : String(tmpl.day_of_week);
       this.editTime = tmpl.time ?? "";
       this.editDuration = String(tmpl.duration_minutes ?? "");
-      const today2 = todayISO();
-      this.fromOccurrence = this.occurrences.map((o7) => o7.occurrence_date).find((d3) => d3 >= today2) ?? today2;
+      const today = todayISO();
+      this.fromOccurrence = this.occurrences.map((o7) => o7.occurrence_date).find((d3) => d3 >= today) ?? today;
       await this.updateComplete;
       this.dataTable()?.open("create");
     } catch (e5) {
@@ -6219,7 +6149,7 @@ __decorateClass([
 ], ErpAppointmentsSeries.prototype, "editDuration", 2);
 define("erp-appointments-series", ErpAppointmentsSeries);
 
-// ui/components/erp-appointments-list/erp-appointments-list.ts
+// @erplora/module-appointments/ui/components/erp-appointments-list/erp-appointments-list.ts
 var CATALOG3 = { es: es_default, en: en_default };
 var STATUS_KEYS2 = {
   pending: "ui.statusPending",
@@ -6616,11 +6546,6 @@ var ErpAppointmentsList = class extends i3 {
   // no sabe —ni debe— de reglas de negocio. El aviso es del módulo.
   //
   // 🔴 Lo que NO pregunta, y por qué:
-  //  · `appointments._book_from_request` (el listener de `whatsapp_inbox.request.approved`) corre
-  //    en el servidor y no tiene a quién preguntar. Su confirmación humana YA ocurrió —alguien
-  //    aprobó la petición en la bandeja, sobre huecos que `availability.slots` había ofrecido— así
-  //    que reserva directamente, con el mismo gate de servidor que el resto. Un aviso ahí sería
-  //    una pregunta sin interlocutor que dejaría la petición aprobada sin cita.
   //  · Mover una SERIE entera (`recurring.update`, alcance «esta y las siguientes») no es un hueco:
   //    son N ocurrencias que el servidor recoloca. Queda fuera con su issue.
   /** ¿Permite este hub dos citas a la vez? El flag viaja como booleano JSON (appointments#79),
@@ -7224,503 +7149,3 @@ __decorateClass([
   r5()
 ], ErpAppointmentsList.prototype, "overlapPrompt", 2);
 define("erp-appointments-list", ErpAppointmentsList);
-
-// ui/components/erp-appointments-request-booking/erp-appointments-request-booking.ts
-var CATALOG4 = { es: es_default, en: en_default };
-function erplora4() {
-  const c5 = globalThis.erplora;
-  if (!c5) throw new Error("erplora SDK not initialised by the shell");
-  return c5;
-}
-function can(permission) {
-  const client = erplora4();
-  return typeof client.hasPermission === "function" ? client.hasPermission(permission) : true;
-}
-function rows4(r6) {
-  if (Array.isArray(r6)) return r6;
-  if (r6 && typeof r6 === "object" && Array.isArray(r6.rows)) return r6.rows;
-  return [];
-}
-var today = todayISO;
-var ErpAppointmentsRequestBooking = class extends i3 {
-  constructor() {
-    super(...arguments);
-    this.open = null;
-    this.services = [];
-    this.staffMembers = [];
-    this.matches = [];
-    this.search = "";
-    this.customerId = "";
-    this.customerLabel = "";
-    this.serviceId = "";
-    this.staffId = "";
-    this.date = today();
-    this.slots = [];
-    this.dayClosed = false;
-    this.openingUnknown = false;
-    this.startDatetime = "";
-    this.busy = false;
-    this.error = "";
-    this.holdUntil = 0;
-    this.holdLeft = 0;
-    this.holdExpired = false;
-    /** How long a hold lasts here, from the hub's settings (`hold_minutes`, 15 by default, 0 = off). */
-    this.holdMinutes = 15;
-    this.holdTicker = null;
-    this.catalogsLoaded = false;
-    this.onLocaleChange = () => this.requestUpdate();
-    /** The host tells us which request is open. Same contract as `customers.detail`: an event on
-     *  the element, never a prop and never a call — and it is re-announced on every host re-render,
-     *  so opening the SAME request again must not wipe what the operator has already picked. */
-    this.onOpen = (ev) => {
-      const detail = ev.detail ?? {};
-      const request = {
-        request_id: String(detail.request_id ?? ""),
-        request_type: String(detail.request_type ?? ""),
-        customer_id: String(detail.customer_id ?? ""),
-        contact_name: String(detail.contact_name ?? ""),
-        contact_phone: String(detail.contact_phone ?? ""),
-        raw_summary: String(detail.raw_summary ?? "")
-      };
-      if (this.open?.request_id === request.request_id) return;
-      this.open = request;
-      this.error = "";
-      this.startDatetime = "";
-      this.slots = [];
-      this.holdUntil = 0;
-      this.holdExpired = false;
-      this.stopHoldClock();
-      this.customerId = request.customer_id;
-      this.customerLabel = request.customer_id ? request.contact_name : "";
-      this.search = request.contact_phone || request.contact_name;
-      void this.loadCatalogs();
-      if (!this.customerId) void this.searchCustomers();
-    };
-  }
-  static {
-    this.styles = i`
-    :host { display:block; font-family: system-ui, sans-serif; color: var(--ion-text-color, #1c1b18); }
-    .panel { display:flex; flex-direction:column; gap:.6rem; padding:.6rem 0; }
-    label { display:block; font-size:.8rem; font-weight:600; margin-bottom:.2rem; }
-    select, input { width:100%; min-height:44px; box-sizing:border-box; padding:.4rem .5rem;
-      border:1px solid var(--ion-color-step-200, #d8d5d0); border-radius:.4rem;
-      background: var(--ion-background-color, #fff); color: inherit; font: inherit; }
-    .actions { display:flex; gap:.4rem; align-items:center; flex-wrap:wrap; }
-    /* pm#392: color= is a document-level rule Ionic cannot apply inside this shadow root; the
-       tone is read from the theme token here instead. */
-    ion-button.tone-medium[fill] { --color: var(--ion-color-medium, #636469); }
-    .slots { display:flex; flex-wrap:wrap; gap:.35rem; }
-    .slot { min-height:44px; min-width:72px; padding:0 .7rem; border-radius:.4rem; cursor:pointer;
-      border:1px solid var(--ion-color-step-200, #d8d5d0); background: var(--ion-background-color, #fff);
-      color: inherit; font: inherit; }
-    .slot[aria-pressed='true'] { border-color: var(--ion-color-primary, #3880ff); font-weight:700; }
-    .matches { display:flex; flex-direction:column; gap:.25rem; margin-top:.3rem; }
-    .match { text-align:left; min-height:44px; padding:.3rem .5rem; border-radius:.4rem; cursor:pointer;
-      border:1px solid var(--ion-color-step-150, #e5e3df); background:none; color:inherit; font:inherit; }
-    .match[aria-pressed='true'] { border-color: var(--ion-color-primary, #3880ff); font-weight:700; }
-    .said { margin:0; color: var(--ion-color-step-600, #5b5852); font-style: italic; }
-    .go { margin-top:.2rem; }
-    .hold { margin:.1rem 0 .3rem; font-size:.8rem; font-weight:600;
-      color: var(--ion-color-primary, #3880ff); }
-    ion-button { --min-height: 44px; }
-  `;
-  }
-  connectedCallback() {
-    super.connectedCallback();
-    window.addEventListener("erplora:locale-changed", this.onLocaleChange);
-    this.addEventListener("erp:whatsapp-request", this.onOpen);
-  }
-  disconnectedCallback() {
-    window.removeEventListener("erplora:locale-changed", this.onLocaleChange);
-    this.removeEventListener("erp:whatsapp-request", this.onOpen);
-    this.stopHoldClock();
-    super.disconnectedCallback();
-  }
-  /** The catalogues, through their PUBLIC queries — never another module's tables. */
-  async loadCatalogs() {
-    if (this.catalogsLoaded) return;
-    this.catalogsLoaded = true;
-    try {
-      const [services, staffMembers, settings] = await Promise.all([
-        erplora4().query("services.services.list", { limit: 500 }).catch(() => []),
-        erplora4().query("staff.members.list", { limit: 500 }).catch(() => []),
-        erplora4().query("appointments.settings.get").catch(() => [])
-      ]);
-      const cfg = rows4(settings)[0];
-      if (cfg && cfg.hold_minutes !== void 0 && cfg.hold_minutes !== null) {
-        this.holdMinutes = Number(cfg.hold_minutes) || 0;
-      }
-      this.services = rows4(services).filter(
-        (s5) => s5.is_bookable === void 0 || Number(s5.is_bookable) === 1
-      );
-      this.staffMembers = rows4(staffMembers).filter(
-        (s5) => (s5.status ?? "active") === "active" && (s5.is_bookable === void 0 || Number(s5.is_bookable) === 1)
-      );
-    } catch (e5) {
-      this.error = e5 instanceof Error ? e5.message : erplora4().t(CATALOG4, "ui.errLoadCatalogs");
-    }
-  }
-  async searchCustomers() {
-    const term = this.search.trim();
-    if (!term) {
-      this.matches = [];
-      return;
-    }
-    try {
-      const result = await erplora4().query("customers.list", { search: term, limit: 8 });
-      this.matches = rows4(result);
-    } catch {
-      this.matches = [];
-    }
-  }
-  /** Creating the customer is an EXPLICIT act, prefilled — never a side effect of approving. */
-  async createCustomer() {
-    if (!this.open || !can("customers.add_customer")) return;
-    this.busy = true;
-    this.error = "";
-    try {
-      const name = this.open.contact_name || this.open.contact_phone;
-      await erplora4().command("customers.create", { name, phone: this.open.contact_phone });
-      this.search = this.open.contact_phone || name;
-      await this.searchCustomers();
-      const created = this.matches.find((c5) => c5.name === name);
-      if (created) this.pickCustomer(created);
-    } catch (e5) {
-      this.error = e5 instanceof Error ? e5.message : erplora4().t(CATALOG4, "ui.errCreateCustomer");
-    } finally {
-      this.busy = false;
-    }
-  }
-  pickCustomer(c5) {
-    this.customerId = c5.id;
-    this.customerLabel = c5.name;
-  }
-  /**
-   * The stretches the business is open on `this.date`, asked of THE DOOR ITSELF — and, since
-   * appointments#132, asked ONLY to caption the list, never to cut it.
-   *
-   * The authority over the business's hours is `schedules` (appointments#102) and the gate
-   * (`appointments.appointments.create`) resolves the date through its precedence (ADR-0392).
-   * Recutting the list here would be a second implementation of that precedence in TypeScript,
-   * which is the disease and not the cure — the engine behind `appointments.availability.slots`
-   * already runs the very function the gate runs (appointments#127).
-   *
-   * What survives is what the LIST CANNOT SAY BY ITSELF, because zero slots is not a reason:
-   *   * `[]` — the authority resolved the date and the business is SHUT (`dayClosed`): the person
-   *     at the counter has to read «closed today», not «no times left»;
-   *   * `null` — either the authority carries no rule reaching the date (`source: "unset"`, and
-   *     then the gate refuses nothing either), or it could not be asked at all, which is what
-   *     `openingUnknown` warns about.
-   *
-   * Read-only, so it writes nothing.
-   */
-  async askDayOpening() {
-    this.openingUnknown = false;
-    if (!can("appointments.view_schedule")) return null;
-    try {
-      const answer = await erplora4().command("appointments.availability.day_opening", { date: this.date });
-      const opening = answer?.result;
-      if (!opening || opening.source !== "schedules") return null;
-      return Array.isArray(opening.spans) ? opening.spans : [];
-    } catch (e5) {
-      if (e5?.code !== "permission_denied") this.openingUnknown = true;
-      return null;
-    }
-  }
-  /** Free slots RIGHT NOW, exactly as the hub's own availability engine hands them over — it has
-   *  already narrowed them to what the door will accept (appointments#127/#132). The market's hard
-   *  rule: what a person can pick has to be free at the moment they pick it, not when the message
-   *  arrived — and it has to be bookable, not just free. */
-  async loadSlots() {
-    this.startDatetime = "";
-    if (!this.date) {
-      this.slots = [];
-      this.dayClosed = false;
-      this.openingUnknown = false;
-      return;
-    }
-    const service = this.services.find((s5) => s5.id === this.serviceId);
-    const opening = await this.askDayOpening();
-    this.dayClosed = opening !== null && opening.length === 0;
-    try {
-      const answer = await erplora4().command("appointments.availability.slots", {
-        date: this.date,
-        staff_id: this.staffId,
-        duration_minutes: service?.duration_minutes,
-        // appointments#69: every hold hides its slot from this list — ours would hide the very
-        // time we just took, which is the one moment a hold must NOT block anyone. Same role as
-        // `exclude_appointment_id` when moving an appointment off its own slot.
-        exclude_hold_ref: this.open?.request_id
-      });
-      const free = rows4(answer?.result);
-      this.slots = free;
-    } catch (e5) {
-      this.slots = [];
-      this.error = e5 instanceof Error ? e5.message : erplora4().t(CATALOG4, "ui.errLoadSlots");
-    }
-  }
-  /** Picking a time SETS IT ASIDE (appointments#69).
-   *
-   *  The window that this closes is the one appointments#38 could only report after the fact:
-   *  hours pass between the message and the approval, the counter sells the hour, and the booking
-   *  is refused when somebody finally approves. Holding while the decision is being made is what
-   *  the market does — Square holds 15 minutes while a customer completes a booking, Appointedd 7,
-   *  Timify caps at 5, Phorest opens a 7-minute holding slot on the calendar while the salon rings
-   *  back. Every documented number sits in the 5–15 band, because the clock only makes sense while
-   *  a PERSON is waiting on screen.
-   *
-   *  The clock starts HERE and not when the message arrives, and that is forced, not chosen: what
-   *  the model parsed is free text with no professional and no hour, so until somebody picks there
-   *  is no slot to hold. The long variant of this mechanism (Odoo and Acuity park the request ON
-   *  the calendar with no expiry at all) needs a request that already names a slot — and it is
-   *  also the variant whose failure mode fills the forums: holds nobody reclaims, freed by hand.
-   *
-   *  Failing to hold does NOT block the booking. A hold is a courtesy that expires; refusing to
-   *  continue because we could not take one would turn the best-effort half of the feature into a
-   *  new way of not being able to book at all. */
-  async pickSlot(s5) {
-    this.startDatetime = s5.slot_start;
-    this.holdExpired = false;
-    if (!this.open || this.holdMinutes <= 0) return;
-    try {
-      await erplora4().command("appointments.slots.hold", {
-        // Opaque both ways: we say who is asking and over which of THEIR rows. `appointments`
-        // stores it without knowing what a WhatsApp request is, and a hub with no inbox never
-        // learns this table exists.
-        source: "whatsapp_inbox",
-        source_ref: this.open.request_id,
-        staff_id: this.staffId,
-        start_datetime: s5.slot_start,
-        end_datetime: s5.slot_end,
-        label: this.customerLabel || this.open.contact_name || this.open.contact_phone
-      });
-      this.startHoldClock();
-    } catch {
-      this.holdUntil = 0;
-      this.error = erplora4().t(CATALOG4, "ui.holdFailed");
-    }
-  }
-  /** Gives the slot back. Only on an EXPLICIT walk-away: an unmount is not one (a host re-render
-   *  would hand the slot back mid-decision), and the TTL already covers the operator who simply
-   *  leaves — «if the user is gone, let it expire silently» is where the market lands. */
-  async releaseHold() {
-    this.stopHoldClock();
-    if (!this.open || !this.holdUntil) return;
-    this.holdUntil = 0;
-    try {
-      await erplora4().command("appointments.slots.release_hold", {
-        source: "whatsapp_inbox",
-        source_ref: this.open.request_id
-      });
-    } catch {
-    }
-  }
-  startHoldClock() {
-    this.holdUntil = Date.now() + this.holdMinutes * 6e4;
-    this.stopHoldClock();
-    this.tickHold();
-    this.holdTicker = setInterval(() => this.tickHold(), 1e3);
-  }
-  stopHoldClock() {
-    if (this.holdTicker) clearInterval(this.holdTicker);
-    this.holdTicker = null;
-  }
-  tickHold() {
-    const left = Math.max(0, this.holdUntil - Date.now());
-    this.holdLeft = left;
-    if (left > 0) return;
-    this.stopHoldClock();
-    this.holdUntil = 0;
-    this.startDatetime = "";
-    this.holdExpired = true;
-    void this.loadSlots();
-  }
-  get ready() {
-    return Boolean(this.customerId && this.serviceId && this.staffId && this.startDatetime);
-  }
-  /** Hands the BOUND request back to the host. Approving is the inbox's command, not ours: this
-   *  module does not know how a request is approved, only what a booking needs. And it does NOT
-   *  book here either — the appointment is created by the listener on the approval event, so the
-   *  booking happens exactly once no matter which door the approval came through. */
-  confirm() {
-    if (!this.open || !this.ready) return;
-    this.stopHoldClock();
-    const service = this.services.find((s5) => s5.id === this.serviceId);
-    this.dispatchEvent(new CustomEvent("erp:booking-resolved", {
-      detail: {
-        request_id: this.open.request_id,
-        customer_id: this.customerId,
-        service_id: this.serviceId,
-        staff_id: this.staffId,
-        start_datetime: this.startDatetime,
-        duration_minutes: service?.duration_minutes,
-        notes: this.open.raw_summary
-      },
-      bubbles: true,
-      composed: true
-    }));
-  }
-  async cancel() {
-    await this.releaseHold();
-    this.dispatchEvent(new CustomEvent("erp:booking-cancelled", { bubbles: true, composed: true }));
-  }
-  renderCustomer() {
-    const t5 = (k2) => erplora4().t(CATALOG4, k2);
-    if (this.customerId) {
-      return b2`<div>
-        <label>${t5("ui.bookingCustomer")}</label>
-        <div class="actions">
-          <strong>${this.customerLabel || this.customerId}</strong>
-          <ion-button data-testid="appointments-request-booking-customer-change" size="small" fill="clear"
-            @click=${() => {
-        this.customerId = "";
-        this.customerLabel = "";
-        void this.searchCustomers();
-      }}>
-            ${t5("ui.bookingChange")}
-          </ion-button>
-        </div>
-      </div>`;
-    }
-    return b2`<div>
-      <label for="cust">${t5("ui.bookingCustomer")}</label>
-      <input data-testid="appointments-request-booking-customer-search" id="cust" .value=${this.search} placeholder=${t5("ui.bookingCustomerSearch")}
-        @input=${(e5) => {
-      this.search = e5.target.value;
-      void this.searchCustomers();
-    }} />
-      <div class="matches">
-        ${this.matches.map((c5) => b2`<button type="button" class="match"
-          data-testid=${`appointments-request-booking-customer-match-${c5.id}`}
-          aria-pressed=${this.customerId === c5.id ? "true" : "false"}
-          @click=${() => this.pickCustomer(c5)}>${c5.name}${c5.phone ? b2` · ${c5.phone}` : A}</button>`)}
-      </div>
-      ${can("customers.add_customer") ? b2`<ion-button data-testid="appointments-request-booking-create-customer" size="small" fill="outline" ?disabled=${this.busy}
-        @click=${() => this.createCustomer()}>${t5("ui.bookingCreateCustomer")}</ion-button>` : A}
-    </div>`;
-  }
-  render() {
-    const t5 = (k2) => erplora4().t(CATALOG4, k2);
-    if (!this.open) return A;
-    return b2`<div class="panel">
-      ${this.open.raw_summary ? b2`<p class="said">“${this.open.raw_summary}”</p>` : A}
-      ${this.error ? b2`<ok-inline-feedback data-testid="appointments-request-booking-error" tone="danger">${this.error}</ok-inline-feedback>` : A}
-
-      ${this.renderCustomer()}
-
-      <div>
-        <label for="svc">${t5("ui.bookingService")}</label>
-        <select data-testid="appointments-request-booking-service" id="svc"
-          @change=${(e5) => {
-      this.serviceId = e5.target.value;
-      void this.loadSlots();
-    }}>
-          <option value="">${t5("ui.bookingPick")}</option>
-          ${this.services.map((s5) => b2`<option value=${s5.id} ?selected=${s5.id === this.serviceId}>${s5.name}</option>`)}
-        </select>
-      </div>
-
-      <div>
-        <label for="stf">${t5("ui.bookingStaff")}</label>
-        <select data-testid="appointments-request-booking-staff" id="stf"
-          @change=${(e5) => {
-      this.staffId = e5.target.value;
-      void this.loadSlots();
-    }}>
-          <option value="">${t5("ui.bookingPick")}</option>
-          ${this.staffMembers.map((s5) => b2`<option value=${s5.id} ?selected=${s5.id === this.staffId}>${s5.full_name}</option>`)}
-        </select>
-      </div>
-
-      <div>
-        <label for="day">${t5("ui.bookingDay")}</label>
-        <input data-testid="appointments-request-booking-day" id="day" type="date" .value=${this.date}
-          @change=${(e5) => {
-      this.date = e5.target.value;
-      void this.loadSlots();
-    }} />
-      </div>
-
-      <div>
-        <label>${t5("ui.bookingSlot")}</label>
-        ${this.holdUntil ? b2`<p class="hold">${t5("ui.holdCountdown").replace("{mins}", String(Math.floor(this.holdLeft / 6e4))).replace("{secs}", String(Math.floor(this.holdLeft % 6e4 / 1e3)).padStart(2, "0"))}</p>` : A}
-        ${this.holdExpired ? b2`<ok-inline-feedback data-testid="appointments-request-booking-hold-expired" tone="warning" icon="time-outline">${t5("ui.holdExpired")}</ok-inline-feedback>` : A}
-        ${this.openingUnknown ? b2`<ok-inline-feedback data-testid="appointments-request-booking-opening-unknown" tone="warning" icon="alert-circle-outline">${t5("ui.openingUnknown")}</ok-inline-feedback>` : A}
-        ${this.slots.length === 0 ? b2`<p class="said">${t5(this.dayClosed ? "ui.bookingDayClosed" : "ui.bookingNoSlots")}</p>` : b2`<div class="slots">
-              ${this.slots.map((s5) => b2`<button type="button" class="slot"
-                data-testid=${`appointments-request-booking-slot-${s5.slot_start}`}
-                aria-pressed=${this.startDatetime === s5.slot_start ? "true" : "false"}
-                @click=${() => {
-      void this.pickSlot(s5);
-    }}>${s5.start_time}</button>`)}
-            </div>`}
-      </div>
-
-      <div class="actions go">
-        <ion-button data-testid="appointments-request-booking-confirm" ?disabled=${!this.ready || this.busy} @click=${() => this.confirm()}>
-          ${t5("ui.bookingConfirm")}
-        </ion-button>
-        <span class="cancel"><ion-button data-testid="appointments-request-booking-cancel" fill="clear" class="tone-medium"
-          @click=${() => void this.cancel()}>${t5("ui.bookingCancel")}</ion-button></span>
-      </div>
-    </div>`;
-  }
-};
-__decorateClass([
-  r5()
-], ErpAppointmentsRequestBooking.prototype, "open", 2);
-__decorateClass([
-  r5()
-], ErpAppointmentsRequestBooking.prototype, "services", 2);
-__decorateClass([
-  r5()
-], ErpAppointmentsRequestBooking.prototype, "staffMembers", 2);
-__decorateClass([
-  r5()
-], ErpAppointmentsRequestBooking.prototype, "matches", 2);
-__decorateClass([
-  r5()
-], ErpAppointmentsRequestBooking.prototype, "search", 2);
-__decorateClass([
-  r5()
-], ErpAppointmentsRequestBooking.prototype, "customerId", 2);
-__decorateClass([
-  r5()
-], ErpAppointmentsRequestBooking.prototype, "customerLabel", 2);
-__decorateClass([
-  r5()
-], ErpAppointmentsRequestBooking.prototype, "serviceId", 2);
-__decorateClass([
-  r5()
-], ErpAppointmentsRequestBooking.prototype, "staffId", 2);
-__decorateClass([
-  r5()
-], ErpAppointmentsRequestBooking.prototype, "date", 2);
-__decorateClass([
-  r5()
-], ErpAppointmentsRequestBooking.prototype, "slots", 2);
-__decorateClass([
-  r5()
-], ErpAppointmentsRequestBooking.prototype, "dayClosed", 2);
-__decorateClass([
-  r5()
-], ErpAppointmentsRequestBooking.prototype, "openingUnknown", 2);
-__decorateClass([
-  r5()
-], ErpAppointmentsRequestBooking.prototype, "startDatetime", 2);
-__decorateClass([
-  r5()
-], ErpAppointmentsRequestBooking.prototype, "busy", 2);
-__decorateClass([
-  r5()
-], ErpAppointmentsRequestBooking.prototype, "error", 2);
-__decorateClass([
-  r5()
-], ErpAppointmentsRequestBooking.prototype, "holdUntil", 2);
-__decorateClass([
-  r5()
-], ErpAppointmentsRequestBooking.prototype, "holdLeft", 2);
-__decorateClass([
-  r5()
-], ErpAppointmentsRequestBooking.prototype, "holdExpired", 2);
-define("erp-appointments-request-booking", ErpAppointmentsRequestBooking);

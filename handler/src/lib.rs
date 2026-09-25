@@ -62,12 +62,6 @@ pub fn create_appointment(input: Json<erplora_guest_sdk::Input>) -> FnResult<Jso
 
 #[cfg(feature = "guest")]
 #[plugin_fn]
-pub fn book_from_request(input: Json<erplora_guest_sdk::Input>) -> FnResult<Json<Output>> {
-    guest_result(book_from_request_pure(input.into_inner().into_value()))
-}
-
-#[cfg(feature = "guest")]
-#[plugin_fn]
 pub fn day_opening(input: Json<erplora_guest_sdk::Input>) -> FnResult<Json<Output>> {
     guest_result(day_opening_pure(input.into_inner().into_value()))
 }
@@ -646,21 +640,15 @@ fn auto_confirm_online_of(settings: &Value) -> bool {
 /// before accepting» the option a business turns ON, so that is the shape: the switch ships on and
 /// switching it off restores the old behaviour exactly.
 ///
-/// **Two doors count, and only two.**
-/// - `booked_online` — the flag an online booking carries. It is the caller's claim, and it is
-///   the same claim the row has always stored; what is new is that the salon's own setting decides
-///   what to do with it.
-/// - a non-empty `request_id` in the payload, which is `_book_from_request` and nothing else:
-///   `appointment_create.json`, `appointment_bulk_create.json` and `recurring_materialize.json`
-///   are all `additionalProperties: false` and none of them declares one, so the marker cannot be
-///   forged through the doors a browser can reach. `tests/auto_confirm.contract.test.py` pins that.
+/// **One door counts: `booked_online`** — the flag an online booking carries. It is the caller's
+/// claim, and it is the same claim the row has always stored; what is new is that the salon's own
+/// setting decides what to do with it. (A second door, the `request_id` of an approved WhatsApp
+/// request, was retired with that listener in appointments#183.)
 ///
 /// Everything else — what the counter types, the occurrences a recurring series materialises — is
 /// the salon's own booking and keeps going through the salon's own review.
-fn born_confirmed(input: &Value, item: &Value, settings: &Value) -> bool {
-    auto_confirm_online_of(settings)
-        && (item.get("booked_online").map(as_bool).unwrap_or(false)
-            || !str_or(&payload_of(input), "request_id", "").is_empty())
+fn born_confirmed(item: &Value, settings: &Value) -> bool {
+    auto_confirm_online_of(settings) && item.get("booked_online").map(as_bool).unwrap_or(false)
 }
 
 fn default_duration_of(settings: &Value) -> i64 {
@@ -1417,13 +1405,7 @@ pub fn available_slots_pure(input: Value) -> Result<Output, String> {
 /// Two reads feed it, mirroring the pair the blocked times already use: `.live` (the holds of ONE
 /// day) for `create`/`reschedule`, and `.upcoming` (every hold still ahead) for `bulk_create` and
 /// `recurring.materialize`, which span days that `reads.params` cannot express.
-///
-/// `exclude_ref` is the request that OWNS the hold, and it is the one thing that must not be
-/// blocked by it: the whole point of holding a slot for a pending request is that the request can
-/// still book it. It comes from `payload.request_id`, which only the listener
-/// (`_book_from_request`) carries — `create`'s schema is `additionalProperties: false`, so no
-/// outside caller can smuggle a `request_id` in to walk past somebody else's hold.
-fn holds_from(input: &Value, staff_id: &str, exclude_ref: &str) -> Vec<Candidate> {
+fn holds_from(input: &Value, staff_id: &str) -> Vec<Candidate> {
     let Some(rows) = read_rows(input, "appointments.slot_holds.live")
         .or_else(|| read_rows(input, "appointments.slot_holds.upcoming"))
     else {
@@ -1432,11 +1414,6 @@ fn holds_from(input: &Value, staff_id: &str, exclude_ref: &str) -> Vec<Candidate
     rows.iter()
         .filter_map(|row| {
             if row.get("is_deleted").map(as_bool).unwrap_or(false) {
-                return None;
-            }
-            if !exclude_ref.is_empty()
-                && as_str(row.get("source_ref").unwrap_or(&Value::Null)) == exclude_ref
-            {
                 return None;
             }
             let owner = as_str(row.get("staff_id").unwrap_or(&Value::Null));
@@ -1774,7 +1751,7 @@ fn prepare_appointment(
     }
 
     // appointments#79: a `Domain` error, not an `Invalid` one. `Invalid` is re-raised as a raw
-    // `Err` by `create` (and by `book_from_request`), which the host turns into «error de handler
+    // `Err` by `create`, which the host turns into «error de handler
     // WASM: …» — the plumbing on screen instead of a code. The two callers that report per item
     // keep behaving as they should: `bulk_create` stops the batch, exactly as it already does for
     // `blocked` / `too_soon`, and `materialize` skips the occurrence and carries on with the
@@ -1852,11 +1829,7 @@ fn prepare_appointment(
         // appointments#69: y las franjas RETENIDAS por una decisión pendiente. Van detrás del
         // solape a propósito — una cita real es una razón más firme que una retención que caduca
         // sola, y cuando las dos aplican es la cita la que hay que nombrar.
-        let held = holds_from(
-            input,
-            &resolved.staff_id,
-            &str_or(&payload_of(input), "request_id", ""),
-        );
+        let held = holds_from(input, &resolved.staff_id);
         if let Some(c) = held
             .iter()
             .find(|c| cmp_secs(&c.start, &end) < 0 && cmp_secs(&c.end, &start) > 0)
@@ -1877,7 +1850,7 @@ fn prepare_appointment(
     // appointments#136: the status the row is BORN with. Everything below writes THIS and not the
     // literal `pending` that used to be spelled out twice — the row and its history line have to
     // agree, and two literals is how they stop agreeing.
-    let status = if born_confirmed(input, item, settings) {
+    let status = if born_confirmed(item, settings) {
         "confirmed"
     } else {
         "pending"
@@ -1977,15 +1950,13 @@ fn prepare_appointment(
 /// `appointments.appointment.created`, built from the row the booking is about to write
 /// (appointments#174).
 ///
-/// Every door that books — one by one, a batch, a WhatsApp approval — announces the appointment
+/// Every door that books — one by one, a batch, a recurring series — announces the appointment
 /// with THIS payload, read off its own `_insert_appointment` operation, so the event can never
 /// say something the row does not. The id travels as `appointment_id` like in every other event
 /// of the module, and also as `new_id`, the name the one-by-one booking carried while it was
-/// emitted declaratively, so an automation built on it keeps working. `request_id` is the WhatsApp
-/// correlation and is `null` elsewhere: the key is always there so the shape never depends on the
-/// door. Contact details and internal notes stay out of the outbox on purpose — a listener that
+/// emitted declaratively, so an automation built on it keeps working. Contact details and internal notes stay out of the outbox on purpose — a listener that
 /// needs them reads the appointment.
-fn appointment_created(ops: &[Operation], request_id: Option<&str>) -> Option<erplora_guest_sdk::Event> {
+fn appointment_created(ops: &[Operation]) -> Option<erplora_guest_sdk::Event> {
     let row = &ops
         .iter()
         .find(|op| op.command == "appointments._insert_appointment")?
@@ -2010,7 +1981,6 @@ fn appointment_created(ops: &[Operation], request_id: Option<&str>) -> Option<er
             "notes": field("notes"),
             "booked_online": json!(row.get("booked_online").map(as_bool).unwrap_or(false)),
             "recurring_id": field("recurring_id"),
-            "request_id": request_id.map_or(Value::Null, |r| json!(r)),
         }),
     ))
 }
@@ -2322,7 +2292,7 @@ pub fn reschedule_appointment_pure(input: Value) -> Result<Output, String> {
         }
         // appointments#69: mover una cita encima de una franja retenida es venderla igual que
         // crearla ahí. Sin exclusión: reprogramar no viene de ninguna petición.
-        if let Some(c) = holds_from(&input, &staff_id, "")
+        if let Some(c) = holds_from(&input, &staff_id)
             .iter()
             .find(|c| cmp_secs(&c.start, &end) < 0 && cmp_secs(&c.end, &start) > 0)
         {
@@ -2368,12 +2338,6 @@ pub fn reschedule_appointment_pure(input: Value) -> Result<Output, String> {
 /// hub's records (the reads the manifest declares) BEFORE anything else; an id that does not
 /// resolve is a domain refusal and nothing is written.
 pub fn create_appointment_pure(input: Value) -> Result<Output, String> {
-    book_appointment(input, None)
-}
-
-/// The booking behind `create` and `_book_from_request`; `request_id` is the WhatsApp request
-/// the appointment answers, when there is one (it only reaches the `created` event).
-fn book_appointment(input: Value, request_id: Option<&str>) -> Result<Output, String> {
     let payload = input.get("payload").cloned().unwrap_or(Value::Null);
     let ctx = host_ctx(&input)?;
     let appointment_id = ctx
@@ -2410,10 +2374,7 @@ fn book_appointment(input: Value, request_id: Option<&str>) -> Result<Output, St
         "Cita creada",
         None,
         // appointments#155/#157: the counter screen declares a start it knows has already begun,
-        // or one inside the minimum notice, and only it can. `_book_from_request` delegates here
-        // with the event payload WHOLE and its schema is `additionalProperties: true` by design,
-        // so both keys are stripped there before they can arrive as anything but the counter's
-        // own word. A booking marked `booked_online` is not the counter either: it is the
+        // or one inside the minimum notice, and only it can. A booking marked `booked_online` is not the counter either: it is the
         // customer's, and the notice is her window (whatsapp_inbox#159 — the WhatsApp card pins
         // `booked_online: true`, so its AI step cannot declare its way inside the notice).
         // Nor is any other automation, marked online or not: a flow or an API key never declares
@@ -2429,14 +2390,14 @@ fn book_appointment(input: Value, request_id: Option<&str>) -> Result<Output, St
         Err(PrepareError::Invalid(detail)) => return Err(detail),
     };
     // appointments#174: `created` comes from here, not from a declarative `emit`, so it has the
-    // same payload as the batch and the WhatsApp door. Both names are declared in `events.emits`,
+    // same payload as the batch and the recurring series. Both names are declared in `events.emits`,
     // which is what the runtime checks before queueing them (hub#240).
     let mut events: Vec<erplora_guest_sdk::Event> =
-        appointment_created(&ops, request_id).into_iter().collect();
+        appointment_created(&ops).into_iter().collect();
     // appointments#136: born confirmed ANNOUNCES it. Whatever reacts to a confirmation — a
     // reminder, an automation telling the customer «you are booked» — must not go blind to half
     // the diary just because the confirmation happened at creation instead of a second later.
-    if born_confirmed(&input, &payload, &settings) {
+    if born_confirmed(&payload, &settings) {
         events.push(erplora_guest_sdk::Event::new(
             "appointments.appointment.confirmed",
             json!({ "appointment_id": appointment_id }),
@@ -2447,179 +2408,6 @@ fn book_appointment(input: Value, request_id: Option<&str>) -> Result<Output, St
     // compilar en cuanto el checkout del hub avanza, y nadie puede regenerar el wasm (pm#81).
     Ok(Output {
         operations: ops,
-        events,
-        ..Default::default()
-    })
-}
-
-// ───────────────── una petición aprobada en otro módulo → una cita (appointments#38) ─────────────
-
-/// The answer this module sends back when it DID book what it was asked to book.
-const BOOKING_FULFILLED: &str = "appointments.booking_request.fulfilled";
-
-/// The answer it sends back when it did not, and why.
-const BOOKING_FAILED: &str = "appointments.booking_request.failed";
-
-/// The refusal for a request nobody bound to real records — the heart of appointments#38.
-const REQUEST_NOT_BOUND: &str = "appointments.request_not_bound";
-
-/// The answer event for a booking that did not happen.
-///
-/// It is an EVENT and not an [`Output::with_error`] on purpose, and this is the whole design of
-/// the listener: the host discards the operations **and the events** of an output that carries an
-/// error (hub#139). Expressed as an error, a refusal would fail the listener command, the relay
-/// would retry it eight times over an hour and drop the row into the dead-letter — and the inbox
-/// that is waiting for an answer would never get one. A slot lost to the counter is a business
-/// outcome, not a fault: it must travel, not retry.
-fn booking_refused(request_id: &str, code: &str, message: &str) -> Output {
-    Output::new().with_event(erplora_guest_sdk::Event::new(
-        BOOKING_FAILED,
-        json!({ "request_id": request_id, "reason_code": code, "reason": message }),
-    ))
-}
-
-/// `appointments._book_from_request` — the listener of `whatsapp_inbox.request.approved`
-/// (appointments#38).
-///
-/// Until this existed, the chain stopped one step short of being a booking channel: a customer
-/// wrote on WhatsApp, an LLM parsed the message into a request, somebody at the salon approved it
-/// — and nothing was created. The salon still typed the appointment by hand, which is what the
-/// approval was supposed to replace.
-///
-/// **What this is not.** It is not a second, looser door into the agenda. It books through exactly
-/// the same [`create_appointment_pure`] as the screen and the assistant: same authoritative reads,
-/// same snapshot frozen from the catalogue (appointments#11), same lead-time, blocked-agenda and
-/// overlap rules (appointments#10). What a language model read in a sentence gets no privileges
-/// here; if anything, less.
-///
-/// **Why it needs the ids up front.** `create` resolves customer/service/professional against this
-/// hub's records and fails closed, so a request carrying a service NAME and «tomorrow at ten» can
-/// never become an appointment. The binding is done by a PERSON when they approve, in the inbox,
-/// and travels in the event payload — which is why this command reads the same flat fields as
-/// `create` (`reads.params` can only address `payload.<field>`, so the shape is not a choice).
-/// That order — parse, propose, a human commits against real records — is what the market does
-/// without exception: Square Messages composes the appointment in the normal sheet, Zenoti refuses
-/// to confirm a request until a therapist is chosen, Booksy answers WhatsApp with a booking link
-/// rather than parsing the chat. The two products that do book from free text unattended (Podium,
-/// Booksy via Google) both replaced the human with a live-availability contract, which an inbox
-/// request parsed hours earlier is not.
-///
-/// **Reads are declared NON-required here, deliberately**, unlike in `create`. A `required` read
-/// that cannot resolve aborts the command (`ReadUnavailable`) — and inside a listener that means a
-/// dead-letter row nobody reads. There is no degradation to caller data either way: every read
-/// this handler is missing ends in a refusal (`catalog_unavailable`, `settings_unavailable`,
-/// `availability_unavailable`), so making them non-required does not open a door — it turns a
-/// silent death into a visible answer, which is the entire point of the issue.
-pub fn book_from_request_pure(input: Value) -> Result<Output, String> {
-    let payload = input.get("payload").cloned().unwrap_or(Value::Null);
-
-    // No request = nobody to answer. That is a wiring bug (a listener on the wrong event, an
-    // emitter that dropped the correlation), and it SHOULD retry and end up in the dead-letter:
-    // unlike a refusal, there is no inbox row this could be reported on.
-    let request_id = str_or(&payload, "request_id", "");
-    if request_id.is_empty() {
-        return Err("invalid_payload: request_id requerido".to_string());
-    }
-
-    // The four things a person had to bind for there to be anything to book. Checked BEFORE the
-    // booking so the answer names the real problem — «this request was never bound to a customer,
-    // a service and a slot» — instead of whichever catalogue lookup happened to miss first.
-    let missing: Vec<&str> = ["customer_id", "service_id", "staff_id", "start_datetime"]
-        .into_iter()
-        .filter(|k| str_or(&payload, k, "").is_empty())
-        .collect();
-    if !missing.is_empty() {
-        return Ok(booking_refused(
-            &request_id,
-            REQUEST_NOT_BOUND,
-            &format!(
-                "The request was approved without choosing {}, so there was nothing to book. \
-                 Open it again, pick them, and approve.",
-                missing.join(", ")
-            ),
-        ));
-    }
-
-    let appointment_id = host_ctx(&input)?
-        .new_ids
-        .first()
-        .cloned()
-        .ok_or_else(|| "context.new_ids vacío (lo inyecta el host)".to_string())?;
-
-    // appointments#155: the counter's declaration does not travel. This listener hands the event
-    // payload to `create` WHOLE, and `book_from_request.json` is `additionalProperties: true` on
-    // purpose (the runtime stamps its own system params on every event payload), so an
-    // `allow_past` riding in an approval would reach `create` as if a person had typed it. A
-    // message that books itself into yesterday is exactly what that wall is there to stop.
-    let mut input = input;
-    if let Some(Value::Object(p)) = input.get_mut("payload") {
-        p.remove("allow_past");
-        // appointments#157: nor its short notice — an approval is the customer's own booking
-        // arriving late, the very case the minimum notice is for.
-        p.remove("allow_short_notice");
-    }
-    let booked = match book_appointment(input, Some(&request_id)) {
-        Ok(out) => out,
-        // What is left here is NOT a business refusal any more: appointments#70 gave the overlap —
-        // the refusal this listener meets most, because hours pass between the message and the
-        // approval — its own domain code, so it now arrives below as `booked.error` like every
-        // other «no» of the module. This arm is the malformed-item case (a start date that will
-        // not parse, an empty customer name), and it is still answered rather than retried: inside
-        // a listener an `Err` aborts the command, the relay retries it eight times over an hour
-        // and drops the row into the dead-letter, so the inbox waiting for an answer never gets
-        // one.
-        Err(detail) => {
-            return Ok(booking_refused(
-                &request_id,
-                "appointments.booking_refused",
-                &detail,
-            ));
-        }
-    };
-    if let Some(refusal) = booked.error {
-        // The refusal `create` produced, forwarded WHOLE: the code so a screen can act on it, and
-        // the sentence so the inbox can paint the real reason instead of «something went wrong».
-        // Since appointments#70 the overlap comes through HERE, with the same
-        // `appointments.overlapping_appointment` the inbox already showed — no prefix to sniff, no
-        // `format!` in `prepare_appointment` that can rename the error behind this module's back.
-        return Ok(booking_refused(
-            &request_id,
-            &refusal.code,
-            &refusal.message,
-        ));
-    }
-
-    // appointments#69: the slot this request had set aside is now an appointment, so the hold is
-    // CONSUMED — in the same transaction, right behind the row it protected. Leaving it for
-    // afterwards is how orphan holds are made: a failure in between would leave the slot set aside
-    // for a request that is no longer waiting for anything, blocking its OWN appointment until the
-    // sweep got to it. Idempotent and blind: it matches 0 rows when there was no hold, which is the
-    // normal case for a hub whose inbox never held anything.
-    let mut operations = booked.operations;
-    let mut consume = Map::new();
-    consume.insert("source_ref".into(), json!(request_id));
-    operations.push(Operation::sql("appointments._hold_consume", consume));
-
-    // A booking made through this door is a booking: whatever subscribes to new appointments
-    // (reminders, KPIs) must not go blind to half the diary because it arrived by WhatsApp. The
-    // `created` — same payload as every door, carrying this `request_id` (appointments#174) — and,
-    // when the salon asked for these to be confirmed on arrival, the confirmation (#136) are both
-    // decided ONCE, by `book_appointment`: carrying its events over instead of re-deciding here is
-    // what keeps the events and the row from ever disagreeing.
-    let mut events = booked.events;
-    events.push(erplora_guest_sdk::Event::new(
-        BOOKING_FULFILLED,
-        json!({
-            "request_id": request_id,
-            "appointment_id": appointment_id,
-            // Who booked it. The asking module stores this as the link, so the answer is
-            // not hard-wired to one module: a table reservation would answer the same way.
-            "module": "appointments",
-        }),
-    ));
-
-    Ok(Output {
-        operations,
         events,
         ..Default::default()
     })
@@ -2698,11 +2486,11 @@ pub fn bulk_create_pure(input: Value) -> Result<Output, String> {
                 // customer, a reminder) reacts to an appointment, not to a batch. The declarative
                 // `emit` of the command cannot do this: it fires once per call, not per row.
                 // appointments#174: and with the same payload, built from the same row.
-                events.extend(appointment_created(&item_ops, None));
+                events.extend(appointment_created(&item_ops));
                 ops.extend(item_ops);
                 // appointments#136: a slot born confirmed announces that too, decided by the same
                 // `born_confirmed` that set the row's status — the event and the row cannot differ.
-                if born_confirmed(&input, item, &settings) {
+                if born_confirmed(item, &settings) {
                     events.push(erplora_guest_sdk::Event::new(
                         "appointments.appointment.confirmed",
                         json!({ "appointment_id": id }),
@@ -3486,7 +3274,7 @@ pub fn materialize_recurring_pure(input: Value) -> Result<Output, String> {
                 // appointments#172: every booked occurrence is announced like the other doors (#138,
                 // #174) — one `created` per appointment, built from the row it writes. Occurrences
                 // are born pending (`booked_online: false`), so there is never a `confirmed` to add.
-                events.extend(appointment_created(&item_ops, None));
+                events.extend(appointment_created(&item_ops));
                 ops.extend(item_ops);
                 created += 1;
             }
@@ -3686,73 +3474,6 @@ mod tests {
             "req-9"
         )]);
         assert!(create_appointment_pure(inp).unwrap().error.is_none());
-    }
-
-    /// Y la que cierra el círculo de appointments#38: la petición que APARTÓ el hueco tiene que
-    /// poder reservarlo. Su propia retención no puede rechazarla — sería el único caso en que
-    /// retener una franja impide usarla, que es lo contrario de retenerla.
-    #[test]
-    fn the_request_that_holds_the_slot_can_book_it() {
-        let mut inp = input(request_payload("2026-07-31T11:00:00Z"), None);
-        inp["context"]["reads"]["appointments.slot_holds.live"] = json!([hold(
-            "2026-07-31T11:00:00Z",
-            "2026-07-31T11:30:00Z",
-            "s1",
-            "req-1"
-        )]);
-        let out = book_from_request_pure(inp).unwrap();
-        assert!(
-            event(&out, "appointments.booking_request.fulfilled").is_some(),
-            "the request was refused by the very hold it had asked for: {:?}",
-            event(&out, "appointments.booking_request.failed").map(|e| e.payload.clone())
-        );
-    }
-
-    /// Reservar la petición CONSUME su retención, en la misma transacción que la cita.
-    ///
-    /// Si el consumo se dejase para después, un fallo entre medias dejaría la franja apartada por
-    /// una petición que ya no espera nada — la retención huérfana que Lightspeed documenta en sus
-    /// notas de versión. Caducaría sola, sí, pero mientras tanto estaría cerrando el hueco de su
-    /// propia cita.
-    #[test]
-    fn booking_a_request_consumes_the_hold_it_was_holding() {
-        let out =
-            book_from_request_pure(input(request_payload("2026-07-31T11:00:00Z"), None)).unwrap();
-        let consume = out
-            .operations
-            .iter()
-            .find(|op| op.command.ends_with("_hold_consume"))
-            .expect("the hold is consumed with the booking, not after it");
-        assert_eq!(consume.params.get("source_ref"), Some(&json!("req-1")));
-        let insert = out
-            .operations
-            .iter()
-            .position(|op| op.command.ends_with("_insert_appointment"));
-        let pos = out
-            .operations
-            .iter()
-            .position(|op| op.command.ends_with("_hold_consume"));
-        assert!(
-            insert < pos,
-            "the appointment is written first; the hold is closed behind it"
-        );
-    }
-
-    /// Una reserva RECHAZADA no consume nada: la retención sigue viva hasta que caduque o alguien
-    /// la suelte, porque la petición vuelve a la bandeja y la persona va a elegir otra hora.
-    #[test]
-    fn a_refused_request_does_not_consume_its_hold() {
-        let out = book_from_request_pure(input(
-            request_payload("2026-07-31T11:00:00Z"),
-            Some(json!({
-                "appointments.appointments.conflicting": [
-                    { "id": "apt-0", "staff_id": "s1", "start_datetime": "2026-07-31T11:00:00Z",
-                      "end_datetime": "2026-07-31T11:30:00Z", "status": "confirmed" }
-                ]
-            })),
-        ))
-        .unwrap();
-        assert!(out.operations.is_empty(), "a refusal writes nothing at all");
     }
 
     /// Mover una cita encima de una franja retenida es venderla igual que crearla ahí, así que
@@ -4209,8 +3930,8 @@ mod tests {
     /// appointments#70 — the point of the issue, from the consumer's side.
     ///
     /// The overlap is the most frequent refusal of all, and it was the only one WITHOUT a stable
-    /// code: it left `create` as `Err("overlap: …")`, so `_book_from_request` had to sniff the
-    /// prefix to name it. This pins the two halves of the contract that made the sniffing
+    /// code: it left `create` as `Err("overlap: …")`, so every caller had to sniff the prefix to
+    /// name it. This pins the two halves of the contract that made the sniffing
     /// unnecessary: the refusal is carried, not thrown, and the message names the clashing
     /// appointment so a screen can say WHICH one.
     #[test]
@@ -6705,24 +6426,6 @@ mod tests {
         );
     }
 
-    /// 🔴 The declaration is the COUNTER's, and nobody else can borrow it. `_book_from_request`
-    /// hands its event payload to `create` whole, and its schema is `additionalProperties: true`
-    /// on purpose (the runtime stamps its own system params on every event payload), so an
-    /// `allow_past` riding in that payload would reach `create` unfiltered. A message that books
-    /// itself into yesterday is exactly what the wall is there to stop.
-    #[test]
-    fn an_approved_request_cannot_borrow_the_counters_declaration() {
-        let mut payload = request_payload("2026-07-30T10:00:00Z");
-        payload["allow_past"] = json!(true);
-        let out = book_from_request_pure(input(payload, None)).unwrap();
-        assert!(out.operations.is_empty(), "the inbox booked into the past");
-        let answer = event(&out, "appointments.booking_request.failed").expect("failure answer");
-        assert_eq!(
-            answer.payload.get("reason_code"),
-            Some(&json!("appointments.invalid_start"))
-        );
-    }
-
     /// Same for a batch: `bulk_create` books N slots for one customer, and its items are the
     /// caller's. The declaration is not a field the batch can carry.
     #[test]
@@ -6789,25 +6492,6 @@ mod tests {
         assert_eq!(
             domain_code(&out).as_deref(),
             Some("appointments.outside_schedule")
-        );
-    }
-
-    /// 🔴 The declaration is the counter's and nobody else's. An approval from the inbox is the
-    /// customer's own booking arriving late: it hands its payload to `create` whole, so the key
-    /// has to be stripped there or a message would book itself inside the notice.
-    #[test]
-    fn an_approved_request_cannot_borrow_the_counters_short_notice() {
-        let mut payload = request_payload("2026-07-31T10:30:00Z");
-        payload["allow_short_notice"] = json!(true);
-        let out = book_from_request_pure(input(payload, Some(lead_time(60, 0)))).unwrap();
-        assert!(
-            out.operations.is_empty(),
-            "the inbox booked inside the notice"
-        );
-        let answer = event(&out, "appointments.booking_request.failed").expect("failure answer");
-        assert_eq!(
-            answer.payload.get("reason_code"),
-            Some(&json!("appointments.too_soon"))
         );
     }
 
@@ -7709,149 +7393,8 @@ mod tests {
         );
     }
 
-    // ── appointments#38 · a request approved on WhatsApp becomes a REAL appointment ──
-    //
-    // `whatsapp_inbox` emits `whatsapp_inbox.request.approved` and, until now, nobody listened:
-    // the salon clicked «Approve», the row went to `confirmed`, and no appointment was created.
-    // The listener is `_book_from_request`, and its whole job is to be the SAME booking as any
-    // other — same reads, same refusals, same rows — with one difference that is the point of the
-    // issue: it has nobody in front of it, so a refusal has to travel BACK as an event instead of
-    // as an error message on a screen.
-    //
-    // Which is why a business refusal here is `Ok(Output)` carrying the failure event and NOT
-    // `Output::error`: the host DISCARDS the operations and the events of an output that carries
-    // an error (hub#139). A refusal expressed that way would fail the listener command, the relay
-    // would retry it eight times and drop the row in the dead-letter — and the inbox would never
-    // hear a thing. That is exactly the silent failure appointments#38 was opened for.
-
-    fn request_payload(start: &str) -> Value {
-        json!({
-            "request_id": "req-1",
-            "customer_id": "c1",
-            "service_id": "s-corte",
-            "staff_id": "s1",
-            "start_datetime": start,
-            "duration_minutes": 30,
-            "notes": "the same colour as last time"
-        })
-    }
-
     fn event<'a>(out: &'a Output, name: &str) -> Option<&'a erplora_guest_sdk::Event> {
         out.events.iter().find(|e| e.name == name)
-    }
-
-    #[test]
-    fn an_approved_request_books_the_appointment_and_answers_fulfilled() {
-        let out =
-            book_from_request_pure(input(request_payload("2026-07-31T11:00:00Z"), None)).unwrap();
-        assert!(out.error.is_none(), "{:?}", out.error);
-        let insert = insert_op(&out);
-        assert_eq!(insert.params.get("customer_id"), Some(&json!("c1")));
-        assert_eq!(insert.params.get("service_id"), Some(&json!("s-corte")));
-        // The snapshot still comes from the CATALOGUE (appointments#11): a listener is not a way
-        // in for names the browser — or a language model — chose.
-        assert_eq!(insert.params.get("service_name"), Some(&json!("Corte")));
-
-        let answer = event(&out, "appointments.booking_request.fulfilled")
-            .expect("the request that produced the booking has to be told so");
-        assert_eq!(answer.payload.get("request_id"), Some(&json!("req-1")));
-        assert_eq!(answer.payload.get("appointment_id"), Some(&json!("apt-1")));
-        assert_eq!(answer.payload.get("module"), Some(&json!("appointments")));
-        assert!(event(&out, "appointments.booking_request.failed").is_none());
-    }
-
-    /// The listener is not a second door into the agenda: what a booking normally emits, it emits.
-    #[test]
-    fn a_booking_made_from_a_request_still_announces_the_appointment() {
-        let out =
-            book_from_request_pure(input(request_payload("2026-07-31T11:00:00Z"), None)).unwrap();
-        assert!(
-            event(&out, "appointments.appointment.created").is_some(),
-            "a listener that books in silence leaves reminders, KPIs and every other subscriber \
-             blind to half the appointments in the diary"
-        );
-    }
-
-    /// The heart of the issue: the LLM read a sentence, not this hub's records. An approval that
-    /// nobody bound to a customer, a service and a professional has NOTHING to book — and it must
-    /// say so where the person who can fix it is looking.
-    #[test]
-    fn an_unbound_request_books_nothing_and_answers_failed() {
-        let mut payload = request_payload("2026-07-31T11:00:00Z");
-        payload["service_id"] = json!("");
-        let out = book_from_request_pure(input(payload, None)).unwrap();
-        assert!(out.operations.is_empty(), "nothing may be written");
-        assert!(
-            out.error.is_none(),
-            "a refusal carried as `error` makes the host drop the answer event with it"
-        );
-        let answer = event(&out, "appointments.booking_request.failed").expect("failure answer");
-        assert_eq!(answer.payload.get("request_id"), Some(&json!("req-1")));
-        assert_eq!(
-            answer.payload.get("reason_code"),
-            Some(&json!("appointments.request_not_bound"))
-        );
-    }
-
-    /// The normal case, not the edge case: hours pass between the message and the approval, and
-    /// the salon sold the slot over the counter meanwhile. The booking is refused — never forced —
-    /// and the refusal travels back with the code `create` produced, so the inbox shows the real
-    /// reason and not «something went wrong».
-    #[test]
-    fn a_slot_taken_since_the_message_answers_failed_with_the_reason() {
-        let out = book_from_request_pure(input(
-            request_payload("2026-07-31T11:00:00Z"),
-            Some(json!({
-                "appointments.appointments.conflicting": [
-                    { "id": "apt-0", "staff_id": "s1", "start_datetime": "2026-07-31T11:00:00Z",
-                      "end_datetime": "2026-07-31T11:30:00Z", "status": "confirmed" }
-                ]
-            })),
-        ))
-        .unwrap();
-        assert!(out.operations.is_empty(), "an overbooking is never written");
-        assert!(out.error.is_none());
-        let answer = event(&out, "appointments.booking_request.failed").expect("failure answer");
-        assert_eq!(
-            answer.payload.get("reason_code"),
-            Some(&json!("appointments.overlapping_appointment"))
-        );
-        assert!(
-            answer
-                .payload
-                .get("reason")
-                .and_then(|v| v.as_str())
-                .is_some_and(|s| !s.is_empty()),
-            "the inbox paints the sentence, so there has to be one"
-        );
-    }
-
-    /// A catalogue that could not be read is a refusal like any other — and it has to come back
-    /// as one. Before this, an unreadable catalogue inside a listener was an aborted command and a
-    /// dead-letter row: the request sat on `confirmed` for ever with no appointment behind it.
-    #[test]
-    fn an_unreadable_catalogue_answers_failed_instead_of_dead_lettering() {
-        let mut inp = input(request_payload("2026-07-31T11:00:00Z"), None);
-        inp["context"]["reads"]
-            .as_object_mut()
-            .unwrap()
-            .remove("customers.get");
-        let out = book_from_request_pure(inp).unwrap();
-        assert!(out.operations.is_empty());
-        let answer = event(&out, "appointments.booking_request.failed").expect("failure answer");
-        assert_eq!(
-            answer.payload.get("reason_code"),
-            Some(&json!("appointments.catalog_unavailable"))
-        );
-    }
-
-    /// Without a request there is nobody to answer, so this one IS a wiring bug and fails loudly:
-    /// retrying it is the right behaviour, unlike a business refusal.
-    #[test]
-    fn a_payload_without_a_request_is_a_wiring_bug_not_a_business_answer() {
-        let mut payload = request_payload("2026-07-31T11:00:00Z");
-        payload["request_id"] = json!("");
-        assert!(book_from_request_pure(input(payload, None)).is_err());
     }
 
     // ── appointments#89 · the business hours are a DOOR, not a hint ────────────────────────────
@@ -9110,11 +8653,9 @@ mod tests {
     // negocio activa si quiere. Así que el interruptor nace encendido y apagarlo devuelve el
     // comportamiento de siempre.
     //
-    // Dos puertas cuentan como «el cliente ya se comprometió», y solo dos: la reserva que llega
-    // marcada `booked_online`, y `_book_from_request` — la única que trae `request_id`, porque
-    // `appointment_create.json`, `appointment_bulk_create.json` y `recurring_materialize.json`
-    // son `additionalProperties: false` y no lo declaran (pinado en
-    // `tests/auto_confirm.contract.test.py`). Lo que teclea el mostrador sigue naciendo pendiente.
+    // One door counts as «the customer already committed»: a booking marked `booked_online`
+    // (the `request_id` door of the WhatsApp requests was retired in appointments#183). What the
+    // counter types is still born pending.
 
     /// The settings singleton with the switch in a KNOWN position. The shared [`catalog_reads`]
     /// fixture leaves the key OUT on purpose — that is the case
@@ -9220,32 +8761,55 @@ mod tests {
         assert_eq!(status_of(&out), Some(&json!("confirmed")));
     }
 
-    /// The chain whatsapp_inbox#58 needs: the request becomes an appointment that is already
-    /// confirmed, so the customer can be told «done» instead of «we'll get back to you».
+    // appointments#183: the WhatsApp «requests» door is retired (whatsapp_inbox#206). Its
+    // `request_id` was a marker only that listener carried; with the listener gone, a
+    // `request_id` that reaches the handler is just an unknown key and must buy nothing.
+
+    fn payload_with_request_id(start: &str) -> Value {
+        json!({
+            "request_id": "req-9",
+            "customer_id": "c1",
+            "service_id": "s-corte",
+            "staff_id": "s1",
+            "start_datetime": start,
+            "duration_minutes": 30
+        })
+    }
+
     #[test]
-    fn a_booking_request_becomes_a_confirmed_appointment() {
-        let out = book_from_request_pure(input(
-            request_payload("2026-07-31T11:00:00Z"),
+    fn a_request_id_no_longer_confirms_a_booking_on_arrival() {
+        let out = create_appointment_pure(input(
+            payload_with_request_id("2026-07-31T11:00:00Z"),
             Some(settings_auto_confirm(true)),
         ))
         .unwrap();
-        assert!(
-            event(&out, "appointments.booking_request.fulfilled").is_some(),
-            "{:?}",
-            event(&out, "appointments.booking_request.failed").map(|e| e.payload.clone())
-        );
-        assert_eq!(status_of(&out), Some(&json!("confirmed")));
+        assert!(out.error.is_none(), "{:?}", out.error);
+        assert_eq!(status_of(&out), Some(&json!("pending")));
     }
 
-    /// A salon that wants to look at every WhatsApp booking before it counts keeps doing so.
     #[test]
-    fn a_booking_request_stays_pending_when_the_salon_wants_to_review() {
-        let out = book_from_request_pure(input(
-            request_payload("2026-07-31T11:00:00Z"),
-            Some(settings_auto_confirm(false)),
+    fn a_request_id_does_not_walk_past_the_hold_it_names() {
+        let mut inp = input(payload_with_request_id("2026-07-31T11:00:00Z"), None);
+        inp["context"]["reads"]["appointments.slot_holds.live"] = json!([hold(
+            "2026-07-31T11:00:00Z",
+            "2026-07-31T11:30:00Z",
+            "s1",
+            "req-9"
+        )]);
+        let out = create_appointment_pure(inp).unwrap();
+        assert_eq!(domain_code(&out).as_deref(), Some("appointments.slot_on_hold"));
+    }
+
+    #[test]
+    fn the_created_event_carries_no_request_key() {
+        let out = create_appointment_pure(input(
+            payload_with_request_id("2026-07-31T11:00:00Z"),
+            None,
         ))
         .unwrap();
-        assert_eq!(status_of(&out), Some(&json!("pending")));
+        let created = events_named(&out, "appointments.appointment.created");
+        assert_eq!(created.len(), 1, "{:?}", out.events);
+        assert!(created[0].payload.get("request_id").is_none(), "{}", created[0].payload);
     }
 
     /// Born confirmed ANNOUNCES it. Whatever reacts to a confirmation — the reminder, an
@@ -9273,23 +8837,6 @@ mod tests {
         ))
         .unwrap();
         assert!(event(&out, "appointments.appointment.confirmed").is_none());
-    }
-
-    /// The same through the WhatsApp door, where the three answers travel together.
-    #[test]
-    fn a_confirmed_booking_request_announces_created_confirmed_and_fulfilled() {
-        let out = book_from_request_pure(input(
-            request_payload("2026-07-31T11:00:00Z"),
-            Some(settings_auto_confirm(true)),
-        ))
-        .unwrap();
-        for name in [
-            "appointments.appointment.created",
-            "appointments.appointment.confirmed",
-            "appointments.booking_request.fulfilled",
-        ] {
-            assert!(event(&out, name).is_some(), "missing {name}: {:?}", out.events);
-        }
     }
 
     /// The trail says what really happened: created (already confirmed) and confirmed. Without
@@ -9352,8 +8899,7 @@ mod tests {
     }
 
     /// The third door the counter uses — a batch typed into the agenda — is the salon's own
-    /// booking too. Its items carry no `booked_online` and its payload cannot carry a
-    /// `request_id` (`appointment_bulk_create.json` is closed), so the switch changes nothing.
+    /// booking too. Its items carry no `booked_online`, so the switch changes nothing.
     #[test]
     fn a_batch_the_counter_types_is_still_born_pending() {
         let mut batch = json!({
@@ -9487,8 +9033,8 @@ mod tests {
     }
 
     /// A recurring series the salon set up is the salon's own booking, whatever the switch says:
-    /// `materialize` books occurrences with `booked_online: false` and its payload cannot carry a
-    /// `request_id`, so no occurrence can slip through the automation door.
+    /// `materialize` books occurrences with `booked_online: false`, so no occurrence can slip
+    /// through the online door.
     #[test]
     fn occurrences_of_a_series_are_never_born_confirmed() {
         let out = materialize_recurring_pure(series_input(
@@ -9521,8 +9067,8 @@ mod tests {
                 assert_eq!(ev.payload.get("service_id"), Some(&json!("s-corte")));
                 assert_eq!(ev.payload.get("staff_id"), Some(&json!("s1")));
                 assert_eq!(ev.payload.get("recurring_id"), Some(&json!("r1")));
-                // A series is the salon's own booking, never the approval of a WhatsApp request.
-                assert_eq!(ev.payload.get("request_id"), Some(&Value::Null));
+                // appointments#183: the WhatsApp request correlation is gone from the shape.
+                assert!(ev.payload.get("request_id").is_none(), "{}", ev.payload);
                 (
                     ev.payload.get("appointment_id").cloned().unwrap_or(Value::Null),
                     ev.payload.get("start_datetime").cloned().unwrap_or(Value::Null),
@@ -9605,15 +9151,15 @@ mod tests {
     }
     // appointments#174: ONE shape for `appointments.appointment.created`, whatever the door. The
     // one-by-one booking used to announce it declaratively (the command's whole payload plus the
-    // runtime's system params, the id as `new_id`) while the batch and the WhatsApp approval sent
+    // runtime's system params, the id as `new_id`) while the batch and the (since retired) WhatsApp approval sent
     // five fields with the id as `appointment_id` — so an automation tested on one door failed on
-    // the other. The three doors now build the event from the SAME row they write.
+    // the other. The doors now build the event from the SAME row they write.
 
     const MANIFEST: &str = include_str!("../../module.json");
 
-    /// The same booking through the three doors: customer c1, «Corte» with Bea, 11:00, 30 min,
-    /// under the same policy (no confirmation on arrival), so every field can be compared.
-    fn booked_through_every_door() -> [(&'static str, Output); 3] {
+    /// The same booking through the one-by-one and the batch doors: customer c1, «Corte» with Bea,
+    /// 11:00, 30 min, under the same policy (no confirmation on arrival), so every field can be compared.
+    fn booked_through_every_door() -> [(&'static str, Output); 2] {
         let single = create_appointment_pure(input(
             json!({
                 "customer_id": "c1", "service_id": "s-corte", "staff_id": "s1",
@@ -9631,12 +9177,7 @@ mod tests {
         });
         binder_applied_defaults(BULK_CREATE_SCHEMA, &mut batch);
         let bulk = bulk_create_pure(input(batch, Some(settings_auto_confirm(false)))).unwrap();
-        let whatsapp = book_from_request_pure(input(
-            request_payload("2026-07-31T11:00:00Z"),
-            Some(settings_auto_confirm(false)),
-        ))
-        .unwrap();
-        [("single", single), ("batch", bulk), ("whatsapp", whatsapp)]
+        [("single", single), ("batch", bulk)]
     }
 
     /// The ONE `created` a door announces.
@@ -9647,7 +9188,7 @@ mod tests {
         created[0].payload.clone()
     }
 
-    fn created_through_every_door() -> [(&'static str, Value); 3] {
+    fn created_through_every_door() -> [(&'static str, Value); 2] {
         booked_through_every_door().map(|(door, out)| (door, created_payload(&out, door)))
     }
 
@@ -9680,7 +9221,7 @@ mod tests {
     }
 
     #[test]
-    fn the_created_event_has_the_same_payload_through_the_three_doors() {
+    fn the_created_event_has_the_same_payload_through_every_door() {
         let doors = created_through_every_door();
         let (_, reference) = &doors[0];
         for (door, payload) in &doors {
@@ -9706,16 +9247,6 @@ mod tests {
         assert_eq!(reference.get("customer_name"), Some(&json!("Ada Lovelace")));
         assert_eq!(reference.get("service_name"), Some(&json!("Corte")));
         assert_eq!(reference.get("status"), Some(&json!("pending")));
-    }
-
-    /// The correlation to the WhatsApp request travels only where there is one; the key is there
-    /// in every door so the shape does not change with the door.
-    #[test]
-    fn only_the_whatsapp_door_carries_its_request() {
-        for (door, payload) in created_through_every_door() {
-            let expected = if door == "whatsapp" { json!("req-1") } else { Value::Null };
-            assert_eq!(payload.get("request_id"), Some(&expected), "{door}: {payload}");
-        }
     }
 
     /// The one-by-one booking announces from its handler now. Keeping the declarative `emit` as
