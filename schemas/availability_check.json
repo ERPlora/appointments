@@ -19,10 +19,6 @@
     "staff_id": {
       "type": "string",
       "description": "Ask about ONE professional's agenda. Absent = the whole agenda: any appointment or block of the hub counts."
-    },
-    "exclude_hold_ref": {
-      "type": "string",
-      "description": "The pending booking request that OWNS a hold on this slot, so its own hold does not refuse it. Only the request that set the slot aside can name it."
     }
   }
 }

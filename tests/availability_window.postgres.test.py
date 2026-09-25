@@ -225,7 +225,6 @@ def check_at(staff: str, start: str, duration: int = 30) -> dict:
             "staff_id": staff,
             "duration_minutes": duration,
             "exclude_appointment_id": None,
-            "exclude_hold_ref": None,
             "hub_id": HUB,
             "now": NOW,
             # El runtime bindea SIEMPRE la zona del negocio (hub#1022); estas filas son de

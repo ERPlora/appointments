@@ -36,7 +36,9 @@
     "appointments.service_not_bookable": {},
     "appointments.service_not_found": {},
     "appointments.settings_unavailable": {},
-    "appointments.slot_on_hold": {},
+    "appointments.slot_on_hold": {
+      "deprecated": "1.1.91"
+    },
     "appointments.staff_not_bookable": {},
     "appointments.staff_not_eligible": {},
     "appointments.staff_not_found": {},
@@ -192,14 +194,14 @@
       "permission": "appointments.view_schedule",
       "sql": "queries/availability_slots.sql",
       "ai": {
-        "description": "The half of the day's free slots this module owns: the calendar window and booking-notice settings, the blocked time, the appointments already on the books and the slots currently set aside for pending booking requests. It does NOT know the opening hours: this is the runtime read of `appointments.availability.slots`, which adds them from the authority before answering, and `appointments.availability.day_opening` is what returns them on their own (runtime reads)."
+        "description": "The half of the day's free slots this module owns: the calendar window and booking-notice settings, the blocked time, and the appointments already on the books. It does NOT know the opening hours: this is the runtime read of `appointments.availability.slots`, which adds them from the authority before answering, and `appointments.availability.day_opening` is what returns them on their own (runtime reads)."
       }
     },
     "appointments.availability.own_rules": {
       "permission": "appointments.view_schedule",
       "sql": "queries/availability_check.sql",
       "ai": {
-        "description": "The half of the availability verdict this module owns: the booking notice and maximum advance, the blocked periods, the appointments already on the books and the slots held for a pending request (invalid_start, too_soon, too_far, blocked, overlap or held — `held` means another pending booking request has that slot set aside for a few minutes). It does NOT know the opening hours: this is the runtime read of `appointments.availability.check`, which adds them from the authority before answering, and `appointments.availability.day_opening` is what returns them on their own (runtime reads)."
+        "description": "The half of the availability verdict this module owns: the booking notice and maximum advance, the blocked periods, and the appointments already on the books (invalid_start, too_soon, too_far, blocked or overlap). It does NOT know the opening hours: this is the runtime read of `appointments.availability.check`, which adds them from the authority before answering, and `appointments.availability.day_opening` is what returns them on their own (runtime reads)."
       }
     },
     "appointments.blocked_times.list": {
@@ -365,20 +367,6 @@
         "description": "Loads a professional's live appointments that have not ended yet, used by the batch and recurring handlers to detect overlapping bookings across several days authoritatively (runtime reads)."
       }
     },
-    "appointments.slot_holds.live": {
-      "permission": "appointments.view_schedule",
-      "sql": "queries/slot_holds_live.sql",
-      "ai": {
-        "description": "Loads the LIVE slot holds of the requested day — slots set aside while somebody decides on a pending booking request — used by the create, reschedule and booking-request handlers to refuse selling a slot that is already spoken for (runtime reads)."
-      }
-    },
-    "appointments.slot_holds.upcoming": {
-      "permission": "appointments.view_schedule",
-      "sql": "queries/slot_holds_upcoming.sql",
-      "ai": {
-        "description": "Loads every live slot hold still ahead, used by the batch and recurring handlers, which span several days and cannot express one day per read (runtime reads)."
-      }
-    },
     "appointments.appointments.count_to_confirm": {
       "permission": "appointments.view_appointment",
       "sql": "queries/appointments_count_to_confirm.sql",
@@ -536,13 +524,6 @@
         },
         {
           "query": "appointments.appointments.upcoming_for_staff",
-          "params": {
-            "staff_id": "payload.staff_id"
-          },
-          "required": true
-        },
-        {
-          "query": "appointments.slot_holds.upcoming",
           "params": {
             "staff_id": "payload.staff_id"
           },
@@ -710,14 +691,6 @@
           "required": true
         },
         {
-          "query": "appointments.slot_holds.live",
-          "params": {
-            "staff_id": "payload.staff_id",
-            "start_datetime": "payload.start_datetime"
-          },
-          "required": true
-        },
-        {
           "query": "schedules.business_hours.list",
           "required": true
         },
@@ -809,13 +782,6 @@
           "required": true
         },
         {
-          "query": "appointments.slot_holds.live",
-          "params": {
-            "start_datetime": "payload.start_datetime"
-          },
-          "required": true
-        },
-        {
           "query": "schedules.business_hours.list",
           "required": true
         },
@@ -879,7 +845,7 @@
         "function": "check_availability"
       },
       "ai": {
-        "description": "Checks whether a specific date/time slot is available for booking and returns the reason when it is not (outside_schedule, invalid_start, too_soon, too_far, blocked, overlap or held — `outside_schedule` means the business is shut at that hour and `held` that another pending booking request has the slot set aside for a few minutes). It answers the SAME opening hours the booking door enforces, read from the `schedules` module, so an hour this says is free is an hour a booking will be accepted at."
+        "description": "Checks whether a specific date/time slot is available for booking and returns the reason when it is not (outside_schedule, invalid_start, too_soon, too_far, blocked or overlap — `outside_schedule` means the business is shut at that hour). It answers the SAME opening hours the booking door enforces, read from the `schedules` module, so an hour this says is free is an hour a booking will be accepted at."
       },
       "reads": [
         {
@@ -887,8 +853,7 @@
           "params": {
             "start_datetime": "payload.start_datetime",
             "duration_minutes": "payload.duration_minutes",
-            "staff_id": "payload.staff_id",
-            "exclude_hold_ref": "payload.exclude_hold_ref"
+            "staff_id": "payload.staff_id"
           },
           "required": true
         },
@@ -923,7 +888,7 @@
         "function": "available_slots"
       },
       "ai": {
-        "description": "Lists the free booking slots of a given date (optionally for one staff member and a duration), crossing the calendar window and booking-notice settings, blocked time, existing appointments and the slots set aside for pending booking requests. It answers the SAME opening hours the booking door enforces, read from the `schedules` module, so an hour this offers is an hour a booking will be accepted at — the business being shut that date comes back as an empty list."
+        "description": "Lists the free booking slots of a given date (optionally for one staff member and a duration), crossing the calendar window and booking-notice settings, blocked time and existing appointments. It answers the SAME opening hours the booking door enforces, read from the `schedules` module, so an hour this offers is an hour a booking will be accepted at — the business being shut that date comes back as an empty list."
       },
       "reads": [
         {
@@ -931,8 +896,7 @@
           "params": {
             "date": "payload.date",
             "duration_minutes": "payload.duration_minutes",
-            "staff_id": "payload.staff_id",
-            "exclude_hold_ref": "payload.exclude_hold_ref"
+            "staff_id": "payload.staff_id"
           },
           "required": true
         },
@@ -1146,13 +1110,6 @@
           "required": true
         },
         {
-          "query": "appointments.slot_holds.upcoming",
-          "params": {
-            "staff_id": "payload.staff_id"
-          },
-          "required": true
-        },
-        {
           "query": "schedules.business_hours.list",
           "required": true
         },
@@ -1235,44 +1192,6 @@
       "ai": {
         "description": "Creates or updates the general settings for the appointments module."
       }
-    },
-    "appointments.slots.expire_holds": {
-      "permission": "appointments.change_appointment",
-      "transaction": true,
-      "sql": [
-        "commands/slot_hold_expire.sql"
-      ],
-      "emit": [
-        "appointments.slot.hold_released"
-      ]
-    },
-    "appointments.slots.hold": {
-      "permission": "appointments.add_appointment",
-      "transaction": true,
-      "schema": "schemas/slot_hold.json",
-      "sql": [
-        "commands/slot_hold_upsert.sql"
-      ],
-      "emit": [
-        "appointments.slot.held"
-      ],
-      "ai": {
-        "description": "Sets a time slot aside for a few minutes while somebody decides on a pending booking request, so the counter cannot sell it meanwhile. It frees itself; it is not a booking."
-      }
-    },
-    "appointments.slots.release_hold": {
-      "permission": "appointments.add_appointment",
-      "transaction": true,
-      "schema": "schemas/slot_release_hold.json",
-      "sql": [
-        "commands/slot_hold_release.sql"
-      ],
-      "emit": [
-        "appointments.slot.hold_released"
-      ],
-      "ai": {
-        "description": "Gives back a slot that was set aside for a pending request, because another time was chosen or the request was turned down."
-      }
     }
   },
   "events": {
@@ -1294,20 +1213,10 @@
       "appointments.blocked_time.created",
       "appointments.recurring.created",
       "appointments.recurring.updated",
-      "appointments.settings.updated",
-      "appointments.slot.held",
-      "appointments.slot.hold_released"
+      "appointments.settings.updated"
     ]
   },
   "ui": {
     "entry": "dist/appointments.esm.js"
-  },
-  "scheduled_tasks": [
-    {
-      "name": "expire_slot_holds",
-      "command": "appointments.slots.expire_holds",
-      "cron": "*/5 * * * *",
-      "catch_up": "collapse"
-    }
-  ]
+  }
 }

@@ -354,7 +354,6 @@ def check_settings_round_trip() -> None:
             "calendar_start_hour": 9,
             "calendar_end_hour": 19,
             "slot_interval": 15,
-            "hold_minutes": 15,
             "auto_confirm_online": True,
             "current_user_id": "u-1",
             "now": NOW,

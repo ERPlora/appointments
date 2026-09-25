@@ -1,7 +1,7 @@
 -- The availability engine, own-rules half: is THIS slot free? (appointments#122)
 --
 -- Returns `available` (0/1) and the first `reason` that fails, in the door's order:
---   invalid_start | too_soon | too_far | blocked | overlap | held | ''
+--   invalid_start | too_soon | too_far | blocked | overlap | ''
 --
 -- 🔴 THE HOURS ARE NOT HERE, AND CANNOT BE. This query used to compute `outside_schedule` against
 -- the module's OWN timetable, retired with the screen that wrote it (appointments#117) and with
@@ -15,11 +15,10 @@
 --
 -- The names say which half is which: this query is `appointments.availability.own_rules` and it
 -- answers ONLY what this module owns — the booking notice, the blocked periods, the appointments
--- already on the books and the slots held for a pending request.
+-- already on the books.
 --
 -- Binds: :start_datetime (ISO 8601, required) · :duration_minutes (optional; default =
--- settings.default_duration) · :staff_id (optional; absent = the whole agenda) ·
--- :exclude_hold_ref (optional; the pending request that owns a hold on this slot).
+-- settings.default_duration) · :staff_id (optional; absent = the whole agenda).
 -- The runtime injects :hub_id and :now. Dates/times go through the erp_* bridge functions
 -- (ADR-0007 §4a): erp_dt (comparable datetime), erp_date (date part), erp_dateadd (add interval).
 -- Dates are ISO-8601 TEXT.
@@ -75,29 +74,11 @@ checks AS (
                    AND erp_dt(a.start_datetime) < w.s_end
                    AND erp_dt(a.end_datetime) > w.s_start
              )
-             THEN 1 ELSE 0 END AS overlap,
-        -- appointments#69: y las franjas RETENIDAS mientras alguien decide. `held` es un motivo
-        -- PROPIO, no `overlap`: «ya hay una cita» mandaría a buscar en la agenda una cita que no
-        -- existe, y un hueco que desaparece sin nombre se lee como un bug (es literalmente lo que
-        -- el soporte de Square tiene que explicar sobre su retención de 15 min).
-        -- Va DESPUÉS de `overlap` en la cascada: una cita real es una razón más firme que una
-        -- retención que caduca sola.
-        CASE WHEN c.allow_overlapping = 0 AND EXISTS (
-                 SELECT 1
-                 FROM appointments_slot_hold h
-                 WHERE h.hub_id = :hub_id AND h.is_deleted = 0
-                   AND h.status = 'held'
-                   AND erp_dt(h.expires_at) > erp_dt(:now)
-                   AND COALESCE(CAST(:exclude_hold_ref AS TEXT), '') <> h.source_ref
-                   AND (CAST(:staff_id AS TEXT) IS NULL OR h.staff_id = '' OR h.staff_id = :staff_id)
-                   AND erp_dt(h.start_datetime) < w.s_end
-                   AND erp_dt(h.end_datetime) > w.s_start
-             )
-             THEN 1 ELSE 0 END AS held
+             THEN 1 ELSE 0 END AS overlap
     FROM win w, cfg c
 )
 SELECT
-    CASE WHEN invalid_start + too_soon + too_far + blocked + overlap + held = 0
+    CASE WHEN invalid_start + too_soon + too_far + blocked + overlap = 0
          THEN 1 ELSE 0 END AS available,
     CASE
         WHEN invalid_start = 1 THEN 'invalid_start'
@@ -105,7 +86,6 @@ SELECT
         WHEN too_far = 1 THEN 'too_far'
         WHEN blocked = 1 THEN 'blocked'
         WHEN overlap = 1 THEN 'overlap'
-        WHEN held = 1 THEN 'held'
         ELSE ''
     END AS reason
 FROM checks;
