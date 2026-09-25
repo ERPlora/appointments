@@ -1,7 +1,7 @@
 {
   "id": "appointments",
   "name": "Appointments",
-  "version": "1.1.88",
+  "version": "1.1.89",
   "errors": {
     "appointments.availability_unavailable": {},
     "appointments.blocked": {},
