@@ -1949,6 +1949,47 @@ fn prepare_appointment(
     Ok(ops)
 }
 
+/// `appointments.appointment.created`, built from the row the booking is about to write
+/// (appointments#174).
+///
+/// Every door that books — one by one, a batch, a WhatsApp approval — announces the appointment
+/// with THIS payload, read off its own `_insert_appointment` operation, so the event can never
+/// say something the row does not. The id travels as `appointment_id` like in every other event
+/// of the module, and also as `new_id`, the name the one-by-one booking carried while it was
+/// emitted declaratively, so an automation built on it keeps working. `request_id` is the WhatsApp
+/// correlation and is `null` elsewhere: the key is always there so the shape never depends on the
+/// door. Contact details and internal notes stay out of the outbox on purpose — a listener that
+/// needs them reads the appointment.
+fn appointment_created(ops: &[Operation], request_id: Option<&str>) -> Option<erplora_guest_sdk::Event> {
+    let row = &ops
+        .iter()
+        .find(|op| op.command == "appointments._insert_appointment")?
+        .params;
+    let field = |k: &str| row.get(k).cloned().unwrap_or(Value::Null);
+    Some(erplora_guest_sdk::Event::new(
+        "appointments.appointment.created",
+        json!({
+            "appointment_id": field("appointment_id"),
+            "new_id": field("appointment_id"),
+            "customer_id": field("customer_id"),
+            "customer_name": field("customer_name"),
+            "service_id": field("service_id"),
+            "service_name": field("service_name"),
+            "service_price": field("service_price"),
+            "staff_id": field("staff_id"),
+            "staff_name": field("staff_name"),
+            "start_datetime": field("start_datetime"),
+            "end_datetime": field("end_datetime"),
+            "duration_minutes": field("duration_minutes"),
+            "status": field("status"),
+            "notes": field("notes"),
+            "booked_online": json!(row.get("booked_online").map(as_bool).unwrap_or(false)),
+            "recurring_id": field("recurring_id"),
+            "request_id": request_id.map_or(Value::Null, |r| json!(r)),
+        }),
+    ))
+}
+
 // ───────────────────────────── funciones puras por command ─────────────────────────────
 
 /// Who is asking (appointments#6 for `cancel`, appointments#142 for `reschedule`). `staff` =
@@ -2301,6 +2342,12 @@ pub fn reschedule_appointment_pure(input: Value) -> Result<Output, String> {
 /// hub's records (the reads the manifest declares) BEFORE anything else; an id that does not
 /// resolve is a domain refusal and nothing is written.
 pub fn create_appointment_pure(input: Value) -> Result<Output, String> {
+    book_appointment(input, None)
+}
+
+/// The booking behind `create` and `_book_from_request`; `request_id` is the WhatsApp request
+/// the appointment answers, when there is one (it only reaches the `created` event).
+fn book_appointment(input: Value, request_id: Option<&str>) -> Result<Output, String> {
     let payload = input.get("payload").cloned().unwrap_or(Value::Null);
     let ctx = host_ctx(&input)?;
     let appointment_id = ctx
@@ -2347,20 +2394,20 @@ pub fn create_appointment_pure(input: Value) -> Result<Output, String> {
         Err(PrepareError::Domain(refusal)) => return Ok(Output::new().with_error(refusal)),
         Err(PrepareError::Invalid(detail)) => return Err(detail),
     };
-    // appointments#136: born confirmed ANNOUNCES it. `appointments.appointment.created` is emitted
-    // declaratively by the command (`emit` in module.json); the confirmation is CONDITIONAL, so it
-    // can only come from here. Whatever reacts to a confirmation — a reminder, an automation
-    // telling the customer «you are booked» — must not go blind to half the diary just because the
-    // confirmation happened at creation instead of a second later. The name is already declared in
-    // `events.emits`, which is what the runtime checks before queueing it (hub#240).
-    let events = if born_confirmed(&input, &payload, &settings) {
-        vec![erplora_guest_sdk::Event::new(
+    // appointments#174: `created` comes from here, not from a declarative `emit`, so it has the
+    // same payload as the batch and the WhatsApp door. Both names are declared in `events.emits`,
+    // which is what the runtime checks before queueing them (hub#240).
+    let mut events: Vec<erplora_guest_sdk::Event> =
+        appointment_created(&ops, request_id).into_iter().collect();
+    // appointments#136: born confirmed ANNOUNCES it. Whatever reacts to a confirmation — a
+    // reminder, an automation telling the customer «you are booked» — must not go blind to half
+    // the diary just because the confirmation happened at creation instead of a second later.
+    if born_confirmed(&input, &payload, &settings) {
+        events.push(erplora_guest_sdk::Event::new(
             "appointments.appointment.confirmed",
             json!({ "appointment_id": appointment_id }),
-        )]
-    } else {
-        vec![]
-    };
+        ));
+    }
     // `..Default::default()` para que el literal compile contra LAS DOS formas de `Output`: la de
     // antes de hub#139 y la que ganó `error` (rechazo de dominio). Sin esto el handler deja de
     // compilar en cuanto el checkout del hub avanza, y nadie puede regenerar el wasm (pm#81).
@@ -2477,7 +2524,7 @@ pub fn book_from_request_pure(input: Value) -> Result<Output, String> {
         // arriving late, the very case the minimum notice is for.
         p.remove("allow_short_notice");
     }
-    let booked = match create_appointment_pure(input) {
+    let booked = match book_appointment(input, Some(&request_id)) {
         Ok(out) => out,
         // What is left here is NOT a business refusal any more: appointments#70 gave the overlap —
         // the refusal this listener meets most, because hours pass between the message and the
@@ -2519,26 +2566,13 @@ pub fn book_from_request_pure(input: Value) -> Result<Output, String> {
     consume.insert("source_ref".into(), json!(request_id));
     operations.push(Operation::sql("appointments._hold_consume", consume));
 
-    let mut events = vec![
-        // A booking made through this door is a booking: whatever subscribes to new
-        // appointments (reminders, KPIs) must not go blind to half the diary because it
-        // arrived by WhatsApp.
-        erplora_guest_sdk::Event::new(
-            "appointments.appointment.created",
-            json!({
-                "appointment_id": appointment_id,
-                "customer_id": str_or(&payload, "customer_id", ""),
-                "service_id": str_or(&payload, "service_id", ""),
-                "staff_id": str_or(&payload, "staff_id", ""),
-                "start_datetime": str_or(&payload, "start_datetime", ""),
-                "request_id": request_id,
-            }),
-        ),
-    ];
-    // appointments#136: and the confirmation, when the salon asked for these to be confirmed on
-    // arrival. It is decided ONCE, by `create_appointment_pure` — carrying its events over instead
-    // of re-deciding here is what keeps the event and the `status` on the row from ever disagreeing.
-    events.extend(booked.events);
+    // A booking made through this door is a booking: whatever subscribes to new appointments
+    // (reminders, KPIs) must not go blind to half the diary because it arrived by WhatsApp. The
+    // `created` — same payload as every door, carrying this `request_id` (appointments#174) — and,
+    // when the salon asked for these to be confirmed on arrival, the confirmation (#136) are both
+    // decided ONCE, by `book_appointment`: carrying its events over instead of re-deciding here is
+    // what keeps the events and the row from ever disagreeing.
+    let mut events = booked.events;
     events.push(erplora_guest_sdk::Event::new(
         BOOKING_FULFILLED,
         json!({
@@ -2625,21 +2659,13 @@ pub fn bulk_create_pure(input: Value) -> Result<Output, String> {
             CounterDeclaration::NONE,
         ) {
             Ok(item_ops) => {
-                ops.extend(item_ops);
                 // appointments#138: every booked slot is announced like a one-by-one booking —
                 // one `created` per appointment, because what listens (a flow confirming to the
                 // customer, a reminder) reacts to an appointment, not to a batch. The declarative
                 // `emit` of the command cannot do this: it fires once per call, not per row.
-                events.push(erplora_guest_sdk::Event::new(
-                    "appointments.appointment.created",
-                    json!({
-                        "appointment_id": id,
-                        "customer_id": resolved.customer_id,
-                        "service_id": resolved.service_id,
-                        "staff_id": resolved.staff_id,
-                        "start_datetime": str_or(item, "start_datetime", ""),
-                    }),
-                ));
+                // appointments#174: and with the same payload, built from the same row.
+                events.extend(appointment_created(&item_ops, None));
+                ops.extend(item_ops);
                 // appointments#136: a slot born confirmed announces that too, decided by the same
                 // `born_confirmed` that set the row's status — the event and the row cannot differ.
                 if born_confirmed(&input, item, &settings) {
@@ -9097,7 +9123,17 @@ mod tests {
             ("apt-2", "2026-07-31T12:00:00Z"),
         ]) {
             assert_eq!(ev.payload.get("appointment_id"), Some(&json!(id)));
-            assert_eq!(ev.payload.get("start_datetime"), Some(&json!(start)));
+            // appointments#174: the start the ROW was written with (normalised), not the string
+            // the caller typed — the event says what the row says.
+            let row_start = insert_ops(&out)
+                .iter()
+                .find(|op| op.params.get("appointment_id") == Some(&json!(id)))
+                .and_then(|op| op.params.get("start_datetime").cloned());
+            assert_eq!(ev.payload.get("start_datetime"), row_start.as_ref());
+            assert_eq!(
+                parse_dt(ev.payload["start_datetime"].as_str().unwrap()),
+                parse_dt(start)
+            );
             assert_eq!(ev.payload.get("customer_id"), Some(&json!("c1")));
             assert_eq!(ev.payload.get("service_id"), Some(&json!("s-corte")));
             assert_eq!(ev.payload.get("staff_id"), Some(&json!("s1")));
@@ -9173,4 +9209,110 @@ mod tests {
         );
     }
 
+    // appointments#174: ONE shape for `appointments.appointment.created`, whatever the door. The
+    // one-by-one booking used to announce it declaratively (the command's whole payload plus the
+    // runtime's system params, the id as `new_id`) while the batch and the WhatsApp approval sent
+    // five fields with the id as `appointment_id` — so an automation tested on one door failed on
+    // the other. The three doors now build the event from the SAME row they write.
+
+    const MANIFEST: &str = include_str!("../../module.json");
+
+    /// The same booking through the three doors: customer c1, «Corte» with Bea, 11:00, 30 min,
+    /// under the same policy (no confirmation on arrival), so every field can be compared.
+    fn created_through_every_door() -> [(&'static str, Value); 3] {
+        let one = |out: Output, door: &str| -> Value {
+            assert!(out.error.is_none(), "{door}: {:?}", out.error);
+            let created = events_named(&out, "appointments.appointment.created");
+            assert_eq!(created.len(), 1, "{door} announces the appointment once: {:?}", out.events);
+            created[0].payload.clone()
+        };
+        let single = create_appointment_pure(input(
+            json!({
+                "customer_id": "c1", "service_id": "s-corte", "staff_id": "s1",
+                "start_datetime": "2026-07-31T11:00:00Z", "duration_minutes": 30,
+                "notes": "the same colour as last time"
+            }),
+            Some(settings_auto_confirm(false)),
+        ))
+        .unwrap();
+        let mut batch = json!({
+            "customer_id": "c1", "service_id": "s-corte", "staff_id": "s1",
+            "appointments": [ { "start_datetime": "2026-07-31T11:00:00Z",
+                                "duration_minutes": 30,
+                                "notes": "the same colour as last time" } ]
+        });
+        binder_applied_defaults(BULK_CREATE_SCHEMA, &mut batch);
+        let bulk = bulk_create_pure(input(batch, Some(settings_auto_confirm(false)))).unwrap();
+        let whatsapp = book_from_request_pure(input(
+            request_payload("2026-07-31T11:00:00Z"),
+            Some(settings_auto_confirm(false)),
+        ))
+        .unwrap();
+        [
+            ("single", one(single, "single")),
+            ("batch", one(bulk, "batch")),
+            ("whatsapp", one(whatsapp, "whatsapp")),
+        ]
+    }
+
+    #[test]
+    fn the_created_event_has_the_same_payload_through_the_three_doors() {
+        let doors = created_through_every_door();
+        let (_, reference) = &doors[0];
+        for (door, payload) in &doors {
+            let keys: Vec<&String> = payload.as_object().unwrap().keys().collect();
+            let expected: Vec<&String> = reference.as_object().unwrap().keys().collect();
+            assert_eq!(keys, expected, "{door} announces a different shape: {payload}");
+            for field in [
+                "customer_id", "customer_name", "service_id", "service_name", "staff_id",
+                "staff_name", "start_datetime", "end_datetime", "duration_minutes", "status",
+                "notes",
+            ] {
+                assert!(
+                    payload.get(field).is_some_and(|v| !v.is_null()),
+                    "{door} does not say `{field}`: {payload}"
+                );
+                assert_eq!(payload.get(field), reference.get(field), "{door}: `{field}` differs");
+            }
+            // The id is the row's id, under the same name in every door — and still under the
+            // `new_id` the one-by-one booking always carried, for automations built on it.
+            assert_eq!(payload.get("appointment_id"), Some(&json!("apt-1")), "{door}");
+            assert_eq!(payload.get("new_id"), Some(&json!("apt-1")), "{door}");
+        }
+        assert_eq!(reference.get("customer_name"), Some(&json!("Ada Lovelace")));
+        assert_eq!(reference.get("service_name"), Some(&json!("Corte")));
+        assert_eq!(reference.get("status"), Some(&json!("pending")));
+    }
+
+    /// The correlation to the WhatsApp request travels only where there is one; the key is there
+    /// in every door so the shape does not change with the door.
+    #[test]
+    fn only_the_whatsapp_door_carries_its_request() {
+        for (door, payload) in created_through_every_door() {
+            let expected = if door == "whatsapp" { json!("req-1") } else { Value::Null };
+            assert_eq!(payload.get("request_id"), Some(&expected), "{door}: {payload}");
+        }
+    }
+
+    /// The one-by-one booking announces from its handler now. Keeping the declarative `emit` as
+    /// well would queue a SECOND, differently shaped copy on a runtime that predates hub#1786.
+    #[test]
+    fn the_single_booking_does_not_also_emit_created_declaratively() {
+        let manifest: Value = serde_json::from_str(MANIFEST).expect("module.json parses");
+        let create = &manifest["commands"]["appointments.appointments.create"];
+        assert!(create.is_object(), "the create command exists");
+        let declared = create.get("emit").cloned().unwrap_or(json!([]));
+        assert!(
+            !declared.as_array().unwrap().iter().any(|e| e == "appointments.appointment.created"),
+            "{declared}"
+        );
+        assert!(
+            manifest["events"]["emits"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|e| e == "appointments.appointment.created"),
+            "a handler event must be declared in `events.emits` (hub#240)"
+        );
+    }
 }
