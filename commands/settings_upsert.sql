@@ -11,7 +11,7 @@
 INSERT INTO appointments_settings
   (id, hub_id, default_duration, min_booking_notice, max_advance_booking, allow_overlapping,
    send_reminders, reminder_hours_before, allow_customer_cancellation, cancellation_notice_hours,
-   calendar_start_hour, calendar_end_hour, slot_interval, hold_minutes, auto_confirm_online,
+   calendar_start_hour, calendar_end_hour, slot_interval, auto_confirm_online,
    is_deleted, created_by, updated_by, created_at, updated_at)
 VALUES
   (:new_id, :hub_id, :default_duration, :min_booking_notice, :max_advance_booking,
@@ -21,10 +21,10 @@ VALUES
    :allow_customer_cancellation,
    :cancellation_notice_hours,
    :calendar_start_hour, :calendar_end_hour, :slot_interval,
-   COALESCE(:hold_minutes, 15),
-   -- appointments#136. COALESCE por la misma razón que `hold_minutes`: el schema le pone
-   -- `default: true`, así que el runtime siempre lo manda (ADR-0073), pero un llamante que
-   -- escriba esta sentencia sin él no puede dejar en NULL una columna NOT NULL.
+   -- appointments#136. COALESCE on purpose: the schema gives it `default: true`, so the runtime
+   -- always sends it (ADR-0073), but a caller writing this statement without it must not leave a
+   -- NOT NULL column as NULL. (`hold_minutes` is no longer written: its setting was retired in
+   -- appointments#184 and the column keeps its table DEFAULT until appointments#187 drops it.)
    COALESCE(:auto_confirm_online, 1),
    0, :current_user_id, :current_user_id, :now, :now)
 ON CONFLICT(hub_id) DO UPDATE SET
@@ -39,7 +39,6 @@ ON CONFLICT(hub_id) DO UPDATE SET
   calendar_start_hour         = excluded.calendar_start_hour,
   calendar_end_hour           = excluded.calendar_end_hour,
   slot_interval               = excluded.slot_interval,
-  hold_minutes                = excluded.hold_minutes,
   auto_confirm_online         = excluded.auto_confirm_online,
   is_deleted                  = 0,
   deleted_at                  = NULL,

@@ -10,7 +10,7 @@ of them. So a foreign screen that only wants to flip «confirm bookings made by 
 automatically» sends `{"auto_confirm_online": false}` and silently resets the other twelve
 settings to factory values:
 
-    default_duration 45 -> 60 · hold_minutes 5 -> 15 · calendar_end_hour 22 -> 20 · …
+    default_duration 45 -> 60 · slot_interval 30 -> 15 · calendar_end_hour 22 -> 20 · …
 
 Measured against origin/main@39b13fa: 12 of 12. Nobody sees it — the write succeeds, the event
 fires, and the salon finds out when a booking lands at 20:30 in a calendar that used to close at
@@ -98,7 +98,6 @@ CONFIGURED = {
     "calendar_start_hour": 10,
     "calendar_end_hour": 22,
     "slot_interval": 30,
-    "hold_minutes": 5,
     FLAG: True,
 }
 

@@ -402,15 +402,15 @@ def check_the_engine_answers_the_hours() -> None:
 
 
 def check_every_verdict_of_the_sql_is_ranked_against_the_hours() -> None:
-    """The handler decides in the DOOR's order: lead time → hours → blocked → overlap → hold. A
+    """The handler decides in the DOOR's order: lead time → hours → blocked → overlap. A
     verdict added to the SQL tomorrow that nobody ranked would be reported as itself and never be
     overwritten by the hours — safe, but silently wrong for a rule the door ranks lower. So every
     word the SQL can answer has to be accounted for: either the hours outrank it
     (`RANKED_BELOW_THE_HOURS`) or the door settles it first (`RANKED_ABOVE_THE_HOURS`).
 
     🔴 «or the door emits it as an `appointments.<code>` refusal» is NOT good enough, and that is
-    what this check said first. `slot_on_hold` and `overlapping_appointment` are codes the door
-    emits AND ranks below the hours: a verdict added to the SQL under either name walked straight
+    what this check said first. `overlapping_appointment` is a code the door emits AND ranks below
+    the hours: a verdict added to the SQL under that name walked straight
     through, and the engine would report it instead of `outside_schedule` — the exact silent escape
     the paragraph above says this check prevents (measured on this manifest). Being emitted by the
     door proves the door knows the word, not that the door decides it before the clock."""
@@ -453,19 +453,19 @@ def check_the_ranking_reader_finds_the_positive() -> None:
         )
     if ranked_below_the_hours("const SOMETHING_ELSE: [&str; 1] = [\"blocked\"];"):
         fail("the ranking reader matches any Rust array: it would read the wrong list")
-    if "held" not in sql_reasons():
+    if "overlap" not in sql_reasons():
         fail(
-            "`held` is not among the reasons read from the SQL: the parser is not reaching the "
+            "`overlap` is not among the reasons read from the SQL: the parser is not reaching the "
             f"`CASE` of `{ENGINE_RULES}`, so the coverage check ranks nothing"
         )
 
-    # The partition has to REJECT a verdict the door merely knows a word for. `slot_on_hold` is a
-    # refusal the door emits and ranks BELOW the hours: accepting it on that ground is the hole
-    # this check used to have.
+    # The partition has to REJECT a verdict the door merely knows a word for.
+    # `overlapping_appointment` is a refusal the door emits and ranks BELOW the hours: accepting
+    # it on that ground is the hole this check used to have.
     below = ranked_below_the_hours(HANDLER.read_text())
-    if not unranked_reasons({"slot_on_hold"}, below):
+    if not unranked_reasons({"overlapping_appointment"}, below):
         fail(
-            "the partition accepts `slot_on_hold` as ranked: a verdict the door emits but settles "
+            "the partition accepts `overlapping_appointment` as ranked: a verdict the door emits but settles "
             "AFTER the hours would pass unranked and escape them in silence"
         )
     if unranked_reasons({"too_soon", "blocked"}, below):

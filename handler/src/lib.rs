@@ -1207,7 +1207,7 @@ pub fn day_opening_pure(input: Value) -> Result<Output, String> {
 const OWN_RULES_READ: &str = "appointments.availability.own_rules";
 
 /// The refusals the gate ranks BELOW the opening hours, in `prepare_appointment`'s order:
-/// lead time → **hours** → blocked → overlap → hold. A slot the SQL refuses for one of these and
+/// lead time → **hours** → blocked → overlap. A slot the SQL refuses for one of these and
 /// that is ALSO shut comes back `outside_schedule`, because that is the word the door would answer.
 ///
 /// Stated as the list BELOW and not the list above on purpose. A reason this list has never heard
@@ -1215,7 +1215,7 @@ const OWN_RULES_READ: &str = "appointments.availability.own_rules";
 /// itself — never silently overwritten by the hours. The list is pinned against the SQL's own
 /// `CASE ... END AS reason` by `tests/availability_rules.contract.test.py`, so «never heard of» is
 /// a red test and not a quiet drift.
-const RANKED_BELOW_THE_HOURS: [&str; 3] = ["blocked", "overlap", "held"];
+const RANKED_BELOW_THE_HOURS: [&str; 2] = ["blocked", "overlap"];
 
 /// Is this slot free? — the engine, answering the SAME hours the door enforces (appointments#122).
 ///
@@ -1230,7 +1230,7 @@ const RANKED_BELOW_THE_HOURS: [&str; 3] = ["blocked", "overlap", "held"];
 ///
 /// **Why it answers here.** This is the only place that can see both halves. The SQL keeps every
 /// verdict built on tables this module owns — the booking notice, the blocked periods, the
-/// appointments already on the books, the slots held for a pending request — and arrives as an
+/// appointments already on the books — and arrives as an
 /// authoritative read; the hours come from `schedules` through [`schedule_refusal`], the very
 /// function `create` and `reschedule` run. There is no second implementation of ADR-0392's
 /// precedence to drift, which is what
@@ -1335,7 +1335,7 @@ fn slot_page(rows: Vec<Value>) -> Output {
 /// salon that does not open on Sundays; so did the hour before opening and the lunch break. This
 /// is the question of appointments#122 asked in bulk, and it is the one that gets asked most:
 /// `queries/availability_slots.sql` generates the candidates of the settings' calendar window and
-/// discounts the booking notice, the blocked time, the appointments and the holds — every verdict
+/// discounts the booking notice, the blocked time and the appointments — every verdict
 /// built on tables THIS module owns — and knows nothing about the opening hours. It cannot: they
 /// belong to `schedules` (ADR-0392) and a query of a module may only name its own module's
 /// tables. The booking screen papered over it by asking [`day_opening_pure`] separately and
@@ -1393,63 +1393,6 @@ pub fn available_slots_pure(input: Value) -> Result<Output, String> {
     Ok(slot_page(kept))
 }
 
-
-/// The live slot holds this booking has to respect (appointments#69).
-///
-/// A **hold** is a slot this module has apartado for a decision that is still pending — today, a
-/// booking request somebody is deciding on in the WhatsApp inbox. It is a row of THIS module with
-/// an opaque reference to whoever asked for it (`source`/`source_ref`), exactly like the table
-/// hold of `tables` (tables#12): `appointments` never learns what a WhatsApp request is, only that
-/// someone identifiable set a slot aside and can give it back.
-///
-/// Two reads feed it, mirroring the pair the blocked times already use: `.live` (the holds of ONE
-/// day) for `create`/`reschedule`, and `.upcoming` (every hold still ahead) for `bulk_create` and
-/// `recurring.materialize`, which span days that `reads.params` cannot express.
-fn holds_from(input: &Value, staff_id: &str) -> Vec<Candidate> {
-    let Some(rows) = read_rows(input, "appointments.slot_holds.live")
-        .or_else(|| read_rows(input, "appointments.slot_holds.upcoming"))
-    else {
-        return Vec::new();
-    };
-    rows.iter()
-        .filter_map(|row| {
-            if row.get("is_deleted").map(as_bool).unwrap_or(false) {
-                return None;
-            }
-            let owner = as_str(row.get("staff_id").unwrap_or(&Value::Null));
-            if !owner.is_empty() && !staff_id.is_empty() && owner != staff_id {
-                return None;
-            }
-            let start = parse_dt(&as_str(row.get("start_datetime")?))?;
-            let end = parse_dt(&as_str(row.get("end_datetime")?))?;
-            Some(Candidate {
-                start,
-                end,
-                label: str_or(row, "label", "(en espera)"),
-            })
-        })
-        .collect()
-}
-
-/// A slot somebody else has set aside while they decide (appointments#69).
-///
-/// It gets its OWN code and is not folded into `overlapping_appointment` on purpose. «That
-/// professional already has an appointment» would send the receptionist to look for an appointment
-/// that does not exist, and the forums say exactly that is how a hold gets read: Square's own
-/// troubleshooting article lists its 15-minute hold among the causes of slots that «appear
-/// unavailable for no reason». A hold that cannot say its name is indistinguishable from a bug.
-fn hold_refusal(c: &Candidate) -> DomainError {
-    DomainError::new(
-        "appointments.slot_on_hold",
-        &format!(
-            "That slot is being held for a pending request — {} ({} – {}). It frees itself if \
-             nobody books it.",
-            c.label,
-            c.start.iso(),
-            c.end.iso()
-        ),
-    )
-}
 
 /// Double booking: the professional already has an appointment across this slot.
 ///
@@ -1825,16 +1768,6 @@ fn prepare_appointment(
             .find(|c| cmp_secs(&c.start, &end) < 0 && cmp_secs(&c.end, &start) > 0)
         {
             return Err(PrepareError::Domain(overlap_refusal(c)));
-        }
-        // appointments#69: y las franjas RETENIDAS por una decisión pendiente. Van detrás del
-        // solape a propósito — una cita real es una razón más firme que una retención que caduca
-        // sola, y cuando las dos aplican es la cita la que hay que nombrar.
-        let held = holds_from(input, &resolved.staff_id);
-        if let Some(c) = held
-            .iter()
-            .find(|c| cmp_secs(&c.start, &end) < 0 && cmp_secs(&c.end, &start) > 0)
-        {
-            return Err(PrepareError::Domain(hold_refusal(c)));
         }
     }
 
@@ -2289,14 +2222,6 @@ pub fn reschedule_appointment_pure(input: Value) -> Result<Output, String> {
             .find(|c| cmp_secs(&c.start, &end) < 0 && cmp_secs(&c.end, &start) > 0)
         {
             return Ok(Output::new().with_error(overlap_refusal(c)));
-        }
-        // appointments#69: mover una cita encima de una franja retenida es venderla igual que
-        // crearla ahí. Sin exclusión: reprogramar no viene de ninguna petición.
-        if let Some(c) = holds_from(&input, &staff_id)
-            .iter()
-            .find(|c| cmp_secs(&c.start, &end) < 0 && cmp_secs(&c.end, &start) > 0)
-        {
-            return Ok(Output::new().with_error(hold_refusal(c)));
         }
     }
 
@@ -3399,121 +3324,6 @@ mod tests {
 
     fn domain_code(out: &Output) -> Option<String> {
         out.error.as_ref().map(|e| e.code.clone())
-    }
-
-    // ── appointments#69 · una franja RETENIDA no se vende ──────────────────────────────────────
-    //
-    // Entre que el cliente escribe por WhatsApp y alguien del salón aprueba la petición pasan
-    // horas, y el mostrador vende esa hora por la puerta. Hasta aquí el choque se gestionaba
-    // DESPUÉS: la reserva se rechazaba y la petición volvía a la bandeja (appointments#38).
-    // Retener la franja mientras se decide es lo que cierra la ventana en vez de gestionarla, y
-    // es lo que hace el mercado (Square 15 min, Phorest 7, Odoo bloquea la pre-reserva).
-    //
-    // La retención es un dato de ESTE módulo con referencia OPACA a quien la pidió
-    // (`source`/`source_ref`), exactamente como la de `tables` (tables#12): `appointments` no
-    // aprende qué es una petición de WhatsApp, solo que alguien identificable apartó un hueco y
-    // puede soltarlo.
-
-    /// Una retención viva tal como la precarga el runtime (`appointments.slot_holds.live`).
-    fn hold(start: &str, end: &str, staff: &str, source_ref: &str) -> Value {
-        json!({
-            "id": format!("hold-{source_ref}"),
-            "staff_id": staff,
-            "source": "whatsapp_inbox",
-            "source_ref": source_ref,
-            "start_datetime": start,
-            "end_datetime": end,
-            "label": "Ana (WhatsApp)"
-        })
-    }
-
-    /// El mostrador intenta vender una hora que una petición pendiente tiene apartada. Se rechaza
-    /// —y con su PROPIO código: «ya hay una cita» sería mentira y mandaría a la recepcionista a
-    /// buscar en la agenda una cita que no existe. El fallo típico que cuentan los foros de Square
-    /// es justo ese: el hueco desaparece «sin motivo» porque la retención es invisible.
-    #[test]
-    fn create_refuses_a_slot_another_request_is_holding() {
-        let mut inp = input(item("2026-07-31T10:15:00Z", 30, "s1"), None);
-        inp["context"]["reads"]["appointments.slot_holds.live"] = json!([hold(
-            "2026-07-31T10:00:00Z",
-            "2026-07-31T10:30:00Z",
-            "s1",
-            "req-9"
-        )]);
-        let out = create_appointment_pure(inp).unwrap();
-        assert_eq!(
-            domain_code(&out).as_deref(),
-            Some("appointments.slot_on_hold")
-        );
-        assert!(out.operations.is_empty(), "a refusal writes nothing");
-    }
-
-    /// La retención es POR PROFESIONAL, como el solape: apartar el hueco de Bea no puede cerrar
-    /// la agenda de Carla, o retener una franja vaciaría el salón entero.
-    #[test]
-    fn a_hold_on_another_professional_does_not_block_this_booking() {
-        let mut inp = input(item("2026-07-31T10:15:00Z", 30, "s1"), None);
-        inp["context"]["reads"]["appointments.slot_holds.live"] = json!([hold(
-            "2026-07-31T10:00:00Z",
-            "2026-07-31T10:30:00Z",
-            "s2",
-            "req-9"
-        )]);
-        assert!(create_appointment_pure(inp).unwrap().error.is_none());
-    }
-
-    /// Bordes que se tocan NO solapan, igual que en el resto del módulo: una retención que
-    /// termina a las 10:15 deja libres las 10:15.
-    #[test]
-    fn a_hold_that_ends_where_the_booking_starts_does_not_block_it() {
-        let mut inp = input(item("2026-07-31T10:15:00Z", 30, "s1"), None);
-        inp["context"]["reads"]["appointments.slot_holds.live"] = json!([hold(
-            "2026-07-31T09:45:00Z",
-            "2026-07-31T10:15:00Z",
-            "s1",
-            "req-9"
-        )]);
-        assert!(create_appointment_pure(inp).unwrap().error.is_none());
-    }
-
-    /// Mover una cita encima de una franja retenida es venderla igual que crearla ahí, así que
-    /// `reschedule` mira las retenciones con la misma regla.
-    #[test]
-    fn reschedule_refuses_a_slot_another_request_is_holding() {
-        let mut inp = reschedule_input(
-            move_to("2026-07-31T15:00:00Z", Some(45)),
-            booked_row("2026-07-31T11:00:00Z", 60, "confirmed"),
-            None,
-        );
-        inp["context"]["reads"]["appointments.slot_holds.live"] = json!([hold(
-            "2026-07-31T15:15:00Z",
-            "2026-07-31T16:00:00Z",
-            "s1",
-            "req-9"
-        )]);
-        let out = reschedule_appointment_pure(inp).unwrap();
-        assert_eq!(
-            domain_code(&out).as_deref(),
-            Some("appointments.slot_on_hold")
-        );
-        assert!(out.operations.is_empty(), "a refusal moves nothing");
-    }
-
-    /// `allow_overlapping` apaga la comprobación ENTERA (docs/concepts.md), y una retención es una
-    /// cita que todavía no es: un hub que acepta solaparse acepta esto también. Si no, el toggle
-    /// dejaría de significar lo que dice en su propia pantalla.
-    #[test]
-    fn a_hub_that_allows_overlapping_ignores_holds_too() {
-        let mut inp = input(item("2026-07-31T10:15:00Z", 30, "s1"), None);
-        inp["context"]["reads"]["appointments.settings.get"] = json!([{ "allow_overlapping": 1, "default_duration": 60,
-                     "min_booking_notice": 0, "max_advance_booking": 0 }]);
-        inp["context"]["reads"]["appointments.slot_holds.live"] = json!([hold(
-            "2026-07-31T10:00:00Z",
-            "2026-07-31T10:30:00Z",
-            "s1",
-            "req-9"
-        )]);
-        assert!(create_appointment_pure(inp).unwrap().error.is_none());
     }
 
     // ── appointments#11 · the customer, the service and the professional are RESOLVED, not told ──
@@ -8194,7 +8004,7 @@ mod tests {
     // read `available` and believed it.
     //
     // The engine now answers through the handler, exactly like the door: `availability_check.sql`
-    // keeps the verdicts built on tables THIS module owns (notice, blocks, overlaps, holds) and
+    // keeps the verdicts built on tables THIS module owns (notice, blocks, overlaps) and
     // the handler adds the one it does not — the hours, from `schedules`, through the very
     // function the gate runs. The order is the gate's, not the query's convenience.
 
@@ -8223,7 +8033,7 @@ mod tests {
     }
 
     /// 🔴 THE SYMPTOM OF THE ISSUE. 2026-07-31 is a FRIDAY and the salon closes at 18:00. Nothing
-    /// this module owns objects to 23:00 — no block, no appointment, no hold — so the SQL says
+    /// this module owns objects to 23:00 — no block, no appointment — so the SQL says
     /// FREE, and that is the answer that used to reach the assistant.
     #[test]
     fn check_says_outside_schedule_when_the_business_is_shut() {
@@ -8265,11 +8075,11 @@ mod tests {
     }
 
     /// …and it DOES overwrite the ones the gate ranks below: the door checks the hours before the
-    /// blocked time, the overlap and the hold, so a shut hour is `outside_schedule` even when the
+    /// blocked time and the overlap, so a shut hour is `outside_schedule` even when the
     /// agenda has something else to say about it.
     #[test]
     fn check_ranks_the_hours_above_the_refusals_the_door_ranks_lower() {
-        for reason in ["blocked", "overlap", "held"] {
+        for reason in ["blocked", "overlap"] {
             let out = check_availability_pure(check_input(
                 "2026-07-31T23:00:00+02:00",
                 own_rules(0, reason),
@@ -8441,7 +8251,7 @@ mod tests {
     }
 
     /// 🔴 THE SYMPTOM OF THE ISSUE. 2026-08-30 is a SUNDAY and the salon works Monday to Friday.
-    /// Nothing this module owns objects to any of those hours — no block, no appointment, no hold
+    /// Nothing this module owns objects to any of those hours — no block, no appointment
     /// — so the SQL offers the whole calendar day, and that is the list that used to reach the
     /// assistant, a flow and the public API.
     #[test]
@@ -8785,19 +8595,6 @@ mod tests {
         .unwrap();
         assert!(out.error.is_none(), "{:?}", out.error);
         assert_eq!(status_of(&out), Some(&json!("pending")));
-    }
-
-    #[test]
-    fn a_request_id_does_not_walk_past_the_hold_it_names() {
-        let mut inp = input(payload_with_request_id("2026-07-31T11:00:00Z"), None);
-        inp["context"]["reads"]["appointments.slot_holds.live"] = json!([hold(
-            "2026-07-31T11:00:00Z",
-            "2026-07-31T11:30:00Z",
-            "s1",
-            "req-9"
-        )]);
-        let out = create_appointment_pure(inp).unwrap();
-        assert_eq!(domain_code(&out).as_deref(), Some("appointments.slot_on_hold"));
     }
 
     #[test]

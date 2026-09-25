@@ -19,10 +19,6 @@
     "staff_id": {
       "type": "string",
       "description": "List ONE professional's free slots. Absent = the whole agenda: any appointment or block of the hub counts."
-    },
-    "exclude_hold_ref": {
-      "type": "string",
-      "description": "The pending booking request that OWNS a hold on one of these slots, so its own hold does not hide the slot it just set aside. Only the request that set it aside can name it."
     }
   }
 }

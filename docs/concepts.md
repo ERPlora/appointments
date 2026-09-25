@@ -90,7 +90,6 @@ When a slot is not free, the availability check tells you **why**:
 | `outside_schedule` | You are closed at that hour |
 | `overlap` | That professional is already booked then |
 | `blocked` | Holiday, vacation, break or maintenance covers it |
-| `held` | Another pending booking request has that slot set aside for a few minutes |
 | `too_soon` | It breaks the minimum booking notice |
 | `too_far` | It is beyond how far ahead you allow bookings |
 | `invalid_start` | The start is in the past or unparseable |

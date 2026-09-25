@@ -9,11 +9,6 @@ SELECT id, default_duration, min_booking_notice, max_advance_booking,
        send_reminders <> 0               AS send_reminders,
        reminder_hours_before, allow_customer_cancellation <> 0 AS allow_customer_cancellation,
        cancellation_notice_hours, calendar_start_hour, calendar_end_hour, slot_interval,
-       -- appointments#69. Sale por aquí por DOS razones: la pestaña de Ajustes tiene que pintar
-       -- el valor guardado (si no, el formulario enseñaría el defecto del schema para siempre y
-       -- guardarlo lo pisaría), y el panel de reserva necesita el mismo número para que la cuenta
-       -- atrás en pantalla sea el reloj que de verdad está corriendo en el servidor.
-       hold_minutes,
        -- appointments#136: si la reserva que hace el propio cliente (online o por una
        -- automatización) nace ya confirmada. La puerta de reservas lo lee de aquí y solo de aquí:
        -- es la política del salón, no algo que el llamante pueda traer en el payload.

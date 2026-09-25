@@ -1883,7 +1883,7 @@ __decorateClass3([
 ], OkTimeline.prototype, "align");
 define("ok-timeline", OkTimeline);
 
-// @erplora/module-appointments/locales/es.json
+// locales/es.json
 var es_default = {
   name: "Citas",
   description: "Agenda las citas de tus clientes con sus servicios y profesionales, y s\xEDguelas desde que se reservan hasta que se completan.",
@@ -1928,10 +1928,6 @@ var es_default = {
       },
       slot_interval: {
         label: "Intervalo entre huecos (minutos)"
-      },
-      hold_minutes: {
-        label: "Apartar el hueco durante (minutos)",
-        description: "Minutos que un hueco queda apartado mientras alguien decide sobre una solicitud de cita pendiente. 0 desactiva la reserva temporal."
       },
       auto_confirm_online: {
         label: "Confirmar autom\xE1ticamente las citas que reserva el cliente",
@@ -2098,7 +2094,7 @@ var es_default = {
   }
 };
 
-// @erplora/module-appointments/locales/en.json
+// locales/en.json
 var en_default = {
   name: "Appointments",
   navigation: {
@@ -2142,10 +2138,6 @@ var en_default = {
       },
       slot_interval: {
         label: "Slot interval (minutes)"
-      },
-      hold_minutes: {
-        label: "Hold a slot for (minutes)",
-        description: "Minutes a slot stays set aside while somebody decides on a pending booking request. 0 switches holds off."
       },
       auto_confirm_online: {
         label: "Confirm bookings made by the customer automatically",
@@ -2312,7 +2304,7 @@ var en_default = {
   }
 };
 
-// @erplora/module-appointments/ui/lib/business-time.ts
+// ui/lib/business-time.ts
 var InvalidLocalTimeError = class extends Error {
   constructor(wall, timezone) {
     super(`invalid_local_time: ${wall} does not exist in ${timezone}`);
@@ -2479,7 +2471,7 @@ function deviceZoneDiffers(timezone = businessTimezone()) {
   return offsetMinutesAt(now, timezone) !== -new Date(now).getTimezoneOffset();
 }
 
-// @erplora/module-appointments/ui/components/erp-appointments-customer-history/erp-appointments-customer-history.ts
+// ui/components/erp-appointments-customer-history/erp-appointments-customer-history.ts
 var CATALOG = { es: es_default, en: en_default };
 function erplora() {
   const c5 = globalThis.erplora;
@@ -5698,7 +5690,7 @@ __decorateClass5([
 ], OkScheduler.prototype, "heldId");
 define("ok-scheduler", OkScheduler);
 
-// @erplora/module-appointments/ui/components/erp-appointments-series/erp-appointments-series.ts
+// ui/components/erp-appointments-series/erp-appointments-series.ts
 var CATALOG2 = { es: es_default, en: en_default };
 function erplora2() {
   const c5 = globalThis.erplora;
@@ -6149,7 +6141,7 @@ __decorateClass([
 ], ErpAppointmentsSeries.prototype, "editDuration", 2);
 define("erp-appointments-series", ErpAppointmentsSeries);
 
-// @erplora/module-appointments/ui/components/erp-appointments-list/erp-appointments-list.ts
+// ui/components/erp-appointments-list/erp-appointments-list.ts
 var CATALOG3 = { es: es_default, en: en_default };
 var STATUS_KEYS2 = {
   pending: "ui.statusPending",

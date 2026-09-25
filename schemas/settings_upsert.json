@@ -69,14 +69,6 @@
       "minimum": 1,
       "default": 15
     },
-    "hold_minutes": {
-      "type": "integer",
-      "title": "Hold a slot for (minutes)",
-      "minimum": 0,
-      "maximum": 120,
-      "default": 15,
-      "description": "Minutes a slot stays set aside while somebody decides on a pending booking request. 0 switches holds off."
-    },
     "auto_confirm_online": {
       "type": "boolean",
       "title": "Confirm bookings made by the customer automatically",
