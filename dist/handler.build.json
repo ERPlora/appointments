@@ -1,9 +1,9 @@
 {
   "file": "dist/handler.wasm",
   "target": "wasm32-unknown-unknown",
-  "sources_sha256": "8d95466a2b349000be9a583248cd016412f3df6b5f01b3757c9eea79b1caee4e",
+  "sources_sha256": "5fffa552ed116dd030c0361772c4a6f105cb36a9ca38e8eb92460f0b0e9757c6",
   "wasm_sha256": "714427ac1dfe6110d9e857145caadba9ed43b7fd7c15d0ab98fd3620fae20e5d",
-  "built_at": "2026-09-25T01:38:56.324Z",
+  "built_at": "2026-09-25T01:39:29.181Z",
   "features": [
     "guest"
   ]
