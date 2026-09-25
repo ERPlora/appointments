@@ -1706,13 +1706,30 @@ impl CounterDeclaration {
         short_notice: false,
     };
 
-    fn from_payload(payload: &Value) -> Self {
+    /// What the payload declares, if a PERSON of the team is calling (appointments#177). A flow
+    /// (`flow:<id>`) or an integration behind an API key (`apikey:<id>`) has nobody in front of
+    /// the agenda who saw the warning, so it keeps both walls whatever its payload says; the
+    /// runtime puts that identity in `context.current_user_id` and the caller cannot forge it.
+    fn from_request(input: &Value, payload: &Value) -> Self {
+        let caller = as_str(
+            input
+                .get("context")
+                .and_then(|c| c.get("current_user_id"))
+                .unwrap_or(&Value::Null),
+        );
+        if AUTOMATION_CALLERS.iter().any(|p| caller.starts_with(p)) {
+            return Self::NONE;
+        }
         Self {
             past: as_bool(payload.get("allow_past").unwrap_or(&Value::Null)),
             short_notice: as_bool(payload.get("allow_short_notice").unwrap_or(&Value::Null)),
         }
     }
 }
+
+/// The `current_user_id` prefixes the runtime gives a caller that is not a person: a flow run
+/// (ADR-0283) and a hub API key.
+const AUTOMATION_CALLERS: [&str; 2] = ["flow:", "apikey:"];
 
 /// Valida un ítem de cita y devuelve sus 3 intenciones (`_bump_counter` +
 /// `_insert_appointment` + `_insert_history`). Añade la cita aceptada a
@@ -2238,9 +2255,10 @@ pub fn reschedule_appointment_pure(input: Value) -> Result<Output, String> {
     // appointments#165 / #156: the move panel IS the counter, so it carries the same two
     // declarations `create` does (#155, #157) — the client seen at 11:30 instead of 11:00, the
     // one who arrived early and fits in half an hour. The customer channel (appointments#142)
-    // cannot borrow them: its window is exactly what the minimum notice protects.
+    // cannot borrow them: its window is exactly what the minimum notice protects. Nor can a flow
+    // or an API key on the staff channel (appointments#177): nobody there saw the warning.
     let counter = match channel {
-        CallerChannel::Staff => CounterDeclaration::from_payload(&payload),
+        CallerChannel::Staff => CounterDeclaration::from_request(&input, &payload),
         CallerChannel::Customer => CounterDeclaration::NONE,
     };
     let starts_in_past = cmp_secs(&start, &ctx.now) < 0;
@@ -2390,10 +2408,12 @@ fn book_appointment(input: Value, request_id: Option<&str>) -> Result<Output, St
         // own word. A booking marked `booked_online` is not the counter either: it is the
         // customer's, and the notice is her window (whatsapp_inbox#159 — the WhatsApp card pins
         // `booked_online: true`, so its AI step cannot declare its way inside the notice).
+        // Nor is any other automation, marked online or not: a flow or an API key never declares
+        // (appointments#177, see `CounterDeclaration::from_request`).
         if as_bool(payload.get("booked_online").unwrap_or(&Value::Null)) {
             CounterDeclaration::NONE
         } else {
-            CounterDeclaration::from_payload(&payload)
+            CounterDeclaration::from_request(&input, &payload)
         },
     ) {
         Ok(ops) => ops,
@@ -6818,6 +6838,90 @@ mod tests {
         );
     }
 
+    // ── appointments#177 · an AUTOMATION is not the counter either ─────────────────────────────
+    //
+    // The two declarations exist because a person has the agenda in front of them and has seen
+    // the warning. A flow the business builds (its AI step gets the whole schema as tool
+    // parameters) or an integration behind an API key has nobody there, so it keeps both walls
+    // even when it does not mark the booking `booked_online`. The runtime says who is calling:
+    // `context.current_user_id` is `flow:<id>` for a flow and `apikey:<id>` for a key.
+
+    /// The same guest input, called by `caller` instead of a person.
+    fn called_by(mut input: Value, caller: &str) -> Value {
+        input["context"]["current_user_id"] = json!(caller);
+        input
+    }
+
+    #[test]
+    fn a_flow_cannot_borrow_the_counters_short_notice() {
+        let mut payload = item("2026-07-31T10:30:00Z", 30, "s1");
+        payload["allow_short_notice"] = json!(true);
+        let out = create_appointment_pure(called_by(
+            input(payload, Some(lead_time(60, 0))),
+            "flow:f-1",
+        ))
+        .unwrap();
+        assert!(
+            out.operations.is_empty(),
+            "a flow booked inside the notice"
+        );
+        assert_eq!(domain_code(&out).as_deref(), Some("appointments.too_soon"));
+    }
+
+    #[test]
+    fn a_flow_cannot_borrow_the_counters_past() {
+        let mut payload = item("2026-07-31T09:00:00Z", 30, "s1");
+        payload["allow_past"] = json!(true);
+        let out = create_appointment_pure(called_by(
+            input(payload, Some(lead_time(0, 0))),
+            "flow:f-1",
+        ))
+        .unwrap();
+        assert!(out.operations.is_empty(), "a flow booked into the past");
+        assert_eq!(
+            domain_code(&out).as_deref(),
+            Some("appointments.invalid_start")
+        );
+    }
+
+    #[test]
+    fn an_api_key_cannot_borrow_the_counters_short_notice() {
+        let mut payload = item("2026-07-31T10:30:00Z", 30, "s1");
+        payload["allow_short_notice"] = json!(true);
+        let out = create_appointment_pure(called_by(
+            input(payload, Some(lead_time(60, 0))),
+            "apikey:k-1",
+        ))
+        .unwrap();
+        assert!(
+            out.operations.is_empty(),
+            "an API key booked inside the notice"
+        );
+        assert_eq!(domain_code(&out).as_deref(), Some("appointments.too_soon"));
+    }
+
+    /// Control: a person of the team (the id the runtime puts for a signed-in user) keeps both
+    /// declarations — the wall is for machines, not for the counter.
+    #[test]
+    fn a_person_of_the_team_still_declares_the_counters_short_notice_and_past() {
+        let mut payload = item("2026-07-31T09:00:00Z", 30, "s1");
+        payload["allow_past"] = json!(true);
+        let out = create_appointment_pure(called_by(
+            input(payload, Some(lead_time(0, 0))),
+            "0b7c1a52-6f7e-4d1c-9a51-2f0f6f2e8d11",
+        ))
+        .unwrap();
+        assert_eq!(domain_code(&out), None, "the counter's past booking was refused");
+        let mut payload = item("2026-07-31T10:30:00Z", 30, "s1");
+        payload["allow_short_notice"] = json!(true);
+        let out = create_appointment_pure(called_by(
+            input(payload, Some(lead_time(60, 0))),
+            "0b7c1a52-6f7e-4d1c-9a51-2f0f6f2e8d11",
+        ))
+        .unwrap();
+        assert_eq!(domain_code(&out), None, "the counter's short notice was refused");
+    }
+
     /// Same for a batch item: the batch is not the counter's single booking.
     #[test]
     fn a_batch_item_cannot_borrow_the_counters_short_notice() {
@@ -7239,6 +7343,41 @@ mod tests {
             payload,
             booked_row_of(ROW_CUSTOMER, "2026-07-31T11:00:00Z", 60, "confirmed"),
             Some(lead_time(0, 0)),
+        ))
+        .unwrap();
+        assert_eq!(
+            domain_code(&out).as_deref(),
+            Some("appointments.invalid_start")
+        );
+        assert!(out.operations.is_empty());
+    }
+
+    /// appointments#177: a flow granted `reschedule` moves on the staff channel, but it is not
+    /// the counter — neither declaration survives it.
+    #[test]
+    fn a_flow_cannot_borrow_the_counters_short_notice_on_a_move() {
+        let out = reschedule_appointment_pure(called_by(
+            reschedule_input(
+                counter_move_to("2026-07-31T10:30:00Z", false, true),
+                booked_row("2026-07-31T11:00:00Z", 60, "confirmed"),
+                Some(lead_time(60, 0)),
+            ),
+            "flow:f-1",
+        ))
+        .unwrap();
+        assert_eq!(domain_code(&out).as_deref(), Some("appointments.too_soon"));
+        assert!(out.operations.is_empty());
+    }
+
+    #[test]
+    fn a_flow_cannot_borrow_the_counters_past_on_a_move() {
+        let out = reschedule_appointment_pure(called_by(
+            reschedule_input(
+                counter_move_to("2026-07-31T09:30:00Z", true, false),
+                booked_row("2026-07-31T09:00:00Z", 60, "confirmed"),
+                Some(lead_time(0, 0)),
+            ),
+            "flow:f-1",
         ))
         .unwrap();
         assert_eq!(
