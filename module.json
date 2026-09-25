@@ -27,9 +27,6 @@
     "appointments.service_not_bookable": {},
     "appointments.service_not_found": {},
     "appointments.settings_unavailable": {},
-    "appointments.slot_on_hold": {
-      "deprecated": "1.1.91"
-    },
     "appointments.staff_not_bookable": {},
     "appointments.staff_not_eligible": {},
     "appointments.staff_not_found": {},
@@ -135,7 +132,12 @@
         "kind": "contract",
         "since": "1.1.67"
       },
-      "migrations/postgres/010_auto_confirm_online.sql"
+      "migrations/postgres/010_auto_confirm_online.sql",
+      {
+        "file": "migrations/postgres/011_drop_slot_hold_storage.sql",
+        "kind": "contract",
+        "since": "1.1.93"
+      }
     ]
   },
   "queries": {

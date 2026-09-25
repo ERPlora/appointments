@@ -20,14 +20,14 @@ old branch — checked where each piece would be declared or shipped:
      `exclude_hold_ref` parameter in the queries, the schemas or the manifest params;
   5. the setting `hold_minutes`: not in the settings schema (the Settings screen is drawn from it),
      not read by `settings.get`, not written by `settings.upsert`, and without its `en`/`es` text;
-  6. the error `appointments.slot_on_hold`: marked `deprecated` (ADR-0398 retires a published code
-     in two releases: mark it, then delete it), keeping its `en`/`es` text, and produced by nobody;
+  6. the error `appointments.slot_on_hold`: GONE — ADR-0398 retires a published code in two
+     releases, #184 marked it `deprecated` in 1.1.91 and #187 deleted it with its `en`/`es` text;
   7. the handler: no `holds_from`, no read of the hold queries, in the Rust source and in the built
      `handler.wasm`.
 
-The TABLE `appointments_slot_hold` and the COLUMN `appointments_settings.hold_minutes` stay for now:
-dropping them is a reversible migration of its own (appointments#187), and a column nobody reads or
-writes costs nothing in the meantime.
+The TABLE `appointments_slot_hold` and the COLUMN `appointments_settings.hold_minutes` are set aside
+by `011_drop_slot_hold_storage.sql` (appointments#187); `slot_hold_storage_retired.postgres.test.py`
+pins that migration.
 
 Usage: tests/slot_holds_retired.contract.test.py   (exit 0 = green)
 """
@@ -157,18 +157,15 @@ def check_setting() -> None:
 
 
 def check_error() -> None:
-    decl = (MANIFEST.get("errors") or {}).get(RETIRED_ERROR)
-    if not isinstance(decl, dict) or not isinstance(decl.get("deprecated"), str):
+    if RETIRED_ERROR in (MANIFEST.get("errors") or {}):
         fail(
-            f"module.json: errors.{RETIRED_ERROR} is not marked `deprecated` — ADR-0398 retires a "
-            "published code in two releases, and this is the first"
+            f"module.json: errors.{RETIRED_ERROR} is still declared — it was deprecated in 1.1.91 "
+            "and ADR-0398 deletes it in the next release"
         )
     for lang in ("en", "es"):
         catalog = json.loads((MODULE_DIR / "locales" / f"{lang}.json").read_text())
-        if RETIRED_ERROR not in (catalog.get("errors") or {}):
-            fail(
-                f"locales/{lang}.json: errors.{RETIRED_ERROR} — a declared code needs its text"
-            )
+        if RETIRED_ERROR in (catalog.get("errors") or {}):
+            fail(f"locales/{lang}.json: errors.{RETIRED_ERROR} — no code produces it any more")
 
 
 def check_handler() -> None:
