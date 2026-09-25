@@ -1,7 +1,7 @@
 {
   "id": "appointments",
   "name": "Appointments",
-  "version": "1.1.83",
+  "version": "1.1.85",
   "errors": {
     "appointments.availability_unavailable": {},
     "appointments.blocked": {},
@@ -738,9 +738,6 @@
         "file": "dist/handler.wasm",
         "function": "create_appointment"
       },
-      "emit": [
-        "appointments.appointment.created"
-      ],
       "ai": {
         "description": "Creates a new appointment for a customer with a specified service, professional and date/time. The customer, service and professional are resolved against the hub's records (name, price and duration are frozen from the catalogue, never from the caller)."
       },
