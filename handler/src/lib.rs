@@ -3379,6 +3379,7 @@ pub fn materialize_recurring_pure(input: Value) -> Result<Output, String> {
         return Ok(Output::new().with_error(availability_unavailable()));
     };
     let mut ops: Vec<Operation> = Vec::new();
+    let mut events: Vec<erplora_guest_sdk::Event> = Vec::new();
     let mut created = 0usize;
 
     // Ocurrencias de ESTA serie que ya están en la agenda (appointments#15). Sin esto, reejecutar
@@ -3448,6 +3449,10 @@ pub fn materialize_recurring_pure(input: Value) -> Result<Output, String> {
             CounterDeclaration::NONE,
         ) {
             Ok(item_ops) => {
+                // appointments#172: every booked occurrence is announced like the other doors (#138,
+                // #174) — one `created` per appointment, built from the row it writes. Occurrences
+                // are born pending (`booked_online: false`), so there is never a `confirmed` to add.
+                events.extend(appointment_created(&item_ops, None));
                 ops.extend(item_ops);
                 created += 1;
             }
@@ -3467,7 +3472,7 @@ pub fn materialize_recurring_pure(input: Value) -> Result<Output, String> {
     }
     Ok(Output {
         operations: ops,
-        events: vec![],
+        events,
         ..Default::default()
     })
 }
@@ -9209,6 +9214,101 @@ mod tests {
         );
     }
 
+    // appointments#172: the third door. The occurrences a series books are appointments like any
+    // other, so each one announces `created` with the same fields the batch sends (#138) — the
+    // customer of a weekly series gets the confirmation flow the customer of a one-off gets.
+
+    /// `(appointment_id, start_datetime)` of every `created` announced, in order.
+    fn announced_created(out: &Output) -> Vec<(Value, Value)> {
+        events_named(out, "appointments.appointment.created")
+            .iter()
+            .map(|ev| {
+                assert_eq!(ev.payload.get("customer_id"), Some(&json!("c1")));
+                assert_eq!(ev.payload.get("service_id"), Some(&json!("s-corte")));
+                assert_eq!(ev.payload.get("staff_id"), Some(&json!("s1")));
+                assert_eq!(ev.payload.get("recurring_id"), Some(&json!("r1")));
+                // A series is the salon's own booking, never the approval of a WhatsApp request.
+                assert_eq!(ev.payload.get("request_id"), Some(&Value::Null));
+                (
+                    ev.payload.get("appointment_id").cloned().unwrap_or(Value::Null),
+                    ev.payload.get("start_datetime").cloned().unwrap_or(Value::Null),
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_series_announces_every_occurrence_it_books() {
+        let out = materialize_recurring_pure(series_input(
+            series_payload(),
+            json!([template(json!({}))]),
+            None,
+        ))
+        .unwrap();
+        assert!(out.error.is_none(), "{:?}", out.error);
+        assert_eq!(
+            announced_created(&out),
+            vec![
+                (json!("apt-1"), json!("2026-08-03T11:00:00+02:00")),
+                (json!("apt-2"), json!("2026-08-10T11:00:00+02:00")),
+            ],
+            "one announcement per booked occurrence: {:?}",
+            out.events
+        );
+        // The announced id is the row's id: a listener that reads the appointment finds it.
+        let rows: Vec<&Value> = insert_ops(&out)
+            .iter()
+            .filter_map(|op| op.params.get("appointment_id"))
+            .collect();
+        assert_eq!(rows, vec![&json!("apt-1"), &json!("apt-2")]);
+        assert!(
+            events_named(&out, "appointments.appointment.confirmed").is_empty(),
+            "occurrences are born pending: {:?}",
+            out.events
+        );
+    }
+
+    /// An occurrence the series skips — a holiday, or one already on the books from a previous
+    /// run — was not booked now, so it is not announced now.
+    #[test]
+    fn a_series_does_not_announce_the_occurrences_it_skips() {
+        let holiday = upcoming_blocks(json!([
+            { "id": "b1", "title": "Festivo", "staff_id": null, "all_day": 1,
+              "start_datetime": "2026-08-03T00:00:00Z", "end_datetime": "2026-08-04T00:00:00Z" }
+        ]));
+        let out = materialize_recurring_pure(series_input(
+            series_payload(),
+            json!([template(json!({}))]),
+            Some(holiday),
+        ))
+        .unwrap();
+        assert!(out.error.is_none(), "{:?}", out.error);
+        assert_eq!(
+            announced_created(&out),
+            vec![(json!("apt-1"), json!("2026-08-10T11:00:00+02:00"))]
+        );
+
+        let out = materialize_recurring_pure(series_input(
+            series_payload(),
+            json!([template(json!({}))]),
+            Some(already_booked(json!(["2026-08-03"]))),
+        ))
+        .unwrap();
+        assert!(out.error.is_none(), "{:?}", out.error);
+        assert_eq!(
+            announced_created(&out),
+            vec![(json!("apt-1"), json!("2026-08-10T11:00:00+02:00"))]
+        );
+
+        let out = materialize_recurring_pure(series_input(
+            series_payload(),
+            json!([template(json!({}))]),
+            Some(already_booked(json!(["2026-08-03", "2026-08-10"]))),
+        ))
+        .unwrap();
+        assert!(out.error.is_none(), "{:?}", out.error);
+        assert!(out.operations.is_empty() && out.events.is_empty(), "{:?}", out.events);
+    }
     // appointments#174: ONE shape for `appointments.appointment.created`, whatever the door. The
     // one-by-one booking used to announce it declaratively (the command's whole payload plus the
     // runtime's system params, the id as `new_id`) while the batch and the WhatsApp approval sent
