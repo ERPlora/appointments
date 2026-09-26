@@ -69,8 +69,6 @@ RESCHEDULE = "appointments.appointments.reschedule"
 RESCHEDULE_CHAIN = [
     "appointments._reschedule_state_assert",
     "appointments._reschedule_row",
-    "appointments._appointment_overlap_assert",
-    "appointments._history_reschedule",
 ]
 
 DOMAIN_CODES = (
@@ -214,9 +212,13 @@ def check_reschedule() -> None:
             fail(
                 f"{op}: the handler emits it as an intention but it is not a declared command"
             )
+    # The overlap gate and the history line are statements of `_reschedule_row`, after its UPDATE:
+    # both find the row by `updated_at = :now`, which only holds inside ONE command — the runtime
+    # mints a fresh `:now` for every operation a WASM handler returns (appointments#196).
     files = [
-        (MANIFEST.get("commands", {}).get(op) or {}).get("sql", [None])[0]
+        rel
         for op in RESCHEDULE_CHAIN
+        for rel in (MANIFEST.get("commands", {}).get(op) or {}).get("sql", [None])
     ]
     if files != [
         "commands/_reschedule_state_assert.sql",

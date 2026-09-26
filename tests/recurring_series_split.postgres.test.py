@@ -176,9 +176,13 @@ def check_pattern_manifest(move_sql: str) -> None:
             "_recurring_cancel_occurrence: must need change_appointment, like every other "
             "sub-step of the split"
         )
-    if cancel_cmd.get("sql") != [cancel_rel]:
+    # Its history line is the SECOND statement of the same command, never an operation of its own:
+    # it finds the row by `updated_at = :now`, and the runtime mints a fresh `:now` for every
+    # operation a WASM handler returns (appointments#196).
+    if cancel_cmd.get("sql") != [cancel_rel, "commands/_history_cancel.sql"]:
         fail(
-            f"_recurring_cancel_occurrence: must run {cancel_rel!r}, got {cancel_cmd.get('sql')!r}"
+            f"_recurring_cancel_occurrence: must run {cancel_rel!r} then its history line, got "
+            f"{cancel_cmd.get('sql')!r}"
         )
     if not (MODULE_DIR / cancel_rel).exists():
         fail(f"{cancel_rel}: not in the package")

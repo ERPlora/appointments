@@ -53,8 +53,6 @@ CREATE_CHAIN = [
 RESCHEDULE_CHAIN = [
     "appointments._reschedule_state_assert",
     "appointments._reschedule_row",
-    "appointments._appointment_overlap_assert",
-    "appointments._history_reschedule",
     "appointments._gate_clear",
 ]
 # The gate table's drain (appointments#116). It is the last link of every chain that uses a gate,
@@ -75,16 +73,14 @@ def fail(msg: str) -> None:
 def statements_of(command: str) -> list[str]:
     """Every statement of a command, in manifest order.
 
-    An internal command carries exactly one file; a declarative command like
-    `appointments.appointments.update` chains several, and the runtime runs them in that order
-    inside one transaction — so the battery has to as well.
+    A command may chain several files — `appointments.appointments.update`, and the internal
+    `_reschedule_row`, whose row UPDATE, overlap gate and history line have to share one `:now`
+    (appointments#196) — and the runtime runs them in that order inside one transaction, bound
+    with ONE set of params — so the battery has to as well.
     """
     files = (MANIFEST.get("commands", {}).get(command) or {}).get("sql") or []
     if not files:
         fail(f"{command}: the manifest declares no sql chain")
-        return []
-    if command.split(".", 1)[1].startswith("_") and len(files) != 1:
-        fail(f"{command}: an internal command must be one statement, got {files!r}")
         return []
     return [(MODULE_DIR / f).read_text() for f in files]
 
@@ -205,6 +201,22 @@ def shim(sql: str, pad=pad_min_width) -> str:
     return sql
 
 
+def op_params(params: dict, index: int) -> dict:
+    """The params ONE operation of the chain is bound with, the way the runtime binds them.
+
+    The runtime mints the system params once PER OPERATION a WASM handler returns (`system_params`
+    inside the loop over `output.operations`, `crates/runtime/src/commands.rs`): each operation
+    gets its own `:now`, microseconds apart. Binding one `:now` for the whole chain — what this
+    battery used to do — is what hid appointments#196: a history line pinned to
+    `updated_at = :now` in an operation of its own matched in here and nothing in the real hub.
+    Statements of the SAME command still share one `:now`, as they do in the runtime.
+    """
+    now = params.get("now")
+    if not now or len(now) < 19:
+        return params
+    return {**params, "now": f"{now[:19]}.{index:06d}{now[19:]}"}
+
+
 def run_chain(commands: list[str], params: dict, pad=pad_min_width) -> str | None:
     """Runs a whole intention chain in ONE transaction, like the runtime does.
 
@@ -212,7 +224,9 @@ def run_chain(commands: list[str], params: dict, pad=pad_min_width) -> str | Non
     how a gate with `CHECK (ok = 1)` refuses.
     """
     body = "\n".join(
-        shim(bind(stmt, params), pad) for c in commands for stmt in statements_of(c)
+        shim(bind(stmt, op_params(params, i)), pad)
+        for i, c in enumerate(commands)
+        for stmt in statements_of(c)
     )
     try:
         psql([], db=DB, stdin=f"BEGIN;\n{body}\nCOMMIT;\n")

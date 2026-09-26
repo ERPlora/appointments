@@ -1,7 +1,11 @@
--- Audit trail of the `reschedule` transition (appointments#21). Runs LAST in the command, after
--- the state gate, the UPDATE and the overlap gate — so a rejected reschedule (terminal status or
--- double booking) rolls back with NO history row, and the trail never shows a move that did not
--- happen. See _history_confirm.sql for the `a.updated_at = :now` run-pinning rationale.
+-- Audit trail of the `reschedule` transition (appointments#21). Runs as a LATER statement of the
+-- SAME command as the UPDATE it audits — `_reschedule_row` (reschedule_appointment) or
+-- `_recurring_move_occurrence` (series update) — because the runtime binds `:now` once per command
+-- (and once per WASM operation), so a separate operation would never match the pin below
+-- (appointments#196). In `_reschedule_row` it runs LAST, after the state gate, the UPDATE and the
+-- overlap gate — so a rejected reschedule (terminal status or double booking) rolls back with NO
+-- history row, and the trail never shows a move that did not happen. See _history_confirm.sql for
+-- the `a.updated_at = :now` run-pinning rationale.
 --
 -- new_value carries the slot the appointment landed on (read back from the row), plus the channel
 -- the move was asked through (`staff` | `customer`, appointments#145 — bound by the handler as

@@ -7,9 +7,12 @@
 --
 -- The `WHERE status IN (...)` stays as a belt: the handler decided with a read and the state could
 -- have changed since. The one that turns that into an ERROR instead of a silent no-op is
--- _reschedule_state_assert.sql, which the handler emits BEFORE this statement; the overlap check
--- (allow_overlapping) is enforced right after by _appointment_overlap_assert.sql (gate table with
--- CHECK — appointments#20). Both run inside this command's transaction.
+-- _reschedule_state_assert.sql, which the handler emits as its own operation BEFORE this one; the
+-- overlap check (allow_overlapping) is enforced right after by _appointment_overlap_assert.sql
+-- (gate table with CHECK — appointments#20), and the audit trail by _history_reschedule.sql last —
+-- both run as LATER statements of this SAME `_reschedule_row` command's own `sql[]`, not as
+-- separate operations, because the runtime binds `:now` once per command and both find this row
+-- by `a.updated_at = :now` (appointments#196).
 UPDATE appointments_appointment
 SET start_datetime   = :start_datetime,
     end_datetime     = :end_datetime,

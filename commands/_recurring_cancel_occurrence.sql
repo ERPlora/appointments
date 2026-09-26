@@ -1,23 +1,25 @@
--- Cancela una ocurrencia que la PAUTA nueva deja sin sitio (appointments#90).
+-- Cancels an occurrence the new PATTERN leaves without a slot (appointments#90).
 --
--- Cambiar `frequency` o `day_of_week` mueve la serie a días DISTINTOS, así que no hay
--- correspondencia 1:1 con lo ya reservado: lo que sigue cayendo en la pauta nueva se mueve
--- (`_recurring_move_occurrence`) y lo que no, se cancela aquí.
+-- Changing `frequency` or `day_of_week` moves the series to DIFFERENT days, so there is no 1:1
+-- correspondence with what is already booked: what still falls on the new pattern gets moved
+-- (`_recurring_move_occurrence`) and what does not gets cancelled here.
 --
--- CANCELAR, no borrar. Borrar libera el día en el índice único parcial de la 005, pero tira el
--- número de cita, el historial y el rastro en la ficha de la clienta — y el historial es de la
--- clienta, no nuestro. Cancelar es además lo ÚNICO que ofrece el vertical de salón: Fresha,
--- Vagaro, Square y Booksy no dejan cambiar la pauta de una serie y obligan a cancelar y volver a
--- reservar. Lo cancelado se queda colgando de la mitad VIEJA de la serie, así que ni la read de
--- ocurrencias de la mitad nueva lo ve ni ese índice choca con nada.
+-- CANCEL, not delete. Deleting frees the day in the 005 partial unique index, but throws away the
+-- appointment number, the history and the trail on the customer's record — and that history
+-- belongs to the customer, not to us. Cancelling is also the ONLY thing the salon vertical offers:
+-- Fresha, Vagaro, Square and Booksy do not let you change a series' pattern and force a cancel and
+-- a new booking. What is cancelled stays hanging off the OLD half of the series, so neither the
+-- new half's occurrence read sees it nor does that index collide with anything.
 --
--- El `WHERE` es LA MISMA PUERTA que la de `_recurring_move_occurrence.sql`, palabra por palabra, y
--- eso es el punto: `_cancel_row` habría sido más cómodo y más ancho —su guarda solo conoce
--- `cancelled`/`completed`—, así que un cambio de pauta habría cancelado una cita EN CURSO o ya
--- convertida en venta, que arrastra registro fiscal y cadena VeriFactu (ADR-0331).
+-- The `WHERE` is THE SAME GATE as `_recurring_move_occurrence.sql`'s, word for word, and that is
+-- the point: `_cancel_row` would have been more convenient and wider — its guard only knows
+-- `cancelled`/`completed` — so a pattern change would have cancelled an appointment IN PROGRESS or
+-- already converted into a sale, which drags a fiscal record and the VeriFactu chain (ADR-0331).
 --
--- `updated_at = :now` fija la ejecución: `_history_cancel.sql` cuelga de esa marca, así que una
--- cancelación que no ocurre NO deja rastro de auditoría.
+-- `updated_at = :now` pins the run: `_history_cancel.sql` runs right after it as a later statement
+-- of this SAME `_recurring_cancel_occurrence` command, never as a separate operation, and finds
+-- this row by that same mark — so a cancellation that does not happen leaves NO audit trail (a
+-- separate operation would never match the pin, appointments#196).
 UPDATE appointments_appointment
    SET status = 'cancelled',
        cancelled_at = :now,

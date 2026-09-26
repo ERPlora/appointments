@@ -45,8 +45,6 @@ GET_QUERY = "appointments.appointments.get"
 INTENTIONS = (
     "appointments._reschedule_state_assert",
     "appointments._reschedule_row",
-    "appointments._appointment_overlap_assert",
-    "appointments._history_reschedule",
     "appointments._gate_clear",
 )
 DOMAIN_CODES = (

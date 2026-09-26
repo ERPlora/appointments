@@ -370,12 +370,6 @@
     }
   },
   "commands": {
-    "appointments._appointment_overlap_assert": {
-      "permission": "appointments.change_appointment",
-      "sql": [
-        "commands/_appointment_overlap_assert.sql"
-      ]
-    },
     "appointments._bump_counter": {
       "permission": "appointments.add_appointment",
       "sql": [
@@ -385,25 +379,14 @@
     "appointments._cancel_row": {
       "permission": "appointments.change_appointment",
       "sql": [
-        "commands/appointment_cancel.sql"
+        "commands/appointment_cancel.sql",
+        "commands/_history_cancel.sql"
       ]
     },
     "appointments._gate_clear": {
       "permission": "appointments.change_appointment",
       "sql": [
         "commands/_gate_clear.sql"
-      ]
-    },
-    "appointments._history_cancel": {
-      "permission": "appointments.change_appointment",
-      "sql": [
-        "commands/_history_cancel.sql"
-      ]
-    },
-    "appointments._history_reschedule": {
-      "permission": "appointments.change_appointment",
-      "sql": [
-        "commands/_history_reschedule.sql"
       ]
     },
     "appointments._insert_appointment": {
@@ -428,7 +411,8 @@
     "appointments._recurring_cancel_occurrence": {
       "permission": "appointments.change_appointment",
       "sql": [
-        "commands/_recurring_cancel_occurrence.sql"
+        "commands/_recurring_cancel_occurrence.sql",
+        "commands/_history_cancel.sql"
       ]
     },
     "appointments._recurring_close": {
@@ -446,7 +430,8 @@
     "appointments._recurring_move_occurrence": {
       "permission": "appointments.change_appointment",
       "sql": [
-        "commands/_recurring_move_occurrence.sql"
+        "commands/_recurring_move_occurrence.sql",
+        "commands/_history_reschedule.sql"
       ]
     },
     "appointments._recurring_split": {
@@ -458,7 +443,9 @@
     "appointments._reschedule_row": {
       "permission": "appointments.change_appointment",
       "sql": [
-        "commands/appointment_reschedule.sql"
+        "commands/appointment_reschedule.sql",
+        "commands/_appointment_overlap_assert.sql",
+        "commands/_history_reschedule.sql"
       ]
     },
     "appointments._reschedule_state_assert": {

@@ -1,10 +1,14 @@
--- Overlap gate shared by `appointments.appointments.reschedule` and `.update`
+-- Overlap gate shared by `appointments.appointments.reschedule` (as a later statement of
+-- `_reschedule_row`'s own `sql[]`) and the declarative `appointments.appointments.update`
 -- (appointments#20): the double-booking invariant is enforced SERVER-SIDE, inside the
 -- command's own transaction, so no caller (UI, SDK, API) can skip it.
 --
 -- Runs AFTER the UPDATE of the same command. `me.updated_at = :now` pins the row to THIS
 -- command run (verifactu#27 pattern): if the UPDATE did not apply (wrong status, missing
--- row), the gate stays green and the command remains the no-op it already was.
+-- row), the gate stays green and the command remains the no-op it already was. The runtime
+-- binds `:now` once per command (and once per WASM operation), so this MUST stay a later
+-- statement of the same command as the UPDATE — as its own operation it would never see the
+-- pin (appointments#196).
 --
 -- Overlap semantics mirror the availability engine (queries/availability_check.sql) and
 -- the create handler's authoritative read (queries/appointments_conflicting.sql):

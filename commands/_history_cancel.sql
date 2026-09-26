@@ -1,5 +1,8 @@
--- Audit trail of the `cancel` transition (appointments#21). See _history_confirm.sql for the
--- `a.updated_at = :now` run-pinning rationale.
+-- Audit trail of the `cancel` transition (appointments#21). Runs as a LATER statement of the SAME
+-- command as the UPDATE it audits — `_cancel_row` (cancel_appointment) or
+-- `_recurring_cancel_occurrence` (series update) — because the runtime binds `:now` once per
+-- command (and once per WASM operation), so a separate operation would never match the pin below
+-- (appointments#196). See _history_confirm.sql for the `a.updated_at = :now` run-pinning rationale.
 --
 -- new_value carries the cancellation reason read back from the row the UPDATE just wrote, plus
 -- the channel the cancel came through (`staff` | `customer`, appointments#6 — bound by the

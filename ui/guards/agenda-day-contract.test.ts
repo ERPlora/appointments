@@ -38,15 +38,16 @@ const TRANSITIONS: Record<string, string> = {
 // intentions the handler emits — internal commands of this module. The audit-trail contract is
 // the same: the history statement runs after the row UPDATE, pinned to the run.
 const HANDLER_CHAINS: Record<string, string[]> = {
-  'appointments.appointments.cancel': ['appointments._cancel_row', 'appointments._history_cancel'],
+  // appointments#196: the history line (and, for reschedule, the overlap gate) is a later statement
+  // of the row command itself, never an intention of its own — it finds the row by
+  // `updated_at = :now`, and the runtime mints a fresh `:now` for every operation a handler returns.
+  'appointments.appointments.cancel': ['appointments._cancel_row'],
   // appointments#10: `reschedule` is Tier 2 too — the availability rules (minimum notice, maximum
   // advance, blocked agenda) are decided from the reads, and the end of the slot is computed
   // instead of believed. Both gates stay server-side, inside the same transaction.
   'appointments.appointments.reschedule': [
     'appointments._reschedule_state_assert',
     'appointments._reschedule_row',
-    'appointments._appointment_overlap_assert',
-    'appointments._history_reschedule',
   ],
 };
 
