@@ -6613,41 +6613,39 @@ var ErpAppointmentsList = class extends i3 {
     /* La vista llena el alto: el data-table ocupa el resto (scroll interno, pie fijo). */
     .page { display:flex; flex-direction:column; min-height:0; flex:1 1 auto; }
     .page > ok-data-table, .page > ok-scheduler { flex:1 1 auto; min-height:0; }
-    /* ALCANCE de la consulta (día + estado) y modo de vista: no son filtros de columna.
-       appointments#93 · UNA fila, no tres. Medido a 390 px, este bloque ocupaba ~300 px: era
-       flex-wrap:wrap con tres controles a tamaño completo (el input de fecha con etiqueta
-       flotante, el select de estado y el segment), y en un móvil cada uno caía a su propia línea,
-       así que la primera cita empezaba por debajo del 55 % de la pantalla. nowrap + controles
-       que ENCOGEN es lo que hacen Fresha, Vagaro, Square Appointments y Google Calendar: el día
-       manda y ocupa el hueco libre, lo secundario se estrecha. Mismo movimiento que tables#64 y
-       kitchen#60. */
-    .filters { display:flex; gap:.5rem; align-items:center; margin:0 0 .5rem; flex-wrap:nowrap; }
-    /* El día: paso atrás · fecha · paso adelante, como una sola pieza. Se queda con el ancho que
-       sobre (min-width:0 para que de verdad pueda encoger dentro de un flex). */
-    .filters .daynav { display:flex; align-items:center; gap:.15rem; flex:1 1 auto; min-width:0; }
-    /* 6.5rem es lo que mide una fecha completa (17/08/2026) en el input nativo: por debajo, el
-       navegador la CORTA y la agenda deja de decir qué día está enseñando. El tope de 11rem es lo
-       contrario: en un escritorio ancho, un input elástico separaba el paso adelante media
-       pantalla del día que iba a cambiar, y dejaban de leerse como un solo mando. */
-    .filters .daynav ion-input { flex:1 1 auto; min-width:6.5rem; max-width:11rem; }
+    /* Query SCOPE (day + status) and view mode: not column filters.
+       appointments#93 · compact, not three stacked full-size controls (~300 px at 390 px): no
+       floating labels, icon-only view buttons on a phone. Same move as tables#64 and kitchen#60.
+       appointments#206 · but the row WRAPS when it does not fit. With nowrap the pieces were
+       squeezed below their content and painted on top of each other (date under its calendar
+       icon, «next day» over «Todos»). Same day bar as reservations: the day stepper is one
+       unbreakable piece and what does not fit goes to a second line. */
+    .filters { display:flex; gap:.5rem; row-gap:.25rem; align-items:center; margin:0 0 .5rem; flex-wrap:wrap; }
+    /* The day: step back · date · step forward, as a single control that never shrinks. */
+    .filters .daynav { display:flex; align-items:center; gap:.15rem; flex:0 0 auto; }
+    /* A full date plus the native calendar icon measures 138 px in Chromium es-ES («26/09/2026»);
+       below that the browser clips the year under the icon. Fixed width, so on a wide desktop the
+       step forward stays next to the day it changes. */
+    .filters .daynav ion-input { flex:0 0 auto; width:9rem; min-width:9rem; }
     /* 44×44 es el suelo táctil (Ionic lo aplica a sus propios controles y es lo que exige el QA de
        las tres ventanas): un paso de día de 28 px se falla con el pulgar en una tablet de barra. */
     .filters .daynav ion-button { flex:0 0 auto; height:44px; width:44px; --padding-start:.25rem; --padding-end:.25rem; margin:0; }
     .filters ion-select { flex:0 1 9rem; min-width:5.5rem; }
-    /* Ionic le da al host de ion-segment un width:100%: a solas, ES una fila entera. */
-    .filters ion-segment { flex:0 0 auto; width:auto; margin-left:auto; }
+    /* Ionic gives the ion-segment host width:100% (alone, it IS a whole row). In md it is also a
+       grid of minmax(auto, 360px) columns, so with width:auto every button grew to 360 px:
+       equal columns sized by their content instead. */
+    .filters ion-segment { flex:0 0 auto; width:auto; margin-left:auto; grid-auto-columns:1fr; }
     .filters ion-segment-button { min-height:44px; --padding-start:.5rem; --padding-end:.5rem; text-transform:none; }
     .filters ion-segment-button ion-icon { font-size:1.15rem; }
-    /* En un teléfono el texto de la vista lo dice el icono: «Por profesional» son 120 px que
-       empujan el día fuera de la fila. El nombre accesible sigue en el aria-label. */
+    /* On a phone the icon names the view («Por profesional» is 120 px); the accessible name stays
+       in aria-label. Day and view share the first line; the status filter drops to the second. */
     @media (max-width: 640px) {
       .filters { gap:.25rem; }
       .filters ion-segment-button ion-label { display:none; }
       .filters ion-segment-button { --padding-start:.2rem; --padding-end:.2rem; min-width:2.3rem; }
-      /* 40 px de ancho (44 de alto, el suelo táctil se mantiene): son los 8 px que le faltan al
-         estado para escribir «Todos» entero en 390 px. */
+      /* 40 px wide, 44 tall: the touch floor is kept. */
       .filters .daynav ion-button { width:40px; }
-      .filters ion-select { flex:0 1 5.5rem; min-width:4.5rem; }
+      .filters ion-select { order:3; }
     }
     /* Formulario del panel de alta (drawer estrecho) → una columna, no en fila. */
     .form { display:flex; flex-direction:column; gap:.7rem; }
