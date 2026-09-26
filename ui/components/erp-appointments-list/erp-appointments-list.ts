@@ -334,9 +334,9 @@ export class ErpAppointmentsList extends LitElement {
   @state() newDuration = '';
 
   // ── Reprogramar (appointments#42) ──────────────────────────────────────────────────────────
-  // El panel es EL MISMO que el del alta: `ok-data-table.open('create')` está pensado para esto
-  // («editar abre el form pre-rellenado», ok-data-table.ts:848). Con `rescheduleId` puesto, el
-  // hueco `create` pinta el formulario de mover en vez del de alta.
+  // The panel is THE SAME one as the create panel: `ok-data-table.open('edit', { title })` paints
+  // the `create` slot under its own header (pm#450). With `rescheduleId` set, that slot paints the
+  // move form instead of the create one.
   /** Cita que se está moviendo; `''` = el panel está en modo alta. */
   @state() rescheduleId = '';
 
@@ -591,9 +591,9 @@ export class ErpAppointmentsList extends LitElement {
   }
 
   // Referencia al ok-data-table para abrir/cerrar su panel lateral (el «+» de su barra).
-  private dataTable(): { open(p?: 'filters' | 'create'): void; close(): void } | null {
+  private dataTable(): { open(p?: 'filters' | 'create' | 'edit', opts?: { title?: string }): void; close(): void } | null {
     return this.renderRoot.querySelector('ok-data-table') as
-      | { open(p?: 'filters' | 'create'): void; close(): void }
+      | { open(p?: 'filters' | 'create' | 'edit', opts?: { title?: string }): void; close(): void }
       | null;
   }
 
@@ -868,7 +868,9 @@ export class ErpAppointmentsList extends LitElement {
     this.error = '';
     this.view = 'list'; // el panel vive en la tabla
     await this.updateComplete;
-    this.dataTable()?.open('create');
+    // pm#450: «edit» mode + its own title (also the dialog's aria-label). The `.labels.newRecord`
+    // override in render() stays as the fallback for OutfitKit < 0.1.94, which ignores the title.
+    this.dataTable()?.open('edit', { title: erplora().t(CATALOG, 'ui.rescheduleTitle') });
   }
 
   /** Opens the panel on the history of ONE appointment, without touching it (appointments#194).
@@ -878,9 +880,9 @@ export class ErpAppointmentsList extends LitElement {
     this.clearReschedule();
     this.historyId = String(row.id ?? '');
     this.error = '';
-    this.view = 'list'; // el panel vive en la tabla
+    this.view = 'list'; // the panel lives in the table
     await this.updateComplete;
-    this.dataTable()?.open('create');
+    this.dataTable()?.open('create', { title: erplora().t(CATALOG, 'ui.appointmentHistoryTitle') });
   }
 
   /** Bloque del timeline → mismo panel pre-rellenado.
@@ -1090,7 +1092,8 @@ export class ErpAppointmentsList extends LitElement {
    *  estándar de una agenda de salón. */
   private async onSlotClick(ev: CustomEvent<{ resourceId: string; time: string }>) {
     const { resourceId, time } = ev.detail;
-    this.clearReschedule(); // el hueco vacío es un ALTA, no una mudanza
+    this.clearReschedule(); // an empty slot is a CREATE, not a move
+    this.historyId = ''; // …nor the history left open before switching to the timeline
     if (resourceId !== UNASSIGNED) this.newStaffId = resourceId;
     this.newStart = `${this.day}T${time}`;
     this.view = 'list';

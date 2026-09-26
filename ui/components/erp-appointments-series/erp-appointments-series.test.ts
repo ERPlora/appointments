@@ -340,3 +340,36 @@ describe('desactivar/reactivar una serie sin borrarla (appointments#110)', () =>
     expect(el.busySeriesId).toBe('');
   });
 });
+
+// pm#450 (outfitkit#150): editing a series reused the ALTA panel with open('create'). The table now
+// has an «edit» mode and takes the whole header title — also the dialog's `aria-label`, which read
+// the generic «Form». The body has no repeated «Editing …» line; the `.labels.newRecord` override
+// STAYS as the fallback for shells with OutfitKit < 0.1.94, which ignore `title` and paint
+// `newRecord` for the «edit» panel too (hub:stable 1.1.29 ships 0.1.73).
+describe('editing a series titles the panel header (pm#450)', () => {
+  type Table = HTMLElement & {
+    shadowRoot: ShadowRoot;
+    updateComplete: Promise<unknown>;
+    labels: Record<string, string>;
+    open: (panel?: unknown, opts?: { title?: string }) => void;
+  };
+  const table = (el: Wc) => el.shadowRoot.querySelector('ok-data-table') as Table;
+
+  it("opens the panel with open('edit', { title: «Edit repeating appointment» })", async () => {
+    const el = await mount();
+    const calls: unknown[][] = [];
+    table(el).open = (...args: unknown[]) => void calls.push(args);
+    await el.openSeries(SERIES_ROW);
+    expect(calls).toEqual([['edit', { title: esLocale.ui.seriesEditTitle }]]);
+  });
+
+  it('an old shell paints the same title for the «edit» panel (labels fallback), not «New»', async () => {
+    const el = await mount();
+    await el.openSeries(SERIES_ROW);
+    await el.updateComplete;
+    await table(el).updateComplete;
+    expect(table(el).labels.newRecord).toBe(esLocale.ui.seriesEditTitle);
+    expect(table(el).shadowRoot.querySelector('.drawer .dh')?.textContent).toContain(esLocale.ui.seriesEditTitle);
+    expect(el.shadowRoot.querySelector('[slot="create"]')?.getAttribute('data-mode')).toBe('series-edit');
+  });
+});
