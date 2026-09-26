@@ -344,6 +344,20 @@ describe('the «Repeating» view can create a series (appointments#209)', () => 
     expect(create?.payload.day_of_week).toBeNull();
   });
 
+  it('a weekly series with «Any day» sends day_of_week null, not Sunday', async () => {
+    // rv-appointments-213: `Number('')` is 0, so without the empty-weekday guard a weekly series
+    // left on «Any day» would be pinned to weekday 0 — the receptionist asked for no fixed day.
+    const el = await mount();
+    await tapAdd(el);
+    await fillBea(el);
+    await choose(el, 'appointments-series-create-frequency', 'weekly');
+    await choose(el, 'appointments-series-create-day', '');
+    await submit(el);
+    const create = commands.find((c) => c.name === 'appointments.recurring.create');
+    expect(create?.payload.frequency).toBe('weekly');
+    expect(create?.payload.day_of_week).toBeNull();
+  });
+
   it('it can end on a date instead of after N times, or never', async () => {
     const el = await mount();
     await tapAdd(el);
