@@ -213,8 +213,13 @@ for (const locale of ['es', 'en'] as const) {
         expect(text, `${key} must be in the ${locale} catalog`).toBeTruthy();
         expect(picker.labels[label], `ok-calendar label ${label}`).toBe(text);
       }
+      queries.length = 0;
       await pickInCalendar(el, 'appointments-list-day-calendar-picker', '2026-08-20');
       expect(el.day).toBe('2026-08-20');
+      expect(
+        queries.some((q) => q.name === 'appointments.appointments.list' && String(q.params.day_start ?? '').startsWith('2026-08-19T22:00')),
+        'the agenda is fetched for the picked day',
+      ).toBe(true);
       expect(byTestId(el, 'appointments-list-day-calendar-picker'), 'the calendar closes once a day is picked').toBeNull();
     });
 

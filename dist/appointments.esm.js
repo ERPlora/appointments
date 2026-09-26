@@ -7560,18 +7560,12 @@ var ErpAppointmentsList = class extends i3 {
   toggleDateCalendar(field) {
     this.calendarOpen = this.calendarOpen === field ? "" : field;
   }
-  /** appointments#205 — `ok-date-select` of an inline `ok-calendar`: `detail.date` is a
-   *  `YYYY-MM-DD`; only the calendar date matters, so the first 10 characters are all that is
-   *  read. Applies it like a typed date, forgets the draft and closes the calendar — no
-   *  ion-popover/ion-modal wrapper: an overlay would teleport out of the shadow root and lose its
-   *  styles (hub#2162). */
-  onDateCalendarPick(field, date) {
-    const iso = parseTypedStart(String(date ?? "").slice(0, 10), "en")?.date ?? "";
+  /** appointments#205 — `ok-date-select` of an inline `ok-calendar`: `detail.date` is the tapped
+   *  cell as `YYYY-MM-DD` (the calendar cannot be cleared). Applies it like a typed date, forgets
+   *  the draft and closes the calendar — no ion-popover/ion-modal wrapper: an overlay would
+   *  teleport out of the shadow root and lose its styles (hub#2162). */
+  onDateCalendarPick(field, iso) {
     if (field === "day") {
-      if (!iso) {
-        this.calendarOpen = "";
-        return;
-      }
       this.day = iso;
       void this.refresh();
     } else if (field === "new") {
