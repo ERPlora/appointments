@@ -149,6 +149,16 @@ Monday · 11:00"), when it starts and when it ends. Each row offers three action
 - **Book appointments** — materialises the window for that series.
 - **Delete** — destructive, as before.
 
+**Add** (the table's own button, appointments#209) opens the **New repeating appointment** panel:
+customer, service and professional picked from their modules (only bookable services and
+professionals), the frequency, the weekday (weekly and every-two-weeks patterns only), the start as
+**Day + Time** — the same two fields as a new appointment, so it can be typed in one go or pasted —,
+the minutes (pre-filled from the service) and, optionally, an end date or a number of appointments.
+**Create repeating appointment** creates the series and books its window straight away, so it lands
+on the agenda; if the booking fails the series is still created and listed, and the screen says to
+use **Book appointments** on its row. Tapping **Add** while a series is being edited (or still
+loading) drops that edit: the panel shows a clean new-series form and never updates the other series.
+
 Opening a series shows how many appointments it already has on the books, from which date the change
 will apply, how many are still ahead, and — when the series came out of a split — that it continues
 an earlier one. Appointments that are **already charged** are named before you save, because they

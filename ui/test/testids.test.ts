@@ -132,6 +132,22 @@ const COVERED: Record<
   'components/erp-appointments-series/erp-appointments-series.ts': {
     prefix: 'appointments-series-',
     contract: [
+      // The NEW-series form (appointments#209): the create panel `.addable` paints its own «+»
+      // (`appointments-series-table-add`, a computed hook of `ok-data-table` itself, not of this
+      // file) and this component only owns what it renders inside the panel.
+      'appointments-series-create-customer',
+      'appointments-series-create-day',
+      'appointments-series-create-duration',
+      'appointments-series-create-end',
+      'appointments-series-create-error',
+      'appointments-series-create-form',
+      'appointments-series-create-frequency',
+      'appointments-series-create-occurrences',
+      'appointments-series-create-service',
+      'appointments-series-create-staff',
+      'appointments-series-create-start',
+      'appointments-series-create-start-time',
+      'appointments-series-create-submit',
       'appointments-series-day',
       'appointments-series-duration',
       'appointments-series-error',

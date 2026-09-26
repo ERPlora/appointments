@@ -4,9 +4,14 @@ import { define } from '@erplora/outfitkit/define';
 import '@erplora/outfitkit/ok-inline-feedback';
 import '@erplora/outfitkit/ok-data-table';
 import type { DataTableColumn } from '@erplora/outfitkit';
+import { dataTableLabels } from '@erplora/module-sdk';
 import esLocale from '../../../locales/es.json';
 import enLocale from '../../../locales/en.json';
 import { todayISO } from '../../lib/business-time';
+// appointments#204/#209: a start typed or pasted as one string is read in the active language's
+// day/month order and split into the Day + Time fields, the same helper the new-appointment and
+// reschedule panels of `erp-appointments-list` use.
+import { parseTypedStart, type TypedStart } from '../../lib/typed-start';
 
 const CATALOG: Record<string, unknown> = { es: esLocale, en: enLocale };
 
@@ -27,6 +32,11 @@ const CATALOG: Record<string, unknown> = { es: esLocale, en: enLocale };
 // Y es AQUÍ donde vive el cambio de PAUTA (appointments#90): el panel de reprogramar mueve un
 // hueco, y meter un selector de frecuencia en él sería pedirle a la recepcionista que redefina la
 // serie mientras arrastra una cita.
+//
+// appointments#209 — the ADD button. Until now a repeating appointment could only be EDITED from
+// here; this view now also CREATES one, with the existing `appointments.recurring.create` command,
+// and books its window right away with `appointments.recurring.materialize` — the same two-step
+// chain `submitEdit` already uses for a pattern change.
 
 interface ErploraClientLike {
   query<T = unknown>(name: string, params?: Record<string, unknown>): Promise<T>;
@@ -93,6 +103,32 @@ interface Occurrence {
   converted_sale_id: string | null;
 }
 
+/** appointments#209 — the catalogs the NEW-series form books against, the same shapes
+ *  `erp-appointments-list` reads from their public queries. */
+interface Customer {
+  id: string;
+  name: string;
+  phone?: string;
+  email?: string;
+}
+
+/** A bookable service (`services.services.list`): brings the duration to prefill. */
+interface Service {
+  id: string;
+  name: string;
+  price?: number;
+  duration_minutes?: number;
+  is_bookable?: number;
+}
+
+/** A professional (`staff.members.list`): only the `is_bookable` ones can be picked. */
+interface StaffMember {
+  id: string;
+  full_name: string;
+  status?: string;
+  is_bookable?: number;
+}
+
 const FREQUENCIES = ['daily', 'weekly', 'biweekly', 'monthly'] as const;
 const FREQUENCY_KEYS: Record<string, string> = {
   daily: 'ui.freqDaily',
@@ -119,11 +155,11 @@ export class ErpAppointmentsSeries extends LitElement {
             font-family: system-ui, sans-serif; color: var(--ion-text-color, #1c1b18); }
     .page { display:flex; flex-direction:column; gap:.5rem; min-height:0; flex:1 1 auto; }
     .page > ok-data-table { flex:1 1 auto; min-height:0; }
-    .form { display:flex; flex-direction:column; gap:.75rem; padding:.25rem 0; }
-    /* Dos columnas en cuanto hay sitio y una sola en móvil: el panel es el mismo en los tres
-       tamaños, lo que cambia es cuántos campos caben por fila. */
+    .form { display:flex; flex-direction:column; gap:.75rem; padding:.25rem 0; container-type:inline-size; }
+    /* Two columns only when the FORM (the table's side panel) has room: on a wide screen that panel
+       is ~360 px, so a viewport media query would cut every field in half. */
     .grid { display:grid; grid-template-columns:1fr; gap:.75rem; }
-    @media (min-width: 540px) { .grid { grid-template-columns:1fr 1fr; } }
+    @container (min-width: 540px) { .grid { grid-template-columns:1fr 1fr; } }
     .ctx { margin:0; font-size:.9rem; color: var(--ion-color-medium, #8b897f); }
     .ctx strong { color: var(--ion-text-color, #1c1b18); }
     .loading, .empty { color: var(--ion-color-medium, #8b897f); font-size:.9rem; margin:.25rem 0; }
@@ -153,19 +189,61 @@ export class ErpAppointmentsSeries extends LitElement {
   @state() editTime = '';
   @state() editDuration = '';
 
+  // ── appointments#209 — the NEW-series form ──────────────────────────────────────────────────
+  // Linked catalogs: a series is booked against real records, same as erp-appointments-list.
+  @state() customers: Customer[] = [];
+  @state() services: Service[] = [];
+  @state() staffMembers: StaffMember[] = [];
+
+  @state() newCustomerId = '';
+  @state() newServiceId = '';
+  @state() newStaffId = '';
+  @state() newFrequency = 'weekly';
+  /** `''` = no fixed weekday, same as `editDayOfWeek`. */
+  @state() newDayOfWeek = '';
+  @state() newStartDate = '';
+  @state() newStartTime = '';
+  @state() newDuration = '';
+  @state() newEndDate = '';
+  @state() newOccurrences = '';
+  /** A refusal painted NEXT TO the submit button — `error` lives in the list template, and the
+   *  panel covers it whole (same reasoning as `formError` in `erp-appointments-list`). */
+  @state() createError = '';
+
   private offLocale: (() => void) | null = null;
 
   async connectedCallback(): Promise<void> {
     super.connectedCallback();
     // i18n (ADR-0055): al cambiar de idioma se repinta, como el resto de vistas del módulo.
     this.offLocale = erplora().on('erplora:locale-changed', () => this.requestUpdate());
-    await this.refresh();
+    // appointments#209: the series list and the NEW-series catalogs do not depend on each other,
+    // the same way `erp-appointments-list` loads its own catalogs alongside the day's agenda.
+    await Promise.all([this.refresh(), this.loadCatalogs()]);
   }
 
   disconnectedCallback(): void {
     this.offLocale?.();
     this.offLocale = null;
     super.disconnectedCallback();
+  }
+
+  /** appointments#209 — the links a NEW series books against, read from their public queries
+   *  (never another module's tables), exactly like the create panel of `erp-appointments-list`. */
+  private async loadCatalogs(): Promise<void> {
+    const [customers, services, staffMembers] = await Promise.all([
+      erplora().query('customers.list', { limit: 500, sort: 'name', dir: 'asc' }).catch(() => []),
+      erplora().query('services.services.list', { limit: 500 }).catch(() => []),
+      erplora().query('staff.members.list', { limit: 500 }).catch(() => []),
+    ]);
+    this.customers = rows<Customer>(customers);
+    // A non-bookable service (e.g. internal) cannot receive an appointment.
+    this.services = rows<Service>(services).filter((s) => s.is_bookable === undefined || Number(s.is_bookable) === 1);
+    this.staffMembers = rows<StaffMember>(staffMembers);
+  }
+
+  /** Professionals that can receive appointments: the ones the `staff` module marks bookable. */
+  private get bookableStaff(): StaffMember[] {
+    return this.staffMembers.filter((m) => Number(m.is_bookable) === 1 && m.status !== 'terminated');
   }
 
   async refresh(): Promise<void> {
@@ -187,6 +265,35 @@ export class ErpAppointmentsSeries extends LitElement {
     return this.renderRoot.querySelector('ok-data-table') as
       | (HTMLElement & { open(mode: string, opts?: { title?: string }): void; close(): void })
       | null;
+  }
+
+  /** appointments#209 — `.addable` makes `ok-data-table` paint its OWN toolbar button
+   *  (`data-testid="appointments-series-table-add"`), which just toggles its `panel` and emits no
+   *  event: there is nothing to listen for on the table itself. Caught here with a NATIVE listener
+   *  on `renderRoot` instead of a `@click` in the template — a testid guard forbids the latter on a
+   *  testid'd element, and `ok-data-table` recreates its own toolbar across renders while
+   *  `renderRoot` is the one thing that survives all of them. */
+  firstUpdated(): void {
+    this.renderRoot.addEventListener('click', (e) => this.onTableAddClick(e));
+  }
+
+  private onTableAddClick(e: Event): void {
+    const tappedAdd = e
+      .composedPath()
+      .some((node) => (node as { getAttribute?: (name: string) => string | null }).getAttribute?.('data-testid') === 'appointments-series-table-add');
+    if (!tappedAdd) return;
+    // pm#459: invalidates an «edit» opening still loading — `openSeries` already checks
+    // `seq !== this.editSeq` right after its await, so a late reply can never turn the fresh
+    // NEW-series form into the edit it was loading.
+    this.editSeq++;
+    if (this.editingId) {
+      // Clear the edit state WITHOUT closing the panel: `ok-data-table` already opened (or kept
+      // open) the one Add just asked for — `closePanel()` would close it right back.
+      this.editingId = '';
+      this.template = null;
+      this.occurrences = [];
+    }
+    // With no edit in progress, the create draft being typed is left exactly as it was.
   }
 
   /** Carga la plantilla AUTORITATIVA de la serie (la lista no trae los tres ids) y lo que ya está
@@ -506,6 +613,7 @@ export class ErpAppointmentsSeries extends LitElement {
         testid="appointments-series-table"
         .fill=${true}
         .views=${true}
+        .addable=${true}
         .cardTitle=${(row: Record<string, unknown>) => String(row.customer_name ?? '')}
         .columns=${this.columns}
         .rows=${this.series as unknown as Record<string, unknown>[]}
@@ -513,10 +621,10 @@ export class ErpAppointmentsSeries extends LitElement {
         .searchPlaceholder=${t('ui.seriesSearchPlaceholder')}
         .actions=${this.rowActions}
         @rowAction=${(e: CustomEvent) => this.onRowAction(e)}
-        .labels=${{ newRecord: t('ui.seriesEditTitle') }}
+        .labels=${{ ...dataTableLabels(erplora().locale), newRecord: this.editingId ? t('ui.seriesEditTitle') : t('ui.seriesNewTitle') }}
         .emptyMessage=${this.loading ? t('ui.loading') : t('ui.seriesEmpty')}
       >
-        ${this.editingId ? this.renderEditForm(t) : nothing}
+        ${this.editingId ? this.renderEditForm(t) : this.renderCreateForm(t)}
       </ok-data-table>
     </div>`;
   }
@@ -596,6 +704,289 @@ export class ErpAppointmentsSeries extends LitElement {
       >
       <ion-button data-testid="appointments-series-submit" type="submit" expand="block" .disabled=${this.saving}>${t('ui.seriesSave')}</ion-button>
     </form>`;
+  }
+
+  /** appointments#209 — chosen service PRE-FILLS «Min.» with its catalog duration: the receptionist
+   *  needs to SEE how long the series is going to book before saving, and re-picking the service
+   *  re-fills from the new one because the typed exception belonged to the old one. */
+  private onCreateServiceChange(serviceId: string): void {
+    this.newServiceId = serviceId;
+    const service = this.services.find((s) => s.id === serviceId);
+    const m = Number(service?.duration_minutes);
+    this.newDuration = Number.isFinite(m) && m >= 1 ? String(m) : '';
+  }
+
+  /** appointments#204/#209 — same trap as the new-appointment panel: the `date` field's year
+   *  segment eats the caret, so a space/comma/`t` typed right after a full date hands the focus to
+   *  the time field instead of doing nothing. */
+  private onCreateStartDateKeydown(e: KeyboardEvent): void {
+    if (e.key !== ' ' && e.key !== ',' && e.key !== 't' && e.key !== 'T') return;
+    const value = (e.target as { value?: unknown }).value;
+    if (typeof value !== 'string' || !value) return;
+    e.preventDefault();
+    const timeField = this.renderRoot.querySelector('ion-input[data-role="series-start-time"]') as
+      | (HTMLElement & { setFocus?: () => Promise<void> })
+      | null;
+    void timeField?.setFocus?.();
+  }
+
+  /** appointments#204/#209 — native `date`/`time` inputs ignore pasted text: read the clipboard as
+   *  a whole start and fill whichever halves `parseTypedStart` recognizes. */
+  private onCreateStartPaste(e: Event): void {
+    const text = (e as ClipboardEvent).clipboardData?.getData('text') ?? '';
+    const parsed: TypedStart | null = parseTypedStart(text, erplora().locale);
+    if (!parsed) return;
+    e.preventDefault();
+    if (parsed.date) this.newStartDate = parsed.date;
+    if (parsed.time) this.newStartTime = parsed.time;
+  }
+
+  /** Everything the NEW-series draft holds, back to a blank form (appointments#209). */
+  private resetCreateDraft(): void {
+    this.newCustomerId = '';
+    this.newServiceId = '';
+    this.newStaffId = '';
+    this.newFrequency = 'weekly';
+    this.newDayOfWeek = '';
+    this.newStartDate = '';
+    this.newStartTime = '';
+    this.newDuration = '';
+    this.newEndDate = '';
+    this.newOccurrences = '';
+    this.createError = '';
+  }
+
+  private renderCreateForm(t: (k: string, p?: Record<string, unknown>) => string) {
+    const customer = this.customers.find((c) => c.id === this.newCustomerId);
+    const service = this.services.find((s) => s.id === this.newServiceId);
+    const staff = this.bookableStaff.find((m) => m.id === this.newStaffId);
+    const duration = Math.trunc(Number(this.newDuration));
+    const canSubmit =
+      !this.saving &&
+      !!customer &&
+      !!service &&
+      !!staff &&
+      !!this.newStartDate &&
+      !!this.newStartTime &&
+      Number.isFinite(duration) &&
+      duration >= 1;
+    return html`<form slot="create" data-testid="appointments-series-create-form" data-mode="series-create" class="form" @submit=${(e: Event) => this.createSeries(e)}>
+      <div class="grid">
+        <ion-select
+          data-testid="appointments-series-create-customer"
+          data-role="series-create-customer"
+          fill="outline"
+          mode="md"
+          label=${t('ui.fieldCustomer')}
+          placeholder=${t('ui.pickCustomer')}
+          label-placement="floating"
+          .value=${this.newCustomerId}
+          @ionChange=${(e: any) => (this.newCustomerId = e.target.value ?? '')}
+        >
+          ${this.customers.map((c) => html`<ion-select-option .value=${c.id}>${c.name}</ion-select-option>`)}
+        </ion-select>
+        <ion-select
+          data-testid="appointments-series-create-service"
+          data-role="series-create-service"
+          fill="outline"
+          mode="md"
+          label=${t('ui.fieldService')}
+          placeholder=${t('ui.pickService')}
+          label-placement="floating"
+          .value=${this.newServiceId}
+          @ionChange=${(e: any) => this.onCreateServiceChange(e.target.value ?? '')}
+        >
+          ${this.services.map((s) => html`<ion-select-option .value=${s.id}>${s.name}</ion-select-option>`)}
+        </ion-select>
+        <ion-select
+          data-testid="appointments-series-create-staff"
+          data-role="series-create-staff"
+          fill="outline"
+          mode="md"
+          label=${t('ui.fieldStaff')}
+          placeholder=${t('ui.pickStaff')}
+          label-placement="floating"
+          .value=${this.newStaffId}
+          @ionChange=${(e: any) => (this.newStaffId = e.target.value ?? '')}
+        >
+          ${this.bookableStaff.map((m) => html`<ion-select-option .value=${m.id}>${m.full_name}</ion-select-option>`)}
+        </ion-select>
+        <ion-select
+          data-testid="appointments-series-create-frequency"
+          data-role="series-create-frequency"
+          fill="outline"
+          mode="md"
+          label=${t('ui.fieldFrequency')}
+          label-placement="floating"
+          .value=${this.newFrequency}
+          @ionChange=${(e: any) => (this.newFrequency = e.target.value)}
+        >
+          ${FREQUENCIES.map((f) => html`<ion-select-option .value=${f}>${t(FREQUENCY_KEYS[f])}</ion-select-option>`)}
+        </ion-select>
+        ${ALIGNS_TO_WEEKDAY.includes(this.newFrequency)
+          ? html`<ion-select
+              data-testid="appointments-series-create-day"
+              data-role="series-create-day"
+              fill="outline"
+              mode="md"
+              label=${t('ui.fieldWeekday')}
+              label-placement="floating"
+              .value=${this.newDayOfWeek}
+              @ionChange=${(e: any) => (this.newDayOfWeek = e.target.value)}
+            >
+              <ion-select-option value="">${t('ui.weekdayAny')}</ion-select-option>
+              ${WEEKDAY_KEYS.map((k, i) => html`<ion-select-option .value=${String(i)}>${t(k)}</ion-select-option>`)}
+            </ion-select>`
+          : nothing}
+        <ion-input
+          data-testid="appointments-series-create-start"
+          data-role="series-start-date"
+          fill="outline"
+          mode="md"
+          label=${t('ui.fieldDate')}
+          label-placement="floating"
+          type="date"
+          .value=${this.newStartDate}
+          @ionInput=${(e: any) => (this.newStartDate = e.target.value ?? '')}
+          @keydown=${(e: KeyboardEvent) => this.onCreateStartDateKeydown(e)}
+          @paste=${(e: Event) => this.onCreateStartPaste(e)}
+        ></ion-input>
+        <ion-input
+          data-testid="appointments-series-create-start-time"
+          data-role="series-start-time"
+          fill="outline"
+          mode="md"
+          label=${t('ui.fieldTime')}
+          label-placement="floating"
+          type="time"
+          .value=${this.newStartTime}
+          @ionInput=${(e: any) => (this.newStartTime = e.target.value ?? '')}
+          @paste=${(e: Event) => this.onCreateStartPaste(e)}
+        ></ion-input>
+        <ion-input
+          data-testid="appointments-series-create-duration"
+          data-role="series-create-duration"
+          fill="outline"
+          mode="md"
+          label=${t('ui.fieldMinutes')}
+          label-placement="floating"
+          type="number"
+          min="1"
+          .value=${this.newDuration}
+          @ionInput=${(e: any) => (this.newDuration = e.target.value)}
+        ></ion-input>
+        <ion-input
+          data-testid="appointments-series-create-end"
+          data-role="series-create-end"
+          fill="outline"
+          mode="md"
+          label=${t('ui.fieldEndDate')}
+          label-placement="floating"
+          type="date"
+          .value=${this.newEndDate}
+          @ionInput=${(e: any) => (this.newEndDate = e.target.value ?? '')}
+        ></ion-input>
+        <ion-input
+          data-testid="appointments-series-create-occurrences"
+          data-role="series-create-occurrences"
+          fill="outline"
+          mode="md"
+          label=${t('ui.fieldOccurrences')}
+          label-placement="floating"
+          type="number"
+          min="1"
+          .value=${this.newOccurrences}
+          @ionInput=${(e: any) => (this.newOccurrences = e.target.value)}
+        ></ion-input>
+      </div>
+      ${this.createError
+        ? html`<ok-inline-feedback data-testid="appointments-series-create-error" tone="danger" icon="alert-circle-outline">${this.createError}</ok-inline-feedback>`
+        : nothing}
+      <ion-button data-testid="appointments-series-create-submit" type="submit" expand="block" ?disabled=${!canSubmit}
+        >${this.saving ? t('ui.saving') : t('ui.seriesCreate')}</ion-button
+      >
+    </form>`;
+  }
+
+  /** appointments#209 — creates the series with the existing `appointments.recurring.create`
+   *  command and books its window right away with `appointments.recurring.materialize`, the same
+   *  two-step chain `submitEdit` already runs for a pattern change: a repeating appointment that
+   *  is created but never booked would land on nobody's agenda. */
+  async createSeries(ev: Event): Promise<void> {
+    ev.preventDefault?.();
+    if (this.saving) return;
+    const customer = this.customers.find((c) => c.id === this.newCustomerId);
+    const service = this.services.find((s) => s.id === this.newServiceId);
+    const staff = this.bookableStaff.find((m) => m.id === this.newStaffId);
+    const duration = Math.trunc(Number(this.newDuration));
+    if (
+      !customer ||
+      !service ||
+      !staff ||
+      !this.newStartDate ||
+      !this.newStartTime ||
+      !Number.isFinite(duration) ||
+      duration < 1
+    ) {
+      return;
+    }
+    this.saving = true;
+    this.createError = '';
+    const t = (k: string, p?: Record<string, unknown>): string => erplora().t(CATALOG, k, p);
+    try {
+      const occurrences = Math.trunc(Number(this.newOccurrences));
+      // The command name must be a LITERAL in the call (ADR-0127: the interop contract finds it by
+      // static analysis, not at runtime).
+      const result = (await erplora().command('appointments.recurring.create', {
+        customer_id: customer.id,
+        customer_name: customer.name,
+        service_id: service.id,
+        service_name: service.name,
+        staff_id: staff.id,
+        staff_name: staff.full_name,
+        frequency: this.newFrequency,
+        // The weekday only aligns patterns that advance by weeks (see ALIGNS_TO_WEEKDAY).
+        day_of_week:
+          ALIGNS_TO_WEEKDAY.includes(this.newFrequency) && this.newDayOfWeek !== ''
+            ? Math.trunc(Number(this.newDayOfWeek))
+            : null,
+        time: this.newStartTime,
+        duration_minutes: duration,
+        start_date: this.newStartDate,
+        end_date: this.newEndDate || null,
+        max_occurrences: Number.isFinite(occurrences) && occurrences >= 1 ? occurrences : null,
+      })) as { new_ids?: string[] } | undefined;
+      const newId = String(result?.new_ids?.[0] ?? '');
+      this.resetCreateDraft();
+      // The open panel would cover the table and the series just created.
+      this.dataTable()?.close();
+      // A NEW repeating appointment lands on the agenda right away, like Fresha or Square: the
+      // three ids travel as SELECTOR, not source (appointments#54) — the handler contrasts them
+      // against the template it just wrote and refuses if they do not match.
+      let notBooked = false;
+      try {
+        await erplora().command('appointments.recurring.materialize', {
+          recurring_id: newId,
+          customer_id: customer.id,
+          service_id: service.id,
+          staff_id: staff.id,
+        });
+      } catch {
+        notBooked = true;
+      }
+      await this.refresh();
+      if (notBooked) {
+        // Set AFTER refresh(): refresh() clears `error` at the start, and a booking failure that
+        // does not survive it would leave the front desk believing the series booked fine.
+        this.error = t('ui.seriesCreatedNotBooked');
+      } else {
+        erplora().notify?.({ type: 'success', message: t('ui.seriesCreated') });
+      }
+    } catch (e) {
+      this.createError = e instanceof Error && e.message ? e.message : t('ui.seriesSaveError');
+    } finally {
+      this.saving = false;
+    }
   }
 }
 
