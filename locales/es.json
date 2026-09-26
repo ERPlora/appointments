@@ -150,6 +150,8 @@
     "seriesSaveError": "No se ha podido guardar la cita periódica.",
     "seriesMaterializeError": "No se han podido reservar las citas de esta serie.",
     "seriesDeleteError": "No se ha podido borrar la cita periódica.",
+    "seriesDeleteTitle": "¿Borrar la serie de citas de {name}?",
+    "seriesDeleteMessage": "Las citas ya reservadas se conservan. La serie dejará de reservar citas nuevas.",
     "seriesActive": "Activa",
     "seriesToggleActiveError": "No se ha podido cambiar el estado de la cita periódica.",
     "seriesMaterialized": "Citas reservadas para esta serie.",

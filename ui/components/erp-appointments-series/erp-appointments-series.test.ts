@@ -503,11 +503,99 @@ describe('the row buttons of the real table reach their action (appointments#202
     });
   });
 
-  it('the «delete» button deletes the tapped series', async () => {
+  it('the «delete» button deletes the tapped series once confirmed', async () => {
     const el = await mount();
     await tapRow(el, 'r1', 'delete');
+    await pressAlertButton('destructive');
     expect(commands.find((c) => c.name === 'appointments.recurring.delete')?.payload).toEqual({
       recurring_id: 'r1',
     });
+  });
+});
+
+// appointments#207: with #203 the «delete» row button started working and it deleted the series
+// on a single tap. Every appointment book of the sector (Fresha, Vagaro, Odoo, Square) asks first.
+// The confirmation is a GLOBAL Ionic overlay appended to document.body (like sales' void dialog):
+// an inline <ion-alert> inside this shadow root loses its styles when Ionic teleports it (hub#2162).
+type AlertButton = { text: string; role?: string; handler?: () => unknown };
+type AlertEl = HTMLElement & { header: string; message: string; buttons: AlertButton[]; isOpen?: boolean };
+
+const confirmAlert = (): AlertEl | null =>
+  document.body.querySelector('ion-alert[data-testid="appointments-series-delete-confirm"]') as AlertEl | null;
+
+const pressAlertButton = async (role: 'cancel' | 'destructive') => {
+  const alert = confirmAlert();
+  expect(alert, 'the delete confirmation is open').toBeTruthy();
+  const btn = alert?.buttons.find((b) => b.role === role);
+  expect(btn, `the «${role}» button of the confirmation`).toBeTruthy();
+  await btn?.handler?.();
+  alert?.dispatchEvent(new CustomEvent('ionAlertDidDismiss', { detail: { role } }));
+  for (let i = 0; i < 3; i++) await new Promise((r) => setTimeout(r, 0));
+};
+
+describe('deleting a series asks for confirmation first (appointments#207)', () => {
+  const tapDelete = async (el: Wc, id = 'r1') => {
+    const table = el.shadowRoot.querySelector('ok-data-table') as HTMLElement & { updateComplete: Promise<unknown> };
+    await table.updateComplete;
+    const btn = table.shadowRoot?.querySelector(`[data-testid="appointments-series-table-row-${id}-delete"]`) as HTMLElement | null;
+    expect(btn, `the real «delete» button of row ${id}`).toBeTruthy();
+    btn?.click();
+    for (let i = 0; i < 3; i++) {
+      await new Promise((r) => setTimeout(r, 0));
+      await el.updateComplete;
+    }
+  };
+  const deletes = () => commands.filter((c) => c.name === 'appointments.recurring.delete');
+
+  beforeEach(() => {
+    document.body.querySelectorAll('ion-alert').forEach((a) => a.remove());
+  });
+
+  it('tapping «delete» does not delete anything until the user confirms', async () => {
+    const el = await mount();
+    await tapDelete(el);
+    expect(deletes()).toEqual([]);
+    const alert = confirmAlert();
+    expect(alert, 'a confirmation opens on document.body').toBeTruthy();
+    expect(alert?.header).toBe(esLocale.ui.seriesDeleteTitle);
+    // The message tells the receptionist that booked appointments are kept.
+    expect(alert?.message).toBe(esLocale.ui.seriesDeleteMessage);
+  });
+
+  it('the confirmation names the customer whose series is deleted', async () => {
+    const api = (globalThis as Record<string, unknown>).erplora as {
+      t: (cat: Record<string, { ui?: Record<string, string> }>, key: string, p?: Record<string, unknown>) => string;
+    };
+    const base = api.t;
+    api.t = (cat, key, p) =>
+      base(cat, key).replace(/\{(\w+)\}/g, (m, k: string) => (p && k in p ? String(p[k]) : m));
+    const el = await mount();
+    await tapDelete(el);
+    expect(confirmAlert()?.header).toBe(esLocale.ui.seriesDeleteTitle.replace('{name}', 'Ana López'));
+  });
+
+  it('confirming deletes the tapped series and closes the dialog', async () => {
+    const el = await mount();
+    await tapDelete(el);
+    await pressAlertButton('destructive');
+    expect(deletes().map((c) => c.payload)).toEqual([{ recurring_id: 'r1' }]);
+    expect(confirmAlert(), 'the dialog is removed after closing').toBeNull();
+  });
+
+  it('cancelling does not delete and closes the dialog', async () => {
+    const el = await mount();
+    await tapDelete(el);
+    await pressAlertButton('cancel');
+    expect(deletes()).toEqual([]);
+    expect(confirmAlert(), 'the dialog is removed after closing').toBeNull();
+  });
+
+  it('dismissing the dialog (backdrop / Esc) does not delete', async () => {
+    const el = await mount();
+    await tapDelete(el);
+    confirmAlert()?.dispatchEvent(new CustomEvent('ionAlertDidDismiss', { detail: { role: 'backdrop' } }));
+    for (let i = 0; i < 3; i++) await new Promise((r) => setTimeout(r, 0));
+    expect(deletes()).toEqual([]);
+    expect(confirmAlert()).toBeNull();
   });
 });

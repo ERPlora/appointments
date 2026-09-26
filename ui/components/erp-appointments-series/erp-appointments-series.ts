@@ -43,6 +43,17 @@ function erplora(): ErploraClientLike {
   return c;
 }
 
+/** Global Ionic overlay appended to `document.body` (same pattern as the sales module's void
+ *  dialog): an inline `<ion-alert>` in this shadow root loses its styles once Ionic teleports it
+ *  (hub#2162). */
+interface IonicAlertElement extends HTMLElement {
+  header: string;
+  message: string;
+  buttons: Array<{ text: string; role?: string; handler?: () => boolean | void }>;
+  isOpen: boolean;
+  present?: () => Promise<void>;
+}
+
 function rows<T>(r: unknown): T[] {
   if (Array.isArray(r)) return r as T[];
   if (r && typeof r === 'object' && Array.isArray((r as { rows?: T[] }).rows)) {
@@ -349,6 +360,38 @@ export class ErpAppointmentsSeries extends LitElement {
     }
   }
 
+  /** appointments#207 — deleting a series asks first, like every appointment book of the sector
+   *  (Fresha, Vagaro, Odoo, Square); it is a GLOBAL Ionic overlay appended to `document.body`
+   *  (same as the void dialog of the sales module) because an inline `<ion-alert>` in this shadow
+   *  root loses its styles when Ionic teleports it (hub#2162). */
+  async confirmDeleteSeries(row: Record<string, unknown>): Promise<void> {
+    const id = String(row.id ?? '');
+    if (!id) return;
+    const t = (k: string, p?: Record<string, unknown>): string => erplora().t(CATALOG, k, p);
+    const alert = document.createElement('ion-alert') as IonicAlertElement;
+    alert.header = t('ui.seriesDeleteTitle', { name: String(row.customer_name ?? '') });
+    alert.message = t('ui.seriesDeleteMessage');
+    alert.buttons = [
+      { text: t('ui.cancelReschedule'), role: 'cancel' },
+      {
+        text: t('ui.actionDelete'),
+        role: 'destructive',
+        handler: () => {
+          void this.deleteSeries(row);
+        },
+      },
+    ];
+    alert.setAttribute('data-testid', 'appointments-series-delete-confirm');
+    alert.addEventListener('ionAlertDidDismiss', () => alert.remove(), { once: true });
+    document.body.appendChild(alert);
+    try {
+      if (typeof alert.present === 'function') await alert.present();
+      else alert.isOpen = true;
+    } catch {
+      alert.remove();
+    }
+  }
+
   async deleteSeries(row: Record<string, unknown>): Promise<void> {
     const id = String(row.id ?? '');
     if (!id) return;
@@ -399,7 +442,7 @@ export class ErpAppointmentsSeries extends LitElement {
     if (!row) return;
     if (action === 'edit') void this.openSeries(row);
     else if (action === 'materialize') void this.materializeSeries(row);
-    else if (action === 'delete') void this.deleteSeries(row);
+    else if (action === 'delete') void this.confirmDeleteSeries(row);
   }
 
   /** La pauta en una frase, que es como la lee una recepcionista («Cada semana · lunes · 11:00»). */

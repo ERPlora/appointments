@@ -2036,6 +2036,8 @@ var es_default = {
     seriesSaveError: "No se ha podido guardar la cita peri\xF3dica.",
     seriesMaterializeError: "No se han podido reservar las citas de esta serie.",
     seriesDeleteError: "No se ha podido borrar la cita peri\xF3dica.",
+    seriesDeleteTitle: "\xBFBorrar la serie de citas de {name}?",
+    seriesDeleteMessage: "Las citas ya reservadas se conservan. La serie dejar\xE1 de reservar citas nuevas.",
     seriesActive: "Activa",
     seriesToggleActiveError: "No se ha podido cambiar el estado de la cita peri\xF3dica.",
     seriesMaterialized: "Citas reservadas para esta serie.",
@@ -2257,6 +2259,8 @@ var en_default = {
     seriesSaveError: "The repeating appointment could not be saved.",
     seriesMaterializeError: "The appointments of this series could not be booked.",
     seriesDeleteError: "The repeating appointment could not be deleted.",
+    seriesDeleteTitle: "Delete {name}'s repeating appointments?",
+    seriesDeleteMessage: "Appointments already booked are kept. This series will stop booking new ones.",
     seriesActive: "Active",
     seriesToggleActiveError: "The repeating appointment's status could not be changed.",
     seriesMaterialized: "Appointments booked for this series.",
@@ -6166,6 +6170,37 @@ var ErpAppointmentsSeries = class extends i3 {
       this.error = e5 instanceof Error && e5.message ? e5.message : erplora3().t(CATALOG3, "ui.seriesMaterializeError");
     }
   }
+  /** appointments#207 — deleting a series asks first, like every appointment book of the sector
+   *  (Fresha, Vagaro, Odoo, Square); it is a GLOBAL Ionic overlay appended to `document.body`
+   *  (same as the void dialog of the sales module) because an inline `<ion-alert>` in this shadow
+   *  root loses its styles when Ionic teleports it (hub#2162). */
+  async confirmDeleteSeries(row) {
+    const id = String(row.id ?? "");
+    if (!id) return;
+    const t5 = (k2, p4) => erplora3().t(CATALOG3, k2, p4);
+    const alert = document.createElement("ion-alert");
+    alert.header = t5("ui.seriesDeleteTitle", { name: String(row.customer_name ?? "") });
+    alert.message = t5("ui.seriesDeleteMessage");
+    alert.buttons = [
+      { text: t5("ui.cancelReschedule"), role: "cancel" },
+      {
+        text: t5("ui.actionDelete"),
+        role: "destructive",
+        handler: () => {
+          void this.deleteSeries(row);
+        }
+      }
+    ];
+    alert.setAttribute("data-testid", "appointments-series-delete-confirm");
+    alert.addEventListener("ionAlertDidDismiss", () => alert.remove(), { once: true });
+    document.body.appendChild(alert);
+    try {
+      if (typeof alert.present === "function") await alert.present();
+      else alert.isOpen = true;
+    } catch {
+      alert.remove();
+    }
+  }
   async deleteSeries(row) {
     const id = String(row.id ?? "");
     if (!id) return;
@@ -6204,7 +6239,7 @@ var ErpAppointmentsSeries = class extends i3 {
     if (!row) return;
     if (action === "edit") void this.openSeries(row);
     else if (action === "materialize") void this.materializeSeries(row);
-    else if (action === "delete") void this.deleteSeries(row);
+    else if (action === "delete") void this.confirmDeleteSeries(row);
   }
   /** La pauta en una frase, que es como la lee una recepcionista («Cada semana · lunes · 11:00»). */
   patternLabel(row) {
