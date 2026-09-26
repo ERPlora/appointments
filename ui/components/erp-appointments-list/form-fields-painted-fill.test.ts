@@ -71,6 +71,28 @@ describe('appointment panels paint their field boxes in ios mode (appointments#2
     for (const f of fields) expectPaintedFill(f);
   });
 
+  // appointments#221 — the list toolbar's day and status filter were the same loose text: the
+  // receptionist could not tell the date was editable nor that «All» opens a list.
+  it('toolbar: the day and the status filter', async () => {
+    const el = await mount();
+    const bar = el.shadowRoot.querySelector('.filters');
+    expect(bar, 'the list toolbar must be rendered').toBeTruthy();
+    const fields = [...bar!.querySelectorAll('ion-input, ion-select, ion-textarea')];
+    expect(fields.map((f) => f.getAttribute('data-testid'))).toEqual([
+      'appointments-list-day',
+      'appointments-list-status-filter',
+    ]);
+    for (const f of fields) expectPaintedFill(f);
+  });
+
+  it('no control anywhere in the list view is left without its box', async () => {
+    const el = await mount();
+    const loose = [...el.shadowRoot.querySelectorAll('ion-input, ion-select, ion-textarea')].filter(
+      (f) => !f.closest('ion-item') && (f.getAttribute('fill') !== 'outline' || f.getAttribute('mode') !== 'md'),
+    );
+    expect(loose.map((f) => f.getAttribute('data-testid') ?? f.tagName)).toEqual([]);
+  });
+
   it('«Move» panel: day, time and minutes', async () => {
     const el = await mount();
     await el.onRowAction(new CustomEvent('rowAction', { detail: { actionId: 'reschedule', row: APPOINTMENT } }));

@@ -1365,7 +1365,7 @@ export class ErpAppointmentsList extends LitElement {
                  BROWSER/OS locale (a Spanish hub in an English browser read «09/26/2026»), and
                  there is no attribute that changes it. This paints the date itself, in the hub's
                  language, with an inline calendar for the mouse. -->
-            <ion-input data-testid="appointments-list-day" data-role="day" aria-label=${t('ui.fieldDate')} type="text" inputmode="numeric" autocomplete="off" placeholder=${t('ui.datePlaceholder')} .value=${this.dateFieldValue('day')} @ionInput=${(e: any) => this.onDateFieldInput('day', e.target.value ?? '')} @ionChange=${() => this.commitDateDraft('day')}>
+            <ion-input data-testid="appointments-list-day" data-role="day" fill="outline" mode="md" aria-label=${t('ui.fieldDate')} type="text" inputmode="numeric" autocomplete="off" placeholder=${t('ui.datePlaceholder')} .value=${this.dateFieldValue('day')} @ionInput=${(e: any) => this.onDateFieldInput('day', e.target.value ?? '')} @ionChange=${() => this.commitDateDraft('day')}>
               <ion-button slot="end" data-role="day-calendar" type="button" fill="clear" size="small" data-testid="appointments-list-day-calendar" aria-label=${t('ui.openCalendar')} @click=${() => this.toggleDateCalendar('day')}>
                 <ion-icon slot="icon-only" name="calendar-outline"></ion-icon>
               </ion-button>
@@ -1374,7 +1374,7 @@ export class ErpAppointmentsList extends LitElement {
               <ion-icon slot="icon-only" name="chevron-forward-outline"></ion-icon>
             </ion-button>
           </div>
-          <ion-select data-testid="appointments-list-status-filter" data-role="status" aria-label=${t('ui.filterStatus')} placeholder=${t('ui.allStatuses')} .value=${this.statusFilter} @ionChange=${(e: any) => {
+          <ion-select data-testid="appointments-list-status-filter" data-role="status" fill="outline" mode="md" aria-label=${t('ui.filterStatus')} placeholder=${t('ui.allStatuses')} .value=${this.statusFilter} @ionChange=${(e: any) => {
               this.statusFilter = e.target.value;
               this.refresh();
             }}>
