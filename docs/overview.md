@@ -57,7 +57,12 @@ as `new_id`, its old name), `customer_id`/`customer_name`, `service_id`/`service
 `duration_minutes`, `status`, `notes`, `booked_online` and `recurring_id`. Contact details and internal notes are not in it: read the
 appointment.
 
-**Events it listens to** — none. Other modules react to appointments, not the other way round.
+**Events it listens to**
+
+| Event | Command | What it does |
+|---|---|---|
+| `sales.sale.created_from_appointment` (from `sales`) | `appointments._mark_converted` | Marks the appointment as converted into that sale |
+| `customer.merged` (from `customers`) | `appointments._on_customer_merged` | When two customer sheets are merged, every appointment (live or deleted, any status) and every recurring series of the absorbed sheet moves to the surviving one, in this hub only; names on the booking stay as they were written (customers#86) |
 
 ## Where its numbers come from
 

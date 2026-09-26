@@ -408,6 +408,14 @@
         "commands/_mark_converted.sql"
       ]
     },
+    "appointments._on_customer_merged": {
+      "permission": "appointments.change_appointment",
+      "transaction": true,
+      "sql": [
+        "commands/customer_merge_appointments.sql",
+        "commands/customer_merge_recurring.sql"
+      ]
+    },
     "appointments._recurring_cancel_occurrence": {
       "permission": "appointments.change_appointment",
       "sql": [
@@ -1176,6 +1184,9 @@
   },
   "events": {
     "listen": {
+      "customer.merged": {
+        "command": "appointments._on_customer_merged"
+      },
       "sales.sale.created_from_appointment": {
         "command": "appointments._mark_converted"
       }
