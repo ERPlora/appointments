@@ -199,6 +199,8 @@ for (const locale of ['es', 'en'] as const) {
       const start = byTestId(el, 'appointments-list-start');
       expect(start?.getAttribute('type')).toBe('text');
       expect(start?.getAttribute('placeholder')).toBe(want.placeholder);
+      // A slot clicked on the timeline wins over a half-typed day.
+      await type(el, 'appointments-list-start', '2');
       el.newStart = '2026-08-18T11:15';
       await el.updateComplete;
       expect(byTestId(el, 'appointments-list-start')?.value).toBe(want.typed);

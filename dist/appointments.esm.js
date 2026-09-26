@@ -1958,6 +1958,8 @@ var es_default = {
     actionCancel: "Cancelar",
     actionDelete: "Borrar",
     fieldDate: "D\xEDa",
+    datePlaceholder: "dd/mm/aaaa",
+    openCalendar: "Abrir calendario",
     fieldCustomer: "Cliente",
     fieldService: "Servicio",
     fieldStart: "Inicio",
@@ -2181,6 +2183,8 @@ var en_default = {
     actionCancel: "Cancel",
     actionDelete: "Delete",
     fieldDate: "Day",
+    datePlaceholder: "mm/dd/yyyy",
+    openCalendar: "Open calendar",
     fieldCustomer: "Customer",
     fieldService: "Service",
     fieldStart: "Start",
@@ -6498,6 +6502,39 @@ function parseTypedStart(text, locale) {
   const time = parseTime(trimmed);
   return time === null ? null : { date: "", time };
 }
+function formatTypedDate(iso, locale) {
+  const match = iso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return "";
+  const [, yearText, monthText, dayText] = match;
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  if (!toIsoDate(year, month, day)) return "";
+  try {
+    const parts = new Intl.DateTimeFormat(locale || void 0, {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      timeZone: "UTC"
+    }).formatToParts(new Date(Date.UTC(year, month - 1, day)));
+    const ordered = parts.filter((p4) => p4.type === "day" || p4.type === "month" || p4.type === "year").map((p4) => p4.value);
+    if (ordered.length === 3) return ordered.join("/");
+  } catch {
+  }
+  return `${pad2(day)}/${pad2(month)}/${String(year).padStart(4, "0")}`;
+}
+function firstDayOfWeek(locale) {
+  if (locale) {
+    try {
+      const info = new Intl.Locale(locale);
+      const weekInfo = info.getWeekInfo ? info.getWeekInfo() : info.weekInfo;
+      const firstDay = weekInfo?.firstDay;
+      if (typeof firstDay === "number") return firstDay === 7 ? 0 : firstDay;
+    } catch {
+    }
+  }
+  return (locale || "").toLowerCase().startsWith("en") ? 0 : 1;
+}
 
 // ui/components/erp-appointments-list/erp-appointments-list.ts
 var CATALOG4 = { es: es_default, en: en_default };
@@ -6578,6 +6615,12 @@ var ErpAppointmentsList = class extends i3 {
     this.formError = "";
     this.saving = false;
     this.day = todayISO();
+    this.dateDraft = {
+      day: null,
+      new: null,
+      reschedule: null
+    };
+    this.calendarOpen = "";
     this.statusFilter = "";
     this.view = "list";
     this.customers = [];
@@ -6655,6 +6698,11 @@ var ErpAppointmentsList = class extends i3 {
     .form .actions { display:flex; gap:.5rem; justify-content:flex-end; align-items:center; }
     .form .actions ion-button { align-self:auto; }
     .err { color:#d9480f; font-weight:600; }
+    /* appointments#205 — the inline ion-datetime calendar of a date field: no ion-popover/
+       ion-modal (an overlay would teleport out of the shadow root and lose its styles, hub#2162),
+       so it is painted right where it opens instead. */
+    .day-calendar, .field-calendar { display:flex; justify-content:flex-start; margin:0 0 .5rem; }
+    ion-datetime { --background: var(--ion-background-color, #fff); border-radius: 8px; }
   `;
   }
   get newStart() {
@@ -6662,12 +6710,14 @@ var ErpAppointmentsList = class extends i3 {
   }
   set newStart(value) {
     [this.newStartDate, this.newStartTime] = splitWall(value);
+    this.dateDraft = { ...this.dateDraft, new: null };
   }
   get rescheduleStart() {
     return joinWall(this.rescheduleStartDate, this.rescheduleStartTime);
   }
   set rescheduleStart(value) {
     [this.rescheduleStartDate, this.rescheduleStartTime] = splitWall(value);
+    this.dateDraft = { ...this.dateDraft, reschedule: null };
   }
   statusLabel(status) {
     const key = STATUS_KEYS2[status];
@@ -6859,6 +6909,7 @@ var ErpAppointmentsList = class extends i3 {
    *  23, 24 o 25 horas, así que «mañana» es la fecha siguiente, nunca `+24 h`. */
   stepDay(delta) {
     this.day = addDaysISO(this.day, delta);
+    this.dateDraft = { ...this.dateDraft, day: null };
     void this.refresh();
   }
   async refresh() {
@@ -6886,24 +6937,34 @@ var ErpAppointmentsList = class extends i3 {
   }
   /** appointments#204 — shared by the create and reschedule date/time pairs: writes the halves
    *  `parseTypedStart` found into the matching form's state, leaving the other half as it was
-   *  when only a date or only a time was recognized. */
+   *  when only a date or only a time was recognized.
+   *  appointments#205 — the date half also clears its draft: this is a route OTHER than typing
+   *  into the field (a paste), so the field must repaint the committed date in the hub format. */
   applyTypedStart(form, parsed) {
     if (form === "new") {
-      if (parsed.date) this.newStartDate = parsed.date;
+      if (parsed.date) {
+        this.newStartDate = parsed.date;
+        this.dateDraft = { ...this.dateDraft, new: null };
+      }
       if (parsed.time) this.newStartTime = parsed.time;
     } else {
-      if (parsed.date) this.rescheduleStartDate = parsed.date;
+      if (parsed.date) {
+        this.rescheduleStartDate = parsed.date;
+        this.dateDraft = { ...this.dateDraft, reschedule: null };
+      }
       if (parsed.time) this.rescheduleStartTime = parsed.time;
     }
   }
   /** appointments#204 — a `date` field's year segment takes six digits, so a space typed right
    *  after the year cannot move the caret to the hour: this hands the caret to the matching
    *  `time` field itself, but only once the date is complete (a half-typed date still needs the
-   *  browser's own handling of that key). */
+   *  browser's own handling of that key).
+   *  appointments#205 — the field is text now, so "complete" is no longer "non-empty": it is
+   *  whatever `parseTypedStart` reads a date out of ("26/09" is not, "26/09/2026" is). */
   onStartDateKeydown(form, e5) {
     if (e5.key !== " " && e5.key !== "," && e5.key !== "t" && e5.key !== "T") return;
     const value = e5.target.value;
-    if (typeof value !== "string" || !value) return;
+    if (typeof value !== "string" || !parseTypedStart(value, erplora4().locale)?.date) return;
     e5.preventDefault();
     const timeField = this.renderRoot.querySelector(
       form === "new" ? 'ion-input[data-role="start-time"]' : 'ion-input[data-role="reschedule-start-time"]'
@@ -6918,6 +6979,72 @@ var ErpAppointmentsList = class extends i3 {
     if (!parsed) return;
     e5.preventDefault();
     this.applyTypedStart(form, parsed);
+  }
+  /** appointments#205 — the ISO date currently in effect for the given field, whatever route set
+   *  it (typed, pasted, stepped, picked from the calendar, or pre-filled from a row/the timeline). */
+  isoForDateField(field) {
+    if (field === "day") return this.day;
+    return field === "new" ? this.newStartDate : this.rescheduleStartDate;
+  }
+  /** appointments#205 — what the field's `ion-input` shows: the raw text while it is being typed
+   *  (so a half-typed date like "26/09" stays on screen instead of being reformatted mid-keystroke),
+   *  the hub-formatted date otherwise. */
+  dateFieldValue(field) {
+    const draft = this.dateDraft[field];
+    return draft ?? formatTypedDate(this.isoForDateField(field), erplora4().locale);
+  }
+  /** appointments#205 — `ionInput` on one of the three date text fields: the raw text is kept as
+   *  the draft (so it stays on screen exactly as typed), and it is parsed in the hub's day/month
+   *  order. The header day only moves once a REAL, different date was typed (a half-typed date
+   *  must not blank the agenda); a panel field's ISO date follows the text exactly, including
+   *  going back to `''` when the text is not (yet) a date — that is what keeps "Add appointment"
+   *  disabled instead of silently keeping the last valid day. */
+  onDateFieldInput(field, text) {
+    this.dateDraft = { ...this.dateDraft, [field]: text };
+    const iso = parseTypedStart(text, erplora4().locale)?.date ?? "";
+    if (field === "day") {
+      if (iso && iso !== this.day) {
+        this.day = iso;
+        void this.refresh();
+      }
+    } else if (field === "new") {
+      this.newStartDate = iso;
+    } else {
+      this.rescheduleStartDate = iso;
+    }
+  }
+  /** appointments#205 — blur/Enter on a date field (`ionChange`): forget the draft so the field
+   *  repaints the committed ISO date in the hub format, instead of whatever was left half-typed. */
+  commitDateDraft(field) {
+    this.dateDraft = { ...this.dateDraft, [field]: null };
+  }
+  /** appointments#205 — opens/closes the inline `ion-datetime` calendar of one date field. Only
+   *  one at a time: two open calendars would be two conflicting answers to "what day is this". */
+  toggleDateCalendar(field) {
+    this.calendarOpen = this.calendarOpen === field ? "" : field;
+  }
+  /** appointments#205 — `ionChange` of an inline `ion-datetime` calendar: `detail.value` is a
+   *  `YYYY-MM-DD` (or, in range/multiple presentations Ionic does not use here, an array of them);
+   *  only the calendar date matters, so the first 10 characters are all that is read. Applies it
+   *  like a typed date, forgets the draft and closes the calendar — no ion-popover/ion-modal
+   *  wrapper: an overlay would teleport out of the shadow root and lose its styles (hub#2162). */
+  onDateCalendarPick(field, value) {
+    const raw = Array.isArray(value) ? value[0] : value;
+    const iso = parseTypedStart(String(raw ?? "").slice(0, 10), "en")?.date ?? "";
+    if (field === "day") {
+      if (!iso) {
+        this.calendarOpen = "";
+        return;
+      }
+      this.day = iso;
+      void this.refresh();
+    } else if (field === "new") {
+      this.newStartDate = iso;
+    } else {
+      this.rescheduleStartDate = iso;
+    }
+    this.dateDraft = { ...this.dateDraft, [field]: null };
+    this.calendarOpen = "";
   }
   /** Has the chosen time already passed? Asked against the SALON clock, which is the one that
    *  decides (appointments#12/#76): the device may sit in another timezone and the answer would
@@ -7372,10 +7499,15 @@ var ErpAppointmentsList = class extends i3 {
             <ion-button data-testid="appointments-list-prev-day" data-role="prev-day" fill="clear" aria-label=${t5("ui.prevDay")} @click=${() => this.stepDay(-1)}>
               <ion-icon slot="icon-only" name="chevron-back-outline"></ion-icon>
             </ion-button>
-            <ion-input data-testid="appointments-list-day" data-role="day" aria-label=${t5("ui.fieldDate")} type="date" .value=${this.day} @ionInput=${(e5) => {
-      this.day = e5.target.value;
-      this.refresh();
-    }}></ion-input>
+            <!-- appointments#205: text, not a native date input — Chromium paints that in the
+                 BROWSER/OS locale (a Spanish hub in an English browser read «09/26/2026»), and
+                 there is no attribute that changes it. This paints the date itself, in the hub's
+                 language, with an inline calendar for the mouse. -->
+            <ion-input data-testid="appointments-list-day" data-role="day" aria-label=${t5("ui.fieldDate")} type="text" inputmode="numeric" autocomplete="off" placeholder=${t5("ui.datePlaceholder")} .value=${this.dateFieldValue("day")} @ionInput=${(e5) => this.onDateFieldInput("day", e5.target.value ?? "")} @ionChange=${() => this.commitDateDraft("day")}>
+              <ion-button slot="end" data-role="day-calendar" type="button" fill="clear" size="small" data-testid="appointments-list-day-calendar" aria-label=${t5("ui.openCalendar")} @click=${() => this.toggleDateCalendar("day")}>
+                <ion-icon slot="icon-only" name="calendar-outline"></ion-icon>
+              </ion-button>
+            </ion-input>
             <ion-button data-testid="appointments-list-next-day" data-role="next-day" fill="clear" aria-label=${t5("ui.nextDay")} @click=${() => this.stepDay(1)}>
               <ion-icon slot="icon-only" name="chevron-forward-outline"></ion-icon>
             </ion-button>
@@ -7407,6 +7539,20 @@ var ErpAppointmentsList = class extends i3 {
             </ion-segment-button>
           </ion-segment>
         </div>
+        <!-- appointments#205 — the inline calendar for the day field. Outside .filters on
+             purpose: it is not a row item, and an ion-popover/ion-modal here would teleport
+             out of the shadow root and lose its styles (hub#2162), which is why this is inline
+             instead. -->
+        ${this.calendarOpen === "day" ? b2`<div class="day-calendar">
+              <ion-datetime
+                data-testid="appointments-list-day-calendar-picker"
+                presentation="date"
+                locale=${erplora4().locale || "es"}
+                first-day-of-week=${firstDayOfWeek(erplora4().locale)}
+                .value=${this.day || void 0}
+                @ionChange=${(e5) => this.onDateCalendarPick("day", e5.detail.value)}
+              ></ion-datetime>
+            </div>` : A}
         <!-- appointments#12: el aparato NO manda, pero tampoco se le engaña en silencio. Si el
              tablet está en otra zona, la agenda sigue pintando el reloj del NEGOCIO y lo dice —
              el patrón que Square acabó adoptando tras años de citas movidas por el huso del
@@ -7475,6 +7621,7 @@ var ErpAppointmentsList = class extends i3 {
               .labels=${{ prevDay: t5("ui.prevDay"), nextDay: t5("ui.nextDay"), empty: t5("ui.noStaff") }}
               @ok-nav=${(e5) => {
       this.day = e5.detail.date;
+      this.dateDraft = { ...this.dateDraft, day: null };
       this.refresh();
     }}
               @ok-slot-click=${(e5) => this.onSlotClick(e5)}
@@ -7493,7 +7640,22 @@ var ErpAppointmentsList = class extends i3 {
       <ok-inline-feedback data-testid="appointments-list-reschedule-hint" tone="info" icon="information-circle-outline">${t5("ui.rescheduleHint")}</ok-inline-feedback>
       <p class="ctx">${t5("ui.fieldStaff")}: <strong>${this.rescheduleStaffName || "\u2014"}</strong></p>
       <!-- appointments#204: date + time, not datetime-local — its year segment takes 6 digits and never hands the caret to the hour, so a typed start never landed. -->
-      <ion-input data-testid="appointments-list-reschedule-start" data-role="reschedule-start" fill="outline" mode="md" label-placement="floating" label=${t5("ui.fieldDate")} type="date" .value=${this.rescheduleStartDate} @ionInput=${(e5) => this.rescheduleStartDate = e5.target.value ?? ""} @keydown=${(e5) => this.onStartDateKeydown("reschedule", e5)} @paste=${(e5) => this.onStartPaste("reschedule", e5)}></ion-input>
+      <!-- appointments#205: text, painted in the hub's language, with an inline calendar. -->
+      <ion-input data-testid="appointments-list-reschedule-start" data-role="reschedule-start" fill="outline" mode="md" label-placement="floating" label=${t5("ui.fieldDate")} type="text" inputmode="numeric" autocomplete="off" placeholder=${t5("ui.datePlaceholder")} .value=${this.dateFieldValue("reschedule")} @ionInput=${(e5) => this.onDateFieldInput("reschedule", e5.target.value ?? "")} @ionChange=${() => this.commitDateDraft("reschedule")} @keydown=${(e5) => this.onStartDateKeydown("reschedule", e5)} @paste=${(e5) => this.onStartPaste("reschedule", e5)}>
+        <ion-button slot="end" type="button" fill="clear" size="small" data-testid="appointments-list-reschedule-start-calendar" aria-label=${t5("ui.openCalendar")} @click=${() => this.toggleDateCalendar("reschedule")}>
+          <ion-icon slot="icon-only" name="calendar-outline"></ion-icon>
+        </ion-button>
+      </ion-input>
+      ${this.calendarOpen === "reschedule" ? b2`<div class="field-calendar">
+            <ion-datetime
+              data-testid="appointments-list-reschedule-start-calendar-picker"
+              presentation="date"
+              locale=${erplora4().locale || "es"}
+              first-day-of-week=${firstDayOfWeek(erplora4().locale)}
+              .value=${this.rescheduleStartDate || void 0}
+              @ionChange=${(e5) => this.onDateCalendarPick("reschedule", e5.detail.value)}
+            ></ion-datetime>
+          </div>` : A}
       <ion-input data-testid="appointments-list-reschedule-start-time" data-role="reschedule-start-time" fill="outline" mode="md" label-placement="floating" label=${t5("ui.fieldTime")} type="time" .value=${this.rescheduleStartTime} @ionInput=${(e5) => this.rescheduleStartTime = e5.target.value ?? ""} @paste=${(e5) => this.onStartPaste("reschedule", e5)}></ion-input>
       <ion-input data-testid="appointments-list-reschedule-duration" data-role="reschedule-duration" fill="outline" mode="md" label-placement="floating" label=${t5("ui.fieldMinutes")} type="number" min="1" .value=${this.rescheduleDuration} @ionInput=${(e5) => this.rescheduleDuration = e5.target.value}></ion-input>
       ${this.rescheduleStartIsPast ? b2`<ok-inline-feedback data-testid="appointments-list-reschedule-past-notice" tone="warning" icon="time-outline">${t5("ui.reschedulePastNotice")}</ok-inline-feedback>` : A}
@@ -7535,7 +7697,22 @@ var ErpAppointmentsList = class extends i3 {
               ${this.bookableStaff.map((m4) => b2`<ion-select-option .value=${m4.id}>${m4.full_name}</ion-select-option>`)}
             </ion-select>
             <!-- appointments#204: date + time, not datetime-local — its year segment takes 6 digits and never hands the caret to the hour, so a typed start never landed. -->
-            <ion-input data-testid="appointments-list-start" data-role="start-date" fill="outline" mode="md" label-placement="floating" label=${t5("ui.fieldDate")} type="date" .value=${this.newStartDate} @ionInput=${(e5) => this.newStartDate = e5.target.value ?? ""} @keydown=${(e5) => this.onStartDateKeydown("new", e5)} @paste=${(e5) => this.onStartPaste("new", e5)}></ion-input>
+            <!-- appointments#205: text, painted in the hub's language, with an inline calendar. -->
+            <ion-input data-testid="appointments-list-start" data-role="start-date" fill="outline" mode="md" label-placement="floating" label=${t5("ui.fieldDate")} type="text" inputmode="numeric" autocomplete="off" placeholder=${t5("ui.datePlaceholder")} .value=${this.dateFieldValue("new")} @ionInput=${(e5) => this.onDateFieldInput("new", e5.target.value ?? "")} @ionChange=${() => this.commitDateDraft("new")} @keydown=${(e5) => this.onStartDateKeydown("new", e5)} @paste=${(e5) => this.onStartPaste("new", e5)}>
+              <ion-button slot="end" type="button" fill="clear" size="small" data-testid="appointments-list-start-calendar" aria-label=${t5("ui.openCalendar")} @click=${() => this.toggleDateCalendar("new")}>
+                <ion-icon slot="icon-only" name="calendar-outline"></ion-icon>
+              </ion-button>
+            </ion-input>
+            ${this.calendarOpen === "new" ? b2`<div class="field-calendar">
+                  <ion-datetime
+                    data-testid="appointments-list-start-calendar-picker"
+                    presentation="date"
+                    locale=${erplora4().locale || "es"}
+                    first-day-of-week=${firstDayOfWeek(erplora4().locale)}
+                    .value=${this.newStartDate || void 0}
+                    @ionChange=${(e5) => this.onDateCalendarPick("new", e5.detail.value)}
+                  ></ion-datetime>
+                </div>` : A}
             <ion-input data-testid="appointments-list-start-time" data-role="start-time" fill="outline" mode="md" label-placement="floating" label=${t5("ui.fieldTime")} type="time" .value=${this.newStartTime} @ionInput=${(e5) => this.newStartTime = e5.target.value ?? ""} @paste=${(e5) => this.onStartPaste("new", e5)}></ion-input>
             <!-- Minutos se PRERRELLENA al elegir servicio (appointments#75): la duración que la
                  reserva va a tener tiene que estar EN PANTALLA; se teclea solo para excepciones
@@ -7569,6 +7746,12 @@ __decorateClass([
 __decorateClass([
   r5()
 ], ErpAppointmentsList.prototype, "day", 2);
+__decorateClass([
+  r5()
+], ErpAppointmentsList.prototype, "dateDraft", 2);
+__decorateClass([
+  r5()
+], ErpAppointmentsList.prototype, "calendarOpen", 2);
 __decorateClass([
   r5()
 ], ErpAppointmentsList.prototype, "statusFilter", 2);
