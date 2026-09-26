@@ -169,9 +169,9 @@ export class ErpAppointmentsSeries extends LitElement {
     }
   }
 
-  private dataTable(): (HTMLElement & { open(mode: string): void; close(): void }) | null {
+  private dataTable(): (HTMLElement & { open(mode: string, opts?: { title?: string }): void; close(): void }) | null {
     return this.renderRoot.querySelector('ok-data-table') as
-      | (HTMLElement & { open(mode: string): void; close(): void })
+      | (HTMLElement & { open(mode: string, opts?: { title?: string }): void; close(): void })
       | null;
   }
 
@@ -210,7 +210,9 @@ export class ErpAppointmentsSeries extends LitElement {
       this.fromOccurrence =
         this.occurrences.map((o) => o.occurrence_date).find((d) => d >= today) ?? today;
       await this.updateComplete;
-      this.dataTable()?.open('create');
+      // pm#450: «edit» mode + its own title (also the dialog's aria-label). The `.labels.newRecord`
+      // override in render() stays as the fallback for OutfitKit < 0.1.94, which ignores the title.
+      this.dataTable()?.open('edit', { title: erplora().t(CATALOG, 'ui.seriesEditTitle') });
     } catch (e) {
       this.error = e instanceof Error && e.message ? e.message : erplora().t(CATALOG, 'ui.seriesLoadError');
     }

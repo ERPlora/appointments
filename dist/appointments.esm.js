@@ -6050,7 +6050,7 @@ var ErpAppointmentsSeries = class extends i3 {
       const today = todayISO();
       this.fromOccurrence = this.occurrences.map((o7) => o7.occurrence_date).find((d3) => d3 >= today) ?? today;
       await this.updateComplete;
-      this.dataTable()?.open("create");
+      this.dataTable()?.open("edit", { title: erplora3().t(CATALOG3, "ui.seriesEditTitle") });
     } catch (e5) {
       this.error = e5 instanceof Error && e5.message ? e5.message : erplora3().t(CATALOG3, "ui.seriesLoadError");
     }
@@ -6983,7 +6983,7 @@ var ErpAppointmentsList = class extends i3 {
     this.error = "";
     this.view = "list";
     await this.updateComplete;
-    this.dataTable()?.open("create");
+    this.dataTable()?.open("edit", { title: erplora4().t(CATALOG4, "ui.rescheduleTitle") });
   }
   /** Opens the panel on the history of ONE appointment, without touching it (appointments#194).
    *  Reachable in every status: a cancelled or completed appointment is precisely the one whose
@@ -6994,7 +6994,7 @@ var ErpAppointmentsList = class extends i3 {
     this.error = "";
     this.view = "list";
     await this.updateComplete;
-    this.dataTable()?.open("create");
+    this.dataTable()?.open("create", { title: erplora4().t(CATALOG4, "ui.appointmentHistoryTitle") });
   }
   /** Bloque del timeline → mismo panel pre-rellenado.
    *
