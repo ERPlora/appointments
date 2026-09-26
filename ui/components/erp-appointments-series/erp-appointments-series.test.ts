@@ -560,6 +560,11 @@ describe('deleting a series asks for confirmation first (appointments#207)', () 
     expect(alert?.header).toBe(esLocale.ui.seriesDeleteTitle);
     // The message tells the receptionist that booked appointments are kept.
     expect(alert?.message).toBe(esLocale.ui.seriesDeleteMessage);
+    expect(alert?.buttons.map((b) => [b.role, b.text])).toEqual([
+      ['cancel', esLocale.ui.cancelReschedule],
+      ['destructive', esLocale.ui.actionDelete],
+    ]);
+    expect(alert?.isOpen, 'the confirmation is actually shown').toBe(true);
   });
 
   it('the confirmation names the customer whose series is deleted', async () => {
