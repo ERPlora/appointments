@@ -2079,17 +2079,15 @@ pub fn cancel_appointment_pure(input: Value) -> Result<Output, String> {
         }
     }
 
+    // The history line runs as a later statement of THIS SAME command (appointments#196):
+    // the runtime binds `:now` once per command, and `_history_cancel.sql` finds the row this
+    // run just wrote by `a.updated_at = :now` — a separate operation would never match it.
     let mut cancel = Map::new();
     cancel.insert("appointment_id".into(), json!(appointment_id));
     cancel.insert("reason".into(), json!(str_or(&payload, "reason", "")));
-    let mut history = Map::new();
-    history.insert("appointment_id".into(), json!(appointment_id));
-    history.insert("channel".into(), json!(channel.label()));
+    cancel.insert("channel".into(), json!(channel.label()));
     Ok(Output {
-        operations: vec![
-            Operation::sql("appointments._cancel_row", cancel),
-            Operation::sql("appointments._history_cancel", history),
-        ],
+        operations: vec![Operation::sql("appointments._cancel_row", cancel)],
         events: vec![],
         ..Default::default()
     })
@@ -2231,11 +2229,13 @@ pub fn reschedule_appointment_pure(input: Value) -> Result<Output, String> {
         }
     }
 
+    // appointments#145: the trail says who asked for the move, like the cancel line does.
     let mut p = Map::new();
     p.insert("appointment_id".into(), json!(appointment_id));
     p.insert("start_datetime".into(), json!(start.iso()));
     p.insert("end_datetime".into(), json!(end.iso()));
     p.insert("duration_minutes".into(), json!(duration));
+    p.insert("channel".into(), json!(channel.label()));
 
     let only_id = |_: ()| {
         let mut m = Map::new();
@@ -2243,23 +2243,23 @@ pub fn reschedule_appointment_pure(input: Value) -> Result<Output, String> {
         m
     };
 
-    // appointments#145: the trail says who asked for the move, like the cancel line does.
-    let mut history = only_id(());
-    history.insert("channel".into(), json!(channel.label()));
-
     // The handler decided with a read; between that read and this UPDATE the state could have
     // changed. Both gates stay SERVER-SIDE, inside the command's own transaction, because that is
-    // the only place the race actually closes (appointments#20).
+    // the only place the race actually closes (appointments#20). The overlap gate and the history
+    // line now run as later statements of `_reschedule_row`'s own `sql[]`, together with the row
+    // UPDATE itself: the runtime binds `:now` once per command, so `_appointment_overlap_assert.sql`
+    // and `_history_reschedule.sql` can only find "the row this run just wrote" (`a.updated_at =
+    // :now`) when they share that command with the UPDATE — a separate operation would never match
+    // the pin (appointments#196).
     Ok(Output {
         operations: vec![
             Operation::sql("appointments._reschedule_state_assert", only_id(())),
             Operation::sql("appointments._reschedule_row", p),
-            Operation::sql("appointments._appointment_overlap_assert", only_id(())),
-            Operation::sql("appointments._history_reschedule", history),
-            // Last link: both asserts above wrote a passing row into `appointments__gate`, and a
-            // row that passes survives the commit. Draining here — and only here, once every
-            // assert is through — keeps the gate table scratch space instead of a log that grows
-            // two rows per reschedule for ever (appointments#116, the `verifactu` pattern).
+            // Last link: the state assert above and the overlap assert folded into
+            // `_reschedule_row` both wrote a passing row into `appointments__gate`, and a row that
+            // passes survives the commit. Draining here — and only here, once every assert is
+            // through — keeps the gate table scratch space instead of a log that grows two rows
+            // per reschedule for ever (appointments#116, the `verifactu` pattern).
             Operation::sql("appointments._gate_clear", only_id(())),
         ],
         events: vec![],
@@ -2758,13 +2758,14 @@ pub fn update_recurring_series_pure(input: Value) -> Result<Output, String> {
         if moved + cancelled_pattern_change >= 50 {
             break; // same per-invocation ceiling as `materialize` and `bulk_create`
         }
-        // appointments#90 — CAMBIO DE PAUTA. Si la fecha ya no cae en la pauta nueva no hay hueco
-        // al que moverla: se CANCELA, que es lo que la recepcionista haría a mano y lo único que
-        // Fresha, Vagaro, Square y Booksy ofrecen (obligan a cancelar y volver a reservar). No se
-        // BORRA: borrar tira el número de cita, el historial y la ficha de la clienta.
+        // appointments#90 — PATTERN CHANGE. If the date no longer falls on the new pattern there is
+        // no slot to move it to: it gets CANCELLED, which is what the receptionist would do by hand
+        // and the only thing Fresha, Vagaro, Square and Booksy offer (they force a cancel and a new
+        // booking). It is NOT deleted: deleting throws away the appointment number, the history and
+        // the customer's record of it.
         //
-        // Lo cancelado se queda colgando de la mitad VIEJA de la serie, así que ni la read de
-        // ocurrencias de la mitad nueva lo ve ni el índice único parcial de la 005 choca con él.
+        // What is cancelled stays hanging off the OLD half of the series, so neither the new half's
+        // occurrence read sees it nor does the 005 partial unique index collide with it.
         if pattern_changed
             && !pattern_contains(
                 &frequency,
@@ -2775,16 +2776,17 @@ pub fn update_recurring_series_pure(input: Value) -> Result<Output, String> {
         {
             let mut cancel = Map::new();
             cancel.insert("appointment_id".into(), json!(appointment_id));
-            // Clave estable, no prosa: la pantalla la traduce (`en` + `es`, ADR-0055/0199).
+            // Stable key, not prose: the screen translates it (`en` + `es`, ADR-0055/0199).
             cancel.insert("reason".into(), json!("series_pattern_changed"));
+            cancel.insert("channel".into(), json!("staff"));
+            // The history line now rides `_recurring_cancel_occurrence`'s own `sql[]` as a later
+            // statement of this SAME command (appointments#196): the runtime binds `:now` once per
+            // command, and `_history_cancel.sql` finds the row this run just wrote by
+            // `a.updated_at = :now` — a separate operation would never match it.
             ops.push(Operation::sql(
                 "appointments._recurring_cancel_occurrence",
                 cancel,
             ));
-            let mut h = Map::new();
-            h.insert("appointment_id".into(), json!(appointment_id));
-            h.insert("channel".into(), json!("staff"));
-            ops.push(Operation::sql("appointments._history_cancel", h));
             cancelled_pattern_change += 1;
             continue;
         }
@@ -2802,17 +2804,15 @@ pub fn update_recurring_series_pure(input: Value) -> Result<Output, String> {
         mv.insert("start_datetime".into(), json!(start_iso));
         mv.insert("end_datetime".into(), json!(end_iso));
         mv.insert("duration_minutes".into(), json!(duration));
+        mv.insert("channel".into(), json!("staff"));
+        // Every move leaves an audit row, like every other transition of this module: the audit
+        // row now rides `_recurring_move_occurrence`'s own `sql[]` as a later statement of this
+        // SAME command (appointments#196), because the runtime binds `:now` once per command and
+        // `_history_reschedule.sql` finds the row this run just wrote by `a.updated_at = :now`.
         ops.push(Operation::sql(
             "appointments._recurring_move_occurrence",
             mv,
         ));
-
-        // Every move leaves an audit row, like every other transition of this module: the trail is
-        // what lets anyone answer «why is this at 12:00 now?» a month later.
-        let mut h = Map::new();
-        h.insert("appointment_id".into(), json!(appointment_id));
-        h.insert("channel".into(), json!("staff"));
-        ops.push(Operation::sql("appointments._history_reschedule", h));
         moved += 1;
     }
 
@@ -3960,13 +3960,15 @@ mod tests {
         );
         assert_eq!(
             op_commands(&out),
-            vec!["appointments._cancel_row", "appointments._history_cancel"]
+            vec!["appointments._cancel_row"]
         );
         let row = &out.operations[0].params;
         assert_eq!(row.get("appointment_id"), Some(&json!("apt-1")));
         assert_eq!(row.get("reason"), Some(&json!("sick")));
+        // appointments#196: the history line is a statement of `_cancel_row` itself, so the
+        // channel it stamps rides the row operation.
         assert_eq!(
-            out.operations[1].params.get("channel"),
+            out.operations[0].params.get("channel"),
             Some(&json!("staff"))
         );
     }
@@ -4000,7 +4002,7 @@ mod tests {
         .unwrap();
         assert!(out.error.is_none(), "{:?}", out.error);
         assert_eq!(
-            out.operations[1].params.get("channel"),
+            out.operations[0].params.get("channel"),
             Some(&json!("customer"))
         );
     }
@@ -4195,7 +4197,7 @@ mod tests {
         assert!(out.error.is_none(), "{:?}", out.error);
         assert_eq!(
             op_commands(&out),
-            vec!["appointments._cancel_row", "appointments._history_cancel"]
+            vec!["appointments._cancel_row"]
         );
     }
 
@@ -4215,7 +4217,7 @@ mod tests {
         assert!(out.error.is_none(), "{:?}", out.error);
         assert_eq!(
             op_commands(&out),
-            vec!["appointments._cancel_row", "appointments._history_cancel"]
+            vec!["appointments._cancel_row"]
         );
     }
 
@@ -5106,10 +5108,11 @@ mod tests {
             Some(new_series.as_str()),
             "a moved occurrence belongs to the NEW half of the series"
         );
-        // Every move leaves an audit row, like every other transition of this module.
-        assert_eq!(ops_named(&out, "_history_reschedule").len(), 2);
+        // Every move leaves an audit row, like every other transition of this module — as a
+        // statement of the move command itself (appointments#196), so the channel its history line
+        // stamps rides the move.
         // appointments#145: a series edit is always the counter's doing, and its history says so.
-        for h in ops_named(&out, "_history_reschedule") {
+        for h in ops_named(&out, "_recurring_move_occurrence") {
             assert_eq!(h.params.get("channel"), Some(&json!("staff")));
         }
     }
@@ -5541,8 +5544,11 @@ mod tests {
             ids_of(&out, "_recurring_cancel_occurrence"),
             vec!["apt-2026-08-17", "apt-2026-08-24"]
         );
-        // Cada cancelación deja su rastro, como cualquier otra transición del módulo.
-        assert_eq!(ops_named(&out, "_history_cancel").len(), 2);
+        // Every cancellation leaves its trail, as a statement of the cancel command itself
+        // (appointments#196): the channel its history line stamps rides that operation.
+        for c in ops_named(&out, "_recurring_cancel_occurrence") {
+            assert_eq!(c.params.get("channel"), Some(&json!("staff")));
+        }
 
         let result = out.result.clone().expect("el command dice lo que hizo");
         assert_eq!(
@@ -6668,6 +6674,10 @@ mod tests {
     ///
     /// The chain ENDS by draining the gate table (appointments#116): both asserts write a passing
     /// row that would otherwise survive the commit and pile up one reschedule at a time.
+    ///
+    /// The overlap gate and the history line are statements of `_reschedule_row` itself, not
+    /// operations of their own (appointments#196): they find the row by `updated_at = :now`, and the
+    /// runtime mints a fresh `:now` for every operation a handler returns.
     #[test]
     fn reschedule_still_runs_the_server_side_overlap_gate_and_the_history() {
         let out = reschedule_appointment_pure(reschedule_input(
@@ -6682,8 +6692,6 @@ mod tests {
             vec![
                 "appointments._reschedule_state_assert",
                 "appointments._reschedule_row",
-                "appointments._appointment_overlap_assert",
-                "appointments._history_reschedule",
                 "appointments._gate_clear",
             ]
         );
@@ -6791,8 +6799,6 @@ mod tests {
             vec![
                 "appointments._reschedule_state_assert",
                 "appointments._reschedule_row",
-                "appointments._appointment_overlap_assert",
-                "appointments._history_reschedule",
                 "appointments._gate_clear",
             ]
         );
@@ -6835,7 +6841,7 @@ mod tests {
     // asked for on the customer's behalf too, and the trail must tell the counter's move from hers.
 
     fn history_channel_of(out: &Output) -> Option<Value> {
-        ops_named(out, "_history_reschedule")
+        ops_named(out, "_reschedule_row")
             .first()
             .and_then(|op| op.params.get("channel").cloned())
     }

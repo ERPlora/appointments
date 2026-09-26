@@ -51,17 +51,12 @@ const DECLARATIVE = ['confirm', 'start', 'complete', 'no_show'] as const;
 const cmd = (t: string) => manifest.commands[`appointments.appointments.${t}`];
 
 // The two statements of a transition — the row update and its history line — wherever they live.
-// A declarative command lists both in its own `sql`; `cancel` reaches them through the intentions
-// its handler emits (`appointments._cancel_row`, `appointments._history_cancel`), which the runtime
-// runs in the command's transaction. Same two statements, one indirection apart, so the SQL-shape
-// guarantees below still cover all five transitions.
+// A declarative command lists both in its own `sql`; `cancel` reaches them through the ONE intention
+// its handler emits (`appointments._cancel_row`), whose `sql` carries the UPDATE and then the history
+// line — one command, so both see the same `:now` (appointments#196). Same two statements, one
+// indirection apart, so the SQL-shape guarantees below still cover all five transitions.
 const statementsOf = (t: string): (string | undefined)[] =>
-  t === 'cancel'
-    ? [
-        manifest.commands['appointments._cancel_row']?.sql?.[0],
-        manifest.commands['appointments._history_cancel']?.sql?.[0],
-      ]
-    : (cmd(t).sql ?? []);
+  t === 'cancel' ? (manifest.commands['appointments._cancel_row']?.sql ?? []) : (cmd(t).sql ?? []);
 
 const sqlOf = (rel: string) =>
   readFileSync(join(ROOT, rel), 'utf8')

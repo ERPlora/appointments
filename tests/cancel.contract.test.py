@@ -43,7 +43,11 @@ MANIFEST = json.loads((MODULE_DIR / "module.json").read_text())
 
 COMMAND = "appointments.appointments.cancel"
 ROW_OP = "appointments._cancel_row"
-HISTORY_OP = "appointments._history_cancel"
+# The history line is a STATEMENT of `_cancel_row`, after its UPDATE, not an intention of its own:
+# it finds the row by `updated_at = :now`, and the runtime mints a fresh `:now` for every operation
+# a WASM handler returns (appointments#196).
+ROW_SQL = ["commands/appointment_cancel.sql", "commands/_history_cancel.sql"]
+HISTORY_OP = ROW_OP
 GET_QUERY = "appointments.appointments.get"
 SETTINGS_QUERY = "appointments.settings.get"
 DOMAIN_CODES = (
@@ -109,7 +113,13 @@ def check_manifest() -> None:
     elif settings.get("required") is not True:
         fail(f"{COMMAND}.reads[{SETTINGS_QUERY}]: must be `required`")
 
-    for name in (ROW_OP, HISTORY_OP):
+    if (commands.get(ROW_OP) or {}).get("sql") != ROW_SQL:
+        fail(
+            f"{ROW_OP}.sql must be {ROW_SQL!r} — the history line has to share the UPDATE's "
+            f"command to see its `:now` (appointments#196), got "
+            f"{(commands.get(ROW_OP) or {}).get('sql')!r}"
+        )
+    for name in (ROW_OP,):
         op = commands.get(name)
         if not isinstance(op, dict):
             fail(
@@ -297,11 +307,16 @@ def check_against_postgres() -> None:
             ],
             db=DB,
         )
-        # The handler's two intentions, in the order it emits them, one transaction.
-        run_op(ROW_OP, {**base, "appointment_id": "apt-1", "reason": 'sick "again"'})
+        # The handler's one intention: the UPDATE and its history line, one set of binds.
         run_op(
-            HISTORY_OP,
-            {**base, "new_id": "h-1", "appointment_id": "apt-1", "channel": "customer"},
+            ROW_OP,
+            {
+                **base,
+                "new_id": "h-1",
+                "appointment_id": "apt-1",
+                "reason": 'sick "again"',
+                "channel": "customer",
+            },
         )
 
         status = scalar(
@@ -338,10 +353,19 @@ def check_against_postgres() -> None:
             {
                 **base,
                 "now": "2026-08-18T10:00:00+02:00",
+                "new_id": "h-2",
                 "appointment_id": "apt-1",
                 "reason": "twice",
+                "channel": "staff",
             },
         )
+        lines = scalar(
+            "SELECT count(*) FROM appointments_history WHERE appointment_id = 'apt-1'"
+        )
+        if lines != "1":
+            fail(
+                f"{ROW_OP}: a cancel that did not apply left a history line ({lines} lines, expected 1)"
+            )
         reason = scalar(
             "SELECT cancellation_reason FROM appointments_appointment WHERE id = 'apt-1'"
         )

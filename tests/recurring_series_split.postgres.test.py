@@ -127,6 +127,21 @@ def check_manifest() -> None:
             "history statement would record a move that did not happen"
         )
 
+    # Every move leaves its history line, as the SECOND statement of the same command: the line
+    # finds the row by `updated_at = :now`, and the runtime mints a fresh `:now` for every operation
+    # a WASM handler returns, so an operation of its own would never match (appointments#196).
+    move_sql = (
+        MANIFEST.get("commands", {}).get("appointments._recurring_move_occurrence") or {}
+    ).get("sql")
+    if move_sql != [
+        "commands/_recurring_move_occurrence.sql",
+        "commands/_history_reschedule.sql",
+    ]:
+        fail(
+            "appointments._recurring_move_occurrence: must run the move then its history line "
+            f"(commands/_history_reschedule.sql) in the same command, got {move_sql!r}"
+        )
+
     check_pattern_manifest(move)
 
 
@@ -176,9 +191,13 @@ def check_pattern_manifest(move_sql: str) -> None:
             "_recurring_cancel_occurrence: must need change_appointment, like every other "
             "sub-step of the split"
         )
-    if cancel_cmd.get("sql") != [cancel_rel]:
+    # Its history line is the SECOND statement of the same command, never an operation of its own:
+    # it finds the row by `updated_at = :now`, and the runtime mints a fresh `:now` for every
+    # operation a WASM handler returns (appointments#196).
+    if cancel_cmd.get("sql") != [cancel_rel, "commands/_history_cancel.sql"]:
         fail(
-            f"_recurring_cancel_occurrence: must run {cancel_rel!r}, got {cancel_cmd.get('sql')!r}"
+            f"_recurring_cancel_occurrence: must run {cancel_rel!r} then its history line, got "
+            f"{cancel_cmd.get('sql')!r}"
         )
     if not (MODULE_DIR / cancel_rel).exists():
         fail(f"{cancel_rel}: not in the package")
@@ -325,18 +344,28 @@ def seed_occurrence(
 
 
 def move(appointment_id: str, hub: str = HUB) -> None:
-    run_command(
-        "commands/_recurring_move_occurrence.sql",
-        {
-            "hub_id": hub,
-            "appointment_id": appointment_id,
-            "recurring_id": "r2",
-            "start_datetime": "2026-08-24T12:00:00+02:00",
-            "end_datetime": "2026-08-24T12:30:00+02:00",
-            "duration_minutes": 30,
-            "current_user_id": "u1",
-            "now": NOW,
-        },
+    """The WHOLE `sql[]` of `_recurring_move_occurrence`, bound ONCE — the way the runtime runs
+    one operation: the move and then its history line, sharing `:now` (appointments#196)."""
+    params = {
+        "hub_id": hub,
+        "appointment_id": appointment_id,
+        "recurring_id": "r2",
+        "start_datetime": "2026-08-24T12:00:00+02:00",
+        "end_datetime": "2026-08-24T12:30:00+02:00",
+        "duration_minutes": 30,
+        "current_user_id": "u1",
+        "channel": "staff",
+        "new_id": f"h-{appointment_id}",
+        "now": NOW,
+    }
+    for rel in MANIFEST["commands"]["appointments._recurring_move_occurrence"]["sql"]:
+        run_command(rel, params)
+
+
+def rescheduled_lines(appointment_id: str) -> str:
+    return scalar(
+        "SELECT count(*) FROM appointments_history WHERE action = 'rescheduled' "
+        f"AND appointment_id = {literal(appointment_id)}"
     )
 
 
@@ -518,6 +547,12 @@ def check_against_postgres() -> None:
                 fail(
                     f"_recurring_move_occurrence.sql: the {status} occurrence stayed on the old half"
                 )
+            # appointments#196: the move leaves ITS line, pinned to this run and to no other.
+            if rescheduled_lines(f"o-{status}") != "1":
+                fail(
+                    f"_history_reschedule.sql: a moved {status} occurrence has "
+                    f"{rescheduled_lines(f'o-{status}')} «rescheduled» lines, expected exactly 1"
+                )
 
         # ── the door: what must NOT move ────────────────────────────────────────────────
         # Each one on its own: a WHERE that is too loose and one that is too tight fail in
@@ -543,6 +578,13 @@ def check_against_postgres() -> None:
             if moved(oid):
                 fail(
                     f"_recurring_move_occurrence.sql: it MOVED an occurrence that is {label} — the door is open"
+                )
+            # …and a move that did not happen leaves NO trail: the history line hangs off the
+            # `updated_at = :now` stamp the UPDATE did not write (appointments#196).
+            if rescheduled_lines(oid) != "0":
+                fail(
+                    f"_history_reschedule.sql: it recorded a move of an occurrence that is {label} "
+                    "and did NOT move — the history line is not pinned to the run"
                 )
 
         # …and never a neighbour's, whatever its state.
