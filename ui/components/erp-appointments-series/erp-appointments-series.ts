@@ -275,6 +275,10 @@ export class ErpAppointmentsSeries extends LitElement {
    *  `renderRoot` is the one thing that survives all of them. */
   firstUpdated(): void {
     this.renderRoot.addEventListener('click', (e) => this.onTableAddClick(e));
+    // appointments#211: closing the panel (X, backdrop, Escape — outfitkit#195, ≥0.1.97) retires the
+    // edit still loading, so its late reply neither reopens the panel nor fills the form. Older
+    // shells never emit it and keep today's behaviour.
+    this.renderRoot.addEventListener('panelClose', () => this.editSeq++);
   }
 
   private onTableAddClick(e: Event): void {
