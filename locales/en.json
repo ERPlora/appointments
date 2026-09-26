@@ -149,6 +149,8 @@
     "seriesSaveError": "The repeating appointment could not be saved.",
     "seriesMaterializeError": "The appointments of this series could not be booked.",
     "seriesDeleteError": "The repeating appointment could not be deleted.",
+    "seriesDeleteTitle": "Delete {name}'s repeating appointments?",
+    "seriesDeleteMessage": "Appointments already booked are kept. This series will stop booking new ones.",
     "seriesActive": "Active",
     "seriesToggleActiveError": "The repeating appointment's status could not be changed.",
     "seriesMaterialized": "Appointments booked for this series.",
