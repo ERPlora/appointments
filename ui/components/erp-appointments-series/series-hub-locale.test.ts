@@ -267,8 +267,10 @@ for (const locale of ['es', 'en'] as const) {
       await fillAllButDates(el);
       await type(el, 'appointments-series-create-start', want.typedStart);
       await type(el, 'appointments-series-create-start-time', want.typedTime);
+      await type(el, 'appointments-series-create-end', want.typedEnd);
+      expect(createDisabled(el)).toBe(false);
       await type(el, 'appointments-series-create-end', '31/0');
-      expect(createDisabled(el), 'an «Until» that is not a date yet must not be dropped silently').toBe(true);
+      expect(createDisabled(el), 'a half-typed «Until» must not keep the last valid one').toBe(true);
       await submitCreate(el);
       expect(commands.some((c) => c.name === 'appointments.recurring.create')).toBe(false);
       await type(el, 'appointments-series-create-end', '');
@@ -328,6 +330,22 @@ for (const locale of ['es', 'en'] as const) {
       expect((field(el, 'appointments-series-create-end-calendar-picker') as Calendar | null)?.value).toBe('2099-10-07');
       await pickInCalendar(el, 'appointments-series-create-end-calendar-picker', '2099-10-28');
       expect(shown(el, 'appointments-series-create-end')).toBe(locale === 'es' ? '28/10/2099' : '10/28/2099');
+    });
+
+    it('after creating with a calendar open, the next «Add» starts with no calendar and no «Until»', async () => {
+      const el = await mount();
+      await tapAdd(el);
+      await fillAllButDates(el);
+      await type(el, 'appointments-series-create-start', want.typedStart);
+      await type(el, 'appointments-series-create-start-time', want.typedTime);
+      await type(el, 'appointments-series-create-end', want.typedEnd);
+      (field(el, 'appointments-series-create-end-calendar') as HTMLElement).click();
+      await settle(el);
+      await submitCreate(el);
+      expect(commands.some((c) => c.name === 'appointments.recurring.create')).toBe(true);
+      await tapAdd(el);
+      expect(field(el, 'appointments-series-create-end-calendar-picker'), 'a new series opens with its calendars closed').toBeNull();
+      expect(shown(el, 'appointments-series-create-end')).toBe('');
     });
   });
 
