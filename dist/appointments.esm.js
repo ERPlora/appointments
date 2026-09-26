@@ -6231,6 +6231,7 @@ var ErpAppointmentsSeries = class extends i3 {
    *  `renderRoot` is the one thing that survives all of them. */
   firstUpdated() {
     this.renderRoot.addEventListener("click", (e5) => this.onTableAddClick(e5));
+    this.renderRoot.addEventListener("panelClose", () => this.editSeq++);
   }
   onTableAddClick(e5) {
     const tappedAdd = e5.composedPath().some((node) => node.getAttribute?.("data-testid") === "appointments-series-table-add");
