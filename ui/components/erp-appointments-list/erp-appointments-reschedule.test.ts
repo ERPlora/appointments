@@ -191,7 +191,8 @@ describe('the row bar can move an appointment', () => {
       'reschedule moves time: customer and service are not up for grabs',
     ).toBeNull();
     // appointments#204: the new slot is a date field + a time field (keyboard-friendly).
-    expect(form.querySelector('ion-input[type="date"]'), 'the new day is picked here').toBeTruthy();
+    // appointments#205: the day is a text field in the hub language (see erp-appointments-hub-locale-dates.test.ts).
+    expect(form.querySelector('ion-input[data-role="reschedule-start"]'), 'the new day is picked here').toBeTruthy();
     expect(form.querySelector('ion-input[type="time"]'), 'the new hour is picked here').toBeTruthy();
   });
 
