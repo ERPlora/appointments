@@ -140,3 +140,30 @@ export function formatTypedDate(iso: string, locale: string): string {
   }
   return `${pad2(day)}/${pad2(month)}/${String(year).padStart(4, '0')}`;
 }
+
+// appointments#214 — the same for the TIME field: Chromium paints a native `time` input with the
+// browser/OS clock (a Spanish hub on a US-English laptop read «02:30 PM»), whatever the hub
+// language. The field is a text input painted in the hub's own clock, in a form `parseTypedStart`
+// reads back unchanged.
+
+/** Formats an `HH:MM` wall-clock time in the given locale's own clock (`es` → `14:30`, `en` →
+ *  `02:30 PM`), 2-digit hour and minute. Built from `Date.UTC` and formatted with `timeZone: 'UTC'`
+ *  so the device's timezone never moves it (a wall-clock time has none to move). Returns `''` for
+ *  anything that is not a valid 24-hour `HH:MM`. */
+export function formatTypedTime(time: string, locale: string): string {
+  const match = time.match(/^(\d{2}):(\d{2})$/);
+  if (!match) return '';
+  const hour = Number(match[1]);
+  const minute = Number(match[2]);
+  if (hour > 23 || minute > 59) return '';
+  try {
+    return new Intl.DateTimeFormat(locale || undefined, {
+      hour: '2-digit',
+      minute: '2-digit',
+      timeZone: 'UTC',
+    }).format(new Date(Date.UTC(2026, 0, 1, hour, minute)));
+  } catch {
+    // Intl threw on the given locale: fall back to the 24-hour default below.
+  }
+  return `${pad2(hour)}:${pad2(minute)}`;
+}

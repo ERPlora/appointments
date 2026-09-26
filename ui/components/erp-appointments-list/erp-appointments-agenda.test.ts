@@ -151,10 +151,11 @@ describe('linked booking: the create panel books against real records', () => {
     // appointments#205: the Day is `type="text"` on purpose now (a native `date` input paints the
     // BROWSER locale, not the hub's) — it is a structured, parsed date, not a free-text field, so
     // it is excluded here by its own `data-role` the same way the status filter is excluded above.
+    // appointments#214: the same for the Time (`data-role="start-time"`, parsed as a time).
     const textInputs = [...form.querySelectorAll('ion-input')].filter(
       (n) =>
         !['datetime-local', 'number', 'date', 'time'].includes(n.getAttribute('type') ?? 'text') &&
-        n.getAttribute('data-role') !== 'start-date',
+        !['start-date', 'start-time'].includes(n.getAttribute('data-role') ?? ''),
     );
     expect(textInputs.length, 'free-text customer/service inputs must be gone').toBe(0);
   });

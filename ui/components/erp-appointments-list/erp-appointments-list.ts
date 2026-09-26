@@ -39,7 +39,7 @@ import {
 } from '../../lib/business-time';
 // appointments#204: a start typed or pasted as one string ("26/09/2026 10:00") is read in the
 // active language's day/month order and split into the date + time fields.
-import { parseTypedStart, formatTypedDate, type TypedStart } from '../../lib/typed-start';
+import { parseTypedStart, formatTypedDate, formatTypedTime, type TypedStart } from '../../lib/typed-start';
 const CATALOG: Record<string, unknown> = { es: esLocale, en: enLocale };
 
 interface ErploraClientLike {
@@ -339,6 +339,11 @@ export class ErpAppointmentsList extends LitElement {
     reschedule: null,
   };
 
+  /** appointments#214 — the same for the two TIME fields: the raw text while it is being typed,
+   *  `null` otherwise so the field paints `formatTypedTime(time, locale)` (the hub clock, not the
+   *  browser's). A half-typed time ("14:") stays on screen without becoming a start. */
+  @state() private timeDraft: Record<'new' | 'reschedule', string | null> = { new: null, reschedule: null };
+
   /** appointments#205 — which of the three date fields has its inline `ok-calendar` calendar
    *  open; `''` = none. Only one at a time — a second calendar open would be two conflicting
    *  answers to "what day is this". */
@@ -381,6 +386,7 @@ export class ErpAppointmentsList extends LitElement {
     // that landed straight in `newStart`), the field must repaint the HUB-formatted date, not
     // whatever the person had half-typed before that route ran.
     this.dateDraft = { ...this.dateDraft, new: null };
+    this.timeDraft = { ...this.timeDraft, new: null };
   }
 
   @state() newDuration = '';
@@ -405,6 +411,7 @@ export class ErpAppointmentsList extends LitElement {
     [this.rescheduleStartDate, this.rescheduleStartTime] = splitWall(value);
     // appointments#205: same as `newStart` — repaint in the hub format, not a stale draft.
     this.dateDraft = { ...this.dateDraft, reschedule: null };
+    this.timeDraft = { ...this.timeDraft, reschedule: null };
   }
 
   @state() rescheduleDuration = '';
@@ -673,13 +680,19 @@ export class ErpAppointmentsList extends LitElement {
         this.newStartDate = parsed.date;
         this.dateDraft = { ...this.dateDraft, new: null };
       }
-      if (parsed.time) this.newStartTime = parsed.time;
+      if (parsed.time) {
+        this.newStartTime = parsed.time;
+        this.timeDraft = { ...this.timeDraft, new: null };
+      }
     } else {
       if (parsed.date) {
         this.rescheduleStartDate = parsed.date;
         this.dateDraft = { ...this.dateDraft, reschedule: null };
       }
-      if (parsed.time) this.rescheduleStartTime = parsed.time;
+      if (parsed.time) {
+        this.rescheduleStartTime = parsed.time;
+        this.timeDraft = { ...this.timeDraft, reschedule: null };
+      }
     }
   }
 
@@ -752,6 +765,29 @@ export class ErpAppointmentsList extends LitElement {
    *  repaints the committed ISO date in the hub format, instead of whatever was left half-typed. */
   private commitDateDraft(field: 'day' | 'new' | 'reschedule'): void {
     this.dateDraft = { ...this.dateDraft, [field]: null };
+  }
+
+  /** appointments#214 — what a time field shows: the raw text while it is being typed, the time in
+   *  the hub clock otherwise. */
+  private timeFieldValue(form: 'new' | 'reschedule'): string {
+    const draft = this.timeDraft[form];
+    return draft ?? formatTypedTime(form === 'new' ? this.newStartTime : this.rescheduleStartTime, erplora().locale);
+  }
+
+  /** appointments#214 — `ionInput` on a time field: the text is kept as the draft and the time
+   *  follows it exactly, back to `''` while it is not (yet) a time — so a half-typed hour never
+   *  books the last valid one. */
+  private onTimeFieldInput(form: 'new' | 'reschedule', text: string): void {
+    this.timeDraft = { ...this.timeDraft, [form]: text };
+    const time = parseTypedStart(text, erplora().locale)?.time ?? '';
+    if (form === 'new') this.newStartTime = time;
+    else this.rescheduleStartTime = time;
+  }
+
+  /** appointments#214 — blur/Enter on a time field: forget the draft so the field repaints the
+   *  committed time in the hub clock. */
+  private commitTimeDraft(form: 'new' | 'reschedule'): void {
+    this.timeDraft = { ...this.timeDraft, [form]: null };
   }
 
   /** appointments#205 — opens/closes the inline `ok-calendar` calendar of one date field. Only
@@ -1499,7 +1535,7 @@ export class ErpAppointmentsList extends LitElement {
             ></ok-calendar>
           </div>`
         : nothing}
-      <ion-input data-testid="appointments-list-reschedule-start-time" data-role="reschedule-start-time" fill="outline" mode="md" label-placement="floating" label=${t('ui.fieldTime')} type="time" .value=${this.rescheduleStartTime} @ionInput=${(e: any) => (this.rescheduleStartTime = e.target.value ?? '')} @paste=${(e: Event) => this.onStartPaste('reschedule', e)}></ion-input>
+      <ion-input data-testid="appointments-list-reschedule-start-time" data-role="reschedule-start-time" fill="outline" mode="md" label-placement="floating" label=${t('ui.fieldTime')} type="text" inputmode="numeric" autocomplete="off" placeholder=${t('ui.timePlaceholder')} .value=${this.timeFieldValue('reschedule')} @ionInput=${(e: any) => this.onTimeFieldInput('reschedule', e.target.value ?? '')} @ionChange=${() => this.commitTimeDraft('reschedule')} @paste=${(e: Event) => this.onStartPaste('reschedule', e)}></ion-input>
       <ion-input data-testid="appointments-list-reschedule-duration" data-role="reschedule-duration" fill="outline" mode="md" label-placement="floating" label=${t('ui.fieldMinutes')} type="number" min="1" .value=${this.rescheduleDuration} @ionInput=${(e: any) => (this.rescheduleDuration = e.target.value)}></ion-input>
       ${this.rescheduleStartIsPast
         ? html`<ok-inline-feedback data-testid="appointments-list-reschedule-past-notice" tone="warning" icon="time-outline">${t('ui.reschedulePastNotice')}</ok-inline-feedback>`
@@ -1563,7 +1599,7 @@ export class ErpAppointmentsList extends LitElement {
                   ></ok-calendar>
                 </div>`
               : nothing}
-            <ion-input data-testid="appointments-list-start-time" data-role="start-time" fill="outline" mode="md" label-placement="floating" label=${t('ui.fieldTime')} type="time" .value=${this.newStartTime} @ionInput=${(e: any) => (this.newStartTime = e.target.value ?? '')} @paste=${(e: Event) => this.onStartPaste('new', e)}></ion-input>
+            <ion-input data-testid="appointments-list-start-time" data-role="start-time" fill="outline" mode="md" label-placement="floating" label=${t('ui.fieldTime')} type="text" inputmode="numeric" autocomplete="off" placeholder=${t('ui.timePlaceholder')} .value=${this.timeFieldValue('new')} @ionInput=${(e: any) => this.onTimeFieldInput('new', e.target.value ?? '')} @ionChange=${() => this.commitTimeDraft('new')} @paste=${(e: Event) => this.onStartPaste('new', e)}></ion-input>
             <!-- Minutos se PRERRELLENA al elegir servicio (appointments#75): la duración que la
                  reserva va a tener tiene que estar EN PANTALLA; se teclea solo para excepciones
                  (una clienta que necesita más tiempo). -->

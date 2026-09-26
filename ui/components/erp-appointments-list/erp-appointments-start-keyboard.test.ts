@@ -111,7 +111,8 @@ describe('appointments#204 — new appointment: Start is a date field + a time f
     const form = el.shadowRoot.querySelector('form[slot="create"]')!;
     expect(form.querySelector('ion-input[type="datetime-local"]'), 'the year segment traps the caret').toBeNull();
     expect(field(el, 'appointments-list-start')?.getAttribute('type')).toBe('text');
-    expect(field(el, 'appointments-list-start-time')?.getAttribute('type')).toBe('time');
+    // appointments#214: the time is a text field painted in the hub clock (erp-appointments-hub-locale-times.test.ts).
+    expect(field(el, 'appointments-list-start-time')?.getAttribute('type')).toBe('text');
   });
 
   it('typing the date and then the time enables «Add appointment» and books that wall clock', async () => {
@@ -168,7 +169,7 @@ describe('appointments#204 — reschedule: the new start is a date field + a tim
     expect(form.querySelector('ion-input[type="datetime-local"]'), 'the year segment traps the caret').toBeNull();
     expect(field(el, 'appointments-list-reschedule-start')?.getAttribute('type')).toBe('text');
     expect(field(el, 'appointments-list-reschedule-start')?.value).toBe('07/08/2026');
-    expect(field(el, 'appointments-list-reschedule-start-time')?.getAttribute('type')).toBe('time');
+    expect(field(el, 'appointments-list-reschedule-start-time')?.getAttribute('type')).toBe('text');
     expect(field(el, 'appointments-list-reschedule-start-time')?.value).toBe('10:00');
 
     await type(el, 'appointments-list-reschedule-start-time', '16:45');

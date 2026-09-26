@@ -72,6 +72,7 @@
     "actionDelete": "Delete",
     "fieldDate": "Day",
     "datePlaceholder": "mm/dd/yyyy",
+    "timePlaceholder": "hh:mm",
     "openCalendar": "Open calendar",
     "calendarMonth": "Month",
     "calendarAgenda": "Agenda",

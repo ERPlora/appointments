@@ -6,7 +6,7 @@
 // fields take (`YYYY-MM-DD`, `HH:MM`). Anything that is not a real date or time returns null, so
 // the field is left as it was instead of being filled with a guess.
 import { describe, expect, it } from 'vitest';
-import { formatTypedDate, parseTypedStart } from './typed-start';
+import { formatTypedDate, formatTypedTime, parseTypedStart } from './typed-start';
 
 describe('parseTypedStart (appointments#204)', () => {
   it('reads the Spanish day/month order with a time', () => {
@@ -72,5 +72,45 @@ describe('formatTypedDate (appointments#205)', () => {
     expect(formatTypedDate('', 'es')).toBe('');
     expect(formatTypedDate('2026-02-31', 'es')).toBe('');
     expect(formatTypedDate('26/09/2026', 'es')).toBe('');
+  });
+});
+
+// appointments#214 — the TIME field follows the hub language too: Chromium paints a native `time`
+// input with the browser/OS locale, so a Spanish hub on a US-English laptop read «02:30 PM».
+describe('formatTypedTime (appointments#214)', () => {
+  it('paints the 24-hour clock in Spanish', () => {
+    expect(formatTypedTime('14:30', 'es')).toBe('14:30');
+    expect(formatTypedTime('09:05', 'es')).toBe('09:05');
+    expect(formatTypedTime('00:00', 'es')).toBe('00:00');
+  });
+
+  it('paints the clock the hub language uses in English', () => {
+    expect(formatTypedTime('14:30', 'en').replace(/\s/g, ' ')).toBe('02:30 PM');
+    expect(formatTypedTime('00:15', 'en').replace(/\s/g, ' ')).toBe('12:15 AM');
+  });
+
+  it('is not moved by the device timezone: a wall-clock time has none', () => {
+    const tz = process.env.TZ;
+    process.env.TZ = 'Pacific/Honolulu';
+    try {
+      expect(formatTypedTime('23:45', 'es')).toBe('23:45');
+    } finally {
+      process.env.TZ = tz;
+    }
+  });
+
+  it('round-trips through parseTypedStart in both languages', () => {
+    for (const locale of ['es', 'en']) {
+      for (const time of ['00:00', '09:05', '12:00', '14:30', '23:59']) {
+        expect(parseTypedStart(formatTypedTime(time, locale), locale)).toEqual({ date: '', time });
+      }
+    }
+  });
+
+  it('shows nothing for what is not a time', () => {
+    expect(formatTypedTime('', 'es')).toBe('');
+    expect(formatTypedTime('24:00', 'es')).toBe('');
+    expect(formatTypedTime('10:60', 'es')).toBe('');
+    expect(formatTypedTime('10', 'es')).toBe('');
   });
 });
