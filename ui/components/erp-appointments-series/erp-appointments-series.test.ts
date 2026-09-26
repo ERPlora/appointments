@@ -590,6 +590,22 @@ describe('deleting a series asks for confirmation first (appointments#207)', () 
     expect(confirmAlert(), 'the dialog is removed after closing').toBeNull();
   });
 
+  it('the dialog does not linger once Ionic puts it back where it was after dismissing', async () => {
+    const el = await mount();
+    await tapDelete(el);
+    const alert = confirmAlert();
+    expect(alert).toBeTruthy();
+    // Ionic's dismiss() emits ionAlertDidDismiss and only THEN moves the teleported overlay back to
+    // its original parent (framework-delegate removeViewFromDom). A synchronous remove() in the
+    // listener is undone by that move and leaves a hidden <ion-alert> behind on every delete.
+    alert?.addEventListener('ionAlertDidDismiss', () => {
+      void Promise.resolve().then(() => document.body.appendChild(alert));
+    });
+    alert?.dispatchEvent(new CustomEvent('ionAlertDidDismiss', { detail: { role: 'cancel' } }));
+    for (let i = 0; i < 3; i++) await new Promise((r) => setTimeout(r, 0));
+    expect(confirmAlert()).toBeNull();
+  });
+
   it('dismissing the dialog (backdrop / Esc) does not delete', async () => {
     const el = await mount();
     await tapDelete(el);

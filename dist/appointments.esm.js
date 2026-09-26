@@ -6192,7 +6192,7 @@ var ErpAppointmentsSeries = class extends i3 {
       }
     ];
     alert.setAttribute("data-testid", "appointments-series-delete-confirm");
-    alert.addEventListener("ionAlertDidDismiss", () => alert.remove(), { once: true });
+    alert.addEventListener("ionAlertDidDismiss", () => setTimeout(() => alert.remove(), 0), { once: true });
     document.body.appendChild(alert);
     try {
       if (typeof alert.present === "function") await alert.present();

@@ -382,7 +382,9 @@ export class ErpAppointmentsSeries extends LitElement {
       },
     ];
     alert.setAttribute('data-testid', 'appointments-series-delete-confirm');
-    alert.addEventListener('ionAlertDidDismiss', () => alert.remove(), { once: true });
+    // Ionic moves the teleported overlay back to its original parent right AFTER emitting
+    // ionAlertDidDismiss: remove it on the next task or a hidden alert is left on every delete.
+    alert.addEventListener('ionAlertDidDismiss', () => setTimeout(() => alert.remove(), 0), { once: true });
     document.body.appendChild(alert);
     try {
       if (typeof alert.present === 'function') await alert.present();
