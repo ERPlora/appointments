@@ -1092,7 +1092,8 @@ export class ErpAppointmentsList extends LitElement {
    *  estándar de una agenda de salón. */
   private async onSlotClick(ev: CustomEvent<{ resourceId: string; time: string }>) {
     const { resourceId, time } = ev.detail;
-    this.clearReschedule(); // el hueco vacío es un ALTA, no una mudanza
+    this.clearReschedule(); // an empty slot is a CREATE, not a move
+    this.historyId = ''; // …nor the history left open before switching to the timeline
     if (resourceId !== UNASSIGNED) this.newStaffId = resourceId;
     this.newStart = `${this.day}T${time}`;
     this.view = 'list';

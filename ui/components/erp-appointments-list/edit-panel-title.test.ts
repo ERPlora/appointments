@@ -53,6 +53,7 @@ type Wc = HTMLElement & {
   updateComplete: Promise<unknown>;
   onRowAction: (ev: CustomEvent<{ actionId: string; row: Record<string, unknown> }>) => Promise<void>;
   openCreate: () => Promise<void>;
+  onSlotClick: (ev: CustomEvent<{ resourceId: string; time: string }>) => Promise<void>;
 };
 type Table = HTMLElement & {
   shadowRoot: ShadowRoot;
@@ -101,6 +102,17 @@ describe('the agenda panel carries its own title in the header (pm#450)', () => 
     const calls = spyOpen(el);
     await el.openCreate();
     expect(calls).toEqual([['create']]);
+  });
+
+  it('a free timeline slot after a history opens a plain ALTA, not the old history', async () => {
+    const el = await mount();
+    await act(el, 'history');
+    const calls = spyOpen(el);
+    await el.onSlotClick(new CustomEvent('slotClick', { detail: { resourceId: 's1', time: '11:00' } }));
+    await el.updateComplete;
+    expect(calls).toEqual([['create']]);
+    expect(table(el).labels.newRecord).toBeUndefined();
+    expect(el.shadowRoot.querySelector('[data-testid="appointments-list-history"]')).toBeNull();
   });
 });
 

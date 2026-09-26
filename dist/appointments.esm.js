@@ -7171,6 +7171,7 @@ var ErpAppointmentsList = class extends i3 {
   async onSlotClick(ev) {
     const { resourceId, time } = ev.detail;
     this.clearReschedule();
+    this.historyId = "";
     if (resourceId !== UNASSIGNED) this.newStaffId = resourceId;
     this.newStart = `${this.day}T${time}`;
     this.view = "list";
