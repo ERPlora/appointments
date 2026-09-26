@@ -359,8 +359,14 @@ HOURS_TALK = re.compile(
     r"|\bwhen\s+the\s+business\s+(?:opens|closes|is\s+open)\b",
     re.IGNORECASE,
 )
-# Clauses, not sentences: a claim bolted on after a semicolon or a colon is the same claim.
-CLAUSE = re.compile(r"(?<=[.!?;:])\s+")
+# Fragments, not sentences: a claim bolted on after a semicolon, a colon, a comma, a dash or a
+# parenthesis is the same claim, and a negation only speaks for the fragment it sits in — «returns
+# the reason when it is NOT free (… the business is shut at that hour)» negates the slot, not the
+# hours (appointments#129). A contrastive conjunction flips the polarity, so it cuts too.
+CLAUSE = re.compile(
+    r"(?<=[.!?;:])\s+|[,()\[\]—–]|\s-\s|\b(?:but|whereas|while|although|though|yet|however)\b",
+    re.IGNORECASE,
+)
 # The markers that turn a mention of the hours into the disclaimer it is allowed to be. Whitelist
 # on purpose: an unknown way of negating produces a FALSE RED that names the description, never a
 # quiet green — the opposite failure mode of the blacklist this replaces.
@@ -537,7 +543,7 @@ def availability_answers() -> list[tuple[str, dict]]:
 
 
 def hours_claims(description: str) -> list[str]:
-    """The clauses of a description that say something about the hours the business keeps."""
+    """The fragments of a description that say something about the hours the business keeps."""
     return [c for c in CLAUSE.split(description) if c.strip() and HOURS_TALK.search(c)]
 
 
@@ -1084,6 +1090,55 @@ def check_the_family_and_the_hours_reader_find_the_positive() -> None:
         )
 
 
+def check_the_reader_denial_finds_the_positive() -> None:
+    """appointments#129 — the mirror of appointments#125: an answer that DOES read the authority
+    must not tell the assistant it does not. Plant the lie next to the honest description (the
+    duty to name `schedules` still met) and the honest negations that talk about something else,
+    before trusting the check either way.
+    """
+    check = probe_operation("commands", "appointments.availability.check")
+    day_opening = probe_operation("commands", DAY_OPENING)
+    if check is None or day_opening is None:
+        return
+    honest = describes(check)
+    # The negation in «returns the reason when it is NOT available (… the business is shut at that
+    # hour)» is about the slot, not about the hours: it has to stay green, or the vocabulary gets
+    # loosened until the guard holds nothing.
+    for name, description in (
+        ("appointments.availability.check", honest),
+        (DAY_OPENING, describes(day_opening)),
+    ):
+        wrongly = reader_description_problems(name, description)
+        if wrongly:
+            fail(
+                f"the reader-side denial check turns the honest description of `{name}` red "
+                f"({wrongly[0][:120]}…): it reads a negation of something else as a denial of the hours"
+            )
+    for lie in (
+        " It does NOT look at the opening hours.",
+        " It never checks the opening hours, so ask for them separately.",
+        " It answers from the calendar alone, without the business opening hours.",
+    ):
+        if not reader_description_problems("appointments.availability.check", honest + lie):
+            fail(
+                "an answer that reads `schedules` can deny knowing the opening hours and stay "
+                f"green — «{lie.strip()}» (appointments#129): the assistant would ask for the hours "
+                "separately and filter by hand, the workaround appointments#122 removed"
+            )
+    # …and on the side that does NOT read the authority, a negation about something else in the
+    # same sentence must not launder a claim bolted on with a comma.
+    comma = (
+        "It does NOT know the opening hours. It never double-books, and it crosses the business "
+        "opening hours before answering."
+    )
+    if not non_reader_description_problems("probe", comma):
+        fail(
+            "a claim about the opening hours hides behind a negation about something else in the "
+            "same sentence («never double-books, and it crosses the business opening hours»): the "
+            "denial duty is dodged by a comma"
+        )
+
+
 def check_an_availability_answer_says_what_it_does_not_know() -> None:
     """appointments#125 — the pointer is a duty to ADD, and a duty to add is not a duty to be true.
 
@@ -1109,39 +1164,47 @@ def check_an_availability_answer_says_what_it_does_not_know() -> None:
         same reason: an unusual way of negating costs a false red that names the description, which
         somebody fixes, instead of a green that nobody ever looks at again.
 
-    Clauses, not sentences: “…: ask `day_opening`; it also crosses the opening hours” is the same
-    claim with different punctuation.
+    Fragments, not sentences: “…: ask `day_opening`; it also crosses the opening hours” and “it
+    never double-books, and it crosses the opening hours” are the same claim with different
+    punctuation (appointments#129).
     """
     for name, spec in availability_answers():
         if reads_the_authority(name, spec):
             continue
-        description = describes(spec)
-        claims = hours_claims(description)
-        if not claims:
-            fail(
-                f"`{name}` answers about availability without reading the opening hours and "
-                "without saying so anywhere in its description. Since appointments#118 nothing of "
-                f"this module's SQL knows when the business is open: name the gap, then point at "
-                f"`{DAY_OPENING}`. (If it IS said and this check cannot see it, the wording is new "
-                "to `HOURS_TALK` — add it there, which is what keeps that vocabulary honest)"
-            )
-            continue
-        for claim in claims:
-            if DENIAL.search(claim):
-                continue
-            fail(
-                f"`{name}` mentions the opening hours without denying it knows them — «"
-                f"{claim.strip()}» — and it reads neither a `{AUTHORITY}_*` table nor a `reads` on "
-                "the authority. TWO ways out, and only you can tell which one this is: (a) it IS a "
-                f"claim — drop it. Pointing at `{DAY_OPENING}` as well does not undo it: what the "
-                "assistant plans with is the claim, so it stops asking and offers an hour with the "
-                "business shut; (b) it is the DISCLAIMER written in a way `DENIAL` has never seen "
-                "(«unknown to it», «no hours of its own», a negation left in the next clause) — "
-                "then add that wording to `DENIAL`, which is what this guard asks for by failing "
-                "loud instead of letting an unreviewed sentence through. An answer that cannot see "
-                "the hours may only say that it cannot"
-            )
+        for problem in non_reader_description_problems(name, describes(spec)):
+            fail(problem)
 
+
+def non_reader_description_problems(name: str, description: str) -> list[str]:
+    """What is wrong with the description of an availability answer that does NOT read the
+    authority. Pure, so the probes can feed it the sentences the manifest must never carry."""
+    problems = []
+    claims = hours_claims(description)
+    if not claims:
+        problems.append(
+            f"`{name}` answers about availability without reading the opening hours and "
+            "without saying so anywhere in its description. Since appointments#118 nothing of "
+            f"this module's SQL knows when the business is open: name the gap, then point at "
+            f"`{DAY_OPENING}`. (If it IS said and this check cannot see it, the wording is new "
+            "to `HOURS_TALK` — add it there, which is what keeps that vocabulary honest)"
+        )
+        return problems
+    for claim in claims:
+        if DENIAL.search(claim):
+            continue
+        problems.append(
+            f"`{name}` mentions the opening hours without denying it knows them — «"
+            f"{claim.strip()}» — and it reads neither a `{AUTHORITY}_*` table nor a `reads` on "
+            "the authority. TWO ways out, and only you can tell which one this is: (a) it IS a "
+            f"claim — drop it. Pointing at `{DAY_OPENING}` as well does not undo it: what the "
+            "assistant plans with is the claim, so it stops asking and offers an hour with the "
+            "business shut; (b) it is the DISCLAIMER written in a way `DENIAL` has never seen "
+            "(«unknown to it», «no hours of its own», a negation left in the next clause) — "
+            "then add that wording to `DENIAL`, which is what this guard asks for by failing "
+            "loud instead of letting an unreviewed sentence through. An answer that cannot see "
+            "the hours may only say that it cannot"
+        )
+    return problems
 
 def check_an_availability_answer_that_reads_the_hours_says_so() -> None:
     """The DUAL of appointments#124's pointer duty, and the hole appointments#122 opened.
@@ -1157,18 +1220,43 @@ def check_an_availability_answer_that_reads_the_hours_says_so() -> None:
     it. Positive duty and not a blacklist of phrases, for the same reason #124 chose one — a list
     of forbidden wordings rots in silence, a duty to name the authority does not, and whoever
     rewrites the description into a claim of ignoring the hours takes the name out with it.
+
+    Naming it is not enough on its own (appointments#129): the name can stay and a denial can sit
+    right beside it — «It does NOT look at the opening hours» was green. So no fragment that talks
+    about the hours may carry a negation either. Fragments, because the honest description itself
+    negates the SLOT («returns the reason when it is not …») in the sentence where it mentions the
+    business being shut; the negation only counts in the fragment that talks about the hours.
     """
     for name, spec in availability_answers():
         if not reads_the_authority(name, spec):
             continue
-        if re.search(rf"\b{AUTHORITY}\b", describes(spec), re.IGNORECASE):
+        for problem in reader_description_problems(name, describes(spec)):
+            fail(problem)
+
+
+def reader_description_problems(name: str, description: str) -> list[str]:
+    """What is wrong with the description of an availability answer that DOES read the authority.
+    Pure, so the probes can feed it the very sentences the manifest must never carry."""
+    problems = []
+    if not re.search(rf"\b{AUTHORITY}\b", description, re.IGNORECASE):
+        problems.append(
+            f"`{name}` reads the opening hours of `{AUTHORITY}` and does not say so. Its "
+            "description is what the assistant plans with: silence there reads as «this one "
+            "does not know the hours», which is the answer appointments#122 stopped being "
+            f"true — say it reads `{AUTHORITY}`"
+        )
+    for claim in hours_claims(description):
+        if not DENIAL.search(claim):
             continue
-        fail(
-                f"`{name}` reads the opening hours of `{AUTHORITY}` and does not say so. Its "
-                "description is what the assistant plans with: silence there reads as «this one "
-                "does not know the hours», which is the answer appointments#122 stopped being "
-                f"true — say it reads `{AUTHORITY}`"
-            )
+        problems.append(
+            f"`{name}` reads the opening hours of `{AUTHORITY}` and tells the assistant it does "
+            f"not — «{claim.strip()}». Naming `{AUTHORITY}` elsewhere does not undo it: the "
+            "assistant plans with the denial, asks for the hours separately and filters by hand, "
+            "which is the workaround appointments#122 removed (appointments#129). Drop the "
+            "denial; if the negation is about something else, move it out of the fragment that "
+            "talks about the hours"
+        )
+    return problems
 
 
 def check_the_assistant_is_not_told_we_cross_the_hours_authority() -> None:
@@ -1210,6 +1298,7 @@ def main() -> int:
     check_every_availability_answer_points_at_the_authority()
     check_the_family_and_the_hours_reader_find_the_positive()
     check_an_availability_answer_says_what_it_does_not_know()
+    check_the_reader_denial_finds_the_positive()
     if failures:
         print(f"FAIL ({len(failures)}):")
         for f in sorted(set(failures)):
