@@ -6,7 +6,10 @@
 // a Spanish salon on a laptop set up in English got the US order — and there is no attribute the
 // module can set to change it (same finding as saas#2351). The fix is the one that closed it in
 // the SaaS: the module paints the date itself, in the hub's language, and offers an
-// `ion-datetime` calendar with that same `locale` for the mouse.
+// OutfitKit `ok-calendar` with that same `locale` for the mouse. Not `ion-datetime`: the hub shell
+// registers a closed list of Ionic components and `ion-datetime` is not on it, so on a real hub it
+// never upgraded and the calendar opened as an empty 0×0 box — hence these tests drive the REAL
+// `ok-calendar` (the module bundles it) and tap a day cell inside its shadow root.
 //
 // The field stays typeable in one go (appointments#204/#210): what it shows is the order
 // `parseTypedStart` reads, so the receptionist types the date exactly the way she sees it.
@@ -35,6 +38,16 @@ const APPOINTMENT = {
 };
 
 const CATALOGS: Record<string, unknown> = { es: esLocale, en: enLocale };
+
+/** ok-calendar label → module catalog key (its defaults are English only). */
+const CALENDAR_LABEL_KEYS = {
+  month: 'ui.calendarMonth',
+  agenda: 'ui.calendarAgenda',
+  agendaEmpty: 'ui.calendarAgendaEmpty',
+  more: 'ui.calendarMore',
+  prevMonth: 'ui.calendarPrevMonth',
+  nextMonth: 'ui.calendarNextMonth',
+} as const;
 
 function lookup(catalog: unknown, key: string): string | undefined {
   const value = key
@@ -116,18 +129,35 @@ async function click(el: Wc, testid: string) {
   await el.updateComplete;
 }
 
-async function pickInCalendar(el: Wc, testid: string, value: string) {
-  const picker = byTestId(el, testid);
+type Calendar = HTMLElement & { value: string; locale: string; labels: Record<string, string>; updateComplete: Promise<unknown> };
+
+/** The open calendar of a date field, once `ok-calendar` has rendered its month. */
+async function openCalendar(el: Wc, testid: string): Promise<Calendar> {
+  const picker = byTestId(el, testid) as Calendar | null;
   expect(picker, `${testid} must be open`).toBeTruthy();
-  picker!.dispatchEvent(new CustomEvent('ionChange', { detail: { value }, bubbles: true, composed: true }));
+  expect(picker!.tagName.toLowerCase(), 'ion-datetime is not registered by the hub shell').toBe('ok-calendar');
+  expect(customElements.get('ok-calendar'), 'the module bundle registers ok-calendar itself').toBeTruthy();
+  await picker!.updateComplete;
+  return picker!;
+}
+
+/** Taps the cell of `iso` (a day of the month the calendar shows) the way a finger does. */
+async function pickInCalendar(el: Wc, testid: string, iso: string) {
+  const picker = await openCalendar(el, testid);
+  const dayOfMonth = Number(iso.slice(8, 10));
+  const cell = [...picker.shadowRoot!.querySelectorAll<HTMLElement>('.day:not(.other-month)')].find(
+    (c) => Number(c.querySelector('.daynum')?.textContent?.trim()) === dayOfMonth,
+  );
+  expect(cell, `day ${iso} must be a cell of the open month`).toBeTruthy();
+  cell!.click();
   await el.updateComplete;
   await new Promise((r) => setTimeout(r, 0));
   await el.updateComplete;
 }
 
 const EXPECTED = {
-  es: { day: '17/08/2026', typed: '18/08/2026', placeholder: 'dd/mm/aaaa', firstDay: '1' },
-  en: { day: '08/17/2026', typed: '08/18/2026', placeholder: 'mm/dd/yyyy', firstDay: '0' },
+  es: { day: '17/08/2026', typed: '18/08/2026', placeholder: 'dd/mm/aaaa', month: 'agosto de 2026', weekday: 'lun' },
+  en: { day: '08/17/2026', typed: '08/18/2026', placeholder: 'mm/dd/yyyy', month: 'August 2026', weekday: 'Mon' },
 } as const;
 
 for (const locale of ['es', 'en'] as const) {
@@ -169,25 +199,33 @@ for (const locale of ['es', 'en'] as const) {
       expect(byTestId(el, 'appointments-list-day')?.value).toBe(locale === 'es' ? '18/08/2026' : '08/18/2026');
     });
 
-    it('the calendar speaks the hub language, starts the week where it does, and picks the day', async () => {
+    it('the calendar speaks the hub language and picks the tapped day', async () => {
       const el = await mount();
       await click(el, 'appointments-list-day-calendar');
-      const picker = byTestId(el, 'appointments-list-day-calendar-picker');
-      expect(picker?.tagName.toLowerCase()).toBe('ion-datetime');
-      expect(picker?.getAttribute('presentation')).toBe('date');
-      expect(picker?.getAttribute('locale')).toBe(locale);
-      expect(picker?.getAttribute('first-day-of-week')).toBe(want.firstDay);
+      const picker = await openCalendar(el, 'appointments-list-day-calendar-picker');
+      expect(picker.locale).toBe(locale);
+      const root = picker.shadowRoot!;
+      expect(root.querySelector('.title')?.textContent?.trim(), 'month and year in the hub language').toBe(want.month);
+      expect(root.querySelector('.weekday')?.textContent?.trim().toLowerCase().replace('.', '')).toBe(want.weekday.toLowerCase());
+      // Every visible word of the calendar comes from the module catalog, never OutfitKit's English defaults.
+      for (const [label, key] of Object.entries(CALENDAR_LABEL_KEYS)) {
+        const text = lookup(CATALOGS[locale], key);
+        expect(text, `${key} must be in the ${locale} catalog`).toBeTruthy();
+        expect(picker.labels[label], `ok-calendar label ${label}`).toBe(text);
+      }
       await pickInCalendar(el, 'appointments-list-day-calendar-picker', '2026-08-20');
       expect(el.day).toBe('2026-08-20');
       expect(byTestId(el, 'appointments-list-day-calendar-picker'), 'the calendar closes once a day is picked').toBeNull();
     });
 
-    it('clearing the calendar selection keeps the agenda on its day', async () => {
+    it('the calendar opens on the day the agenda shows, and the button closes it again', async () => {
       const el = await mount();
       await click(el, 'appointments-list-day-calendar');
-      await pickInCalendar(el, 'appointments-list-day-calendar-picker', null as unknown as string);
+      const picker = await openCalendar(el, 'appointments-list-day-calendar-picker');
+      expect(picker.shadowRoot!.querySelector('.day.selected .daynum')?.textContent?.trim()).toBe('17');
+      await click(el, 'appointments-list-day-calendar');
+      expect(byTestId(el, 'appointments-list-day-calendar-picker')).toBeNull();
       expect(el.day).toBe('2026-08-17');
-      expect(byTestId(el, 'appointments-list-day')?.value).toBe(want.day);
     });
   });
 
@@ -224,8 +262,8 @@ for (const locale of ['es', 'en'] as const) {
     it('the calendar fills the day', async () => {
       const el = await mount();
       await click(el, 'appointments-list-start-calendar');
-      const picker = byTestId(el, 'appointments-list-start-calendar-picker');
-      expect(picker?.getAttribute('locale')).toBe(locale);
+      const picker = await openCalendar(el, 'appointments-list-start-calendar-picker');
+      expect(picker.locale).toBe(locale);
       await pickInCalendar(el, 'appointments-list-start-calendar-picker', '2026-08-18');
       await type(el, 'appointments-list-start-time', '10:00');
       expect(el.newStart).toBe('2026-08-18T10:00');
@@ -245,6 +283,20 @@ for (const locale of ['es', 'en'] as const) {
       expect(field?.value).toBe(locale === 'es' ? '07/08/2026' : '08/07/2026');
       await type(el, 'appointments-list-reschedule-start', want.typed);
       expect(el.rescheduleStart).toBe('2026-08-18T10:00');
+    });
+
+    it('its calendar opens on the appointment day and moves it to the tapped one', async () => {
+      const el = await mount();
+      await el.onRowAction(new CustomEvent('rowAction', { detail: { actionId: 'reschedule', row: APPOINTMENT } }));
+      await el.updateComplete;
+      await click(el, 'appointments-list-reschedule-start-calendar');
+      const picker = await openCalendar(el, 'appointments-list-reschedule-start-calendar-picker');
+      expect(picker.locale).toBe(locale);
+      expect(picker.shadowRoot!.querySelector('.day.selected .daynum')?.textContent?.trim()).toBe('7');
+      await pickInCalendar(el, 'appointments-list-reschedule-start-calendar-picker', '2026-08-18');
+      expect(el.rescheduleStart).toBe('2026-08-18T10:00');
+      expect(byTestId(el, 'appointments-list-reschedule-start')?.value).toBe(want.typed);
+      expect(byTestId(el, 'appointments-list-reschedule-start-calendar-picker')).toBeNull();
     });
   });
 }

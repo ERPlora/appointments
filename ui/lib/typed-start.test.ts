@@ -6,7 +6,7 @@
 // fields take (`YYYY-MM-DD`, `HH:MM`). Anything that is not a real date or time returns null, so
 // the field is left as it was instead of being filled with a guess.
 import { describe, expect, it } from 'vitest';
-import { firstDayOfWeek, formatTypedDate, parseTypedStart } from './typed-start';
+import { formatTypedDate, parseTypedStart } from './typed-start';
 
 describe('parseTypedStart (appointments#204)', () => {
   it('reads the Spanish day/month order with a time', () => {
@@ -45,7 +45,7 @@ describe('parseTypedStart (appointments#204)', () => {
 // paints the BROWSER's format (a Spanish hub in an English browser read «09/26/2026»), so the
 // module paints the date itself: the same day/month order `parseTypedStart` reads, so what the
 // field shows can be typed back unchanged.
-describe('formatTypedDate / firstDayOfWeek (appointments#205)', () => {
+describe('formatTypedDate (appointments#205)', () => {
   it('writes the day first in Spanish and the month first in English', () => {
     expect(formatTypedDate('2026-09-26', 'es')).toBe('26/09/2026');
     expect(formatTypedDate('2026-09-06', 'es')).toBe('06/09/2026');
@@ -72,15 +72,5 @@ describe('formatTypedDate / firstDayOfWeek (appointments#205)', () => {
     expect(formatTypedDate('', 'es')).toBe('');
     expect(formatTypedDate('2026-02-31', 'es')).toBe('');
     expect(formatTypedDate('26/09/2026', 'es')).toBe('');
-  });
-
-  it('starts the week on Monday in Spanish and on Sunday in English', () => {
-    expect(firstDayOfWeek('es')).toBe(1);
-    expect(firstDayOfWeek('en')).toBe(0);
-  });
-
-  it('survives a hub that has not published its language yet', () => {
-    expect(firstDayOfWeek(undefined as unknown as string)).toBe(1);
-    expect(firstDayOfWeek('')).toBe(1);
   });
 });

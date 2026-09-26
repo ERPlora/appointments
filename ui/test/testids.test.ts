@@ -79,7 +79,7 @@ const COVERED: Record<
     contract: [
       'appointments-list-customer',
       'appointments-list-day',
-      // appointments#205 — the day's inline ion-datetime calendar (no ion-popover/ion-modal:
+      // appointments#205 — the day's inline ok-calendar (no ion-popover/ion-modal:
       // an overlay would teleport out of the shadow root and lose its styles, hub#2162).
       'appointments-list-day-calendar',
       'appointments-list-day-calendar-picker',
@@ -178,6 +178,7 @@ const CONTROL_TAGS = [
   'ion-segment',
   'ion-radio-group',
   'ion-datetime',
+  'ok-calendar',
   'ion-range',
   'ok-combo',
   'input',
