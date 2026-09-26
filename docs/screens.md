@@ -164,6 +164,14 @@ on the agenda; if the booking fails the series is still created and listed, and 
 use **Book appointments** on its row. Tapping **Add** while a series is being edited (or still
 loading) drops that edit: the panel shows a clean new-series form and never updates the other series.
 
+Dates and times in this view follow the **hub's language**, like the agenda's (appointments#217):
+**Day**, **Until** and **Time** of a new series, and **Time** when editing one, are text fields
+painted in the hub's day/month order and clock (`dd/mm/aaaa` and 24 h in Spanish, `mm/dd/yyyy` and
+«02:30 PM» in English) instead of the browser's native pickers, which follow the device's locale;
+**Day** and **Until** have the same calendar button. A half-typed date or time is not taken: the
+save button stays off (an «Until» left half-typed never becomes a series with no end). The list
+shows the pattern's time, the start and the end the same way.
+
 Opening a series shows how many appointments it already has on the books, from which date the change
 will apply, how many are still ahead, and — when the series came out of a split — that it continues
 an earlier one. Appointments that are **already charged** are named before you save, because they
