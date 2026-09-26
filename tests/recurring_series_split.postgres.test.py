@@ -127,6 +127,21 @@ def check_manifest() -> None:
             "history statement would record a move that did not happen"
         )
 
+    # Every move leaves its history line, as the SECOND statement of the same command: the line
+    # finds the row by `updated_at = :now`, and the runtime mints a fresh `:now` for every operation
+    # a WASM handler returns, so an operation of its own would never match (appointments#196).
+    move_sql = (
+        MANIFEST.get("commands", {}).get("appointments._recurring_move_occurrence") or {}
+    ).get("sql")
+    if move_sql != [
+        "commands/_recurring_move_occurrence.sql",
+        "commands/_history_reschedule.sql",
+    ]:
+        fail(
+            "appointments._recurring_move_occurrence: must run the move then its history line "
+            f"(commands/_history_reschedule.sql) in the same command, got {move_sql!r}"
+        )
+
     check_pattern_manifest(move)
 
 
