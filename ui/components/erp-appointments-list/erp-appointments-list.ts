@@ -11,6 +11,8 @@ import '@erplora/outfitkit/ok-scheduler';
 // una página de series colgada del menú sería huérfana (ningún producto del sector la tiene), y
 // desde la agenda es donde la recepcionista ya está mirando cuando se acuerda de la serie.
 import '../erp-appointments-series/erp-appointments-series';
+// appointments#194 — the sheet of an appointment carries its history.
+import '../erp-appointments-history/erp-appointments-history';
 import type { DataTableColumn } from '@erplora/outfitkit';
 // i18n (ADR-0055): catálogo `ui` inlineado por esbuild; los textos internos se resuelven
 // con `erplora.t(CATALOG, 'ui.clave')` (idioma activo, fallback locale→en→clave).
@@ -361,6 +363,11 @@ export class ErpAppointmentsList extends LitElement {
    *  de Google, Odoo y Apple. `all` NO EXISTE — reescribiría un pasado ya cobrado y sellado. */
   @state() seriesScope: 'this_only' | 'this_and_following' = 'this_only';
 
+  // appointments#194 — «History» row action / block tap on a non-movable appointment.
+  /** Appointment whose history the panel shows when the panel is not in reschedule mode.
+   *  `''` = no history is being shown (the panel is in create/reschedule mode). */
+  @state() private historyId = '';
+
   // ── Aviso de SOLAPE (appointments#86) ───────────────────────────────────────────────────────
   /** La frase que dice CON QUÉ choca el hueco; `''` = no hay aviso en pantalla. */
   @state() overlapPrompt = '';
@@ -472,6 +479,9 @@ export class ErpAppointmentsList extends LitElement {
         id: 'cancel', label: t('ui.actionCancel'), icon: 'close-circle-outline', color: 'danger',
         disabled: (row: Record<string, unknown>) => !CANCELLABLE.includes(String(row.status)),
       },
+      // HISTORIAL (appointments#194): reachable in EVERY status, never disabled — «who cancelled
+      // this?» is asked precisely about a cancelled appointment.
+      { id: 'history', label: t('ui.actionHistory'), icon: 'time-outline', color: 'medium' },
       { id: 'delete', label: t('ui.actionDelete'), icon: 'trash-outline', color: 'danger' },
     ];
   }
@@ -788,6 +798,9 @@ export class ErpAppointmentsList extends LitElement {
         case 'reschedule':
           await this.openReschedule(row);
           return; // abre el panel; no hay nada que refrescar todavía
+        case 'history':
+          await this.openHistory(row);
+          return; // opens the panel; nothing to refresh
         case 'confirm':
           await erplora().command('appointments.appointments.confirm', { appointment_id: id });
           break;
@@ -821,6 +834,7 @@ export class ErpAppointmentsList extends LitElement {
    *  formulario de mover la cita anterior. */
   private async openCreate() {
     this.clearReschedule();
+    this.historyId = ''; // appointments#194 — a fresh create form never carries a past history
     await this.updateComplete;
     this.dataTable()?.open('create');
   }
@@ -843,6 +857,7 @@ export class ErpAppointmentsList extends LitElement {
    *  y el panel habría prometido algo que no puede cumplir. */
   private async openReschedule(row: Record<string, unknown>) {
     if (!RESCHEDULABLE.includes(String(row.status))) return;
+    this.historyId = ''; // appointments#194 — reschedule mode wins over a history being shown
     this.rescheduleId = String(row.id ?? '');
     this.rescheduleStart = toInputValue(String(row.start_datetime ?? ''));
     this.rescheduleDuration = String(row.duration_minutes ?? '');
@@ -856,6 +871,18 @@ export class ErpAppointmentsList extends LitElement {
     this.dataTable()?.open('create');
   }
 
+  /** Opens the panel on the history of ONE appointment, without touching it (appointments#194).
+   *  Reachable in every status: a cancelled or completed appointment is precisely the one whose
+   *  history the front desk asks about, and `openReschedule` would refuse those. */
+  private async openHistory(row: Record<string, unknown>) {
+    this.clearReschedule();
+    this.historyId = String(row.id ?? '');
+    this.error = '';
+    this.view = 'list'; // el panel vive en la tabla
+    await this.updateComplete;
+    this.dataTable()?.open('create');
+  }
+
   /** Bloque del timeline → mismo panel pre-rellenado.
    *
    *  El ARRASTRE (appointments#74, `onEventMove`) es la mitad rápida del gesto; el clic es la
@@ -863,7 +890,16 @@ export class ErpAppointmentsList extends LitElement {
    *  una tablet cuesta el mismo toque. Las dos llegan al mismo command. */
   private async onEventClick(ev: CustomEvent<{ id: string }>) {
     const row = this.items.find((a) => a.id === ev.detail.id);
-    if (row) await this.openReschedule(row as unknown as Record<string, unknown>);
+    if (!row) return;
+    // appointments#194 — a block the agenda cannot move (cancelled, completed…) opens its
+    // history instead of doing nothing: the tap was not wasted, it just answers a different
+    // question.
+    const asRecord = row as unknown as Record<string, unknown>;
+    if (RESCHEDULABLE.includes(String(row.status))) {
+      await this.openReschedule(asRecord);
+    } else {
+      await this.openHistory(asRecord);
+    }
   }
 
   /** Arrastre del timeline (appointments#74): `ok-scheduler` pinta el bloque en su destino y
@@ -1203,9 +1239,13 @@ export class ErpAppointmentsList extends LitElement {
               @ok-event-click=${(e: CustomEvent<{ id: string }>) => this.onEventClick(e)}
               @ok-event-move=${(e: CustomEvent<SchedulerMoveDetail>) => this.onEventMove(e)}
             ></ok-scheduler>`
-          : html`<ok-data-table testid="appointments-list-table" .fill=${true} .primaryAction=${{ label: t('ui.addAppointment'), icon: 'add' }} @primaryAction=${() => this.openCreate()} .labels=${this.rescheduleId ? { newRecord: t('ui.rescheduleTitle') } : {}} .views=${true} .cardTitle=${(row: Record<string, unknown>) => String(row.appointment_number ?? row.customer_name ?? '')} .columns=${this.columns} .rows=${this.items as unknown as Record<string, unknown>[]} .searchKeys=${['appointment_number', 'customer_name', 'service_name', 'staff_name']} .searchPlaceholder=${t('ui.searchPlaceholder')} .actions=${this.rowActions} @rowAction=${(e: CustomEvent) => this.onRowAction(e)} .emptyMessage=${this.loading ? t('ui.loading') : t('ui.empty')}>
+          : html`<ok-data-table testid="appointments-list-table" .fill=${true} .primaryAction=${{ label: t('ui.addAppointment'), icon: 'add' }} @primaryAction=${() => this.openCreate()} .labels=${this.rescheduleId ? { newRecord: t('ui.rescheduleTitle') } : this.historyId ? { newRecord: t('ui.appointmentHistoryTitle') } : {}} .views=${true} .cardTitle=${(row: Record<string, unknown>) => String(row.appointment_number ?? row.customer_name ?? '')} .columns=${this.columns} .rows=${this.items as unknown as Record<string, unknown>[]} .searchKeys=${['appointment_number', 'customer_name', 'service_name', 'staff_name']} .searchPlaceholder=${t('ui.searchPlaceholder')} .actions=${this.rowActions} @rowAction=${(e: CustomEvent) => this.onRowAction(e)} .emptyMessage=${this.loading ? t('ui.loading') : t('ui.empty')}>
           <!-- El panel es UNO: alta si no hay cita en curso, mover si la hay (appointments#42). -->
-          ${this.rescheduleId ? this.renderRescheduleForm(t) : this.renderCreateForm(t)}
+          ${this.rescheduleId
+            ? this.renderRescheduleForm(t)
+            : this.historyId
+              ? this.renderHistoryPanel(t)
+              : this.renderCreateForm(t)}
         </ok-data-table>`}
       </div>`;
   }
@@ -1228,7 +1268,19 @@ export class ErpAppointmentsList extends LitElement {
         <ion-button data-testid="appointments-list-reschedule-cancel" type="button" size="small" fill="clear" @click=${() => { this.clearReschedule(); this.dataTable()?.close(); }}>${t('ui.cancelReschedule')}</ion-button>
         <ion-button data-testid="appointments-list-reschedule-submit" type="submit" size="small" ?disabled=${this.saving || !this.rescheduleStart || !this.rescheduleDuration}>${this.saving ? t('ui.saving') : t('ui.confirmReschedule')}</ion-button>
       </div>
+      <!-- appointments#194 — the sheet of an appointment carries its history: the reschedule
+           panel does not hide it, it shows it right under the form. -->
+      <erp-appointments-history data-testid="appointments-list-reschedule-history" .appointmentId=${this.rescheduleId}></erp-appointments-history>
     </form>`;
+  }
+
+  /** Opens the history of the appointment shown in the panel (appointments#194): a status the
+   *  agenda cannot move (cancelled, completed, no-show…) has no reschedule form to attach the
+   *  history to, so it gets its own slot in the same `slot="create"` panel. */
+  private renderHistoryPanel(t: (k: string) => string) {
+    return html`<div slot="create" data-testid="appointments-list-history-panel" data-mode="history" class="form">
+      <erp-appointments-history data-testid="appointments-list-history" .appointmentId=${this.historyId}></erp-appointments-history>
+    </div>`;
   }
 
   /** Alta de cita: se proyecta SIEMPRE (aunque el panel esté cerrado); si solo se pintara
