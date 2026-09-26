@@ -62,6 +62,13 @@ const COVERED: Record<
     prefix: 'appointments-customer-history-',
     contract: ['appointments-customer-history-error'],
   },
+  // The change history of ONE appointment (appointments#194), mounted in the agenda's side panel:
+  // read-only, so what a spec names are the three states it has to await — loading, empty and the
+  // load failing — instead of the translated copy.
+  'components/erp-appointments-history/erp-appointments-history.ts': {
+    prefix: 'appointments-history-',
+    contract: ['appointments-history-empty', 'appointments-history-error', 'appointments-history-loading'],
+  },
   // The agenda itself (`/m/appointments/list`): the day nav and the status filter that scope the
   // query, the three views (list · by staff · series), the side panel that books a visit and the
   // same panel reused to move one (appointments#42), plus the two alerts a journey has to cross —
@@ -77,6 +84,8 @@ const COVERED: Record<
       'appointments-list-error',
       'appointments-list-form',
       'appointments-list-form-error',
+      'appointments-list-history',
+      'appointments-list-history-panel',
       'appointments-list-next-day',
       'appointments-list-overlap-confirm',
       'appointments-list-past-start-notice',
@@ -86,6 +95,7 @@ const COVERED: Record<
       'appointments-list-reschedule-error',
       'appointments-list-reschedule-form',
       'appointments-list-reschedule-hint',
+      'appointments-list-reschedule-history',
       'appointments-list-reschedule-past-notice',
       'appointments-list-reschedule-start',
       'appointments-list-reschedule-submit',
