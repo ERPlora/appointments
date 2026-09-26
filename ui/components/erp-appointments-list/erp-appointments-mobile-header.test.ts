@@ -67,18 +67,7 @@ const styles = (el: Wc): string =>
     .flatMap((sheet) => [...sheet.cssRules].map((r) => r.cssText))
     .join('\n') || [...el.shadowRoot.querySelectorAll('style')].map((s) => s.textContent).join('\n');
 
-describe('appointments#93 · the scope bar is ONE row, not three', () => {
-  it('the row does not wrap — wrapping IS the 300 px', async () => {
-    const el = await mount();
-    const css = styles(el);
-    expect(css, '.filters must declare flex-wrap: nowrap').toMatch(
-      /\.filters\s*\{[^}]*flex-wrap:\s*nowrap/,
-    );
-    expect(css, 'the old wrap rule must be gone').not.toMatch(
-      /\.filters\s*\{[^}]*flex-wrap:\s*wrap/,
-    );
-  });
-
+describe('appointments#93 · the scope bar stays compact on a phone', () => {
   it('the segment stops being a full-width row of its own', async () => {
     // Ionic gives the `ion-segment` host `width: 100%`: left alone it IS a line.
     const css = styles(await mount());
@@ -170,5 +159,46 @@ describe('appointments#93 · the day is a STEP, the way every appointment book d
     (el.shadowRoot.querySelector('.filters [data-role="next-day"]') as HTMLElement).click();
     await el.updateComplete;
     expect(el.day).toBe('2026-10-26');
+  });
+});
+
+// appointments#206 — the same header, measured again on hub:stable at 390×844 (ios): the day
+// stepper was allowed to shrink below its content (`min-width:0` inside a `nowrap` row), so the
+// date box got 104 px while Chromium needs 138 px to print «26/09/2026» plus its calendar icon.
+// The icon covered the year and the «next day» arrow landed 20 px on top of «Todos». In `md`
+// the segment is a grid whose columns are `minmax(auto, 360px)`: with `width:auto` every button
+// grew to 360 px (1080 px in total) and the row collapsed on itself at every width.
+//
+// Box measurement needs a browser, which the module suite does not have (happy-dom does no
+// layout): the boxes are measured on the bench and reported in the PR. What is pinned here are
+// the three rules without which the measured overlap comes back.
+describe('appointments#206 · on a phone the header wraps instead of overlapping', () => {
+  it('the row may wrap: one line that does not fit overlaps, it does not shrink legibly', async () => {
+    const css = styles(await mount());
+    expect(css).toMatch(/\.filters\s*\{[^}]*flex-wrap:\s*wrap/);
+    expect(css).not.toMatch(/\.filters\s*\{[^}]*flex-wrap:\s*nowrap/);
+  });
+
+  it('the day stepper never shrinks below its content', async () => {
+    const css = styles(await mount());
+    // happy-dom serializes the `flex` shorthand as its longhands: accept either spelling.
+    const noShrink = (sel: string): RegExp =>
+      new RegExp(`${sel}\\s*\\{[^}]*(flex:\\s*0 0 auto|flex-shrink:\\s*0\\b)`);
+    expect(css).toMatch(noShrink('\\.filters \\.daynav'));
+    expect(css).toMatch(noShrink('\\.filters \\.daynav ion-input'));
+  });
+
+  it('the date box is wide enough for a full date and its calendar icon (138 px measured)', async () => {
+    const css = styles(await mount());
+    const rule = css.match(/\.filters \.daynav ion-input\s*\{([^}]*)\}/)?.[1] ?? '';
+    const rem = (prop: string): number => Number(rule.match(new RegExp(`(?:^|;)\\s*${prop}:\\s*([\\d.]+)rem`))?.[1] ?? 0);
+    // 138 px / 16 = 8.625rem: the measured minimum for «26/09/2026» + icon in Chromium es-ES.
+    expect(rem('width'), 'the date box width').toBeGreaterThanOrEqual(8.625);
+    expect(rem('min-width'), 'and it cannot be squeezed below it').toBeGreaterThanOrEqual(8.625);
+  });
+
+  it('the view segment sizes its buttons to their content, not to Ionic md\'s 360 px columns', async () => {
+    const css = styles(await mount());
+    expect(css).toMatch(/\.filters ion-segment\s*\{[^}]*grid-auto-columns:\s*1fr/);
   });
 });
