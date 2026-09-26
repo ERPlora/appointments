@@ -278,10 +278,11 @@ for (const locale of ['es', 'en'] as const) {
     it('a start pasted as one string fills Day and Time, painted in the hub format', async () => {
       const el = await mount();
       await tapAdd(el);
+      await type(el, 'appointments-series-create-start', '05/1');
       await type(el, 'appointments-series-create-start-time', '1');
       const ev = await paste(el, 'appointments-series-create-start', `${want.typedStart} 17:30`);
       expect(ev.defaultPrevented).toBe(true);
-      expect(shown(el, 'appointments-series-create-start')).toBe(want.shownStart);
+      expect(shown(el, 'appointments-series-create-start'), 'the paste wins over a half-typed day').toBe(want.shownStart);
       expect(shown(el, 'appointments-series-create-start-time'), 'the paste wins over a half-typed time').toBe(want.shownTime);
       await paste(el, 'appointments-series-create-start-time', '08:15');
       expect(shown(el, 'appointments-series-create-start-time')).toBe(locale === 'es' ? '08:15' : '08:15 AM');
@@ -351,6 +352,14 @@ for (const locale of ['es', 'en'] as const) {
       await submitEdit(el);
       const update = commands.find((c) => c.name === 'appointments.recurring.update');
       expect(update?.payload).toMatchObject({ time: '17:30' });
+    });
+
+    it('opening the series again drops a half-typed time and shows the stored one', async () => {
+      const el = await mount();
+      await tapEdit(el);
+      await type(el, 'appointments-series-time', '17:');
+      await tapEdit(el);
+      expect(shown(el, 'appointments-series-time')).toBe(want.rowTime);
     });
 
     it('a half-typed time blocks saving instead of silently keeping the old one', async () => {
