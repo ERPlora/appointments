@@ -2706,6 +2706,7 @@ var ErpAppointmentsHistory = class extends i3 {
   constructor() {
     super(...arguments);
     this.appointmentId = "";
+    this.hideTitle = false;
     this.entries = [];
     this.usersById = /* @__PURE__ */ new Map();
     this.loading = false;
@@ -2793,7 +2794,7 @@ var ErpAppointmentsHistory = class extends i3 {
     if (!this.appointmentId) return A;
     const t5 = (k2) => erplora2().t(CATALOG2, k2);
     return b2`
-      <h3>${t5("ui.appointmentHistoryTitle")}</h3>
+      ${this.hideTitle ? A : b2`<h3>${t5("ui.appointmentHistoryTitle")}</h3>`}
       ${this.error ? b2`<ok-inline-feedback data-testid="appointments-history-error" tone="danger" icon="alert-circle-outline">${this.error}</ok-inline-feedback>` : A}
       ${this.loading && !this.entries.length ? b2`<p class="loading" data-testid="appointments-history-loading">${t5("ui.loading")}</p>` : A}
       ${!this.loading && !this.error && !this.entries.length ? b2`<p class="empty" data-testid="appointments-history-empty">${t5("ui.appointmentHistoryEmpty")}</p>` : A}
@@ -2804,6 +2805,9 @@ var ErpAppointmentsHistory = class extends i3 {
 __decorateClass([
   n4({ attribute: "appointment-id" })
 ], ErpAppointmentsHistory.prototype, "appointmentId", 2);
+__decorateClass([
+  n4({ type: Boolean, attribute: "hide-title" })
+], ErpAppointmentsHistory.prototype, "hideTitle", 2);
 __decorateClass([
   r5()
 ], ErpAppointmentsHistory.prototype, "entries", 2);
@@ -7335,7 +7339,7 @@ var ErpAppointmentsList = class extends i3 {
    *  history to, so it gets its own slot in the same `slot="create"` panel. */
   renderHistoryPanel(t5) {
     return b2`<div slot="create" data-testid="appointments-list-history-panel" data-mode="history" class="form">
-      <erp-appointments-history data-testid="appointments-list-history" .appointmentId=${this.historyId}></erp-appointments-history>
+      <erp-appointments-history data-testid="appointments-list-history" .hideTitle=${true} .appointmentId=${this.historyId}></erp-appointments-history>
     </div>`;
   }
   /** Alta de cita: se proyecta SIEMPRE (aunque el panel esté cerrado); si solo se pintara

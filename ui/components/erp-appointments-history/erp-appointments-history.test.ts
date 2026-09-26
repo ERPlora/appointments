@@ -115,6 +115,24 @@ const items = (el: Wc): TimelineItem[] =>
 
 const byId = (el: Wc, id: string) => items(el).find((i) => i.id === id)!;
 
+describe('the history names itself once', () => {
+  it('carries its own title by default (under the reschedule form nothing else names it)', async () => {
+    const el = await mount();
+    expect(el.shadowRoot.querySelector('h3')?.textContent).toBe('ui.appointmentHistoryTitle');
+  });
+
+  it('drops its title when the host panel already names it', async () => {
+    await import('./erp-appointments-history');
+    const el = document.createElement('erp-appointments-history') as Wc & { hideTitle: boolean };
+    el.hideTitle = true;
+    el.appointmentId = 'ap-1';
+    document.body.appendChild(el);
+    await settle(el);
+    expect(el.shadowRoot.querySelector('h3')).toBeNull();
+    expect(items(el).length, 'the timeline itself still paints').toBe(HISTORY.length);
+  });
+});
+
 describe('the appointment history reads its own door', () => {
   it('asks the module query for THIS appointment', async () => {
     await mount('ap-1');

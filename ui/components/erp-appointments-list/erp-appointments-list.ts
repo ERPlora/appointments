@@ -1279,7 +1279,7 @@ export class ErpAppointmentsList extends LitElement {
    *  history to, so it gets its own slot in the same `slot="create"` panel. */
   private renderHistoryPanel(t: (k: string) => string) {
     return html`<div slot="create" data-testid="appointments-list-history-panel" data-mode="history" class="form">
-      <erp-appointments-history data-testid="appointments-list-history" .appointmentId=${this.historyId}></erp-appointments-history>
+      <erp-appointments-history data-testid="appointments-list-history" .hideTitle=${true} .appointmentId=${this.historyId}></erp-appointments-history>
     </div>`;
   }
 

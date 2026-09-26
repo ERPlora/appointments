@@ -109,6 +109,20 @@ describe('the agenda offers the history of every appointment', () => {
     expect(p?.querySelector('form[data-mode="create"]'), 'the create form is not the history').toBeNull();
   });
 
+  it('the history panel is named once: by its header, not again by the timeline', async () => {
+    const el = await mount();
+    await el.onRowAction(new CustomEvent('rowAction', { detail: { actionId: 'history', row: DAY[1] } }));
+    await el.updateComplete;
+    expect((historyIn(panel(el)) as unknown as { hideTitle?: boolean })?.hideTitle).toBe(true);
+  });
+
+  it('under the reschedule form the history keeps its own title', async () => {
+    const el = await mount();
+    await el.onRowAction(new CustomEvent('rowAction', { detail: { actionId: 'reschedule', row: DAY[0] } }));
+    await el.updateComplete;
+    expect((historyIn(panel(el)) as unknown as { hideTitle?: boolean })?.hideTitle ?? false).toBe(false);
+  });
+
   it('the «+» after looking at a history opens a clean create form', async () => {
     const el = await mount();
     await el.onRowAction(new CustomEvent('rowAction', { detail: { actionId: 'history', row: DAY[1] } }));

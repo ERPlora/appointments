@@ -151,6 +151,8 @@ export class ErpAppointmentsHistory extends LitElement {
   `;
 
   @property({ attribute: 'appointment-id' }) appointmentId = '';
+  /** A host panel whose header already says «Appointment history» drops this title (one name). */
+  @property({ type: Boolean, attribute: 'hide-title' }) hideTitle = false;
 
   @state() private entries: HistoryRow[] = [];
   @state() private usersById = new Map<string, string>();
@@ -248,7 +250,7 @@ export class ErpAppointmentsHistory extends LitElement {
     if (!this.appointmentId) return nothing;
     const t = (k: string): string => erplora().t(CATALOG, k);
     return html`
-      <h3>${t('ui.appointmentHistoryTitle')}</h3>
+      ${this.hideTitle ? nothing : html`<h3>${t('ui.appointmentHistoryTitle')}</h3>`}
       ${this.error
         ? html`<ok-inline-feedback data-testid="appointments-history-error" tone="danger" icon="alert-circle-outline">${this.error}</ok-inline-feedback>`
         : nothing}
