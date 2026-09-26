@@ -145,6 +145,27 @@ interface SchedulerMoveDetail {
  *  que se puede pulsar y siempre falla es peor que uno gris. */
 const RESCHEDULABLE = ['pending', 'confirmed'];
 
+/** Mirrors the status guard in `commands/appointment_confirm.sql`. The toolbar greys the
+ *  action out outside these states (appointments#137). */
+const CONFIRMABLE = ['pending'];
+
+/** Mirrors the status guard in `commands/appointment_start.sql`. The toolbar greys the
+ *  action out outside these states (appointments#137). */
+const STARTABLE = ['confirmed'];
+
+/** Mirrors the status guard in `commands/appointment_complete.sql`. The toolbar greys the
+ *  action out outside these states (appointments#137). */
+const COMPLETABLE = ['confirmed', 'in_progress'];
+
+/** Mirrors the status guard in `commands/appointment_no_show.sql`. The toolbar greys the
+ *  action out outside these states (appointments#137). */
+const NO_SHOWABLE = ['pending', 'confirmed'];
+
+/** Mirrors the status guard in the `cancel_appointment` handler, which refuses
+ *  cancelled|completed, and `commands/appointment_cancel.sql`, which keeps the same guard.
+ *  The toolbar greys the action out outside these states (appointments#137). */
+const CANCELLABLE = ['pending', 'confirmed', 'in_progress', 'no_show'];
+
 function erplora(): ErploraClientLike {
   const c = (globalThis as { erplora?: ErploraClientLike }).erplora;
   if (!c) throw new Error('erplora SDK no inicializado por el shell');
@@ -427,13 +448,30 @@ export class ErpAppointmentsList extends LitElement {
         id: 'reschedule', label: t('ui.actionReschedule'), icon: 'calendar-outline', color: 'primary',
         disabled: (row: Record<string, unknown>) => !RESCHEDULABLE.includes(String(row.status)),
       },
-      { id: 'confirm', label: t('ui.actionConfirm'), icon: 'checkmark-circle-outline', color: 'success' },
-      { id: 'start', label: t('ui.actionStart'), icon: 'play-circle-outline', color: 'primary' },
-      { id: 'complete', label: t('ui.actionComplete'), icon: 'checkmark-done-outline', color: 'success' },
-      // El no-show existía en la API desde el día 1 pero no en la barra: la recepcionista no
-      // tenía forma de registrar que la clienta no vino (appointments#21).
-      { id: 'no_show', label: t('ui.actionNoShow'), icon: 'person-remove-outline', color: 'warning' },
-      { id: 'cancel', label: t('ui.actionCancel'), icon: 'close-circle-outline', color: 'danger' },
+      // Same rule as charge/reschedule (appointments#137): a status transition outside what
+      // the command accepts is greyed out, never hidden — the toolbar stays predictable.
+      {
+        id: 'confirm', label: t('ui.actionConfirm'), icon: 'checkmark-circle-outline', color: 'success',
+        disabled: (row: Record<string, unknown>) => !CONFIRMABLE.includes(String(row.status)),
+      },
+      {
+        id: 'start', label: t('ui.actionStart'), icon: 'play-circle-outline', color: 'primary',
+        disabled: (row: Record<string, unknown>) => !STARTABLE.includes(String(row.status)),
+      },
+      {
+        id: 'complete', label: t('ui.actionComplete'), icon: 'checkmark-done-outline', color: 'success',
+        disabled: (row: Record<string, unknown>) => !COMPLETABLE.includes(String(row.status)),
+      },
+      // No-show existed in the API from day one but not in the toolbar: the front desk had no way
+      // to record that the customer did not come (appointments#21).
+      {
+        id: 'no_show', label: t('ui.actionNoShow'), icon: 'person-remove-outline', color: 'warning',
+        disabled: (row: Record<string, unknown>) => !NO_SHOWABLE.includes(String(row.status)),
+      },
+      {
+        id: 'cancel', label: t('ui.actionCancel'), icon: 'close-circle-outline', color: 'danger',
+        disabled: (row: Record<string, unknown>) => !CANCELLABLE.includes(String(row.status)),
+      },
       { id: 'delete', label: t('ui.actionDelete'), icon: 'trash-outline', color: 'danger' },
     ];
   }

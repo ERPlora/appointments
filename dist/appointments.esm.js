@@ -3466,6 +3466,13 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
     if (typeof this.rowKey === "string") return String(row[this.rowKey] ?? "");
     return String(row[this.rowKeyField] ?? "");
   }
+  /** #143 — `<prefix>-<suffix>`, or `nothing` (= the attribute is not painted) when the host gave
+   *  no prefix. A blank prefix counts as absent: `" "` would leave dangling `-add` hooks, identical
+   *  on every table of the screen, which is exactly what the prefix prevents. */
+  tid(suffix) {
+    const prefix = this.testid?.trim();
+    return prefix ? `${prefix}-${suffix}` : A;
+  }
   get selection() {
     return this.selectedKeys ?? this.internalSelection;
   }
@@ -3832,6 +3839,7 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
   renderRowMenu() {
     const row = this.rowMenuRow;
     if (!this.actions.length || !row) return A;
+    const key = this.keyOf(row);
     return b2`
       <ion-popover
         class="row-menu"
@@ -3846,8 +3854,14 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
       const disabled = a3.loading?.(row) === true || a3.disabled?.(row) === true;
       const label = typeof a3.label === "function" ? a3.label(row) : a3.label;
       return b2`
+                <!-- #143 — The action is named the SAME collapsed or not, so one spec works at any
+                     width. It carries the hook only while the direct buttons are NOT there: the
+                     popover survives its dismissal («rowMenuRow» is not cleared), and if the table
+                     widened again there would be TWO elements with the hook and «getByTestId»
+                     would pick one at random. -->
                 <ion-item
                   button
+                  data-testid=${this.rowActionsCollapsed ? this.tid(`row-${key}-${a3.id}`) : A}
                   ?disabled=${disabled}
                   aria-disabled=${disabled ? "true" : A}
                   .detail=${false}
@@ -4063,6 +4077,7 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
   // a phone. If you add a view that lays these buttons out, MEASURE it.
   actionButtons(row, collapsible = false) {
     if (!this.actions.length) return A;
+    const key = this.keyOf(row);
     if (collapsible && this.rowActionsCollapsed) {
       return b2`
         <div class="actions">
@@ -4070,6 +4085,7 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
             size="small"
             fill="clear"
             color="medium"
+            data-testid=${this.tid(`row-${key}-menu`)}
             aria-label=${this.t.moreActions}
             title=${this.t.moreActions}
             aria-haspopup="menu"
@@ -4092,6 +4108,7 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
               size="small"
               fill="clear"
               color=${a3.color ?? "medium"}
+              data-testid=${this.tid(`row-${key}-${a3.id}`)}
               ?disabled=${disabled}
               aria-disabled=${disabled ? "true" : A}
               aria-label=${label}
@@ -4108,9 +4125,9 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
   }
   // Botón de barra icon-only (filtros / alta / conmutador de vista). `on` = estado activo.
   // `badge` opcional → contador (p.ej. nº de filtros activos), look del Hub.
-  toolButton(icon, on, onClick, label, badge) {
+  toolButton(icon, on, onClick, label, badge, testid = A) {
     return b2`
-      <ion-button class="toolbtn" size="small" fill=${on ? "solid" : "outline"} title=${label} aria-label=${label} @click=${onClick}>
+      <ion-button class="toolbtn" size="small" fill=${on ? "solid" : "outline"} data-testid=${testid} title=${label} aria-label=${label} @click=${onClick}>
         <ion-icon slot="icon-only" .icon=${okIcon(icon)}></ion-icon>
         ${badge && badge > 0 ? b2`<span class="badge">${badge}</span>` : A}
       </ion-button>
@@ -4191,7 +4208,7 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
         this.mobileShown = 0;
       }
     };
-    const searchbar = b2`<ion-searchbar class="ion-no-border" .value=${this.q} placeholder=${this.effSearchPlaceholder} debounce="250" @ionInput=${this.onSearch}></ion-searchbar>`;
+    const searchbar = b2`<ion-searchbar class="ion-no-border" data-testid=${this.tid("search")} .value=${this.q} placeholder=${this.effSearchPlaceholder} debounce="250" @ionInput=${this.onSearch}></ion-searchbar>`;
     const selCount = this.selection.size;
     const showTopbar = !!this.title || this.hasSearch || this.viewToggle || this.effColumnPicker || this.effExport || this.effImport || this.hasFilterRow || this.addable || !!this.primaryAction;
     return b2`
@@ -4236,20 +4253,30 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
                     ${this.hasFilterRow && !this.inlineFilters ? this.toolButton("funnel-outline", this.panel === "filters" || this.activeFilterCount > 0, () => this.toggle("filters"), this.t.filters, this.activeFilterCount) : A}
                     ${this.effImport ? b2`
                           ${this.toolButton("cloud-upload-outline", false, () => this.renderRoot.querySelector(".tk-file")?.click(), this.t.importCsv)}
-                          <input class="tk-file" type="file" accept=".csv,text/csv" hidden @change=${(e5) => this.onImportFile(e5)} />
+                          <!-- #143 — The import hook goes on the INPUT, not on the button that
+                               triggers it: what a spec drives is «setInputFiles», and nobody opens
+                               the button's native dialog from a test. Same criterion as
+                               «GrantFilePicker.vue» in the Hub (the hook goes on the control, not
+                               on its disguise). -->
+                          <input class="tk-file" data-testid=${this.tid("csv-import")} type="file" accept=".csv,text/csv" hidden @change=${(e5) => this.onImportFile(e5)} />
                         ` : A}
-                    ${this.effExport ? this.toolButton("download-outline", false, () => this.exportCsv(), this.t.exportCsv) : A}
+                    ${this.effExport ? this.toolButton("download-outline", false, () => this.exportCsv(), this.t.exportCsv, void 0, this.tid("csv-export")) : A}
                     <!-- #113 — Mismo botón en los dos viewports: la acción principal de la pantalla
                          se lee, no se adivina. En escritorio era un «+» de 36px idéntico a los
                          iconos de vista/filtrar/exportar, y era el último de cuatro. -->
                     ${this.addable ? b2`
-                          <ion-button class="primary-btn add-btn" size="small" @click=${() => this.toggle("create")}>
+                          <ion-button class="primary-btn add-btn" data-testid=${this.tid("add")} size="small" @click=${() => this.toggle("create")}>
                             <ion-icon slot="start" .icon=${okIcon("add")}></ion-icon>${this.t.add}
                           </ion-button>
                         ` : A}
                     ${this.renderOverflowMenu()}
                     ${this.primaryAction ? b2`
-                          <ion-button class="primary-btn add-btn" size="small" @click=${() => this.emit("primaryAction", {})}>
+                          <!-- #143 — Its own hook and NOT «-add»: «addable» and «primaryAction» are
+                               two different buttons that may coexist, and both are really used
+                               («addable» in the modules, «primaryAction» in the SaaS screens).
+                               Sharing the name would give two elements with the same hook as soon
+                               as a screen declared both. -->
+                          <ion-button class="primary-btn add-btn" data-testid=${this.tid("primary-action")} size="small" @click=${() => this.emit("primaryAction", {})}>
                             <ion-icon slot="start" .icon=${okIcon(this.primaryAction.icon ?? "add")}></ion-icon>${this.primaryAction.label}
                           </ion-button>
                         ` : A}
@@ -4282,13 +4309,13 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
                         </select>
                       ` : A}
                 </div>
-                ${this.isMobile ? canLoadMore ? b2`<ion-button class="load-more" size="small" @click=${loadMore}>${this.t.loadMore}</ion-button>` : A : pages > 1 ? b2`
+                ${this.isMobile ? canLoadMore ? b2`<ion-button class="load-more" data-testid=${this.tid("load-more")} size="small" @click=${loadMore}>${this.t.loadMore}</ion-button>` : A : pages > 1 ? b2`
                       <div class="nav">
-                        <ion-button size="small" fill="clear" ?disabled=${current === 0} @click=${() => goTo(current - 1)}><ion-icon slot="icon-only" .icon=${iconChevronBack}></ion-icon></ion-button>
+                        <ion-button size="small" fill="clear" data-testid=${this.tid("page-prev")} ?disabled=${current === 0} @click=${() => goTo(current - 1)}><ion-icon slot="icon-only" .icon=${iconChevronBack}></ion-icon></ion-button>
                         ${this.pageList(current + 1, pages).map(
       (p4) => p4 === "\u2026" ? b2`<span class="pgap">…</span>` : b2`<button class=${`pnum${p4 === current + 1 ? " on" : ""}`} @click=${() => goTo(p4 - 1)}>${p4}</button>`
     )}
-                        <ion-button size="small" fill="clear" ?disabled=${current >= pages - 1} @click=${() => goTo(current + 1)}><ion-icon slot="icon-only" .icon=${iconChevronForward}></ion-icon></ion-button>
+                        <ion-button size="small" fill="clear" data-testid=${this.tid("page-next")} ?disabled=${current >= pages - 1} @click=${() => goTo(current + 1)}><ion-icon slot="icon-only" .icon=${iconChevronForward}></ion-icon></ion-button>
                       </div>
                     ` : A}
               </div>
@@ -4416,6 +4443,7 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
                 <div
                   class=${`grow grow-data${selected ? " selected" : ""}${this.rowClickable ? " clickable" : ""}`}
                   role="row"
+                  data-testid=${this.tid(`row-${key}`)}
                   style=${o6(tpl)}
                   tabindex=${this.rowClickable ? "0" : A}
                   @click=${this.rowClickable ? () => this.emit("rowClick", { row }) : A}
@@ -4450,6 +4478,7 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
         return b2`
               <ion-card
                 class=${`rcard${selected ? " selected" : ""}${this.rowClickable ? " clickable" : ""}`}
+                data-testid=${this.tid(`row-${key}`)}
                 role=${this.rowClickable ? "button" : A}
                 tabindex=${this.rowClickable ? "0" : A}
                 @click=${this.rowClickable ? () => this.emit("rowClick", { row }) : A}
@@ -4596,6 +4625,9 @@ __decorateClass4([
 __decorateClass4([
   n4({ attribute: false })
 ], _OkDataTable.prototype, "renderCard");
+__decorateClass4([
+  n4({ type: String })
+], _OkDataTable.prototype, "testid");
 __decorateClass4([
   r5()
 ], _OkDataTable.prototype, "q");
@@ -6151,6 +6183,11 @@ var STATUS_COLORS = {
 };
 var UNASSIGNED = "unassigned";
 var RESCHEDULABLE = ["pending", "confirmed"];
+var CONFIRMABLE = ["pending"];
+var STARTABLE = ["confirmed"];
+var COMPLETABLE = ["confirmed", "in_progress"];
+var NO_SHOWABLE = ["pending", "confirmed"];
+var CANCELLABLE = ["pending", "confirmed", "in_progress", "no_show"];
 function erplora3() {
   const c5 = globalThis.erplora;
   if (!c5) throw new Error("erplora SDK no inicializado por el shell");
@@ -6351,13 +6388,45 @@ var ErpAppointmentsList = class extends i3 {
         color: "primary",
         disabled: (row) => !RESCHEDULABLE.includes(String(row.status))
       },
-      { id: "confirm", label: t5("ui.actionConfirm"), icon: "checkmark-circle-outline", color: "success" },
-      { id: "start", label: t5("ui.actionStart"), icon: "play-circle-outline", color: "primary" },
-      { id: "complete", label: t5("ui.actionComplete"), icon: "checkmark-done-outline", color: "success" },
-      // El no-show existía en la API desde el día 1 pero no en la barra: la recepcionista no
-      // tenía forma de registrar que la clienta no vino (appointments#21).
-      { id: "no_show", label: t5("ui.actionNoShow"), icon: "person-remove-outline", color: "warning" },
-      { id: "cancel", label: t5("ui.actionCancel"), icon: "close-circle-outline", color: "danger" },
+      // Same rule as charge/reschedule (appointments#137): a status transition outside what
+      // the command accepts is greyed out, never hidden — the toolbar stays predictable.
+      {
+        id: "confirm",
+        label: t5("ui.actionConfirm"),
+        icon: "checkmark-circle-outline",
+        color: "success",
+        disabled: (row) => !CONFIRMABLE.includes(String(row.status))
+      },
+      {
+        id: "start",
+        label: t5("ui.actionStart"),
+        icon: "play-circle-outline",
+        color: "primary",
+        disabled: (row) => !STARTABLE.includes(String(row.status))
+      },
+      {
+        id: "complete",
+        label: t5("ui.actionComplete"),
+        icon: "checkmark-done-outline",
+        color: "success",
+        disabled: (row) => !COMPLETABLE.includes(String(row.status))
+      },
+      // No-show existed in the API from day one but not in the toolbar: the front desk had no way
+      // to record that the customer did not come (appointments#21).
+      {
+        id: "no_show",
+        label: t5("ui.actionNoShow"),
+        icon: "person-remove-outline",
+        color: "warning",
+        disabled: (row) => !NO_SHOWABLE.includes(String(row.status))
+      },
+      {
+        id: "cancel",
+        label: t5("ui.actionCancel"),
+        icon: "close-circle-outline",
+        color: "danger",
+        disabled: (row) => !CANCELLABLE.includes(String(row.status))
+      },
       { id: "delete", label: t5("ui.actionDelete"), icon: "trash-outline", color: "danger" }
     ];
   }
