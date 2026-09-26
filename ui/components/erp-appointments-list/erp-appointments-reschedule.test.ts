@@ -144,7 +144,7 @@ const fireRowAction = async (el: Wc, actionId: string, row: Record<string, unkno
   await el.updateComplete;
 };
 
-/** `YYYY-MM-DDTHH:MM` in LOCAL time — what a `datetime-local` input round-trips. */
+/** `YYYY-MM-DDTHH:MM` in LOCAL time — the combined value of the date + time fields. */
 const localInput = (d: Date) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` +
   `T${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
@@ -190,7 +190,9 @@ describe('the row bar can move an appointment', () => {
       form.querySelector('ion-select[data-role="customer"]'),
       'reschedule moves time: customer and service are not up for grabs',
     ).toBeNull();
-    expect(form.querySelector('ion-input[type="datetime-local"]'), 'the new slot is picked here').toBeTruthy();
+    // appointments#204: the new slot is a date field + a time field (keyboard-friendly).
+    expect(form.querySelector('ion-input[type="date"]'), 'the new day is picked here').toBeTruthy();
+    expect(form.querySelector('ion-input[type="time"]'), 'the new hour is picked here').toBeTruthy();
   });
 
   it('sends appointment_id, the new slot in the SALON wall clock (+ its offset) and the duration — never the end', async () => {

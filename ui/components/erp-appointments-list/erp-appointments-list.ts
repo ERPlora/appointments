@@ -225,6 +225,16 @@ function wallIsPast(wall: string): boolean {
   }
 }
 
+/** Joins a date field and a time field into the combined `'YYYY-MM-DDTHH:MM'` wall clock. */
+function joinWall(date: string, time: string): string {
+  return date && time ? `${date}T${time.slice(0, 5)}` : '';
+}
+/** Splits a `'YYYY-MM-DDTHH:MM[...]'` wall clock into its date and time halves. */
+function splitWall(value: string): [string, string] {
+  const v = String(value ?? '');
+  return [v.slice(0, 10), v.slice(11, 16)];
+}
+
 function rows<T>(r: unknown): T[] {
   if (Array.isArray(r)) return r as T[];
   if (r && typeof r === 'object' && Array.isArray((r as { rows?: T[] }).rows)) {
@@ -329,7 +339,20 @@ export class ErpAppointmentsList extends LitElement {
 
   @state() newStaffId = '';
 
-  @state() newStart = '';
+  /** appointments#204 — the start is typed as a DATE field + a TIME field (a single `datetime-local`
+   *  traps the keyboard in its 6-digit year segment). Each half is kept on its own so a half-typed
+   *  start stays on screen; `newStart` is the combined wall clock, '' until both halves exist. */
+  @state() newStartDate = '';
+
+  @state() newStartTime = '';
+
+  get newStart(): string {
+    return joinWall(this.newStartDate, this.newStartTime);
+  }
+
+  set newStart(value: string) {
+    [this.newStartDate, this.newStartTime] = splitWall(value);
+  }
 
   @state() newDuration = '';
 
@@ -340,8 +363,18 @@ export class ErpAppointmentsList extends LitElement {
   /** Cita que se está moviendo; `''` = el panel está en modo alta. */
   @state() rescheduleId = '';
 
-  /** Nuevo inicio, en hora LOCAL de pared (`datetime-local`). */
-  @state() rescheduleStart = '';
+  /** New start, in the salon's LOCAL wall clock (appointments#204: date + time fields). */
+  @state() rescheduleStartDate = '';
+
+  @state() rescheduleStartTime = '';
+
+  get rescheduleStart(): string {
+    return joinWall(this.rescheduleStartDate, this.rescheduleStartTime);
+  }
+
+  set rescheduleStart(value: string) {
+    [this.rescheduleStartDate, this.rescheduleStartTime] = splitWall(value);
+  }
 
   @state() rescheduleDuration = '';
 
@@ -1259,7 +1292,9 @@ export class ErpAppointmentsList extends LitElement {
     return html`<form slot="create" data-testid="appointments-list-reschedule-form" data-mode="reschedule" class="form" @submit=${(e: Event) => this.submitReschedule(e)}>
       <ok-inline-feedback data-testid="appointments-list-reschedule-hint" tone="info" icon="information-circle-outline">${t('ui.rescheduleHint')}</ok-inline-feedback>
       <p class="ctx">${t('ui.fieldStaff')}: <strong>${this.rescheduleStaffName || '—'}</strong></p>
-      <ion-input data-testid="appointments-list-reschedule-start" data-role="reschedule-start" fill="outline" label-placement="floating" label=${t('ui.fieldStart')} type="datetime-local" .value=${this.rescheduleStart} @ionInput=${(e: any) => (this.rescheduleStart = e.target.value)}></ion-input>
+      <!-- appointments#204: date + time, not datetime-local — its year segment takes 6 digits and never hands the caret to the hour, so a typed start never landed. -->
+      <ion-input data-testid="appointments-list-reschedule-start" data-role="reschedule-start" fill="outline" label-placement="floating" label=${t('ui.fieldDate')} type="date" .value=${this.rescheduleStartDate} @ionInput=${(e: any) => (this.rescheduleStartDate = e.target.value ?? '')}></ion-input>
+      <ion-input data-testid="appointments-list-reschedule-start-time" data-role="reschedule-start-time" fill="outline" label-placement="floating" label=${t('ui.fieldTime')} type="time" .value=${this.rescheduleStartTime} @ionInput=${(e: any) => (this.rescheduleStartTime = e.target.value ?? '')}></ion-input>
       <ion-input data-testid="appointments-list-reschedule-duration" data-role="reschedule-duration" fill="outline" label-placement="floating" label=${t('ui.fieldMinutes')} type="number" min="1" .value=${this.rescheduleDuration} @ionInput=${(e: any) => (this.rescheduleDuration = e.target.value)}></ion-input>
       ${this.rescheduleStartIsPast
         ? html`<ok-inline-feedback data-testid="appointments-list-reschedule-past-notice" tone="warning" icon="time-outline">${t('ui.reschedulePastNotice')}</ok-inline-feedback>`
@@ -1302,7 +1337,9 @@ export class ErpAppointmentsList extends LitElement {
             <ion-select data-testid="appointments-list-staff" data-role="staff" fill="outline" label-placement="floating" label=${t('ui.fieldStaff')} placeholder=${t('ui.pickStaff')} .value=${this.newStaffId} @ionChange=${(e: any) => (this.newStaffId = e.target.value)}>
               ${this.bookableStaff.map((m) => html`<ion-select-option .value=${m.id}>${m.full_name}</ion-select-option>`)}
             </ion-select>
-            <ion-input data-testid="appointments-list-start" fill="outline" label-placement="floating" label=${t('ui.fieldStart')} type="datetime-local" .value=${this.newStart} @ionInput=${(e: any) => (this.newStart = e.target.value)}></ion-input>
+            <!-- appointments#204: date + time, not datetime-local — its year segment takes 6 digits and never hands the caret to the hour, so a typed start never landed. -->
+            <ion-input data-testid="appointments-list-start" data-role="start-date" fill="outline" label-placement="floating" label=${t('ui.fieldDate')} type="date" .value=${this.newStartDate} @ionInput=${(e: any) => (this.newStartDate = e.target.value ?? '')}></ion-input>
+            <ion-input data-testid="appointments-list-start-time" data-role="start-time" fill="outline" label-placement="floating" label=${t('ui.fieldTime')} type="time" .value=${this.newStartTime} @ionInput=${(e: any) => (this.newStartTime = e.target.value ?? '')}></ion-input>
             <!-- Minutos se PRERRELLENA al elegir servicio (appointments#75): la duración que la
                  reserva va a tener tiene que estar EN PANTALLA; se teclea solo para excepciones
                  (una clienta que necesita más tiempo). -->

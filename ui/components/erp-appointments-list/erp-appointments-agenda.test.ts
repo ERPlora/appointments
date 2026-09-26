@@ -149,7 +149,7 @@ describe('linked booking: the create panel books against real records', () => {
     expect(selects.length, 'customer/service/professional must be ion-selects').toBeGreaterThanOrEqual(3);
     // Free text remains only for what IS free text (no service/customer name inputs).
     const textInputs = [...form.querySelectorAll('ion-input')].filter(
-      (n) => !['datetime-local', 'number', 'date'].includes(n.getAttribute('type') ?? 'text'),
+      (n) => !['datetime-local', 'number', 'date', 'time'].includes(n.getAttribute('type') ?? 'text'),
     );
     expect(textInputs.length, 'free-text customer/service inputs must be gone').toBe(0);
   });
