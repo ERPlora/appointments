@@ -339,9 +339,15 @@ def check_create_chain() -> None:
 
 
 def reschedule_params(
-    appointment_id: str, start: str, end: str, minutes: int, now: str
+    appointment_id: str,
+    start: str,
+    end: str,
+    minutes: int,
+    now: str,
+    channel: str | None = None,
 ) -> dict:
     return {
+        "channel": channel,
         "hub_id": HUB,
         "current_user_id": "u-owner",
         "now": now,
@@ -364,6 +370,7 @@ def check_reschedule_chain() -> None:
             "2026-08-20T16:30:00+02:00",
             30,
             "2026-08-20T09:10:00+02:00",
+            channel="customer",
         ),
     )
     if err:
@@ -378,6 +385,22 @@ def check_reschedule_chain() -> None:
     )
     if trail != "1":
         fail(f"the reschedule wrote {trail} history rows, expected 1")
+    # appointments#145: the trail says WHO asked for the move, like the cancel line does.
+    raw = scalar(
+        "SELECT new_value FROM appointments_history WHERE action = 'rescheduled'"
+    )
+    try:
+        stamped = json.loads(raw)
+    except json.JSONDecodeError:
+        stamped = {}
+        fail(f"the reschedule history new_value is not JSON: {raw!r}")
+    if stamped.get("channel") != "customer":
+        fail(
+            f"the reschedule history new_value.channel is {stamped.get('channel')!r}, "
+            "expected 'customer'"
+        )
+    if not str(stamped.get("start_datetime", "")).startswith("2026-08-20T16:00"):
+        fail(f"the reschedule history lost the landing slot: {raw!r}")
 
     # The overlap gate: a-1 back onto a-2's slot (13:00, same professional) must ABORT.
     err = run_chain(
