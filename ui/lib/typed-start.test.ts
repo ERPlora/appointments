@@ -78,4 +78,9 @@ describe('formatTypedDate / firstDayOfWeek (appointments#205)', () => {
     expect(firstDayOfWeek('es')).toBe(1);
     expect(firstDayOfWeek('en')).toBe(0);
   });
+
+  it('survives a hub that has not published its language yet', () => {
+    expect(firstDayOfWeek(undefined as unknown as string)).toBe(1);
+    expect(firstDayOfWeek('')).toBe(1);
+  });
 });

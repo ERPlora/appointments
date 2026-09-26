@@ -71,6 +71,8 @@
     "actionCancel": "Cancel",
     "actionDelete": "Delete",
     "fieldDate": "Day",
+    "datePlaceholder": "mm/dd/yyyy",
+    "openCalendar": "Open calendar",
     "fieldCustomer": "Customer",
     "fieldService": "Service",
     "fieldStart": "Start",

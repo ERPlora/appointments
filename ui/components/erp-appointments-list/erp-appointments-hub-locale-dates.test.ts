@@ -162,8 +162,9 @@ for (const locale of ['es', 'en'] as const) {
       expect(byTestId(el, 'appointments-list-day')?.value).toBe(want.day);
     });
 
-    it('the stepper repaints the field in the hub format', async () => {
+    it('the stepper repaints the field in the hub format, even over a half-typed date', async () => {
       const el = await mount();
+      await type(el, 'appointments-list-day', '2');
       await click(el, 'appointments-list-next-day');
       expect(byTestId(el, 'appointments-list-day')?.value).toBe(locale === 'es' ? '18/08/2026' : '08/18/2026');
     });
@@ -179,6 +180,14 @@ for (const locale of ['es', 'en'] as const) {
       await pickInCalendar(el, 'appointments-list-day-calendar-picker', '2026-08-20');
       expect(el.day).toBe('2026-08-20');
       expect(byTestId(el, 'appointments-list-day-calendar-picker'), 'the calendar closes once a day is picked').toBeNull();
+    });
+
+    it('clearing the calendar selection keeps the agenda on its day', async () => {
+      const el = await mount();
+      await click(el, 'appointments-list-day-calendar');
+      await pickInCalendar(el, 'appointments-list-day-calendar-picker', null as unknown as string);
+      expect(el.day).toBe('2026-08-17');
+      expect(byTestId(el, 'appointments-list-day')?.value).toBe(want.day);
     });
   });
 
@@ -202,8 +211,9 @@ for (const locale of ['es', 'en'] as const) {
       expect(el.newStart).toBe('2026-08-18T10:00');
     });
 
-    it('a date that does not exist is not a start', async () => {
+    it('a date that does not exist is not a start, even after a valid one', async () => {
       const el = await mount();
+      await type(el, 'appointments-list-start', want.typed);
       await type(el, 'appointments-list-start', '31/02/2026');
       await type(el, 'appointments-list-start-time', '10:00');
       expect(el.newStart).toBe('');

@@ -72,6 +72,8 @@
     "actionCancel": "Cancelar",
     "actionDelete": "Borrar",
     "fieldDate": "Día",
+    "datePlaceholder": "dd/mm/aaaa",
+    "openCalendar": "Abrir calendario",
     "fieldCustomer": "Cliente",
     "fieldService": "Servicio",
     "fieldStart": "Inicio",

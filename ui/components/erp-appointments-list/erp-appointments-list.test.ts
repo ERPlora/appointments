@@ -140,8 +140,10 @@ describe('el alta vive DENTRO de la tabla (paridad con /employees e inventory)',
     // NADA del alta, así que se comprueba por su papel, que es más fuerte que contar etiquetas.
     expect(
       sueltos.map((n) => n.getAttribute('data-role') ?? n.tagName.toLowerCase()).sort(),
-      'el alcance de la consulta es día (con sus dos pasos) + estado',
-    ).toEqual(['day', 'next-day', 'prev-day', 'status']);
+      // appointments#205: the day carries its inline calendar (the native input paints the
+      // BROWSER language, not the hub one) — still the query scope, not the create form.
+      'el alcance de la consulta es día (con sus dos pasos y su calendario) + estado',
+    ).toEqual(['day', 'day-calendar', 'next-day', 'prev-day', 'status']);
   });
 
   it('la vista no pinta su propio título (lo pone el topbar del shell)', async () => {
