@@ -373,3 +373,141 @@ describe('editing a series titles the panel header (pm#450)', () => {
     expect(el.shadowRoot.querySelector('[slot="create"]')?.getAttribute('data-mode')).toBe('series-edit');
   });
 });
+
+// pm#459: two «edit series» taps in a row. Each opening waits for the full series
+// (`recurring.get` + `recurring.occurrences`) and only then fills the form, so the two replies can
+// land in the opposite order. The LAST opening wins: id, form and context line belong to the series
+// last tapped — a submit on a stale first reply would rewrite the pattern of the WRONG customer.
+// Every tap goes through the REAL `ok-data-table` row button, never `openSeries()` by hand.
+describe('two «edit series» in a row: the last opening wins (pm#459)', () => {
+  const ROW_B = { ...SERIES_ROW, id: 'r9', customer_name: 'Bea Ruiz', time: '17:30', frequency: 'monthly' };
+  const TEMPLATE_B = { ...SERIES_TEMPLATE, ...ROW_B, customer_id: 'c9' };
+  type Sdk = { query: (name: string, params?: Record<string, unknown>) => Promise<unknown> };
+  const sdk = () => (globalThis as Record<string, unknown>).erplora as Sdk;
+  const settle = async (el: Wc) => {
+    for (let i = 0; i < 3; i++) {
+      await new Promise((r) => setTimeout(r, 0));
+      await el.updateComplete;
+    }
+  };
+  const tapEdit = async (el: Wc, id: string) => {
+    const table = el.shadowRoot.querySelector('ok-data-table') as HTMLElement & { updateComplete: Promise<unknown> };
+    await table.updateComplete;
+    const btn = table.shadowRoot?.querySelector(`[data-testid="appointments-series-table-row-${id}-edit"]`) as HTMLElement | null;
+    expect(btn, `the real «edit» button of row ${id}`).toBeTruthy();
+    btn?.click();
+  };
+  const mountTwoRows = async (): Promise<Wc> => {
+    listResult = { rows: [SERIES_ROW, ROW_B], total: 2 };
+    return mount();
+  };
+
+  it("the table's own «edit» button opens the series (its event carries actionId, not action)", async () => {
+    const el = await mountTwoRows();
+    await tapEdit(el, 'r1');
+    await settle(el);
+    expect(el.editingId).toBe('r1');
+    expect(queries.some((q) => q.name === 'appointments.recurring.get')).toBe(true);
+  });
+
+  it('a slow reply for the FIRST series does not overwrite the form of the second', async () => {
+    const el = await mountTwoRows();
+    let releaseFirst: () => void = () => {};
+    const firstHeld = new Promise<void>((r) => (releaseFirst = r));
+    const base = sdk().query;
+    sdk().query = async (name, params) => {
+      if (name === 'appointments.recurring.get' && params?.recurring_id === 'r1') {
+        await firstHeld;
+        return [SERIES_TEMPLATE];
+      }
+      if (name === 'appointments.recurring.get') return [TEMPLATE_B];
+      return base(name, params);
+    };
+    await tapEdit(el, 'r1');
+    await tapEdit(el, 'r9');
+    await settle(el);
+    expect(el.editingId).toBe('r9');
+    releaseFirst();
+    await settle(el);
+    expect(el.editingId, 'a submit here would rewrite the FIRST customer’s series').toBe('r9');
+    expect(el.editTime).toBe('17:30');
+    expect(el.editFrequency).toBe('monthly');
+    expect(el.shadowRoot.querySelector('[data-role="series-context"]')?.textContent).toContain('Bea Ruiz');
+  });
+
+  it('a slow OCCURRENCES reply for the first series does not bring its cut-off date back', async () => {
+    const el = await mountTwoRows();
+    let releaseFirst: () => void = () => {};
+    const firstHeld = new Promise<void>((r) => (releaseFirst = r));
+    const base = sdk().query;
+    sdk().query = async (name, params) => {
+      if (name === 'appointments.recurring.occurrences' && params?.recurring_id === 'r1') {
+        await firstHeld;
+        return base(name, params);
+      }
+      if (name === 'appointments.recurring.occurrences') return [];
+      if (name === 'appointments.recurring.get') return [params?.recurring_id === 'r9' ? TEMPLATE_B : SERIES_TEMPLATE];
+      return base(name, params);
+    };
+    await tapEdit(el, 'r1');
+    await tapEdit(el, 'r9');
+    await settle(el);
+    releaseFirst();
+    await settle(el);
+    expect(el.editingId).toBe('r9');
+    // r9 has no booked occurrence: its cut-off is TODAY, never r1's first future one.
+    expect(el.fromOccurrence).not.toBe('2099-01-05');
+  });
+
+  it('a late FAILURE of the first series does not paint an error over the second', async () => {
+    const el = await mountTwoRows();
+    let failFirst: () => void = () => {};
+    const firstHeld = new Promise<void>((_, reject) => (failFirst = () => reject(new Error('boom'))));
+    const base = sdk().query;
+    sdk().query = async (name, params) => {
+      if (name === 'appointments.recurring.get' && params?.recurring_id === 'r1') return firstHeld;
+      if (name === 'appointments.recurring.get') return [TEMPLATE_B];
+      return base(name, params);
+    };
+    await tapEdit(el, 'r1');
+    await tapEdit(el, 'r9');
+    await settle(el);
+    failFirst();
+    await settle(el);
+    expect(el.editingId).toBe('r9');
+    expect(el.error).toBe('');
+  });
+});
+
+// appointments#202: the three row buttons of the REAL `ok-data-table` («edit» is covered above by
+// pm#459). The table emits `{ actionId, row }`; the screen once read `action` and every button
+// was dead. A test that calls `materializeSeries()` / `deleteSeries()` by hand never sees that.
+describe('the row buttons of the real table reach their action (appointments#202)', () => {
+  const tapRow = async (el: Wc, id: string, action: string) => {
+    const table = el.shadowRoot.querySelector('ok-data-table') as HTMLElement & { updateComplete: Promise<unknown> };
+    await table.updateComplete;
+    const btn = table.shadowRoot?.querySelector(`[data-testid="appointments-series-table-row-${id}-${action}"]`) as HTMLElement | null;
+    expect(btn, `the real «${action}» button of row ${id}`).toBeTruthy();
+    btn?.click();
+    for (let i = 0; i < 3; i++) {
+      await new Promise((r) => setTimeout(r, 0));
+      await el.updateComplete;
+    }
+  };
+
+  it('the «reserve» button books the window of the tapped series', async () => {
+    const el = await mount();
+    await tapRow(el, 'r1', 'materialize');
+    expect(commands.find((c) => c.name === 'appointments.recurring.materialize')?.payload).toMatchObject({
+      recurring_id: 'r1',
+    });
+  });
+
+  it('the «delete» button deletes the tapped series', async () => {
+    const el = await mount();
+    await tapRow(el, 'r1', 'delete');
+    expect(commands.find((c) => c.name === 'appointments.recurring.delete')?.payload).toEqual({
+      recurring_id: 'r1',
+    });
+  });
+});

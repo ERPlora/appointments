@@ -5969,6 +5969,8 @@ var ErpAppointmentsSeries = class extends i3 {
     this.saving = false;
     this.busySeriesId = "";
     this.editingId = "";
+    /** Ticket of the latest «edit» opening (pm#459). */
+    this.editSeq = 0;
     this.template = null;
     this.occurrences = [];
     this.fromOccurrence = "";
@@ -6030,12 +6032,14 @@ var ErpAppointmentsSeries = class extends i3 {
   async openSeries(row) {
     const id = String(row.id ?? "");
     if (!id) return;
+    const seq = ++this.editSeq;
     this.error = "";
     try {
       const [tmpl, occ] = await Promise.all([
         this.loadTemplate(id),
         erplora3().query("appointments.recurring.occurrences", { recurring_id: id })
       ]);
+      if (seq !== this.editSeq) return;
       if (!tmpl) {
         this.error = erplora3().t(CATALOG3, "ui.seriesNotFound");
         return;
@@ -6052,6 +6056,7 @@ var ErpAppointmentsSeries = class extends i3 {
       await this.updateComplete;
       this.dataTable()?.open("edit", { title: erplora3().t(CATALOG3, "ui.seriesEditTitle") });
     } catch (e5) {
+      if (seq !== this.editSeq) return;
       this.error = e5 instanceof Error && e5.message ? e5.message : erplora3().t(CATALOG3, "ui.seriesLoadError");
     }
   }
@@ -6195,7 +6200,7 @@ var ErpAppointmentsSeries = class extends i3 {
     }
   }
   onRowAction(ev) {
-    const { action, row } = ev.detail ?? {};
+    const { actionId: action, row } = ev.detail ?? {};
     if (!row) return;
     if (action === "edit") void this.openSeries(row);
     else if (action === "materialize") void this.materializeSeries(row);

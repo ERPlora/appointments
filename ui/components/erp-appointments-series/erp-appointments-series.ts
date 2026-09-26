@@ -128,6 +128,9 @@ export class ErpAppointmentsSeries extends LitElement {
 
   /** La serie abierta en el panel (vacío = el panel no está editando nada). */
   @state() editingId = '';
+
+  /** Ticket of the latest «edit» opening (pm#459). */
+  private editSeq = 0;
   @state() template: SeriesTemplate | null = null;
   @state() occurrences: Occurrence[] = [];
   /** El corte: la primera ocurrencia que aún no ha pasado. El servidor lo adelanta a hoy igual. */
@@ -187,12 +190,16 @@ export class ErpAppointmentsSeries extends LitElement {
   async openSeries(row: Record<string, unknown>): Promise<void> {
     const id = String(row.id ?? '');
     if (!id) return;
+    // pm#459: two «edit» taps in a row — only the LAST opening may fill the form. A late reply
+    // (or failure) for an earlier tap is dropped, or a submit would rewrite the wrong series.
+    const seq = ++this.editSeq;
     this.error = '';
     try {
       const [tmpl, occ] = await Promise.all([
         this.loadTemplate(id),
         erplora().query('appointments.recurring.occurrences', { recurring_id: id }),
       ]);
+      if (seq !== this.editSeq) return;
       if (!tmpl) {
         this.error = erplora().t(CATALOG, 'ui.seriesNotFound');
         return;
@@ -214,6 +221,7 @@ export class ErpAppointmentsSeries extends LitElement {
       // override in render() stays as the fallback for OutfitKit < 0.1.94, which ignores the title.
       this.dataTable()?.open('edit', { title: erplora().t(CATALOG, 'ui.seriesEditTitle') });
     } catch (e) {
+      if (seq !== this.editSeq) return;
       this.error = e instanceof Error && e.message ? e.message : erplora().t(CATALOG, 'ui.seriesLoadError');
     }
   }
@@ -386,7 +394,8 @@ export class ErpAppointmentsSeries extends LitElement {
   }
 
   private onRowAction(ev: CustomEvent): void {
-    const { action, row } = (ev.detail ?? {}) as { action?: string; row?: Record<string, unknown> };
+    // ok-data-table emits `{ actionId, row }` (it never sent `action`: with it no row button did anything).
+    const { actionId: action, row } = (ev.detail ?? {}) as { actionId?: string; row?: Record<string, unknown> };
     if (!row) return;
     if (action === 'edit') void this.openSeries(row);
     else if (action === 'materialize') void this.materializeSeries(row);
