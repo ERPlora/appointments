@@ -83,7 +83,8 @@ describe('appointments#93 · the scope bar stays compact on a phone', () => {
     const el = await mount();
     const day = el.shadowRoot.querySelector('.filters ion-input[data-role="day"]')!;
     expect(day, 'the day input must be tagged data-role="day"').toBeTruthy();
-    expect(day.getAttribute('type')).toBe('date');
+    // appointments#205: a text field painted in the hub language — the native date input takes the browser's format.
+    expect(day.getAttribute('type')).toBe('text');
     expect(day.getAttribute('label-placement'), 'no floating label in the scope bar').toBeNull();
     expect(day.getAttribute('aria-label'), 'the accessible name stays').toBeTruthy();
   });

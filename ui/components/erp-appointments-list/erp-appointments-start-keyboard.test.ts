@@ -11,6 +11,10 @@
 // staff) and the booking screens of the market use (Square, Fresha, Odoo): a DATE field and a
 // TIME field. These tests drive the panels through the events the browser emits from those two
 // fields — never by assigning the component state — so a single `datetime-local` cannot pass.
+//
+// appointments#205: the DATE half is no longer the native `date` input (Chromium paints it in the
+// browser's locale, so a Spanish hub showed «mm/dd/yyyy»). It is a text field that shows and reads
+// the date in the hub's language — «07/08/2026» in Spanish — and ISO typed in still lands.
 import { beforeEach, describe, expect, it } from 'vitest';
 
 process.env.TZ = 'Europe/Madrid';
@@ -106,7 +110,7 @@ describe('appointments#204 — new appointment: Start is a date field + a time f
     const el = await mount();
     const form = el.shadowRoot.querySelector('form[slot="create"]')!;
     expect(form.querySelector('ion-input[type="datetime-local"]'), 'the year segment traps the caret').toBeNull();
-    expect(field(el, 'appointments-list-start')?.getAttribute('type')).toBe('date');
+    expect(field(el, 'appointments-list-start')?.getAttribute('type')).toBe('text');
     expect(field(el, 'appointments-list-start-time')?.getAttribute('type')).toBe('time');
   });
 
@@ -137,7 +141,7 @@ describe('appointments#204 — new appointment: Start is a date field + a time f
     const el = await mount();
     el.newStart = '2026-08-07T11:15';
     await el.updateComplete;
-    expect(field(el, 'appointments-list-start')?.value).toBe('2026-08-07');
+    expect(field(el, 'appointments-list-start')?.value).toBe('07/08/2026');
     expect(field(el, 'appointments-list-start-time')?.value).toBe('11:15');
 
     await type(el, 'appointments-list-start-time', '12:45');
@@ -150,7 +154,7 @@ describe('appointments#204 — new appointment: Start is a date field + a time f
     await el.updateComplete;
     await type(el, 'appointments-list-start-time', '');
     expect(el.newStart).toBe('');
-    expect(field(el, 'appointments-list-start')?.value, 'the typed day stays on screen').toBe('2026-08-07');
+    expect(field(el, 'appointments-list-start')?.value, 'the typed day stays on screen').toBe('07/08/2026');
   });
 });
 
@@ -162,8 +166,8 @@ describe('appointments#204 — reschedule: the new start is a date field + a tim
 
     const form = el.shadowRoot.querySelector('form[slot="create"]')!;
     expect(form.querySelector('ion-input[type="datetime-local"]'), 'the year segment traps the caret').toBeNull();
-    expect(field(el, 'appointments-list-reschedule-start')?.getAttribute('type')).toBe('date');
-    expect(field(el, 'appointments-list-reschedule-start')?.value).toBe('2026-08-07');
+    expect(field(el, 'appointments-list-reschedule-start')?.getAttribute('type')).toBe('text');
+    expect(field(el, 'appointments-list-reschedule-start')?.value).toBe('07/08/2026');
     expect(field(el, 'appointments-list-reschedule-start-time')?.getAttribute('type')).toBe('time');
     expect(field(el, 'appointments-list-reschedule-start-time')?.value).toBe('10:00');
 
@@ -233,7 +237,10 @@ describe('appointments#204 — typing or pasting the whole start in one go', () 
       };
       expect(keydown(el, dateId, '2', '2026-09-26').defaultPrevented, 'a digit is the browser’s').toBe(false);
       expect(keydown(el, dateId, ' ', '').defaultPrevented, 'no complete date yet: nothing to jump from').toBe(false);
-      expect(focused).toBe(0);
+      // appointments#205: the field is text now, so «complete» means a date parseTypedStart reads.
+      expect(keydown(el, dateId, ' ', '26/09').defaultPrevented, 'half a date is not a date').toBe(false);
+      expect(keydown(el, dateId, ' ', '26/09/2026').defaultPrevented, 'the date as the hub writes it is complete').toBe(true);
+      expect(focused, 'only the complete date jumped').toBe(1);
     });
 
     it(`${form}: pasting «26/09/2026 10:00» fills the day and the hour`, async () => {
@@ -244,7 +251,7 @@ describe('appointments#204 — typing or pasting the whole start in one go', () 
       expect(ev.defaultPrevented, 'the native field would drop the text').toBe(true);
       const start = form === 'create' ? el.newStart : el.rescheduleStart;
       expect(start).toBe('2026-09-26T10:00');
-      expect(field(el, dateId)?.value).toBe('2026-09-26');
+      expect(field(el, dateId)?.value).toBe('26/09/2026');
       expect(field(el, timeId)?.value).toBe('10:00');
     });
 

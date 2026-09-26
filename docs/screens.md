@@ -13,6 +13,11 @@ appointment book does (Fresha, Vagaro, Square Appointments, Google Calendar). Me
 the bar went from 168 px on three stacked rows to 48 px, and the first appointment moved from 54 %
 of the screen to 39 %.
 
+The date, in the day stepper and in every booking form, is a **text field painted in the hub's own
+language** (not a native browser date input, which paints the device's locale regardless of the
+hub's — appointments#205), with a small calendar button next to it for picking the day with the
+mouse.
+
 Three ways of looking at the agenda, with a switch between them:
 
 - **List** — the appointments of the scope you chose (day, status), with the customer, the service

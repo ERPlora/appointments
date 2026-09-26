@@ -1958,6 +1958,14 @@ var es_default = {
     actionCancel: "Cancelar",
     actionDelete: "Borrar",
     fieldDate: "D\xEDa",
+    datePlaceholder: "dd/mm/aaaa",
+    openCalendar: "Abrir calendario",
+    calendarMonth: "Mes",
+    calendarAgenda: "Agenda",
+    calendarAgendaEmpty: "No hay citas pr\xF3ximas.",
+    calendarMore: "+{n} m\xE1s",
+    calendarPrevMonth: "Mes anterior",
+    calendarNextMonth: "Mes siguiente",
     fieldCustomer: "Cliente",
     fieldService: "Servicio",
     fieldStart: "Inicio",
@@ -2187,6 +2195,14 @@ var en_default = {
     actionCancel: "Cancel",
     actionDelete: "Delete",
     fieldDate: "Day",
+    datePlaceholder: "mm/dd/yyyy",
+    openCalendar: "Open calendar",
+    calendarMonth: "Month",
+    calendarAgenda: "Agenda",
+    calendarAgendaEmpty: "No upcoming appointments.",
+    calendarMore: "+{n} more",
+    calendarPrevMonth: "Previous month",
+    calendarNextMonth: "Next month",
     fieldCustomer: "Customer",
     fieldService: "Service",
     fieldStart: "Start",
@@ -4921,7 +4937,7 @@ __decorateClass4([
 var OkDataTable = _OkDataTable;
 define("ok-data-table", OkDataTable);
 
-// @erplora/outfitkit/dist/ok-scheduler.js
+// @erplora/outfitkit/dist/ok-calendar.js
 var __defProp5 = Object.defineProperty;
 var __decorateClass5 = (decorators, target, key, kind) => {
   var result = void 0;
@@ -4932,6 +4948,543 @@ var __decorateClass5 = (decorators, target, key, kind) => {
   return result;
 };
 var DEFAULT_LABELS3 = {
+  month: "Month",
+  agenda: "Agenda",
+  more: "+{n} more",
+  agendaEmpty: "No upcoming events.",
+  prevMonth: "Previous month",
+  nextMonth: "Next month"
+};
+var WEEKDAY_REF = new Date(2021, 1, 1);
+var OkCalendar = class extends i3 {
+  constructor() {
+    super(...arguments);
+    this.events = [];
+    this.value = "";
+    this.view = "month";
+    this.maxPerDay = 3;
+    this.locale = "en-US";
+    this.labels = {};
+    this.cursor = /* @__PURE__ */ new Date();
+    this.seeded = false;
+  }
+  static {
+    this.styles = i`
+    :host {
+      /* Vars overridable (estilo Ionic), default = cadena --ok-* → --ion-* → hex */
+      --color: var(--ok-text, var(--ion-text-color, #1c1b17));
+      --color-muted: var(--ok-text-muted, rgba(var(--ion-text-color-rgb, 28, 27, 23), 0.55));
+      --background: var(--ok-surface, var(--ion-background-color, #ffffff));
+      --primary-color: var(--ok-primary, var(--ion-color-primary, #3880ff));
+      --primary-contrast: var(--ok-primary-contrast, var(--ion-color-primary-contrast, #ffffff));
+      --hover-bg: var(--ok-hover, rgba(var(--ion-text-color-rgb, 28, 27, 23), 0.06));
+      --border-color: var(--ok-border-soft, rgba(var(--ion-text-color-rgb, 28, 27, 23), 0.12));
+      --today-bg: var(--ok-today-bg, rgba(var(--ion-color-primary-rgb, 56, 128, 255), 0.1));
+      --border-radius: var(--ok-radius, 8px);
+      --font: var(--ok-font, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif);
+
+      /* Por defecto ocupa el ancho del contenedor y es responsive. */
+      display: block;
+      width: 100%;
+      color: var(--color);
+      font-family: var(--font);
+      font-size: 0.95rem;
+      box-sizing: border-box;
+    }
+    * {
+      box-sizing: border-box;
+    }
+
+    /* ── Cabecera ───────────────────────────────────────────────── */
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
+      margin-bottom: 0.75rem;
+      flex-wrap: wrap;
+    }
+    .nav {
+      display: flex;
+      align-items: center;
+      gap: 0.25rem;
+    }
+    .title {
+      min-width: 9rem;
+      text-align: center;
+      font-weight: 600;
+      font-size: 1.05rem;
+      text-transform: capitalize;
+    }
+    .toggle {
+      display: inline-flex;
+      border: 1px solid var(--border-color);
+      border-radius: var(--border-radius);
+      overflow: hidden;
+    }
+    .toggle button {
+      border: 0;
+      background: none;
+      color: var(--color-muted);
+      font: inherit;
+      font-size: 0.85rem;
+      padding: 0.35rem 0.75rem;
+      cursor: pointer;
+      transition: background-color var(--ok-transition, 150ms ease),
+        color var(--ok-transition, 150ms ease), border-color var(--ok-transition, 150ms ease),
+        box-shadow var(--ok-transition, 150ms ease), transform 120ms ease;
+    }
+    @media (hover: hover) {
+      .toggle button:not(.active):hover {
+        background: var(--hover-bg);
+        color: var(--color);
+      }
+    }
+    .toggle button:active {
+      transform: scale(var(--ok-press-scale, 0.97));
+    }
+    .toggle button.active {
+      background: var(--primary-color);
+      color: var(--primary-contrast);
+    }
+
+    /* ── Vista MES ──────────────────────────────────────────────── */
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(7, minmax(0, 1fr));
+      gap: 1px;
+      background: var(--border-color);
+      border: 1px solid var(--border-color);
+      border-radius: var(--border-radius);
+      overflow: hidden;
+    }
+    .weekday {
+      background: var(--background);
+      padding: 0.4rem 0.25rem;
+      text-align: center;
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: var(--color-muted);
+      text-transform: uppercase;
+    }
+    .day {
+      background: var(--background);
+      min-height: 5.5rem;
+      padding: 0.3rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.2rem;
+      cursor: pointer;
+      transition: background-color var(--ok-transition, 150ms ease),
+        color var(--ok-transition, 150ms ease), border-color var(--ok-transition, 150ms ease),
+        box-shadow var(--ok-transition, 150ms ease), transform 120ms ease;
+      overflow: hidden;
+    }
+    @media (hover: hover) {
+      .day:hover {
+        background: var(--hover-bg);
+      }
+    }
+    .day:active {
+      transform: scale(var(--ok-press-scale, 0.97));
+    }
+    .day.other-month {
+      opacity: 0.4;
+    }
+    .day.today .daynum {
+      background: var(--primary-color);
+      color: var(--primary-contrast);
+    }
+    .day.selected {
+      box-shadow: inset 0 0 0 2px var(--primary-color);
+    }
+    .daynum {
+      align-self: flex-end;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 1.5rem;
+      height: 1.5rem;
+      padding: 0 0.35rem;
+      border-radius: 999px;
+      font-size: 0.8rem;
+      font-variant-numeric: tabular-nums;
+    }
+    .chips {
+      display: flex;
+      flex-direction: column;
+      gap: 0.15rem;
+      min-width: 0;
+    }
+    .chip {
+      display: flex;
+      align-items: center;
+      gap: 0.3rem;
+      padding: 0.1rem 0.3rem;
+      border-radius: 4px;
+      font-size: 0.72rem;
+      line-height: 1.3;
+      color: var(--primary-contrast);
+      cursor: pointer;
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+      transition: background-color var(--ok-transition, 150ms ease),
+        color var(--ok-transition, 150ms ease), border-color var(--ok-transition, 150ms ease),
+        box-shadow var(--ok-transition, 150ms ease), transform 120ms ease;
+    }
+    @media (hover: hover) {
+      .chip:hover {
+        filter: brightness(1.05);
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
+      }
+    }
+    .chip:active {
+      transform: scale(var(--ok-press-scale, 0.97));
+    }
+    .chip .chip-title {
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .more {
+      font-size: 0.7rem;
+      color: var(--color-muted);
+      padding: 0 0.3rem;
+      cursor: pointer;
+    }
+
+    /* ── Vista AGENDA ───────────────────────────────────────────── */
+    .agenda {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+    .agenda-empty {
+      color: var(--color-muted);
+      padding: 1rem;
+      text-align: center;
+    }
+    .agenda-group {
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+    }
+    .agenda-date {
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--color-muted);
+      text-transform: capitalize;
+      border-bottom: 1px solid var(--border-color);
+      padding-bottom: 0.25rem;
+    }
+    .agenda-item {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.4rem 0.3rem;
+      border-radius: var(--border-radius);
+      cursor: pointer;
+      transition: background-color var(--ok-transition, 150ms ease),
+        color var(--ok-transition, 150ms ease), border-color var(--ok-transition, 150ms ease),
+        box-shadow var(--ok-transition, 150ms ease), transform 120ms ease;
+    }
+    @media (hover: hover) {
+      .agenda-item:hover {
+        background: var(--hover-bg);
+      }
+    }
+    .agenda-item:active {
+      transform: scale(var(--ok-press-scale, 0.97));
+    }
+    .dot {
+      flex: 0 0 auto;
+      width: 0.6rem;
+      height: 0.6rem;
+      border-radius: 999px;
+    }
+    .agenda-title {
+      flex: 1 1 auto;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .toggle button:active,
+      .day:active,
+      .chip:active,
+      .agenda-item:active {
+        transform: none;
+      }
+    }
+
+    /* ── Responsive (móvil) ─────────────────────────────────────── */
+    @media (max-width: 540px) {
+      .day {
+        min-height: 3.5rem;
+        padding: 0.2rem;
+      }
+      .weekday {
+        font-size: 0.65rem;
+        padding: 0.3rem 0.1rem;
+      }
+      .chip-title {
+        display: none;
+      }
+      .chip {
+        height: 0.5rem;
+        padding: 0;
+      }
+    }
+  `;
+  }
+  /** Textos efectivos: defaults INGLÉS mezclados con los del consumidor. */
+  get t() {
+    return { ...DEFAULT_LABELS3, ...this.labels };
+  }
+  // Nombres cortos de los días (Lun–Dom) según el locale actual.
+  weekdays() {
+    const fmt = new Intl.DateTimeFormat(this.locale, { weekday: "short" });
+    return Array.from(
+      { length: 7 },
+      (_2, i7) => fmt.format(new Date(WEEKDAY_REF.getFullYear(), WEEKDAY_REF.getMonth(), 1 + i7))
+    );
+  }
+  // Normaliza una fecha (`YYYY-MM-DD` o ISO) a clave local `YYYY-MM-DD`.
+  dayKey(d3) {
+    const y3 = d3.getFullYear();
+    const m4 = String(d3.getMonth() + 1).padStart(2, "0");
+    const day = String(d3.getDate()).padStart(2, "0");
+    return `${y3}-${m4}-${day}`;
+  }
+  // Parsea una cadena de fecha del consumidor a `Date` local (ignora la hora si es ISO).
+  parseDate(s5) {
+    const datePart = s5.slice(0, 10);
+    const [y3, m4, d3] = datePart.split("-").map(Number);
+    if (y3 && m4 && d3) return new Date(y3, m4 - 1, d3);
+    const parsed = new Date(s5);
+    return isNaN(parsed.getTime()) ? /* @__PURE__ */ new Date() : parsed;
+  }
+  // Índice eventos por día (`YYYY-MM-DD` → eventos), ordenados por título para estabilidad.
+  indexEvents() {
+    const map = /* @__PURE__ */ new Map();
+    for (const ev of this.events) {
+      const key = this.dayKey(this.parseDate(ev.date));
+      const arr = map.get(key);
+      if (arr) arr.push(ev);
+      else map.set(key, [ev]);
+    }
+    return map;
+  }
+  // Cambia el mes visible (delta en meses) y emite `ok-nav`.
+  navMonth(delta) {
+    const next = new Date(this.cursor.getFullYear(), this.cursor.getMonth() + delta, 1);
+    this.cursor = next;
+    this.dispatchEvent(
+      new CustomEvent("ok-nav", {
+        detail: { year: next.getFullYear(), month: next.getMonth() + 1 },
+        bubbles: true,
+        composed: true
+      })
+    );
+  }
+  // Cambia de vista y emite `ok-view-change`.
+  setView(view) {
+    if (view === this.view) return;
+    this.view = view;
+    this.dispatchEvent(
+      new CustomEvent("ok-view-change", {
+        detail: { view },
+        bubbles: true,
+        composed: true
+      })
+    );
+  }
+  // Selecciona un día y emite `ok-date-select`.
+  selectDay(key) {
+    this.value = key;
+    this.dispatchEvent(
+      new CustomEvent("ok-date-select", {
+        detail: { date: key },
+        bubbles: true,
+        composed: true
+      })
+    );
+  }
+  // Emite el click sobre un evento (sin propagar al día contenedor).
+  clickEvent(ev, e5) {
+    e5.stopPropagation();
+    this.dispatchEvent(
+      new CustomEvent("ok-event-click", {
+        detail: { id: ev.id, event: ev },
+        bubbles: true,
+        composed: true
+      })
+    );
+  }
+  // Etiqueta de mes/año del cursor (capitalizada vía CSS).
+  monthLabel() {
+    return this.cursor.toLocaleDateString(this.locale, { month: "long", year: "numeric" });
+  }
+  // Construye la matriz de días visibles (semanas que empiezan en lunes).
+  buildDays() {
+    const year = this.cursor.getFullYear();
+    const month = this.cursor.getMonth();
+    const first = new Date(year, month, 1);
+    const offset = (first.getDay() + 6) % 7;
+    const start = new Date(year, month, 1 - offset);
+    const days = [];
+    for (let i7 = 0; i7 < 42; i7++) {
+      days.push(new Date(start.getFullYear(), start.getMonth(), start.getDate() + i7));
+    }
+    return days;
+  }
+  // Render de la vista MES.
+  renderMonth(byDay) {
+    const todayKey = this.dayKey(/* @__PURE__ */ new Date());
+    const month = this.cursor.getMonth();
+    const days = this.buildDays();
+    return b2`<div class="grid">
+      ${this.weekdays().map((w2) => b2`<div class="weekday">${w2}</div>`)}
+      ${days.map((d3) => {
+      const key = this.dayKey(d3);
+      const dayEvents = byDay.get(key) ?? [];
+      const visible = dayEvents.slice(0, this.maxPerDay);
+      const extra = dayEvents.length - visible.length;
+      const classes = [
+        "day",
+        d3.getMonth() !== month ? "other-month" : "",
+        key === todayKey ? "today" : "",
+        key === this.value ? "selected" : ""
+      ].filter(Boolean).join(" ");
+      return b2`<div class=${classes} @click=${() => this.selectDay(key)}>
+          <span class="daynum">${d3.getDate()}</span>
+          <div class="chips">
+            ${visible.map(
+        (ev) => b2`<span
+                class="chip"
+                style=${`background:${ev.color || "var(--primary-color)"}`}
+                title=${ev.title}
+                @click=${(e5) => this.clickEvent(ev, e5)}
+              >
+                <span class="chip-title">${ev.title}</span>
+              </span>`
+      )}
+            ${extra > 0 ? b2`<span class="more">${this.t.more.replace("{n}", String(extra))}</span>` : ""}
+          </div>
+        </div>`;
+    })}
+    </div>`;
+  }
+  // Render de la vista AGENDA: próximos eventos (hoy en adelante) agrupados por día.
+  renderAgenda(byDay) {
+    const todayKey = this.dayKey(/* @__PURE__ */ new Date());
+    const keys = [...byDay.keys()].filter((k2) => k2 >= todayKey).sort();
+    if (keys.length === 0) {
+      return b2`<div class="agenda-empty">${this.t.agendaEmpty}</div>`;
+    }
+    return b2`<div class="agenda">
+      ${keys.map((key) => {
+      const d3 = this.parseDate(key);
+      const label = d3.toLocaleDateString(this.locale, {
+        weekday: "long",
+        day: "numeric",
+        month: "long"
+      });
+      return b2`<div class="agenda-group">
+          <div class="agenda-date">${label}</div>
+          ${byDay.get(key).map(
+        (ev) => b2`<div class="agenda-item" @click=${(e5) => this.clickEvent(ev, e5)}>
+              <span class="dot" style=${`background:${ev.color || "var(--primary-color)"}`}></span>
+              <span class="agenda-title">${ev.title}</span>
+              <ion-icon .icon=${iconChevronForwardOutline}></ion-icon>
+            </div>`
+      )}
+        </div>`;
+    })}
+    </div>`;
+  }
+  render() {
+    if (!this.seeded) {
+      if (this.value) this.cursor = this.parseDate(this.value);
+      this.seeded = true;
+    }
+    const byDay = this.indexEvents();
+    return b2`<div class="header">
+        <div class="nav">
+          <ion-button
+            fill="clear"
+            size="small"
+            aria-label=${this.t.prevMonth}
+            @click=${() => this.navMonth(-1)}
+          >
+            <ion-icon slot="icon-only" .icon=${iconChevronBackOutline}></ion-icon>
+          </ion-button>
+          <span class="title">${this.monthLabel()}</span>
+          <ion-button
+            fill="clear"
+            size="small"
+            aria-label=${this.t.nextMonth}
+            @click=${() => this.navMonth(1)}
+          >
+            <ion-icon slot="icon-only" .icon=${iconChevronForwardOutline}></ion-icon>
+          </ion-button>
+        </div>
+        <div class="toggle" role="tablist">
+          <button
+            type="button"
+            class=${this.view === "month" ? "active" : ""}
+            @click=${() => this.setView("month")}
+          >
+            ${this.t.month}
+          </button>
+          <button
+            type="button"
+            class=${this.view === "agenda" ? "active" : ""}
+            @click=${() => this.setView("agenda")}
+          >
+            ${this.t.agenda}
+          </button>
+        </div>
+      </div>
+      ${this.view === "agenda" ? this.renderAgenda(byDay) : this.renderMonth(byDay)}`;
+  }
+};
+__decorateClass5([
+  n4({ attribute: false })
+], OkCalendar.prototype, "events");
+__decorateClass5([
+  n4()
+], OkCalendar.prototype, "value");
+__decorateClass5([
+  n4()
+], OkCalendar.prototype, "view");
+__decorateClass5([
+  n4({ type: Number, attribute: "max-per-day" })
+], OkCalendar.prototype, "maxPerDay");
+__decorateClass5([
+  n4()
+], OkCalendar.prototype, "locale");
+__decorateClass5([
+  n4({ attribute: false })
+], OkCalendar.prototype, "labels");
+__decorateClass5([
+  r5()
+], OkCalendar.prototype, "cursor");
+define("ok-calendar", OkCalendar);
+
+// @erplora/outfitkit/dist/ok-scheduler.js
+var __defProp6 = Object.defineProperty;
+var __decorateClass6 = (decorators, target, key, kind) => {
+  var result = void 0;
+  for (var i7 = decorators.length - 1, decorator; i7 >= 0; i7--)
+    if (decorator = decorators[i7])
+      result = decorator(target, key, result) || result;
+  if (result) __defProp6(target, key, result);
+  return result;
+};
+var DEFAULT_LABELS4 = {
   prevDay: "Previous day",
   nextDay: "Next day",
   empty: "No resources to display."
@@ -5328,7 +5881,7 @@ var OkScheduler = class extends i3 {
   }
   /** Textos efectivos: defaults INGLÉS mezclados con los del consumidor. */
   get t() {
-    return { ...DEFAULT_LABELS3, ...this.labels };
+    return { ...DEFAULT_LABELS4, ...this.labels };
   }
   // El refresco del host manda: descarta la posición optimista en cuanto llegan eventos nuevos.
   willUpdate(changed) {
@@ -5895,52 +6448,52 @@ var OkScheduler = class extends i3 {
     this.suppressClickTimer = null;
   }
 };
-__decorateClass5([
+__decorateClass6([
   n4({ attribute: false })
 ], OkScheduler.prototype, "resources");
-__decorateClass5([
+__decorateClass6([
   n4({ attribute: false })
 ], OkScheduler.prototype, "events");
-__decorateClass5([
+__decorateClass6([
   n4()
 ], OkScheduler.prototype, "date");
-__decorateClass5([
+__decorateClass6([
   n4({ type: Number, attribute: "start-hour" })
 ], OkScheduler.prototype, "startHour");
-__decorateClass5([
+__decorateClass6([
   n4({ type: Number, attribute: "end-hour" })
 ], OkScheduler.prototype, "endHour");
-__decorateClass5([
+__decorateClass6([
   n4({ type: Number, attribute: "slot-minutes" })
 ], OkScheduler.prototype, "slotMin");
-__decorateClass5([
+__decorateClass6([
   n4()
 ], OkScheduler.prototype, "locale");
-__decorateClass5([
+__decorateClass6([
   n4({ attribute: false })
 ], OkScheduler.prototype, "labels");
-__decorateClass5([
+__decorateClass6([
   n4({ type: Boolean, reflect: true })
 ], OkScheduler.prototype, "movable");
-__decorateClass5([
+__decorateClass6([
   n4({ type: Boolean, reflect: true })
 ], OkScheduler.prototype, "resizable");
-__decorateClass5([
+__decorateClass6([
   n4({ type: Number, attribute: "snap-minutes" })
 ], OkScheduler.prototype, "snapMin");
-__decorateClass5([
+__decorateClass6([
   r5()
 ], OkScheduler.prototype, "cursor");
-__decorateClass5([
+__decorateClass6([
   r5()
 ], OkScheduler.prototype, "drag");
-__decorateClass5([
+__decorateClass6([
   r5()
 ], OkScheduler.prototype, "pending");
-__decorateClass5([
+__decorateClass6([
   r5()
 ], OkScheduler.prototype, "announcement");
-__decorateClass5([
+__decorateClass6([
   r5()
 ], OkScheduler.prototype, "heldId");
 define("ok-scheduler", OkScheduler);
@@ -6099,6 +6652,27 @@ function parseTypedStart(text, locale) {
   }
   const time = parseTime(trimmed);
   return time === null ? null : { date: "", time };
+}
+function formatTypedDate(iso, locale) {
+  const match = iso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return "";
+  const [, yearText, monthText, dayText] = match;
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  if (!toIsoDate(year, month, day)) return "";
+  try {
+    const parts = new Intl.DateTimeFormat(locale || void 0, {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      timeZone: "UTC"
+    }).formatToParts(new Date(Date.UTC(year, month - 1, day)));
+    const ordered = parts.filter((p4) => p4.type === "day" || p4.type === "month" || p4.type === "year").map((p4) => p4.value);
+    if (ordered.length === 3) return ordered.join("/");
+  } catch {
+  }
+  return `${pad2(day)}/${pad2(month)}/${String(year).padStart(4, "0")}`;
 }
 
 // ui/components/erp-appointments-series/erp-appointments-series.ts
@@ -7004,6 +7578,12 @@ var ErpAppointmentsList = class extends i3 {
     this.formError = "";
     this.saving = false;
     this.day = todayISO();
+    this.dateDraft = {
+      day: null,
+      new: null,
+      reschedule: null
+    };
+    this.calendarOpen = "";
     this.statusFilter = "";
     this.view = "list";
     this.customers = [];
@@ -7081,6 +7661,11 @@ var ErpAppointmentsList = class extends i3 {
     .form .actions { display:flex; gap:.5rem; justify-content:flex-end; align-items:center; }
     .form .actions ion-button { align-self:auto; }
     .err { color:#d9480f; font-weight:600; }
+    /* appointments#205 — the inline ok-calendar of a date field: no ion-popover/
+       ion-modal (an overlay would teleport out of the shadow root and lose its styles, hub#2162),
+       so it is painted right where it opens instead. */
+    .day-calendar, .field-calendar { display:flex; justify-content:flex-start; margin:0 0 .5rem; }
+    ok-calendar { flex: 1 1 auto; max-width: 28rem; }
   `;
   }
   get newStart() {
@@ -7088,12 +7673,14 @@ var ErpAppointmentsList = class extends i3 {
   }
   set newStart(value) {
     [this.newStartDate, this.newStartTime] = splitWall(value);
+    this.dateDraft = { ...this.dateDraft, new: null };
   }
   get rescheduleStart() {
     return joinWall(this.rescheduleStartDate, this.rescheduleStartTime);
   }
   set rescheduleStart(value) {
     [this.rescheduleStartDate, this.rescheduleStartTime] = splitWall(value);
+    this.dateDraft = { ...this.dateDraft, reschedule: null };
   }
   statusLabel(status) {
     const key = STATUS_KEYS2[status];
@@ -7285,6 +7872,7 @@ var ErpAppointmentsList = class extends i3 {
    *  23, 24 o 25 horas, así que «mañana» es la fecha siguiente, nunca `+24 h`. */
   stepDay(delta) {
     this.day = addDaysISO(this.day, delta);
+    this.dateDraft = { ...this.dateDraft, day: null };
     void this.refresh();
   }
   async refresh() {
@@ -7312,24 +7900,34 @@ var ErpAppointmentsList = class extends i3 {
   }
   /** appointments#204 — shared by the create and reschedule date/time pairs: writes the halves
    *  `parseTypedStart` found into the matching form's state, leaving the other half as it was
-   *  when only a date or only a time was recognized. */
+   *  when only a date or only a time was recognized.
+   *  appointments#205 — the date half also clears its draft: this is a route OTHER than typing
+   *  into the field (a paste), so the field must repaint the committed date in the hub format. */
   applyTypedStart(form, parsed) {
     if (form === "new") {
-      if (parsed.date) this.newStartDate = parsed.date;
+      if (parsed.date) {
+        this.newStartDate = parsed.date;
+        this.dateDraft = { ...this.dateDraft, new: null };
+      }
       if (parsed.time) this.newStartTime = parsed.time;
     } else {
-      if (parsed.date) this.rescheduleStartDate = parsed.date;
+      if (parsed.date) {
+        this.rescheduleStartDate = parsed.date;
+        this.dateDraft = { ...this.dateDraft, reschedule: null };
+      }
       if (parsed.time) this.rescheduleStartTime = parsed.time;
     }
   }
   /** appointments#204 — a `date` field's year segment takes six digits, so a space typed right
    *  after the year cannot move the caret to the hour: this hands the caret to the matching
    *  `time` field itself, but only once the date is complete (a half-typed date still needs the
-   *  browser's own handling of that key). */
+   *  browser's own handling of that key).
+   *  appointments#205 — the field is text now, so "complete" is no longer "non-empty": it is
+   *  whatever `parseTypedStart` reads a date out of ("26/09" is not, "26/09/2026" is). */
   onStartDateKeydown(form, e5) {
     if (e5.key !== " " && e5.key !== "," && e5.key !== "t" && e5.key !== "T") return;
     const value = e5.target.value;
-    if (typeof value !== "string" || !value) return;
+    if (typeof value !== "string" || !parseTypedStart(value, erplora4().locale)?.date) return;
     e5.preventDefault();
     const timeField = this.renderRoot.querySelector(
       form === "new" ? 'ion-input[data-role="start-time"]' : 'ion-input[data-role="reschedule-start-time"]'
@@ -7344,6 +7942,78 @@ var ErpAppointmentsList = class extends i3 {
     if (!parsed) return;
     e5.preventDefault();
     this.applyTypedStart(form, parsed);
+  }
+  /** appointments#205 — the ISO date currently in effect for the given field, whatever route set
+   *  it (typed, pasted, stepped, picked from the calendar, or pre-filled from a row/the timeline). */
+  isoForDateField(field) {
+    if (field === "day") return this.day;
+    return field === "new" ? this.newStartDate : this.rescheduleStartDate;
+  }
+  /** appointments#205 — what the field's `ion-input` shows: the raw text while it is being typed
+   *  (so a half-typed date like "26/09" stays on screen instead of being reformatted mid-keystroke),
+   *  the hub-formatted date otherwise. */
+  dateFieldValue(field) {
+    const draft = this.dateDraft[field];
+    return draft ?? formatTypedDate(this.isoForDateField(field), erplora4().locale);
+  }
+  /** appointments#205 — `ionInput` on one of the three date text fields: the raw text is kept as
+   *  the draft (so it stays on screen exactly as typed), and it is parsed in the hub's day/month
+   *  order. The header day only moves once a REAL, different date was typed (a half-typed date
+   *  must not blank the agenda); a panel field's ISO date follows the text exactly, including
+   *  going back to `''` when the text is not (yet) a date — that is what keeps "Add appointment"
+   *  disabled instead of silently keeping the last valid day. */
+  onDateFieldInput(field, text) {
+    this.dateDraft = { ...this.dateDraft, [field]: text };
+    const iso = parseTypedStart(text, erplora4().locale)?.date ?? "";
+    if (field === "day") {
+      if (iso && iso !== this.day) {
+        this.day = iso;
+        void this.refresh();
+      }
+    } else if (field === "new") {
+      this.newStartDate = iso;
+    } else {
+      this.rescheduleStartDate = iso;
+    }
+  }
+  /** appointments#205 — blur/Enter on a date field (`ionChange`): forget the draft so the field
+   *  repaints the committed ISO date in the hub format, instead of whatever was left half-typed. */
+  commitDateDraft(field) {
+    this.dateDraft = { ...this.dateDraft, [field]: null };
+  }
+  /** appointments#205 — opens/closes the inline `ok-calendar` calendar of one date field. Only
+   *  one at a time: two open calendars would be two conflicting answers to "what day is this". */
+  toggleDateCalendar(field) {
+    this.calendarOpen = this.calendarOpen === field ? "" : field;
+  }
+  /** appointments#205 — `ok-date-select` of an inline `ok-calendar`: `detail.date` is the tapped
+   *  cell as `YYYY-MM-DD` (the calendar cannot be cleared). Applies it like a typed date, forgets
+   *  the draft and closes the calendar — no ion-popover/ion-modal wrapper: an overlay would
+   *  teleport out of the shadow root and lose its styles (hub#2162). */
+  onDateCalendarPick(field, iso) {
+    if (field === "day") {
+      this.day = iso;
+      void this.refresh();
+    } else if (field === "new") {
+      this.newStartDate = iso;
+    } else {
+      this.rescheduleStartDate = iso;
+    }
+    this.dateDraft = { ...this.dateDraft, [field]: null };
+    this.calendarOpen = "";
+  }
+  /** appointments#205 — `ok-calendar`'s own labels default to English only (OutfitKit has no
+   *  i18n of its own); this hands it the module's own `ui.calendar*` catalog keys so every
+   *  visible word of the calendar follows the hub language, never OutfitKit's English defaults. */
+  calendarLabels(t5) {
+    return {
+      month: t5("ui.calendarMonth"),
+      agenda: t5("ui.calendarAgenda"),
+      agendaEmpty: t5("ui.calendarAgendaEmpty"),
+      more: t5("ui.calendarMore"),
+      prevMonth: t5("ui.calendarPrevMonth"),
+      nextMonth: t5("ui.calendarNextMonth")
+    };
   }
   /** Has the chosen time already passed? Asked against the SALON clock, which is the one that
    *  decides (appointments#12/#76): the device may sit in another timezone and the answer would
@@ -7798,10 +8468,15 @@ var ErpAppointmentsList = class extends i3 {
             <ion-button data-testid="appointments-list-prev-day" data-role="prev-day" fill="clear" aria-label=${t5("ui.prevDay")} @click=${() => this.stepDay(-1)}>
               <ion-icon slot="icon-only" name="chevron-back-outline"></ion-icon>
             </ion-button>
-            <ion-input data-testid="appointments-list-day" data-role="day" aria-label=${t5("ui.fieldDate")} type="date" .value=${this.day} @ionInput=${(e5) => {
-      this.day = e5.target.value;
-      this.refresh();
-    }}></ion-input>
+            <!-- appointments#205: text, not a native date input — Chromium paints that in the
+                 BROWSER/OS locale (a Spanish hub in an English browser read «09/26/2026»), and
+                 there is no attribute that changes it. This paints the date itself, in the hub's
+                 language, with an inline calendar for the mouse. -->
+            <ion-input data-testid="appointments-list-day" data-role="day" aria-label=${t5("ui.fieldDate")} type="text" inputmode="numeric" autocomplete="off" placeholder=${t5("ui.datePlaceholder")} .value=${this.dateFieldValue("day")} @ionInput=${(e5) => this.onDateFieldInput("day", e5.target.value ?? "")} @ionChange=${() => this.commitDateDraft("day")}>
+              <ion-button slot="end" data-role="day-calendar" type="button" fill="clear" size="small" data-testid="appointments-list-day-calendar" aria-label=${t5("ui.openCalendar")} @click=${() => this.toggleDateCalendar("day")}>
+                <ion-icon slot="icon-only" name="calendar-outline"></ion-icon>
+              </ion-button>
+            </ion-input>
             <ion-button data-testid="appointments-list-next-day" data-role="next-day" fill="clear" aria-label=${t5("ui.nextDay")} @click=${() => this.stepDay(1)}>
               <ion-icon slot="icon-only" name="chevron-forward-outline"></ion-icon>
             </ion-button>
@@ -7833,6 +8508,19 @@ var ErpAppointmentsList = class extends i3 {
             </ion-segment-button>
           </ion-segment>
         </div>
+        <!-- appointments#205 — the inline calendar for the day field. Outside .filters on
+             purpose: it is not a row item, and an ion-popover/ion-modal here would teleport
+             out of the shadow root and lose its styles (hub#2162), which is why this is inline
+             instead. -->
+        ${this.calendarOpen === "day" ? b2`<div class="day-calendar">
+              <ok-calendar
+                data-testid="appointments-list-day-calendar-picker"
+                locale=${erplora4().locale || "es"}
+                .value=${this.day || ""}
+                .labels=${this.calendarLabels(t5)}
+                @ok-date-select=${(e5) => this.onDateCalendarPick("day", e5.detail.date)}
+              ></ok-calendar>
+            </div>` : A}
         <!-- appointments#12: el aparato NO manda, pero tampoco se le engaña en silencio. Si el
              tablet está en otra zona, la agenda sigue pintando el reloj del NEGOCIO y lo dice —
              el patrón que Square acabó adoptando tras años de citas movidas por el huso del
@@ -7901,6 +8589,7 @@ var ErpAppointmentsList = class extends i3 {
               .labels=${{ prevDay: t5("ui.prevDay"), nextDay: t5("ui.nextDay"), empty: t5("ui.noStaff") }}
               @ok-nav=${(e5) => {
       this.day = e5.detail.date;
+      this.dateDraft = { ...this.dateDraft, day: null };
       this.refresh();
     }}
               @ok-slot-click=${(e5) => this.onSlotClick(e5)}
@@ -7919,7 +8608,21 @@ var ErpAppointmentsList = class extends i3 {
       <ok-inline-feedback data-testid="appointments-list-reschedule-hint" tone="info" icon="information-circle-outline">${t5("ui.rescheduleHint")}</ok-inline-feedback>
       <p class="ctx">${t5("ui.fieldStaff")}: <strong>${this.rescheduleStaffName || "\u2014"}</strong></p>
       <!-- appointments#204: date + time, not datetime-local — its year segment takes 6 digits and never hands the caret to the hour, so a typed start never landed. -->
-      <ion-input data-testid="appointments-list-reschedule-start" data-role="reschedule-start" fill="outline" mode="md" label-placement="floating" label=${t5("ui.fieldDate")} type="date" .value=${this.rescheduleStartDate} @ionInput=${(e5) => this.rescheduleStartDate = e5.target.value ?? ""} @keydown=${(e5) => this.onStartDateKeydown("reschedule", e5)} @paste=${(e5) => this.onStartPaste("reschedule", e5)}></ion-input>
+      <!-- appointments#205: text, painted in the hub's language, with an inline calendar. -->
+      <ion-input data-testid="appointments-list-reschedule-start" data-role="reschedule-start" fill="outline" mode="md" label-placement="floating" label=${t5("ui.fieldDate")} type="text" inputmode="numeric" autocomplete="off" placeholder=${t5("ui.datePlaceholder")} .value=${this.dateFieldValue("reschedule")} @ionInput=${(e5) => this.onDateFieldInput("reschedule", e5.target.value ?? "")} @ionChange=${() => this.commitDateDraft("reschedule")} @keydown=${(e5) => this.onStartDateKeydown("reschedule", e5)} @paste=${(e5) => this.onStartPaste("reschedule", e5)}>
+        <ion-button slot="end" type="button" fill="clear" size="small" data-testid="appointments-list-reschedule-start-calendar" aria-label=${t5("ui.openCalendar")} @click=${() => this.toggleDateCalendar("reschedule")}>
+          <ion-icon slot="icon-only" name="calendar-outline"></ion-icon>
+        </ion-button>
+      </ion-input>
+      ${this.calendarOpen === "reschedule" ? b2`<div class="field-calendar">
+            <ok-calendar
+              data-testid="appointments-list-reschedule-start-calendar-picker"
+              locale=${erplora4().locale || "es"}
+              .value=${this.rescheduleStartDate || ""}
+              .labels=${this.calendarLabels(t5)}
+              @ok-date-select=${(e5) => this.onDateCalendarPick("reschedule", e5.detail.date)}
+            ></ok-calendar>
+          </div>` : A}
       <ion-input data-testid="appointments-list-reschedule-start-time" data-role="reschedule-start-time" fill="outline" mode="md" label-placement="floating" label=${t5("ui.fieldTime")} type="time" .value=${this.rescheduleStartTime} @ionInput=${(e5) => this.rescheduleStartTime = e5.target.value ?? ""} @paste=${(e5) => this.onStartPaste("reschedule", e5)}></ion-input>
       <ion-input data-testid="appointments-list-reschedule-duration" data-role="reschedule-duration" fill="outline" mode="md" label-placement="floating" label=${t5("ui.fieldMinutes")} type="number" min="1" .value=${this.rescheduleDuration} @ionInput=${(e5) => this.rescheduleDuration = e5.target.value}></ion-input>
       ${this.rescheduleStartIsPast ? b2`<ok-inline-feedback data-testid="appointments-list-reschedule-past-notice" tone="warning" icon="time-outline">${t5("ui.reschedulePastNotice")}</ok-inline-feedback>` : A}
@@ -7961,7 +8664,24 @@ var ErpAppointmentsList = class extends i3 {
               ${this.bookableStaff.map((m4) => b2`<ion-select-option .value=${m4.id}>${m4.full_name}</ion-select-option>`)}
             </ion-select>
             <!-- appointments#204: date + time, not datetime-local — its year segment takes 6 digits and never hands the caret to the hour, so a typed start never landed. -->
-            <ion-input data-testid="appointments-list-start" data-role="start-date" fill="outline" mode="md" label-placement="floating" label=${t5("ui.fieldDate")} type="date" .value=${this.newStartDate} @ionInput=${(e5) => this.newStartDate = e5.target.value ?? ""} @keydown=${(e5) => this.onStartDateKeydown("new", e5)} @paste=${(e5) => this.onStartPaste("new", e5)}></ion-input>
+            <!-- appointments#205: text, painted in the hub's language, with an inline calendar. -->
+            <ion-input data-testid="appointments-list-start" data-role="start-date" fill="outline" mode="md" label-placement="floating" label=${t5("ui.fieldDate")} type="text" inputmode="numeric" autocomplete="off" placeholder=${t5("ui.datePlaceholder")} .value=${this.dateFieldValue("new")} @ionInput=${(e5) => this.onDateFieldInput("new", e5.target.value ?? "")} @ionChange=${() => this.commitDateDraft("new")} @keydown=${(e5) => this.onStartDateKeydown("new", e5)} @paste=${(e5) => this.onStartPaste("new", e5)}>
+              <ion-button slot="end" type="button" fill="clear" size="small" data-testid="appointments-list-start-calendar" aria-label=${t5("ui.openCalendar")} @click=${() => this.toggleDateCalendar("new")}>
+                <ion-icon slot="icon-only" name="calendar-outline"></ion-icon>
+              </ion-button>
+            </ion-input>
+            ${this.calendarOpen === "new" ? b2`<div class="field-calendar">
+                  <!-- appointments#205 — before a day is picked, the calendar opens on the day the
+                       agenda is already showing (this.day), not the device's real "today": the
+                       receptionist is adding this appointment while looking at that day. -->
+                  <ok-calendar
+                    data-testid="appointments-list-start-calendar-picker"
+                    locale=${erplora4().locale || "es"}
+                    .value=${this.newStartDate || this.day}
+                    .labels=${this.calendarLabels(t5)}
+                    @ok-date-select=${(e5) => this.onDateCalendarPick("new", e5.detail.date)}
+                  ></ok-calendar>
+                </div>` : A}
             <ion-input data-testid="appointments-list-start-time" data-role="start-time" fill="outline" mode="md" label-placement="floating" label=${t5("ui.fieldTime")} type="time" .value=${this.newStartTime} @ionInput=${(e5) => this.newStartTime = e5.target.value ?? ""} @paste=${(e5) => this.onStartPaste("new", e5)}></ion-input>
             <!-- Minutos se PRERRELLENA al elegir servicio (appointments#75): la duración que la
                  reserva va a tener tiene que estar EN PANTALLA; se teclea solo para excepciones
@@ -7995,6 +8715,12 @@ __decorateClass([
 __decorateClass([
   r5()
 ], ErpAppointmentsList.prototype, "day", 2);
+__decorateClass([
+  r5()
+], ErpAppointmentsList.prototype, "dateDraft", 2);
+__decorateClass([
+  r5()
+], ErpAppointmentsList.prototype, "calendarOpen", 2);
 __decorateClass([
   r5()
 ], ErpAppointmentsList.prototype, "statusFilter", 2);

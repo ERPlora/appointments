@@ -148,8 +148,13 @@ describe('linked booking: the create panel books against real records', () => {
     // customer + service + professional (status filter select lives outside the form)
     expect(selects.length, 'customer/service/professional must be ion-selects').toBeGreaterThanOrEqual(3);
     // Free text remains only for what IS free text (no service/customer name inputs).
+    // appointments#205: the Day is `type="text"` on purpose now (a native `date` input paints the
+    // BROWSER locale, not the hub's) — it is a structured, parsed date, not a free-text field, so
+    // it is excluded here by its own `data-role` the same way the status filter is excluded above.
     const textInputs = [...form.querySelectorAll('ion-input')].filter(
-      (n) => !['datetime-local', 'number', 'date', 'time'].includes(n.getAttribute('type') ?? 'text'),
+      (n) =>
+        !['datetime-local', 'number', 'date', 'time'].includes(n.getAttribute('type') ?? 'text') &&
+        n.getAttribute('data-role') !== 'start-date',
     );
     expect(textInputs.length, 'free-text customer/service inputs must be gone').toBe(0);
   });

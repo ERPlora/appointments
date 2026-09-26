@@ -106,3 +106,37 @@ export function parseTypedStart(text: string, locale: string): TypedStart | null
   const time = parseTime(trimmed);
   return time === null ? null : { date: '', time };
 }
+
+// appointments#205 — the text a date FIELD shows, in the hub's language. Chromium paints a native
+// `date` input in the BROWSER/OS locale (a Spanish hub in an English browser read «09/26/2026»,
+// with the placeholder marker «mm/dd/yyyy» on top), and there is no attribute that changes it. The
+// field is a text input now, painted by the module itself in the same day/month order
+// `parseTypedStart` reads, so what it shows can be typed back unchanged.
+
+/** Formats a `YYYY-MM-DD` calendar date as a numeric date in the given locale's own day/month
+ *  order (`es` → `26/09/2026`, `en` → `09/26/2026`), with 2-digit day/month and a 4-digit year.
+ *  Built from `Date.UTC` and formatted with `timeZone: 'UTC'`, so the device's own timezone never
+ *  moves it (a calendar date has none to move). Returns `''` for anything that is not a real
+ *  calendar date — reuses the same validation `parseTypedStart` relies on. */
+export function formatTypedDate(iso: string, locale: string): string {
+  const match = iso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return '';
+  const [, yearText, monthText, dayText] = match;
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  if (!toIsoDate(year, month, day)) return '';
+  try {
+    const parts = new Intl.DateTimeFormat(locale || undefined, {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      timeZone: 'UTC',
+    }).formatToParts(new Date(Date.UTC(year, month - 1, day)));
+    const ordered = parts.filter((p) => p.type === 'day' || p.type === 'month' || p.type === 'year').map((p) => p.value);
+    if (ordered.length === 3) return ordered.join('/');
+  } catch {
+    // Intl threw on the given locale: fall back to the day-first default below.
+  }
+  return `${pad2(day)}/${pad2(month)}/${String(year).padStart(4, '0')}`;
+}

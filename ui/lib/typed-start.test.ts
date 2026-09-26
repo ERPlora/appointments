@@ -6,7 +6,7 @@
 // fields take (`YYYY-MM-DD`, `HH:MM`). Anything that is not a real date or time returns null, so
 // the field is left as it was instead of being filled with a guess.
 import { describe, expect, it } from 'vitest';
-import { parseTypedStart } from './typed-start';
+import { formatTypedDate, parseTypedStart } from './typed-start';
 
 describe('parseTypedStart (appointments#204)', () => {
   it('reads the Spanish day/month order with a time', () => {
@@ -38,5 +38,39 @@ describe('parseTypedStart (appointments#204)', () => {
     expect(parseTypedStart('13:00 pm', 'en-US')).toBeNull();
     expect(parseTypedStart('mañana a las diez', 'es')).toBeNull();
     expect(parseTypedStart('', 'es')).toBeNull();
+  });
+});
+
+// appointments#205 — the text a date FIELD shows, in the hub's language. The native `date` input
+// paints the BROWSER's format (a Spanish hub in an English browser read «09/26/2026»), so the
+// module paints the date itself: the same day/month order `parseTypedStart` reads, so what the
+// field shows can be typed back unchanged.
+describe('formatTypedDate (appointments#205)', () => {
+  it('writes the day first in Spanish and the month first in English', () => {
+    expect(formatTypedDate('2026-09-26', 'es')).toBe('26/09/2026');
+    expect(formatTypedDate('2026-09-06', 'es')).toBe('06/09/2026');
+    expect(formatTypedDate('2026-09-26', 'en')).toBe('09/26/2026');
+  });
+
+  it('is not moved by the device timezone: a calendar date has none', () => {
+    const tz = process.env.TZ;
+    process.env.TZ = 'Pacific/Honolulu';
+    try {
+      expect(formatTypedDate('2026-01-01', 'es')).toBe('01/01/2026');
+    } finally {
+      process.env.TZ = tz;
+    }
+  });
+
+  it('round-trips through parseTypedStart in both languages', () => {
+    for (const locale of ['es', 'en']) {
+      expect(parseTypedStart(formatTypedDate('2026-02-03', locale), locale)).toEqual({ date: '2026-02-03', time: '' });
+    }
+  });
+
+  it('shows nothing for what is not a calendar date', () => {
+    expect(formatTypedDate('', 'es')).toBe('');
+    expect(formatTypedDate('2026-02-31', 'es')).toBe('');
+    expect(formatTypedDate('26/09/2026', 'es')).toBe('');
   });
 });
