@@ -174,3 +174,101 @@ describe('appointments#204 — reschedule: the new start is a date field + a tim
     expect(submit(el, 'appointments-list-reschedule-submit').hasAttribute('disabled')).toBe(false);
   });
 });
+
+// Typed in ONE go («26/09/2026 10:00»): the space after the year cannot move the caret of a native
+// date field (its year segment takes six digits), so the date field hands the caret to the time
+// field itself — the gesture a single `datetime-local` could never offer. And a PASTED start fills
+// both halves: native date/time inputs ignore pasted text.
+describe('appointments#204 — typing or pasting the whole start in one go', () => {
+  function keydown(el: Wc, testid: string, key: string, nativeValue: string) {
+    const input = field(el, testid)!;
+    input.value = nativeValue;
+    const ev = new KeyboardEvent('keydown', { key, bubbles: true, composed: true, cancelable: true });
+    input.dispatchEvent(ev);
+    return ev;
+  }
+
+  function paste(el: Wc, testid: string, text: string) {
+    const ev = new Event('paste', { bubbles: true, composed: true, cancelable: true }) as Event & {
+      clipboardData: { getData: (type: string) => string };
+    };
+    ev.clipboardData = { getData: (type: string) => (type === 'text' || type === 'text/plain' ? text : '') };
+    field(el, testid)!.dispatchEvent(ev);
+    return ev;
+  }
+
+  for (const [form, dateId, timeId] of [
+    ['create', 'appointments-list-start', 'appointments-list-start-time'],
+    ['reschedule', 'appointments-list-reschedule-start', 'appointments-list-reschedule-start-time'],
+  ] as const) {
+    async function open(el: Wc) {
+      if (form === 'reschedule') {
+        await el.onRowAction(new CustomEvent('rowAction', { detail: { actionId: 'reschedule', row: APPOINTMENT } }));
+        await el.updateComplete;
+      }
+    }
+
+    it(`${form}: a space, comma or «T» after a complete date jumps to the time field`, async () => {
+      const el = await mount();
+      await open(el);
+      for (const key of [' ', ',', 'T']) {
+        const time = field(el, timeId) as HTMLElement & { setFocus?: () => Promise<void> };
+        let focused = 0;
+        time.setFocus = async () => {
+          focused++;
+        };
+        const ev = keydown(el, dateId, key, '2026-09-26');
+        expect(focused, `«${key}» must hand the caret to the time field`).toBe(1);
+        expect(ev.defaultPrevented, `«${key}» must not reach the year segment`).toBe(true);
+      }
+    });
+
+    it(`${form}: digits and a separator on a half-typed date stay in the date field`, async () => {
+      const el = await mount();
+      await open(el);
+      const time = field(el, timeId) as HTMLElement & { setFocus?: () => Promise<void> };
+      let focused = 0;
+      time.setFocus = async () => {
+        focused++;
+      };
+      expect(keydown(el, dateId, '2', '2026-09-26').defaultPrevented, 'a digit is the browser’s').toBe(false);
+      expect(keydown(el, dateId, ' ', '').defaultPrevented, 'no complete date yet: nothing to jump from').toBe(false);
+      expect(focused).toBe(0);
+    });
+
+    it(`${form}: pasting «26/09/2026 10:00» fills the day and the hour`, async () => {
+      const el = await mount();
+      await open(el);
+      const ev = paste(el, dateId, '26/09/2026 10:00');
+      await el.updateComplete;
+      expect(ev.defaultPrevented, 'the native field would drop the text').toBe(true);
+      const start = form === 'create' ? el.newStart : el.rescheduleStart;
+      expect(start).toBe('2026-09-26T10:00');
+      expect(field(el, dateId)?.value).toBe('2026-09-26');
+      expect(field(el, timeId)?.value).toBe('10:00');
+    });
+
+    it(`${form}: pasting only an hour into the time field keeps the day`, async () => {
+      const el = await mount();
+      await open(el);
+      if (form === 'create') {
+        el.newStart = '2026-08-07T11:15';
+        await el.updateComplete;
+      }
+      paste(el, timeId, '16:45');
+      await el.updateComplete;
+      const start = form === 'create' ? el.newStart : el.rescheduleStart;
+      expect(start).toBe('2026-08-07T16:45');
+    });
+
+    it(`${form}: pasting text that is not a date leaves the fields alone`, async () => {
+      const el = await mount();
+      await open(el);
+      const before = form === 'create' ? el.newStart : el.rescheduleStart;
+      const ev = paste(el, dateId, 'mañana a las diez');
+      await el.updateComplete;
+      expect(ev.defaultPrevented).toBe(false);
+      expect(form === 'create' ? el.newStart : el.rescheduleStart).toBe(before);
+    });
+  }
+});

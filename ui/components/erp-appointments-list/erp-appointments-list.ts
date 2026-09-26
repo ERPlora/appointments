@@ -33,6 +33,9 @@ import {
   businessTimezone,
   InvalidLocalTimeError,
 } from '../../lib/business-time';
+// appointments#204: a start typed or pasted as one string ("26/09/2026 10:00") is read in the
+// active language's day/month order and split into the date + time fields.
+import { parseTypedStart, type TypedStart } from '../../lib/typed-start';
 const CATALOG: Record<string, unknown> = { es: esLocale, en: enLocale };
 
 interface ErploraClientLike {
@@ -628,6 +631,45 @@ export class ErpAppointmentsList extends LitElement {
     return this.renderRoot.querySelector('ok-data-table') as
       | { open(p?: 'filters' | 'create' | 'edit', opts?: { title?: string }): void; close(): void }
       | null;
+  }
+
+  /** appointments#204 — shared by the create and reschedule date/time pairs: writes the halves
+   *  `parseTypedStart` found into the matching form's state, leaving the other half as it was
+   *  when only a date or only a time was recognized. */
+  private applyTypedStart(form: 'new' | 'reschedule', parsed: TypedStart): void {
+    if (form === 'new') {
+      if (parsed.date) this.newStartDate = parsed.date;
+      if (parsed.time) this.newStartTime = parsed.time;
+    } else {
+      if (parsed.date) this.rescheduleStartDate = parsed.date;
+      if (parsed.time) this.rescheduleStartTime = parsed.time;
+    }
+  }
+
+  /** appointments#204 — a `date` field's year segment takes six digits, so a space typed right
+   *  after the year cannot move the caret to the hour: this hands the caret to the matching
+   *  `time` field itself, but only once the date is complete (a half-typed date still needs the
+   *  browser's own handling of that key). */
+  private onStartDateKeydown(form: 'new' | 'reschedule', e: KeyboardEvent): void {
+    if (e.key !== ' ' && e.key !== ',' && e.key !== 't' && e.key !== 'T') return;
+    const value = (e.target as { value?: unknown }).value;
+    if (typeof value !== 'string' || !value) return;
+    e.preventDefault();
+    const timeTestId = form === 'new' ? 'appointments-list-start-time' : 'appointments-list-reschedule-start-time';
+    const timeField = this.renderRoot.querySelector(`[data-testid="${timeTestId}"]`) as
+      | (HTMLElement & { setFocus?: () => Promise<void> })
+      | null;
+    void timeField?.setFocus?.();
+  }
+
+  /** appointments#204 — native `date`/`time` inputs ignore pasted text; this reads the clipboard
+   *  as a whole start and fills whichever halves it recognizes. */
+  private onStartPaste(form: 'new' | 'reschedule', e: Event): void {
+    const text = (e as ClipboardEvent).clipboardData?.getData('text') ?? '';
+    const parsed = parseTypedStart(text, erplora().locale);
+    if (!parsed) return;
+    e.preventDefault();
+    this.applyTypedStart(form, parsed);
   }
 
   /** Has the chosen time already passed? Asked against the SALON clock, which is the one that
@@ -1293,8 +1335,8 @@ export class ErpAppointmentsList extends LitElement {
       <ok-inline-feedback data-testid="appointments-list-reschedule-hint" tone="info" icon="information-circle-outline">${t('ui.rescheduleHint')}</ok-inline-feedback>
       <p class="ctx">${t('ui.fieldStaff')}: <strong>${this.rescheduleStaffName || '—'}</strong></p>
       <!-- appointments#204: date + time, not datetime-local — its year segment takes 6 digits and never hands the caret to the hour, so a typed start never landed. -->
-      <ion-input data-testid="appointments-list-reschedule-start" data-role="reschedule-start" fill="outline" label-placement="floating" label=${t('ui.fieldDate')} type="date" .value=${this.rescheduleStartDate} @ionInput=${(e: any) => (this.rescheduleStartDate = e.target.value ?? '')}></ion-input>
-      <ion-input data-testid="appointments-list-reschedule-start-time" data-role="reschedule-start-time" fill="outline" label-placement="floating" label=${t('ui.fieldTime')} type="time" .value=${this.rescheduleStartTime} @ionInput=${(e: any) => (this.rescheduleStartTime = e.target.value ?? '')}></ion-input>
+      <ion-input data-testid="appointments-list-reschedule-start" data-role="reschedule-start" fill="outline" label-placement="floating" label=${t('ui.fieldDate')} type="date" .value=${this.rescheduleStartDate} @ionInput=${(e: any) => (this.rescheduleStartDate = e.target.value ?? '')} @keydown=${(e: KeyboardEvent) => this.onStartDateKeydown('reschedule', e)} @paste=${(e: Event) => this.onStartPaste('reschedule', e)}></ion-input>
+      <ion-input data-testid="appointments-list-reschedule-start-time" data-role="reschedule-start-time" fill="outline" label-placement="floating" label=${t('ui.fieldTime')} type="time" .value=${this.rescheduleStartTime} @ionInput=${(e: any) => (this.rescheduleStartTime = e.target.value ?? '')} @paste=${(e: Event) => this.onStartPaste('reschedule', e)}></ion-input>
       <ion-input data-testid="appointments-list-reschedule-duration" data-role="reschedule-duration" fill="outline" label-placement="floating" label=${t('ui.fieldMinutes')} type="number" min="1" .value=${this.rescheduleDuration} @ionInput=${(e: any) => (this.rescheduleDuration = e.target.value)}></ion-input>
       ${this.rescheduleStartIsPast
         ? html`<ok-inline-feedback data-testid="appointments-list-reschedule-past-notice" tone="warning" icon="time-outline">${t('ui.reschedulePastNotice')}</ok-inline-feedback>`
@@ -1338,8 +1380,8 @@ export class ErpAppointmentsList extends LitElement {
               ${this.bookableStaff.map((m) => html`<ion-select-option .value=${m.id}>${m.full_name}</ion-select-option>`)}
             </ion-select>
             <!-- appointments#204: date + time, not datetime-local — its year segment takes 6 digits and never hands the caret to the hour, so a typed start never landed. -->
-            <ion-input data-testid="appointments-list-start" data-role="start-date" fill="outline" label-placement="floating" label=${t('ui.fieldDate')} type="date" .value=${this.newStartDate} @ionInput=${(e: any) => (this.newStartDate = e.target.value ?? '')}></ion-input>
-            <ion-input data-testid="appointments-list-start-time" data-role="start-time" fill="outline" label-placement="floating" label=${t('ui.fieldTime')} type="time" .value=${this.newStartTime} @ionInput=${(e: any) => (this.newStartTime = e.target.value ?? '')}></ion-input>
+            <ion-input data-testid="appointments-list-start" data-role="start-date" fill="outline" label-placement="floating" label=${t('ui.fieldDate')} type="date" .value=${this.newStartDate} @ionInput=${(e: any) => (this.newStartDate = e.target.value ?? '')} @keydown=${(e: KeyboardEvent) => this.onStartDateKeydown('new', e)} @paste=${(e: Event) => this.onStartPaste('new', e)}></ion-input>
+            <ion-input data-testid="appointments-list-start-time" data-role="start-time" fill="outline" label-placement="floating" label=${t('ui.fieldTime')} type="time" .value=${this.newStartTime} @ionInput=${(e: any) => (this.newStartTime = e.target.value ?? '')} @paste=${(e: Event) => this.onStartPaste('new', e)}></ion-input>
             <!-- Minutos se PRERRELLENA al elegir servicio (appointments#75): la duración que la
                  reserva va a tener tiene que estar EN PANTALLA; se teclea solo para excepciones
                  (una clienta que necesita más tiempo). -->
