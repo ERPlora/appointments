@@ -123,6 +123,17 @@ describe('the agenda offers the history of every appointment', () => {
     expect((historyIn(panel(el)) as unknown as { hideTitle?: boolean })?.hideTitle ?? false).toBe(false);
   });
 
+  it('«History» on another row while a reschedule is open shows THAT history, not the move', async () => {
+    const el = await mount();
+    await el.onRowAction(new CustomEvent('rowAction', { detail: { actionId: 'reschedule', row: DAY[0] } }));
+    await el.updateComplete;
+    await el.onRowAction(new CustomEvent('rowAction', { detail: { actionId: 'history', row: DAY[1] } }));
+    await el.updateComplete;
+    const p = panel(el);
+    expect(p?.getAttribute('data-mode'), 'the move of a1 must not win over the history of a2').toBe('history');
+    expect(historyIn(p)?.appointmentId).toBe('a2');
+  });
+
   it('the «+» after looking at a history opens a clean create form', async () => {
     const el = await mount();
     await el.onRowAction(new CustomEvent('rowAction', { detail: { actionId: 'history', row: DAY[1] } }));

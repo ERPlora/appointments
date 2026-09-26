@@ -4,6 +4,7 @@
   "consumes": {
     "queries": [
       "appointments.appointments.conflicting",
+      "appointments.appointments.history",
       "appointments.appointments.list",
       "appointments.appointments.list_for_customer_with_notes",
       "appointments.recurring.get",
@@ -11,6 +12,7 @@
       "appointments.recurring.occurrences",
       "appointments.settings.get",
       "customers.list",
+      "hub.users.list",
       "services.services.list",
       "staff.members.list"
     ],
