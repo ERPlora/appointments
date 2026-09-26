@@ -18,6 +18,11 @@ language** (not a native browser date input, which paints the device's locale re
 hub's — appointments#205), with a small calendar button next to it for picking the day with the
 mouse.
 
+The time of a booking (new appointment and «Move») is painted the same way: a text field in the
+**hub language's own clock** — 24 h in Spanish, «02:30 PM» in English — typed in one go (`hh:mm`,
+AM/PM accepted in English) and repainted when you leave the field, instead of a native browser time
+input, which follows the device's clock (appointments#214).
+
 Three ways of looking at the agenda, with a switch between them:
 
 - **List** — the appointments of the scope you chose (day, status), with the customer, the service
