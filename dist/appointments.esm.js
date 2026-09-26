@@ -1962,6 +1962,8 @@ var es_default = {
     fieldService: "Servicio",
     fieldStart: "Inicio",
     fieldMinutes: "Min.",
+    fieldEndDate: "Termina el (opcional)",
+    fieldOccurrences: "N\xFAmero de citas (opcional)",
     saving: "Guardando\u2026",
     addAppointment: "A\xF1adir cita",
     searchPlaceholder: "Buscar n\xBA, cliente o servicio\u2026",
@@ -2029,6 +2031,8 @@ var es_default = {
     seriesEmpty: "Todav\xEDa no hay citas peri\xF3dicas.",
     seriesSearchPlaceholder: "Buscar por clienta, servicio o profesional",
     seriesEditTitle: "Editar cita peri\xF3dica",
+    seriesNewTitle: "Nueva cita peri\xF3dica",
+    seriesCreate: "Crear cita peri\xF3dica",
     seriesSave: "Guardar de esta cita en adelante",
     seriesNoEnd: "Sin fin",
     seriesNotFound: "Esa cita peri\xF3dica ya no est\xE1 en este negocio.",
@@ -2041,6 +2045,8 @@ var es_default = {
     seriesActive: "Activa",
     seriesToggleActiveError: "No se ha podido cambiar el estado de la cita peri\xF3dica.",
     seriesMaterialized: "Citas reservadas para esta serie.",
+    seriesCreated: "Cita peri\xF3dica creada y sus citas reservadas.",
+    seriesCreatedNotBooked: "La cita peri\xF3dica se ha creado, pero no se han podido reservar sus citas. Usa \xABReservar citas\xBB en su fila para volver a intentarlo.",
     seriesSplitFrom: "Esta serie contin\xFAa a otra anterior ({id}): se parti\xF3 cuando alguien la edit\xF3 de una cita en adelante.",
     seriesBookedCount: "{booked} citas reservadas \xB7 el cambio se aplica desde el {from} ({upcoming} por delante)",
     seriesLockedInvoiced: "{invoiced} de las citas por delante ya est\xE1n cobradas y no se van a tocar.",
@@ -2185,6 +2191,8 @@ var en_default = {
     fieldService: "Service",
     fieldStart: "Start",
     fieldMinutes: "Min.",
+    fieldEndDate: "Ends on (optional)",
+    fieldOccurrences: "Number of appointments (optional)",
     saving: "Saving\u2026",
     addAppointment: "Add appointment",
     searchPlaceholder: "Search no., customer or service\u2026",
@@ -2252,6 +2260,8 @@ var en_default = {
     seriesEmpty: "No repeating appointments yet.",
     seriesSearchPlaceholder: "Search by customer, service or professional",
     seriesEditTitle: "Edit repeating appointment",
+    seriesNewTitle: "New repeating appointment",
+    seriesCreate: "Create repeating appointment",
     seriesSave: "Save from this occurrence on",
     seriesNoEnd: "No end",
     seriesNotFound: "That repeating appointment is no longer in this business.",
@@ -2264,6 +2274,8 @@ var en_default = {
     seriesActive: "Active",
     seriesToggleActiveError: "The repeating appointment's status could not be changed.",
     seriesMaterialized: "Appointments booked for this series.",
+    seriesCreated: "Repeating appointment created and its appointments booked.",
+    seriesCreatedNotBooked: "The repeating appointment was created, but its appointments could not be booked. Use \xABBook appointments\xBB on its row to try again.",
     seriesSplitFrom: "This series continues an earlier one ({id}): it was split when someone edited it from one occurrence onwards.",
     seriesBookedCount: "{booked} appointments booked \xB7 the change applies from {from} ({upcoming} upcoming)",
     seriesLockedInvoiced: "{invoiced} of the upcoming appointments are already charged and will not be touched.",
@@ -5933,6 +5945,162 @@ __decorateClass5([
 ], OkScheduler.prototype, "heldId");
 define("ok-scheduler", OkScheduler);
 
+// @erplora/module-sdk/src/index.ts
+var DATA_TABLE_LABELS_ES = {
+  search: "Buscar\u2026",
+  empty: "Sin resultados",
+  filters: "Filtros",
+  clear: "Limpiar",
+  apply: "Aplicar",
+  selected: "{n} seleccionados",
+  importCsv: "Importar CSV",
+  exportCsv: "Exportar CSV",
+  add: "A\xF1adir",
+  moreActions: "M\xE1s acciones",
+  rowsPerPage: "Filas por p\xE1gina",
+  perPageShort: "{n} / p\xE1g.",
+  viewList: "Vista lista",
+  viewCards: "Vista tarjetas",
+  columnsVisible: "Columnas visibles",
+  columns: "Columnas",
+  actions: "Acciones",
+  close: "Cerrar",
+  newRecord: "Nuevo",
+  form: "Formulario",
+  filterPlaceholder: "Filtrar\u2026",
+  from: "Desde",
+  to: "Hasta",
+  fromOf: "{label} desde",
+  toOf: "{label} hasta",
+  gte: "\u2265",
+  lte: "\u2264",
+  noValues: "Sin valores",
+  selectAll: "Seleccionar todo",
+  selectRow: "Seleccionar fila",
+  select: "Seleccionar",
+  showing: "Mostrando {from}\u2013{to} de",
+  recordSingular: "registro",
+  recordPlural: "registros"
+};
+var DATA_TABLE_LABELS_EN = {
+  search: "Search\u2026",
+  empty: "No results",
+  filters: "Filters",
+  clear: "Clear",
+  apply: "Apply",
+  selected: "{n} selected",
+  importCsv: "Import CSV",
+  exportCsv: "Export CSV",
+  add: "Add",
+  moreActions: "More actions",
+  rowsPerPage: "Rows per page",
+  perPageShort: "{n} / page",
+  viewList: "List view",
+  viewCards: "Card view",
+  columnsVisible: "Visible columns",
+  columns: "Columns",
+  actions: "Actions",
+  close: "Close",
+  newRecord: "New",
+  form: "Form",
+  filterPlaceholder: "Filter\u2026",
+  from: "From",
+  to: "To",
+  fromOf: "{label} from",
+  toOf: "{label} to",
+  gte: "\u2265",
+  lte: "\u2264",
+  noValues: "No values",
+  selectAll: "Select all",
+  selectRow: "Select row",
+  select: "Select",
+  showing: "Showing {from}\u2013{to} of",
+  recordSingular: "record",
+  recordPlural: "records"
+};
+function dataTableLabels(locale = "es") {
+  return locale.toLowerCase().startsWith("en") ? DATA_TABLE_LABELS_EN : DATA_TABLE_LABELS_ES;
+}
+
+// ui/lib/typed-start.ts
+function pad2(n6) {
+  return String(n6).padStart(2, "0");
+}
+function isLeapYear(year) {
+  return year % 4 === 0 && year % 100 !== 0 || year % 400 === 0;
+}
+function daysInMonth(year, month) {
+  const days = [31, isLeapYear(year) ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  return days[month - 1];
+}
+function toIsoDate(year, month, day) {
+  if (month < 1 || month > 12) return null;
+  if (day < 1 || day > daysInMonth(year, month)) return null;
+  return `${String(year).padStart(4, "0")}-${pad2(month)}-${pad2(day)}`;
+}
+function parseTime(raw) {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  const match = trimmed.match(/^(\d{1,2}):(\d{2})(?::\d{2})?(?:\s*(a\.?m\.?|p\.?m\.?))?$/i);
+  if (!match) return null;
+  const [, hourText, minuteText, meridiem] = match;
+  const minute = Number(minuteText);
+  if (minute < 0 || minute > 59) return null;
+  let hour = Number(hourText);
+  if (meridiem) {
+    if (hour < 1 || hour > 12) return null;
+    const isPm = meridiem.toLowerCase().startsWith("p");
+    hour = isPm ? hour === 12 ? 12 : hour + 12 : hour === 12 ? 0 : hour;
+  } else if (hour < 0 || hour > 23) {
+    return null;
+  }
+  return `${pad2(hour)}:${pad2(minute)}`;
+}
+function isDayFirstLocale(locale) {
+  try {
+    const parts = new Intl.DateTimeFormat(locale || void 0, {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit"
+    }).formatToParts(new Date(2026, 8, 26));
+    const monthIndex = parts.findIndex((p4) => p4.type === "month");
+    const dayIndex = parts.findIndex((p4) => p4.type === "day");
+    if (monthIndex === -1 || dayIndex === -1) return true;
+    return dayIndex < monthIndex;
+  } catch {
+    return true;
+  }
+}
+var ISO_DATE = /^(\d{4})-(\d{2})-(\d{2})(?:[T\s]+(.+))?$/;
+var NUMERIC_DATE = /^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})(?:[\s,T]+(.+))?$/;
+function parseTypedStart(text, locale) {
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+  const iso = trimmed.match(ISO_DATE);
+  if (iso) {
+    const [, yearText, monthText, dayText, rest] = iso;
+    const date = toIsoDate(Number(yearText), Number(monthText), Number(dayText));
+    if (!date) return null;
+    if (rest === void 0) return { date, time: "" };
+    const time2 = parseTime(rest);
+    return time2 === null ? null : { date, time: time2 };
+  }
+  const numeric = trimmed.match(NUMERIC_DATE);
+  if (numeric) {
+    const [, first, second, yearText, rest] = numeric;
+    const dayFirst = isDayFirstLocale(locale);
+    const day = Number(dayFirst ? first : second);
+    const month = Number(dayFirst ? second : first);
+    const date = toIsoDate(Number(yearText), month, day);
+    if (!date) return null;
+    if (rest === void 0) return { date, time: "" };
+    const time2 = parseTime(rest);
+    return time2 === null ? null : { date, time: time2 };
+  }
+  const time = parseTime(trimmed);
+  return time === null ? null : { date: "", time };
+}
+
 // ui/components/erp-appointments-series/erp-appointments-series.ts
 var CATALOG3 = { es: es_default, en: en_default };
 function erplora3() {
@@ -5982,6 +6150,20 @@ var ErpAppointmentsSeries = class extends i3 {
     this.editDayOfWeek = "";
     this.editTime = "";
     this.editDuration = "";
+    this.customers = [];
+    this.services = [];
+    this.staffMembers = [];
+    this.newCustomerId = "";
+    this.newServiceId = "";
+    this.newStaffId = "";
+    this.newFrequency = "weekly";
+    this.newDayOfWeek = "";
+    this.newStartDate = "";
+    this.newStartTime = "";
+    this.newDuration = "";
+    this.newEndDate = "";
+    this.newOccurrences = "";
+    this.createError = "";
     this.offLocale = null;
   }
   static {
@@ -5990,11 +6172,11 @@ var ErpAppointmentsSeries = class extends i3 {
             font-family: system-ui, sans-serif; color: var(--ion-text-color, #1c1b18); }
     .page { display:flex; flex-direction:column; gap:.5rem; min-height:0; flex:1 1 auto; }
     .page > ok-data-table { flex:1 1 auto; min-height:0; }
-    .form { display:flex; flex-direction:column; gap:.75rem; padding:.25rem 0; }
-    /* Dos columnas en cuanto hay sitio y una sola en móvil: el panel es el mismo en los tres
-       tamaños, lo que cambia es cuántos campos caben por fila. */
+    .form { display:flex; flex-direction:column; gap:.75rem; padding:.25rem 0; container-type:inline-size; }
+    /* Two columns only when the FORM (the table's side panel) has room: on a wide screen that panel
+       is ~360 px, so a viewport media query would cut every field in half. */
     .grid { display:grid; grid-template-columns:1fr; gap:.75rem; }
-    @media (min-width: 540px) { .grid { grid-template-columns:1fr 1fr; } }
+    @container (min-width: 540px) { .grid { grid-template-columns:1fr 1fr; } }
     .ctx { margin:0; font-size:.9rem; color: var(--ion-color-medium, #8b897f); }
     .ctx strong { color: var(--ion-text-color, #1c1b18); }
     .loading, .empty { color: var(--ion-color-medium, #8b897f); font-size:.9rem; margin:.25rem 0; }
@@ -6003,12 +6185,28 @@ var ErpAppointmentsSeries = class extends i3 {
   async connectedCallback() {
     super.connectedCallback();
     this.offLocale = erplora3().on("erplora:locale-changed", () => this.requestUpdate());
-    await this.refresh();
+    await Promise.all([this.refresh(), this.loadCatalogs()]);
   }
   disconnectedCallback() {
     this.offLocale?.();
     this.offLocale = null;
     super.disconnectedCallback();
+  }
+  /** appointments#209 — the links a NEW series books against, read from their public queries
+   *  (never another module's tables), exactly like the create panel of `erp-appointments-list`. */
+  async loadCatalogs() {
+    const [customers, services, staffMembers] = await Promise.all([
+      erplora3().query("customers.list", { limit: 500, sort: "name", dir: "asc" }).catch(() => []),
+      erplora3().query("services.services.list", { limit: 500 }).catch(() => []),
+      erplora3().query("staff.members.list", { limit: 500 }).catch(() => [])
+    ]);
+    this.customers = rows3(customers);
+    this.services = rows3(services).filter((s5) => s5.is_bookable === void 0 || Number(s5.is_bookable) === 1);
+    this.staffMembers = rows3(staffMembers);
+  }
+  /** Professionals that can receive appointments: the ones the `staff` module marks bookable. */
+  get bookableStaff() {
+    return this.staffMembers.filter((m4) => Number(m4.is_bookable) === 1 && m4.status !== "terminated");
   }
   async refresh() {
     this.loading = true;
@@ -6024,6 +6222,25 @@ var ErpAppointmentsSeries = class extends i3 {
   }
   dataTable() {
     return this.renderRoot.querySelector("ok-data-table");
+  }
+  /** appointments#209 — `.addable` makes `ok-data-table` paint its OWN toolbar button
+   *  (`data-testid="appointments-series-table-add"`), which just toggles its `panel` and emits no
+   *  event: there is nothing to listen for on the table itself. Caught here with a NATIVE listener
+   *  on `renderRoot` instead of a `@click` in the template — a testid guard forbids the latter on a
+   *  testid'd element, and `ok-data-table` recreates its own toolbar across renders while
+   *  `renderRoot` is the one thing that survives all of them. */
+  firstUpdated() {
+    this.renderRoot.addEventListener("click", (e5) => this.onTableAddClick(e5));
+  }
+  onTableAddClick(e5) {
+    const tappedAdd = e5.composedPath().some((node) => node.getAttribute?.("data-testid") === "appointments-series-table-add");
+    if (!tappedAdd) return;
+    this.editSeq++;
+    if (this.editingId) {
+      this.editingId = "";
+      this.template = null;
+      this.occurrences = [];
+    }
   }
   /** Carga la plantilla AUTORITATIVA de la serie (la lista no trae los tres ids) y lo que ya está
    *  reservado, que es lo que decide dónde cae el corte y lo que hay que avisar antes de guardar. */
@@ -6294,6 +6511,7 @@ var ErpAppointmentsSeries = class extends i3 {
         testid="appointments-series-table"
         .fill=${true}
         .views=${true}
+        .addable=${true}
         .cardTitle=${(row) => String(row.customer_name ?? "")}
         .columns=${this.columns}
         .rows=${this.series}
@@ -6301,10 +6519,10 @@ var ErpAppointmentsSeries = class extends i3 {
         .searchPlaceholder=${t5("ui.seriesSearchPlaceholder")}
         .actions=${this.rowActions}
         @rowAction=${(e5) => this.onRowAction(e5)}
-        .labels=${{ newRecord: t5("ui.seriesEditTitle") }}
+        .labels=${{ ...dataTableLabels(erplora3().locale), newRecord: this.editingId ? t5("ui.seriesEditTitle") : t5("ui.seriesNewTitle") }}
         .emptyMessage=${this.loading ? t5("ui.loading") : t5("ui.seriesEmpty")}
       >
-        ${this.editingId ? this.renderEditForm(t5) : A}
+        ${this.editingId ? this.renderEditForm(t5) : this.renderCreateForm(t5)}
       </ok-data-table>
     </div>`;
   }
@@ -6378,6 +6596,250 @@ var ErpAppointmentsSeries = class extends i3 {
       <ion-button data-testid="appointments-series-submit" type="submit" expand="block" .disabled=${this.saving}>${t5("ui.seriesSave")}</ion-button>
     </form>`;
   }
+  /** appointments#209 — chosen service PRE-FILLS «Min.» with its catalog duration: the receptionist
+   *  needs to SEE how long the series is going to book before saving, and re-picking the service
+   *  re-fills from the new one because the typed exception belonged to the old one. */
+  onCreateServiceChange(serviceId) {
+    this.newServiceId = serviceId;
+    const service = this.services.find((s5) => s5.id === serviceId);
+    const m4 = Number(service?.duration_minutes);
+    this.newDuration = Number.isFinite(m4) && m4 >= 1 ? String(m4) : "";
+  }
+  /** appointments#204/#209 — same trap as the new-appointment panel: the `date` field's year
+   *  segment eats the caret, so a space/comma/`t` typed right after a full date hands the focus to
+   *  the time field instead of doing nothing. */
+  onCreateStartDateKeydown(e5) {
+    if (e5.key !== " " && e5.key !== "," && e5.key !== "t" && e5.key !== "T") return;
+    const value = e5.target.value;
+    if (typeof value !== "string" || !value) return;
+    e5.preventDefault();
+    const timeField = this.renderRoot.querySelector('ion-input[data-role="series-start-time"]');
+    void timeField?.setFocus?.();
+  }
+  /** appointments#204/#209 — native `date`/`time` inputs ignore pasted text: read the clipboard as
+   *  a whole start and fill whichever halves `parseTypedStart` recognizes. */
+  onCreateStartPaste(e5) {
+    const text = e5.clipboardData?.getData("text") ?? "";
+    const parsed = parseTypedStart(text, erplora3().locale);
+    if (!parsed) return;
+    e5.preventDefault();
+    if (parsed.date) this.newStartDate = parsed.date;
+    if (parsed.time) this.newStartTime = parsed.time;
+  }
+  /** Everything the NEW-series draft holds, back to a blank form (appointments#209). */
+  resetCreateDraft() {
+    this.newCustomerId = "";
+    this.newServiceId = "";
+    this.newStaffId = "";
+    this.newFrequency = "weekly";
+    this.newDayOfWeek = "";
+    this.newStartDate = "";
+    this.newStartTime = "";
+    this.newDuration = "";
+    this.newEndDate = "";
+    this.newOccurrences = "";
+    this.createError = "";
+  }
+  renderCreateForm(t5) {
+    const customer = this.customers.find((c5) => c5.id === this.newCustomerId);
+    const service = this.services.find((s5) => s5.id === this.newServiceId);
+    const staff = this.bookableStaff.find((m4) => m4.id === this.newStaffId);
+    const duration = Math.trunc(Number(this.newDuration));
+    const canSubmit = !this.saving && !!customer && !!service && !!staff && !!this.newStartDate && !!this.newStartTime && Number.isFinite(duration) && duration >= 1;
+    return b2`<form slot="create" data-testid="appointments-series-create-form" data-mode="series-create" class="form" @submit=${(e5) => this.createSeries(e5)}>
+      <div class="grid">
+        <ion-select
+          data-testid="appointments-series-create-customer"
+          data-role="series-create-customer"
+          fill="outline"
+          mode="md"
+          label=${t5("ui.fieldCustomer")}
+          placeholder=${t5("ui.pickCustomer")}
+          label-placement="floating"
+          .value=${this.newCustomerId}
+          @ionChange=${(e5) => this.newCustomerId = e5.target.value ?? ""}
+        >
+          ${this.customers.map((c5) => b2`<ion-select-option .value=${c5.id}>${c5.name}</ion-select-option>`)}
+        </ion-select>
+        <ion-select
+          data-testid="appointments-series-create-service"
+          data-role="series-create-service"
+          fill="outline"
+          mode="md"
+          label=${t5("ui.fieldService")}
+          placeholder=${t5("ui.pickService")}
+          label-placement="floating"
+          .value=${this.newServiceId}
+          @ionChange=${(e5) => this.onCreateServiceChange(e5.target.value ?? "")}
+        >
+          ${this.services.map((s5) => b2`<ion-select-option .value=${s5.id}>${s5.name}</ion-select-option>`)}
+        </ion-select>
+        <ion-select
+          data-testid="appointments-series-create-staff"
+          data-role="series-create-staff"
+          fill="outline"
+          mode="md"
+          label=${t5("ui.fieldStaff")}
+          placeholder=${t5("ui.pickStaff")}
+          label-placement="floating"
+          .value=${this.newStaffId}
+          @ionChange=${(e5) => this.newStaffId = e5.target.value ?? ""}
+        >
+          ${this.bookableStaff.map((m4) => b2`<ion-select-option .value=${m4.id}>${m4.full_name}</ion-select-option>`)}
+        </ion-select>
+        <ion-select
+          data-testid="appointments-series-create-frequency"
+          data-role="series-create-frequency"
+          fill="outline"
+          mode="md"
+          label=${t5("ui.fieldFrequency")}
+          label-placement="floating"
+          .value=${this.newFrequency}
+          @ionChange=${(e5) => this.newFrequency = e5.target.value}
+        >
+          ${FREQUENCIES.map((f3) => b2`<ion-select-option .value=${f3}>${t5(FREQUENCY_KEYS[f3])}</ion-select-option>`)}
+        </ion-select>
+        ${ALIGNS_TO_WEEKDAY.includes(this.newFrequency) ? b2`<ion-select
+              data-testid="appointments-series-create-day"
+              data-role="series-create-day"
+              fill="outline"
+              mode="md"
+              label=${t5("ui.fieldWeekday")}
+              label-placement="floating"
+              .value=${this.newDayOfWeek}
+              @ionChange=${(e5) => this.newDayOfWeek = e5.target.value}
+            >
+              <ion-select-option value="">${t5("ui.weekdayAny")}</ion-select-option>
+              ${WEEKDAY_KEYS.map((k2, i7) => b2`<ion-select-option .value=${String(i7)}>${t5(k2)}</ion-select-option>`)}
+            </ion-select>` : A}
+        <ion-input
+          data-testid="appointments-series-create-start"
+          data-role="series-start-date"
+          fill="outline"
+          mode="md"
+          label=${t5("ui.fieldDate")}
+          label-placement="floating"
+          type="date"
+          .value=${this.newStartDate}
+          @ionInput=${(e5) => this.newStartDate = e5.target.value ?? ""}
+          @keydown=${(e5) => this.onCreateStartDateKeydown(e5)}
+          @paste=${(e5) => this.onCreateStartPaste(e5)}
+        ></ion-input>
+        <ion-input
+          data-testid="appointments-series-create-start-time"
+          data-role="series-start-time"
+          fill="outline"
+          mode="md"
+          label=${t5("ui.fieldTime")}
+          label-placement="floating"
+          type="time"
+          .value=${this.newStartTime}
+          @ionInput=${(e5) => this.newStartTime = e5.target.value ?? ""}
+          @paste=${(e5) => this.onCreateStartPaste(e5)}
+        ></ion-input>
+        <ion-input
+          data-testid="appointments-series-create-duration"
+          data-role="series-create-duration"
+          fill="outline"
+          mode="md"
+          label=${t5("ui.fieldMinutes")}
+          label-placement="floating"
+          type="number"
+          min="1"
+          .value=${this.newDuration}
+          @ionInput=${(e5) => this.newDuration = e5.target.value}
+        ></ion-input>
+        <ion-input
+          data-testid="appointments-series-create-end"
+          data-role="series-create-end"
+          fill="outline"
+          mode="md"
+          label=${t5("ui.fieldEndDate")}
+          label-placement="floating"
+          type="date"
+          .value=${this.newEndDate}
+          @ionInput=${(e5) => this.newEndDate = e5.target.value ?? ""}
+        ></ion-input>
+        <ion-input
+          data-testid="appointments-series-create-occurrences"
+          data-role="series-create-occurrences"
+          fill="outline"
+          mode="md"
+          label=${t5("ui.fieldOccurrences")}
+          label-placement="floating"
+          type="number"
+          min="1"
+          .value=${this.newOccurrences}
+          @ionInput=${(e5) => this.newOccurrences = e5.target.value}
+        ></ion-input>
+      </div>
+      ${this.createError ? b2`<ok-inline-feedback data-testid="appointments-series-create-error" tone="danger" icon="alert-circle-outline">${this.createError}</ok-inline-feedback>` : A}
+      <ion-button data-testid="appointments-series-create-submit" type="submit" expand="block" ?disabled=${!canSubmit}
+        >${this.saving ? t5("ui.saving") : t5("ui.seriesCreate")}</ion-button
+      >
+    </form>`;
+  }
+  /** appointments#209 — creates the series with the existing `appointments.recurring.create`
+   *  command and books its window right away with `appointments.recurring.materialize`, the same
+   *  two-step chain `submitEdit` already runs for a pattern change: a repeating appointment that
+   *  is created but never booked would land on nobody's agenda. */
+  async createSeries(ev) {
+    ev.preventDefault?.();
+    if (this.saving) return;
+    const customer = this.customers.find((c5) => c5.id === this.newCustomerId);
+    const service = this.services.find((s5) => s5.id === this.newServiceId);
+    const staff = this.bookableStaff.find((m4) => m4.id === this.newStaffId);
+    const duration = Math.trunc(Number(this.newDuration));
+    if (!customer || !service || !staff || !this.newStartDate || !this.newStartTime || !Number.isFinite(duration) || duration < 1) {
+      return;
+    }
+    this.saving = true;
+    this.createError = "";
+    const t5 = (k2, p4) => erplora3().t(CATALOG3, k2, p4);
+    try {
+      const occurrences = Math.trunc(Number(this.newOccurrences));
+      const result = await erplora3().command("appointments.recurring.create", {
+        customer_id: customer.id,
+        customer_name: customer.name,
+        service_id: service.id,
+        service_name: service.name,
+        staff_id: staff.id,
+        staff_name: staff.full_name,
+        frequency: this.newFrequency,
+        // The weekday only aligns patterns that advance by weeks (see ALIGNS_TO_WEEKDAY).
+        day_of_week: ALIGNS_TO_WEEKDAY.includes(this.newFrequency) && this.newDayOfWeek !== "" ? Math.trunc(Number(this.newDayOfWeek)) : null,
+        time: this.newStartTime,
+        duration_minutes: duration,
+        start_date: this.newStartDate,
+        end_date: this.newEndDate || null,
+        max_occurrences: Number.isFinite(occurrences) && occurrences >= 1 ? occurrences : null
+      });
+      const newId = String(result?.new_ids?.[0] ?? "");
+      this.resetCreateDraft();
+      this.dataTable()?.close();
+      let notBooked = false;
+      try {
+        await erplora3().command("appointments.recurring.materialize", {
+          recurring_id: newId,
+          customer_id: customer.id,
+          service_id: service.id,
+          staff_id: staff.id
+        });
+      } catch {
+        notBooked = true;
+      }
+      await this.refresh();
+      if (notBooked) {
+        this.error = t5("ui.seriesCreatedNotBooked");
+      } else {
+        erplora3().notify?.({ type: "success", message: t5("ui.seriesCreated") });
+      }
+    } catch (e5) {
+      this.createError = e5 instanceof Error && e5.message ? e5.message : t5("ui.seriesSaveError");
+    } finally {
+      this.saving = false;
+    }
+  }
 };
 __decorateClass([
   r5()
@@ -6418,86 +6880,49 @@ __decorateClass([
 __decorateClass([
   r5()
 ], ErpAppointmentsSeries.prototype, "editDuration", 2);
+__decorateClass([
+  r5()
+], ErpAppointmentsSeries.prototype, "customers", 2);
+__decorateClass([
+  r5()
+], ErpAppointmentsSeries.prototype, "services", 2);
+__decorateClass([
+  r5()
+], ErpAppointmentsSeries.prototype, "staffMembers", 2);
+__decorateClass([
+  r5()
+], ErpAppointmentsSeries.prototype, "newCustomerId", 2);
+__decorateClass([
+  r5()
+], ErpAppointmentsSeries.prototype, "newServiceId", 2);
+__decorateClass([
+  r5()
+], ErpAppointmentsSeries.prototype, "newStaffId", 2);
+__decorateClass([
+  r5()
+], ErpAppointmentsSeries.prototype, "newFrequency", 2);
+__decorateClass([
+  r5()
+], ErpAppointmentsSeries.prototype, "newDayOfWeek", 2);
+__decorateClass([
+  r5()
+], ErpAppointmentsSeries.prototype, "newStartDate", 2);
+__decorateClass([
+  r5()
+], ErpAppointmentsSeries.prototype, "newStartTime", 2);
+__decorateClass([
+  r5()
+], ErpAppointmentsSeries.prototype, "newDuration", 2);
+__decorateClass([
+  r5()
+], ErpAppointmentsSeries.prototype, "newEndDate", 2);
+__decorateClass([
+  r5()
+], ErpAppointmentsSeries.prototype, "newOccurrences", 2);
+__decorateClass([
+  r5()
+], ErpAppointmentsSeries.prototype, "createError", 2);
 define("erp-appointments-series", ErpAppointmentsSeries);
-
-// ui/lib/typed-start.ts
-function pad2(n6) {
-  return String(n6).padStart(2, "0");
-}
-function isLeapYear(year) {
-  return year % 4 === 0 && year % 100 !== 0 || year % 400 === 0;
-}
-function daysInMonth(year, month) {
-  const days = [31, isLeapYear(year) ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-  return days[month - 1];
-}
-function toIsoDate(year, month, day) {
-  if (month < 1 || month > 12) return null;
-  if (day < 1 || day > daysInMonth(year, month)) return null;
-  return `${String(year).padStart(4, "0")}-${pad2(month)}-${pad2(day)}`;
-}
-function parseTime(raw) {
-  const trimmed = raw.trim();
-  if (!trimmed) return null;
-  const match = trimmed.match(/^(\d{1,2}):(\d{2})(?::\d{2})?(?:\s*(a\.?m\.?|p\.?m\.?))?$/i);
-  if (!match) return null;
-  const [, hourText, minuteText, meridiem] = match;
-  const minute = Number(minuteText);
-  if (minute < 0 || minute > 59) return null;
-  let hour = Number(hourText);
-  if (meridiem) {
-    if (hour < 1 || hour > 12) return null;
-    const isPm = meridiem.toLowerCase().startsWith("p");
-    hour = isPm ? hour === 12 ? 12 : hour + 12 : hour === 12 ? 0 : hour;
-  } else if (hour < 0 || hour > 23) {
-    return null;
-  }
-  return `${pad2(hour)}:${pad2(minute)}`;
-}
-function isDayFirstLocale(locale) {
-  try {
-    const parts = new Intl.DateTimeFormat(locale || void 0, {
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit"
-    }).formatToParts(new Date(2026, 8, 26));
-    const monthIndex = parts.findIndex((p4) => p4.type === "month");
-    const dayIndex = parts.findIndex((p4) => p4.type === "day");
-    if (monthIndex === -1 || dayIndex === -1) return true;
-    return dayIndex < monthIndex;
-  } catch {
-    return true;
-  }
-}
-var ISO_DATE = /^(\d{4})-(\d{2})-(\d{2})(?:[T\s]+(.+))?$/;
-var NUMERIC_DATE = /^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})(?:[\s,T]+(.+))?$/;
-function parseTypedStart(text, locale) {
-  const trimmed = text.trim();
-  if (!trimmed) return null;
-  const iso = trimmed.match(ISO_DATE);
-  if (iso) {
-    const [, yearText, monthText, dayText, rest] = iso;
-    const date = toIsoDate(Number(yearText), Number(monthText), Number(dayText));
-    if (!date) return null;
-    if (rest === void 0) return { date, time: "" };
-    const time2 = parseTime(rest);
-    return time2 === null ? null : { date, time: time2 };
-  }
-  const numeric = trimmed.match(NUMERIC_DATE);
-  if (numeric) {
-    const [, first, second, yearText, rest] = numeric;
-    const dayFirst = isDayFirstLocale(locale);
-    const day = Number(dayFirst ? first : second);
-    const month = Number(dayFirst ? second : first);
-    const date = toIsoDate(Number(yearText), month, day);
-    if (!date) return null;
-    if (rest === void 0) return { date, time: "" };
-    const time2 = parseTime(rest);
-    return time2 === null ? null : { date, time: time2 };
-  }
-  const time = parseTime(trimmed);
-  return time === null ? null : { date: "", time };
-}
 
 // ui/components/erp-appointments-list/erp-appointments-list.ts
 var CATALOG4 = { es: es_default, en: en_default };
