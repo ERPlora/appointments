@@ -6385,6 +6385,85 @@ __decorateClass([
 ], ErpAppointmentsSeries.prototype, "editDuration", 2);
 define("erp-appointments-series", ErpAppointmentsSeries);
 
+// ui/lib/typed-start.ts
+function pad2(n6) {
+  return String(n6).padStart(2, "0");
+}
+function isLeapYear(year) {
+  return year % 4 === 0 && year % 100 !== 0 || year % 400 === 0;
+}
+function daysInMonth(year, month) {
+  const days = [31, isLeapYear(year) ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  return days[month - 1];
+}
+function toIsoDate(year, month, day) {
+  if (month < 1 || month > 12) return null;
+  if (day < 1 || day > daysInMonth(year, month)) return null;
+  return `${String(year).padStart(4, "0")}-${pad2(month)}-${pad2(day)}`;
+}
+function parseTime(raw) {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  const match = trimmed.match(/^(\d{1,2}):(\d{2})(?::\d{2})?(?:\s*(a\.?m\.?|p\.?m\.?))?$/i);
+  if (!match) return null;
+  const [, hourText, minuteText, meridiem] = match;
+  const minute = Number(minuteText);
+  if (minute < 0 || minute > 59) return null;
+  let hour = Number(hourText);
+  if (meridiem) {
+    if (hour < 1 || hour > 12) return null;
+    const isPm = meridiem.toLowerCase().startsWith("p");
+    hour = isPm ? hour === 12 ? 12 : hour + 12 : hour === 12 ? 0 : hour;
+  } else if (hour < 0 || hour > 23) {
+    return null;
+  }
+  return `${pad2(hour)}:${pad2(minute)}`;
+}
+function isDayFirstLocale(locale) {
+  try {
+    const parts = new Intl.DateTimeFormat(locale || void 0, {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit"
+    }).formatToParts(new Date(2026, 8, 26));
+    const monthIndex = parts.findIndex((p4) => p4.type === "month");
+    const dayIndex = parts.findIndex((p4) => p4.type === "day");
+    if (monthIndex === -1 || dayIndex === -1) return true;
+    return dayIndex < monthIndex;
+  } catch {
+    return true;
+  }
+}
+var ISO_DATE = /^(\d{4})-(\d{2})-(\d{2})(?:[T\s]+(.+))?$/;
+var NUMERIC_DATE = /^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})(?:[\s,T]+(.+))?$/;
+function parseTypedStart(text, locale) {
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+  const iso = trimmed.match(ISO_DATE);
+  if (iso) {
+    const [, yearText, monthText, dayText, rest] = iso;
+    const date = toIsoDate(Number(yearText), Number(monthText), Number(dayText));
+    if (!date) return null;
+    if (rest === void 0) return { date, time: "" };
+    const time2 = parseTime(rest);
+    return time2 === null ? null : { date, time: time2 };
+  }
+  const numeric = trimmed.match(NUMERIC_DATE);
+  if (numeric) {
+    const [, first, second, yearText, rest] = numeric;
+    const dayFirst = isDayFirstLocale(locale);
+    const day = Number(dayFirst ? first : second);
+    const month = Number(dayFirst ? second : first);
+    const date = toIsoDate(Number(yearText), month, day);
+    if (!date) return null;
+    if (rest === void 0) return { date, time: "" };
+    const time2 = parseTime(rest);
+    return time2 === null ? null : { date, time: time2 };
+  }
+  const time = parseTime(trimmed);
+  return time === null ? null : { date: "", time };
+}
+
 // ui/components/erp-appointments-list/erp-appointments-list.ts
 var CATALOG4 = { es: es_default, en: en_default };
 var STATUS_KEYS2 = {
@@ -6440,6 +6519,13 @@ function wallIsPast(wall) {
     return false;
   }
 }
+function joinWall(date, time) {
+  return date && time ? `${date}T${time.slice(0, 5)}` : "";
+}
+function splitWall(value) {
+  const v3 = String(value ?? "");
+  return [v3.slice(0, 10), v3.slice(11, 16)];
+}
 function rows4(r6) {
   if (Array.isArray(r6)) return r6;
   if (r6 && typeof r6 === "object" && Array.isArray(r6.rows)) {
@@ -6466,10 +6552,12 @@ var ErpAppointmentsList = class extends i3 {
     this.newCustomerId = "";
     this.newServiceId = "";
     this.newStaffId = "";
-    this.newStart = "";
+    this.newStartDate = "";
+    this.newStartTime = "";
     this.newDuration = "";
     this.rescheduleId = "";
-    this.rescheduleStart = "";
+    this.rescheduleStartDate = "";
+    this.rescheduleStartTime = "";
     this.rescheduleDuration = "";
     this.rescheduleStaffName = "";
     this.rescheduleStaffId = "";
@@ -6535,6 +6623,18 @@ var ErpAppointmentsList = class extends i3 {
     .form .actions ion-button { align-self:auto; }
     .err { color:#d9480f; font-weight:600; }
   `;
+  }
+  get newStart() {
+    return joinWall(this.newStartDate, this.newStartTime);
+  }
+  set newStart(value) {
+    [this.newStartDate, this.newStartTime] = splitWall(value);
+  }
+  get rescheduleStart() {
+    return joinWall(this.rescheduleStartDate, this.rescheduleStartTime);
+  }
+  set rescheduleStart(value) {
+    [this.rescheduleStartDate, this.rescheduleStartTime] = splitWall(value);
   }
   statusLabel(status) {
     const key = STATUS_KEYS2[status];
@@ -6750,6 +6850,40 @@ var ErpAppointmentsList = class extends i3 {
   // Referencia al ok-data-table para abrir/cerrar su panel lateral (el «+» de su barra).
   dataTable() {
     return this.renderRoot.querySelector("ok-data-table");
+  }
+  /** appointments#204 — shared by the create and reschedule date/time pairs: writes the halves
+   *  `parseTypedStart` found into the matching form's state, leaving the other half as it was
+   *  when only a date or only a time was recognized. */
+  applyTypedStart(form, parsed) {
+    if (form === "new") {
+      if (parsed.date) this.newStartDate = parsed.date;
+      if (parsed.time) this.newStartTime = parsed.time;
+    } else {
+      if (parsed.date) this.rescheduleStartDate = parsed.date;
+      if (parsed.time) this.rescheduleStartTime = parsed.time;
+    }
+  }
+  /** appointments#204 — a `date` field's year segment takes six digits, so a space typed right
+   *  after the year cannot move the caret to the hour: this hands the caret to the matching
+   *  `time` field itself, but only once the date is complete (a half-typed date still needs the
+   *  browser's own handling of that key). */
+  onStartDateKeydown(form, e5) {
+    if (e5.key !== " " && e5.key !== "," && e5.key !== "t" && e5.key !== "T") return;
+    const value = e5.target.value;
+    if (typeof value !== "string" || !value) return;
+    e5.preventDefault();
+    const timeTestId = form === "new" ? "appointments-list-start-time" : "appointments-list-reschedule-start-time";
+    const timeField = this.renderRoot.querySelector(`[data-testid="${timeTestId}"]`);
+    void timeField?.setFocus?.();
+  }
+  /** appointments#204 — native `date`/`time` inputs ignore pasted text; this reads the clipboard
+   *  as a whole start and fills whichever halves it recognizes. */
+  onStartPaste(form, e5) {
+    const text = e5.clipboardData?.getData("text") ?? "";
+    const parsed = parseTypedStart(text, erplora4().locale);
+    if (!parsed) return;
+    e5.preventDefault();
+    this.applyTypedStart(form, parsed);
   }
   /** Has the chosen time already passed? Asked against the SALON clock, which is the one that
    *  decides (appointments#12/#76): the device may sit in another timezone and the answer would
@@ -7324,7 +7458,9 @@ var ErpAppointmentsList = class extends i3 {
     return b2`<form slot="create" data-testid="appointments-list-reschedule-form" data-mode="reschedule" class="form" @submit=${(e5) => this.submitReschedule(e5)}>
       <ok-inline-feedback data-testid="appointments-list-reschedule-hint" tone="info" icon="information-circle-outline">${t5("ui.rescheduleHint")}</ok-inline-feedback>
       <p class="ctx">${t5("ui.fieldStaff")}: <strong>${this.rescheduleStaffName || "\u2014"}</strong></p>
-      <ion-input data-testid="appointments-list-reschedule-start" data-role="reschedule-start" fill="outline" label-placement="floating" label=${t5("ui.fieldStart")} type="datetime-local" .value=${this.rescheduleStart} @ionInput=${(e5) => this.rescheduleStart = e5.target.value}></ion-input>
+      <!-- appointments#204: date + time, not datetime-local — its year segment takes 6 digits and never hands the caret to the hour, so a typed start never landed. -->
+      <ion-input data-testid="appointments-list-reschedule-start" data-role="reschedule-start" fill="outline" label-placement="floating" label=${t5("ui.fieldDate")} type="date" .value=${this.rescheduleStartDate} @ionInput=${(e5) => this.rescheduleStartDate = e5.target.value ?? ""} @keydown=${(e5) => this.onStartDateKeydown("reschedule", e5)} @paste=${(e5) => this.onStartPaste("reschedule", e5)}></ion-input>
+      <ion-input data-testid="appointments-list-reschedule-start-time" data-role="reschedule-start-time" fill="outline" label-placement="floating" label=${t5("ui.fieldTime")} type="time" .value=${this.rescheduleStartTime} @ionInput=${(e5) => this.rescheduleStartTime = e5.target.value ?? ""} @paste=${(e5) => this.onStartPaste("reschedule", e5)}></ion-input>
       <ion-input data-testid="appointments-list-reschedule-duration" data-role="reschedule-duration" fill="outline" label-placement="floating" label=${t5("ui.fieldMinutes")} type="number" min="1" .value=${this.rescheduleDuration} @ionInput=${(e5) => this.rescheduleDuration = e5.target.value}></ion-input>
       ${this.rescheduleStartIsPast ? b2`<ok-inline-feedback data-testid="appointments-list-reschedule-past-notice" tone="warning" icon="time-outline">${t5("ui.reschedulePastNotice")}</ok-inline-feedback>` : A}
       ${this.formError ? b2`<ok-inline-feedback data-testid="appointments-list-reschedule-error" tone="danger" icon="alert-circle-outline">${this.formError}</ok-inline-feedback>` : A}
@@ -7364,7 +7500,9 @@ var ErpAppointmentsList = class extends i3 {
             <ion-select data-testid="appointments-list-staff" data-role="staff" fill="outline" label-placement="floating" label=${t5("ui.fieldStaff")} placeholder=${t5("ui.pickStaff")} .value=${this.newStaffId} @ionChange=${(e5) => this.newStaffId = e5.target.value}>
               ${this.bookableStaff.map((m4) => b2`<ion-select-option .value=${m4.id}>${m4.full_name}</ion-select-option>`)}
             </ion-select>
-            <ion-input data-testid="appointments-list-start" fill="outline" label-placement="floating" label=${t5("ui.fieldStart")} type="datetime-local" .value=${this.newStart} @ionInput=${(e5) => this.newStart = e5.target.value}></ion-input>
+            <!-- appointments#204: date + time, not datetime-local — its year segment takes 6 digits and never hands the caret to the hour, so a typed start never landed. -->
+            <ion-input data-testid="appointments-list-start" data-role="start-date" fill="outline" label-placement="floating" label=${t5("ui.fieldDate")} type="date" .value=${this.newStartDate} @ionInput=${(e5) => this.newStartDate = e5.target.value ?? ""} @keydown=${(e5) => this.onStartDateKeydown("new", e5)} @paste=${(e5) => this.onStartPaste("new", e5)}></ion-input>
+            <ion-input data-testid="appointments-list-start-time" data-role="start-time" fill="outline" label-placement="floating" label=${t5("ui.fieldTime")} type="time" .value=${this.newStartTime} @ionInput=${(e5) => this.newStartTime = e5.target.value ?? ""} @paste=${(e5) => this.onStartPaste("new", e5)}></ion-input>
             <!-- Minutos se PRERRELLENA al elegir servicio (appointments#75): la duración que la
                  reserva va a tener tiene que estar EN PANTALLA; se teclea solo para excepciones
                  (una clienta que necesita más tiempo). -->
@@ -7426,7 +7564,10 @@ __decorateClass([
 ], ErpAppointmentsList.prototype, "newStaffId", 2);
 __decorateClass([
   r5()
-], ErpAppointmentsList.prototype, "newStart", 2);
+], ErpAppointmentsList.prototype, "newStartDate", 2);
+__decorateClass([
+  r5()
+], ErpAppointmentsList.prototype, "newStartTime", 2);
 __decorateClass([
   r5()
 ], ErpAppointmentsList.prototype, "newDuration", 2);
@@ -7435,7 +7576,10 @@ __decorateClass([
 ], ErpAppointmentsList.prototype, "rescheduleId", 2);
 __decorateClass([
   r5()
-], ErpAppointmentsList.prototype, "rescheduleStart", 2);
+], ErpAppointmentsList.prototype, "rescheduleStartDate", 2);
+__decorateClass([
+  r5()
+], ErpAppointmentsList.prototype, "rescheduleStartTime", 2);
 __decorateClass([
   r5()
 ], ErpAppointmentsList.prototype, "rescheduleDuration", 2);
