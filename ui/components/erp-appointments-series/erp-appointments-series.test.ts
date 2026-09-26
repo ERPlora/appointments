@@ -478,3 +478,36 @@ describe('two «edit series» in a row: the last opening wins (pm#459)', () => {
     expect(el.error).toBe('');
   });
 });
+
+// appointments#202: the three row buttons of the REAL `ok-data-table` («edit» is covered above by
+// pm#459). The table emits `{ actionId, row }`; the screen once read `action` and every button
+// was dead. A test that calls `materializeSeries()` / `deleteSeries()` by hand never sees that.
+describe('the row buttons of the real table reach their action (appointments#202)', () => {
+  const tapRow = async (el: Wc, id: string, action: string) => {
+    const table = el.shadowRoot.querySelector('ok-data-table') as HTMLElement & { updateComplete: Promise<unknown> };
+    await table.updateComplete;
+    const btn = table.shadowRoot?.querySelector(`[data-testid="appointments-series-table-row-${id}-${action}"]`) as HTMLElement | null;
+    expect(btn, `the real «${action}» button of row ${id}`).toBeTruthy();
+    btn?.click();
+    for (let i = 0; i < 3; i++) {
+      await new Promise((r) => setTimeout(r, 0));
+      await el.updateComplete;
+    }
+  };
+
+  it('the «reserve» button books the window of the tapped series', async () => {
+    const el = await mount();
+    await tapRow(el, 'r1', 'materialize');
+    expect(commands.find((c) => c.name === 'appointments.recurring.materialize')?.payload).toMatchObject({
+      recurring_id: 'r1',
+    });
+  });
+
+  it('the «delete» button deletes the tapped series', async () => {
+    const el = await mount();
+    await tapRow(el, 'r1', 'delete');
+    expect(commands.find((c) => c.name === 'appointments.recurring.delete')?.payload).toEqual({
+      recurring_id: 'r1',
+    });
+  });
+});
