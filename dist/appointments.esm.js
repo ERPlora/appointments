@@ -7460,9 +7460,9 @@ var ErpAppointmentsList = class extends i3 {
       <ok-inline-feedback data-testid="appointments-list-reschedule-hint" tone="info" icon="information-circle-outline">${t5("ui.rescheduleHint")}</ok-inline-feedback>
       <p class="ctx">${t5("ui.fieldStaff")}: <strong>${this.rescheduleStaffName || "\u2014"}</strong></p>
       <!-- appointments#204: date + time, not datetime-local — its year segment takes 6 digits and never hands the caret to the hour, so a typed start never landed. -->
-      <ion-input data-testid="appointments-list-reschedule-start" data-role="reschedule-start" fill="outline" label-placement="floating" label=${t5("ui.fieldDate")} type="date" .value=${this.rescheduleStartDate} @ionInput=${(e5) => this.rescheduleStartDate = e5.target.value ?? ""} @keydown=${(e5) => this.onStartDateKeydown("reschedule", e5)} @paste=${(e5) => this.onStartPaste("reschedule", e5)}></ion-input>
-      <ion-input data-testid="appointments-list-reschedule-start-time" data-role="reschedule-start-time" fill="outline" label-placement="floating" label=${t5("ui.fieldTime")} type="time" .value=${this.rescheduleStartTime} @ionInput=${(e5) => this.rescheduleStartTime = e5.target.value ?? ""} @paste=${(e5) => this.onStartPaste("reschedule", e5)}></ion-input>
-      <ion-input data-testid="appointments-list-reschedule-duration" data-role="reschedule-duration" fill="outline" label-placement="floating" label=${t5("ui.fieldMinutes")} type="number" min="1" .value=${this.rescheduleDuration} @ionInput=${(e5) => this.rescheduleDuration = e5.target.value}></ion-input>
+      <ion-input data-testid="appointments-list-reschedule-start" data-role="reschedule-start" fill="outline" mode="md" label-placement="floating" label=${t5("ui.fieldDate")} type="date" .value=${this.rescheduleStartDate} @ionInput=${(e5) => this.rescheduleStartDate = e5.target.value ?? ""} @keydown=${(e5) => this.onStartDateKeydown("reschedule", e5)} @paste=${(e5) => this.onStartPaste("reschedule", e5)}></ion-input>
+      <ion-input data-testid="appointments-list-reschedule-start-time" data-role="reschedule-start-time" fill="outline" mode="md" label-placement="floating" label=${t5("ui.fieldTime")} type="time" .value=${this.rescheduleStartTime} @ionInput=${(e5) => this.rescheduleStartTime = e5.target.value ?? ""} @paste=${(e5) => this.onStartPaste("reschedule", e5)}></ion-input>
+      <ion-input data-testid="appointments-list-reschedule-duration" data-role="reschedule-duration" fill="outline" mode="md" label-placement="floating" label=${t5("ui.fieldMinutes")} type="number" min="1" .value=${this.rescheduleDuration} @ionInput=${(e5) => this.rescheduleDuration = e5.target.value}></ion-input>
       ${this.rescheduleStartIsPast ? b2`<ok-inline-feedback data-testid="appointments-list-reschedule-past-notice" tone="warning" icon="time-outline">${t5("ui.reschedulePastNotice")}</ok-inline-feedback>` : A}
       ${this.formError ? b2`<ok-inline-feedback data-testid="appointments-list-reschedule-error" tone="danger" icon="alert-circle-outline">${this.formError}</ok-inline-feedback>` : A}
       <div class="actions">
@@ -7492,22 +7492,22 @@ var ErpAppointmentsList = class extends i3 {
    *  disponibilidad, ni pasar a la venta sin re-teclear. */
   renderCreateForm(t5) {
     return b2`<form slot="create" data-testid="appointments-list-form" data-mode="create" class="form" @submit=${(e5) => this.createAppointment(e5)}>
-            <ion-select data-testid="appointments-list-customer" data-role="customer" fill="outline" label-placement="floating" label=${t5("ui.fieldCustomer")} placeholder=${t5("ui.pickCustomer")} .value=${this.newCustomerId} @ionChange=${(e5) => this.newCustomerId = e5.target.value}>
+            <ion-select data-testid="appointments-list-customer" data-role="customer" fill="outline" mode="md" label-placement="floating" label=${t5("ui.fieldCustomer")} placeholder=${t5("ui.pickCustomer")} .value=${this.newCustomerId} @ionChange=${(e5) => this.newCustomerId = e5.target.value}>
               ${this.customers.map((c5) => b2`<ion-select-option .value=${c5.id}>${c5.name}</ion-select-option>`)}
             </ion-select>
-            <ion-select data-testid="appointments-list-service" data-role="service" fill="outline" label-placement="floating" label=${t5("ui.fieldService")} placeholder=${t5("ui.pickService")} .value=${this.newServiceId} @ionChange=${(e5) => this.onServiceChange(e5.target.value)}>
+            <ion-select data-testid="appointments-list-service" data-role="service" fill="outline" mode="md" label-placement="floating" label=${t5("ui.fieldService")} placeholder=${t5("ui.pickService")} .value=${this.newServiceId} @ionChange=${(e5) => this.onServiceChange(e5.target.value)}>
               ${this.services.map((s5) => b2`<ion-select-option .value=${s5.id}>${s5.name}</ion-select-option>`)}
             </ion-select>
-            <ion-select data-testid="appointments-list-staff" data-role="staff" fill="outline" label-placement="floating" label=${t5("ui.fieldStaff")} placeholder=${t5("ui.pickStaff")} .value=${this.newStaffId} @ionChange=${(e5) => this.newStaffId = e5.target.value}>
+            <ion-select data-testid="appointments-list-staff" data-role="staff" fill="outline" mode="md" label-placement="floating" label=${t5("ui.fieldStaff")} placeholder=${t5("ui.pickStaff")} .value=${this.newStaffId} @ionChange=${(e5) => this.newStaffId = e5.target.value}>
               ${this.bookableStaff.map((m4) => b2`<ion-select-option .value=${m4.id}>${m4.full_name}</ion-select-option>`)}
             </ion-select>
             <!-- appointments#204: date + time, not datetime-local — its year segment takes 6 digits and never hands the caret to the hour, so a typed start never landed. -->
-            <ion-input data-testid="appointments-list-start" data-role="start-date" fill="outline" label-placement="floating" label=${t5("ui.fieldDate")} type="date" .value=${this.newStartDate} @ionInput=${(e5) => this.newStartDate = e5.target.value ?? ""} @keydown=${(e5) => this.onStartDateKeydown("new", e5)} @paste=${(e5) => this.onStartPaste("new", e5)}></ion-input>
-            <ion-input data-testid="appointments-list-start-time" data-role="start-time" fill="outline" label-placement="floating" label=${t5("ui.fieldTime")} type="time" .value=${this.newStartTime} @ionInput=${(e5) => this.newStartTime = e5.target.value ?? ""} @paste=${(e5) => this.onStartPaste("new", e5)}></ion-input>
+            <ion-input data-testid="appointments-list-start" data-role="start-date" fill="outline" mode="md" label-placement="floating" label=${t5("ui.fieldDate")} type="date" .value=${this.newStartDate} @ionInput=${(e5) => this.newStartDate = e5.target.value ?? ""} @keydown=${(e5) => this.onStartDateKeydown("new", e5)} @paste=${(e5) => this.onStartPaste("new", e5)}></ion-input>
+            <ion-input data-testid="appointments-list-start-time" data-role="start-time" fill="outline" mode="md" label-placement="floating" label=${t5("ui.fieldTime")} type="time" .value=${this.newStartTime} @ionInput=${(e5) => this.newStartTime = e5.target.value ?? ""} @paste=${(e5) => this.onStartPaste("new", e5)}></ion-input>
             <!-- Minutos se PRERRELLENA al elegir servicio (appointments#75): la duración que la
                  reserva va a tener tiene que estar EN PANTALLA; se teclea solo para excepciones
                  (una clienta que necesita más tiempo). -->
-            <ion-input data-testid="appointments-list-duration" data-role="duration" fill="outline" label-placement="floating" label=${t5("ui.fieldMinutes")} type="number" min="1" .value=${this.newDuration} @ionInput=${(e5) => this.newDuration = e5.target.value}></ion-input>
+            <ion-input data-testid="appointments-list-duration" data-role="duration" fill="outline" mode="md" label-placement="floating" label=${t5("ui.fieldMinutes")} type="number" min="1" .value=${this.newDuration} @ionInput=${(e5) => this.newDuration = e5.target.value}></ion-input>
             <!-- appointments#155 - the warning and the refusal, NEXT TO THE BUTTON. This is
                  where the person is looking; the list's inline feedback is covered by this very
                  panel. The past-start warning is informative (Acuity warns without blocking) and
