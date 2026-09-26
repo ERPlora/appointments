@@ -6872,8 +6872,9 @@ var ErpAppointmentsList = class extends i3 {
     const value = e5.target.value;
     if (typeof value !== "string" || !value) return;
     e5.preventDefault();
-    const timeTestId = form === "new" ? "appointments-list-start-time" : "appointments-list-reschedule-start-time";
-    const timeField = this.renderRoot.querySelector(`[data-testid="${timeTestId}"]`);
+    const timeField = this.renderRoot.querySelector(
+      form === "new" ? 'ion-input[data-role="start-time"]' : 'ion-input[data-role="reschedule-start-time"]'
+    );
     void timeField?.setFocus?.();
   }
   /** appointments#204 — native `date`/`time` inputs ignore pasted text; this reads the clipboard

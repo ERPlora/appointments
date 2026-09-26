@@ -655,8 +655,9 @@ export class ErpAppointmentsList extends LitElement {
     const value = (e.target as { value?: unknown }).value;
     if (typeof value !== 'string' || !value) return;
     e.preventDefault();
-    const timeTestId = form === 'new' ? 'appointments-list-start-time' : 'appointments-list-reschedule-start-time';
-    const timeField = this.renderRoot.querySelector(`[data-testid="${timeTestId}"]`) as
+    const timeField = this.renderRoot.querySelector(
+      form === 'new' ? 'ion-input[data-role="start-time"]' : 'ion-input[data-role="reschedule-start-time"]',
+    ) as
       | (HTMLElement & { setFocus?: () => Promise<void> })
       | null;
     void timeField?.setFocus?.();
