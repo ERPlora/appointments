@@ -253,9 +253,11 @@ describe('the «Repeating» view can create a series (appointments#209)', () => 
     await tapAdd(el);
     const form = field(el, 'appointments-series-create-form')!;
     expect(form.querySelector('ion-input[type="datetime-local"]')).toBeNull();
-    expect(field(el, 'appointments-series-create-start')?.getAttribute('type')).toBe('date');
+    // appointments#217: text fields painted in the hub language — a native `date`/`time` input
+    // paints the browser's locale, which was the defect (series-hub-locale.test.ts).
+    expect(field(el, 'appointments-series-create-start')?.getAttribute('type')).toBe('text');
     expect(field(el, 'appointments-series-create-start')?.getAttribute('data-role')).toBe('series-start-date');
-    expect(field(el, 'appointments-series-create-start-time')?.getAttribute('type')).toBe('time');
+    expect(field(el, 'appointments-series-create-start-time')?.getAttribute('type')).toBe('text');
   });
 
   it('a start pasted as one string fills Day and Time', async () => {
@@ -268,7 +270,8 @@ describe('the «Repeating» view can create a series (appointments#209)', () => 
     paste.clipboardData = { getData: () => '01/10/2099 17:30' };
     day.dispatchEvent(paste);
     await el.updateComplete;
-    expect(field(el, 'appointments-series-create-start')?.value).toBe('2099-10-01');
+    // appointments#217: the field shows the day in the hub's order (es), not the ISO it stores.
+    expect(field(el, 'appointments-series-create-start')?.value).toBe('01/10/2099');
     expect(field(el, 'appointments-series-create-start-time')?.value).toBe('17:30');
   });
 
