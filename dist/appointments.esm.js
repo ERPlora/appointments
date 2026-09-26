@@ -1959,6 +1959,7 @@ var es_default = {
     actionDelete: "Borrar",
     fieldDate: "D\xEDa",
     datePlaceholder: "dd/mm/aaaa",
+    timePlaceholder: "hh:mm",
     openCalendar: "Abrir calendario",
     calendarMonth: "Mes",
     calendarAgenda: "Agenda",
@@ -2196,6 +2197,7 @@ var en_default = {
     actionDelete: "Delete",
     fieldDate: "Day",
     datePlaceholder: "mm/dd/yyyy",
+    timePlaceholder: "hh:mm",
     openCalendar: "Open calendar",
     calendarMonth: "Month",
     calendarAgenda: "Agenda",
@@ -6674,6 +6676,22 @@ function formatTypedDate(iso, locale) {
   }
   return `${pad2(day)}/${pad2(month)}/${String(year).padStart(4, "0")}`;
 }
+function formatTypedTime(time, locale) {
+  const match = time.match(/^(\d{2}):(\d{2})$/);
+  if (!match) return "";
+  const hour = Number(match[1]);
+  const minute = Number(match[2]);
+  if (hour > 23 || minute > 59) return "";
+  try {
+    return new Intl.DateTimeFormat(locale || void 0, {
+      hour: "2-digit",
+      minute: "2-digit",
+      timeZone: "UTC"
+    }).format(new Date(Date.UTC(2026, 0, 1, hour, minute)));
+  } catch {
+  }
+  return `${pad2(hour)}:${pad2(minute)}`;
+}
 
 // ui/components/erp-appointments-series/erp-appointments-series.ts
 var CATALOG3 = { es: es_default, en: en_default };
@@ -7583,6 +7601,7 @@ var ErpAppointmentsList = class extends i3 {
       new: null,
       reschedule: null
     };
+    this.timeDraft = { new: null, reschedule: null };
     this.calendarOpen = "";
     this.statusFilter = "";
     this.view = "list";
@@ -7674,6 +7693,7 @@ var ErpAppointmentsList = class extends i3 {
   set newStart(value) {
     [this.newStartDate, this.newStartTime] = splitWall(value);
     this.dateDraft = { ...this.dateDraft, new: null };
+    this.timeDraft = { ...this.timeDraft, new: null };
   }
   get rescheduleStart() {
     return joinWall(this.rescheduleStartDate, this.rescheduleStartTime);
@@ -7681,6 +7701,7 @@ var ErpAppointmentsList = class extends i3 {
   set rescheduleStart(value) {
     [this.rescheduleStartDate, this.rescheduleStartTime] = splitWall(value);
     this.dateDraft = { ...this.dateDraft, reschedule: null };
+    this.timeDraft = { ...this.timeDraft, reschedule: null };
   }
   statusLabel(status) {
     const key = STATUS_KEYS2[status];
@@ -7909,13 +7930,19 @@ var ErpAppointmentsList = class extends i3 {
         this.newStartDate = parsed.date;
         this.dateDraft = { ...this.dateDraft, new: null };
       }
-      if (parsed.time) this.newStartTime = parsed.time;
+      if (parsed.time) {
+        this.newStartTime = parsed.time;
+        this.timeDraft = { ...this.timeDraft, new: null };
+      }
     } else {
       if (parsed.date) {
         this.rescheduleStartDate = parsed.date;
         this.dateDraft = { ...this.dateDraft, reschedule: null };
       }
-      if (parsed.time) this.rescheduleStartTime = parsed.time;
+      if (parsed.time) {
+        this.rescheduleStartTime = parsed.time;
+        this.timeDraft = { ...this.timeDraft, reschedule: null };
+      }
     }
   }
   /** appointments#204 — a `date` field's year segment takes six digits, so a space typed right
@@ -7980,6 +8007,26 @@ var ErpAppointmentsList = class extends i3 {
    *  repaints the committed ISO date in the hub format, instead of whatever was left half-typed. */
   commitDateDraft(field) {
     this.dateDraft = { ...this.dateDraft, [field]: null };
+  }
+  /** appointments#214 — what a time field shows: the raw text while it is being typed, the time in
+   *  the hub clock otherwise. */
+  timeFieldValue(form) {
+    const draft = this.timeDraft[form];
+    return draft ?? formatTypedTime(form === "new" ? this.newStartTime : this.rescheduleStartTime, erplora4().locale);
+  }
+  /** appointments#214 — `ionInput` on a time field: the text is kept as the draft and the time
+   *  follows it exactly, back to `''` while it is not (yet) a time — so a half-typed hour never
+   *  books the last valid one. */
+  onTimeFieldInput(form, text) {
+    this.timeDraft = { ...this.timeDraft, [form]: text };
+    const time = parseTypedStart(text, erplora4().locale)?.time ?? "";
+    if (form === "new") this.newStartTime = time;
+    else this.rescheduleStartTime = time;
+  }
+  /** appointments#214 — blur/Enter on a time field: forget the draft so the field repaints the
+   *  committed time in the hub clock. */
+  commitTimeDraft(form) {
+    this.timeDraft = { ...this.timeDraft, [form]: null };
   }
   /** appointments#205 — opens/closes the inline `ok-calendar` calendar of one date field. Only
    *  one at a time: two open calendars would be two conflicting answers to "what day is this". */
@@ -8623,7 +8670,7 @@ var ErpAppointmentsList = class extends i3 {
               @ok-date-select=${(e5) => this.onDateCalendarPick("reschedule", e5.detail.date)}
             ></ok-calendar>
           </div>` : A}
-      <ion-input data-testid="appointments-list-reschedule-start-time" data-role="reschedule-start-time" fill="outline" mode="md" label-placement="floating" label=${t5("ui.fieldTime")} type="time" .value=${this.rescheduleStartTime} @ionInput=${(e5) => this.rescheduleStartTime = e5.target.value ?? ""} @paste=${(e5) => this.onStartPaste("reschedule", e5)}></ion-input>
+      <ion-input data-testid="appointments-list-reschedule-start-time" data-role="reschedule-start-time" fill="outline" mode="md" label-placement="floating" label=${t5("ui.fieldTime")} type="text" inputmode="numeric" autocomplete="off" placeholder=${t5("ui.timePlaceholder")} .value=${this.timeFieldValue("reschedule")} @ionInput=${(e5) => this.onTimeFieldInput("reschedule", e5.target.value ?? "")} @ionChange=${() => this.commitTimeDraft("reschedule")} @paste=${(e5) => this.onStartPaste("reschedule", e5)}></ion-input>
       <ion-input data-testid="appointments-list-reschedule-duration" data-role="reschedule-duration" fill="outline" mode="md" label-placement="floating" label=${t5("ui.fieldMinutes")} type="number" min="1" .value=${this.rescheduleDuration} @ionInput=${(e5) => this.rescheduleDuration = e5.target.value}></ion-input>
       ${this.rescheduleStartIsPast ? b2`<ok-inline-feedback data-testid="appointments-list-reschedule-past-notice" tone="warning" icon="time-outline">${t5("ui.reschedulePastNotice")}</ok-inline-feedback>` : A}
       ${this.formError ? b2`<ok-inline-feedback data-testid="appointments-list-reschedule-error" tone="danger" icon="alert-circle-outline">${this.formError}</ok-inline-feedback>` : A}
@@ -8682,7 +8729,7 @@ var ErpAppointmentsList = class extends i3 {
                     @ok-date-select=${(e5) => this.onDateCalendarPick("new", e5.detail.date)}
                   ></ok-calendar>
                 </div>` : A}
-            <ion-input data-testid="appointments-list-start-time" data-role="start-time" fill="outline" mode="md" label-placement="floating" label=${t5("ui.fieldTime")} type="time" .value=${this.newStartTime} @ionInput=${(e5) => this.newStartTime = e5.target.value ?? ""} @paste=${(e5) => this.onStartPaste("new", e5)}></ion-input>
+            <ion-input data-testid="appointments-list-start-time" data-role="start-time" fill="outline" mode="md" label-placement="floating" label=${t5("ui.fieldTime")} type="text" inputmode="numeric" autocomplete="off" placeholder=${t5("ui.timePlaceholder")} .value=${this.timeFieldValue("new")} @ionInput=${(e5) => this.onTimeFieldInput("new", e5.target.value ?? "")} @ionChange=${() => this.commitTimeDraft("new")} @paste=${(e5) => this.onStartPaste("new", e5)}></ion-input>
             <!-- Minutos se PRERRELLENA al elegir servicio (appointments#75): la duración que la
                  reserva va a tener tiene que estar EN PANTALLA; se teclea solo para excepciones
                  (una clienta que necesita más tiempo). -->
@@ -8718,6 +8765,9 @@ __decorateClass([
 __decorateClass([
   r5()
 ], ErpAppointmentsList.prototype, "dateDraft", 2);
+__decorateClass([
+  r5()
+], ErpAppointmentsList.prototype, "timeDraft", 2);
 __decorateClass([
   r5()
 ], ErpAppointmentsList.prototype, "calendarOpen", 2);
