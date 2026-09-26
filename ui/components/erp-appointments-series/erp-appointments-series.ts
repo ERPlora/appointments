@@ -3,6 +3,9 @@ import { state } from 'lit/decorators.js';
 import { define } from '@erplora/outfitkit/define';
 import '@erplora/outfitkit/ok-inline-feedback';
 import '@erplora/outfitkit/ok-data-table';
+// appointments#217 — the same inline calendar the agenda's date fields use (#205): the hub shell
+// does not register `ion-datetime`, so the module bundles `ok-calendar` itself.
+import '@erplora/outfitkit/ok-calendar';
 import type { DataTableColumn } from '@erplora/outfitkit';
 import { dataTableLabels } from '@erplora/module-sdk';
 import esLocale from '../../../locales/es.json';
@@ -11,7 +14,8 @@ import { todayISO } from '../../lib/business-time';
 // appointments#204/#209: a start typed or pasted as one string is read in the active language's
 // day/month order and split into the Day + Time fields, the same helper the new-appointment and
 // reschedule panels of `erp-appointments-list` use.
-import { parseTypedStart, type TypedStart } from '../../lib/typed-start';
+// appointments#217: and the dates/times are painted in the hub's language by the same helpers.
+import { parseTypedStart, formatTypedDate, formatTypedTime, type TypedStart } from '../../lib/typed-start';
 
 const CATALOG: Record<string, unknown> = { es: esLocale, en: enLocale };
 
@@ -163,6 +167,10 @@ export class ErpAppointmentsSeries extends LitElement {
     .ctx { margin:0; font-size:.9rem; color: var(--ion-color-medium, #8b897f); }
     .ctx strong { color: var(--ion-text-color, #1c1b18); }
     .loading, .empty { color: var(--ion-color-medium, #8b897f); font-size:.9rem; margin:.25rem 0; }
+    /* appointments#217 — the inline ok-calendar of a date field, painted right where it opens (an
+       overlay would teleport out of the shadow root and lose its styles, hub#2162), full width. */
+    .field-calendar { grid-column: 1 / -1; display:flex; justify-content:flex-start; }
+    ok-calendar { flex: 1 1 auto; max-width: 28rem; }
   `;
 
   @state() series: Series[] = [];
@@ -209,6 +217,19 @@ export class ErpAppointmentsSeries extends LitElement {
   /** A refusal painted NEXT TO the submit button — `error` lives in the list template, and the
    *  panel covers it whole (same reasoning as `formError` in `erp-appointments-list`). */
   @state() createError = '';
+
+  /** appointments#217 — the raw text of a date field while it is being typed; `null` otherwise, so
+   *  the field paints `formatTypedDate(iso, locale)` in the hub's day/month order (a native `date`
+   *  input paints the BROWSER's). A half-typed date stays on screen without becoming a date. */
+  @state() private dateDraft: Record<'start' | 'end', string | null> = { start: null, end: null };
+
+  /** appointments#217 — the same for the two TIME fields (new series, edit): `null` paints
+   *  `formatTypedTime(time, locale)`, the hub clock instead of the browser's. */
+  @state() private timeDraft: Record<'new' | 'edit', string | null> = { new: null, edit: null };
+
+  /** appointments#217 — which date field has its inline `ok-calendar` open; `''` = none. One at a
+   *  time: two open calendars would be two answers to "what day is this". */
+  @state() private calendarOpen: '' | 'start' | 'end' = '';
 
   private offLocale: (() => void) | null = null;
 
@@ -332,6 +353,7 @@ export class ErpAppointmentsSeries extends LitElement {
       this.editFrequency = tmpl.frequency ?? '';
       this.editDayOfWeek = tmpl.day_of_week === null || tmpl.day_of_week === undefined ? '' : String(tmpl.day_of_week);
       this.editTime = tmpl.time ?? '';
+      this.timeDraft = { ...this.timeDraft, edit: null };
       this.editDuration = String(tmpl.duration_minutes ?? '');
       // EL PASADO ESTÁ CONGELADO: el corte nunca apunta a una ocurrencia ya servida. Si no queda
       // ninguna futura reservada, se corta hoy — que es lo que el servidor haría de todos modos.
@@ -565,7 +587,8 @@ export class ErpAppointmentsSeries extends LitElement {
     if (ALIGNS_TO_WEEKDAY.includes(row.frequency) && row.day_of_week !== null && row.day_of_week !== undefined) {
       parts.push(t(WEEKDAY_KEYS[row.day_of_week] ?? String(row.day_of_week)));
     }
-    if (row.time) parts.push(row.time);
+    // appointments#217: in the hub clock («02:30 PM» in English), like the Time field shows it.
+    if (row.time) parts.push(formatTypedTime(row.time, erplora().locale) || row.time);
     return parts.join(' · ');
   }
 
@@ -576,8 +599,9 @@ export class ErpAppointmentsSeries extends LitElement {
       { key: 'service_name', header: t('ui.colService') },
       { key: 'staff_name', header: t('ui.colStaff'), format: (r) => (r.staff_name as string) || '—' },
       { key: 'frequency', header: t('ui.colPattern'), format: (r) => this.patternLabel(r as unknown as Series) },
-      { key: 'start_date', header: t('ui.colStarts') },
-      { key: 'end_date', header: t('ui.colEnds'), format: (r) => (r.end_date as string) || t('ui.seriesNoEnd') },
+      // appointments#217: dates in the hub's day/month order, not raw ISO.
+      { key: 'start_date', header: t('ui.colStarts'), format: (r) => this.shownDate(r.start_date) },
+      { key: 'end_date', header: t('ui.colEnds'), format: (r) => this.shownDate(r.end_date) || t('ui.seriesNoEnd') },
       {
         key: 'is_active',
         header: t('ui.colStatus'),
@@ -596,6 +620,12 @@ export class ErpAppointmentsSeries extends LitElement {
         `,
       },
     ];
+  }
+
+  /** A stored `YYYY-MM-DD` as the hub language writes it; anything unreadable is shown as stored. */
+  private shownDate(value: unknown): string {
+    const iso = typeof value === 'string' ? value : '';
+    return formatTypedDate(iso, erplora().locale) || iso;
   }
 
   private get rowActions() {
@@ -683,14 +713,19 @@ export class ErpAppointmentsSeries extends LitElement {
               ${WEEKDAY_KEYS.map((k, i) => html`<ion-select-option .value=${String(i)}>${t(k)}</ion-select-option>`)}
             </ion-select>`
           : nothing}
+        <!-- appointments#217: text in the hub clock, not the native time input (browser clock). -->
         <ion-input
           data-testid="appointments-series-time"
           data-role="series-time"
           label=${t('ui.fieldTime')}
           label-placement="floating"
-          type="time"
-          .value=${this.editTime}
-          @ionInput=${(e: any) => (this.editTime = e.target.value)}
+          type="text"
+          inputmode="numeric"
+          autocomplete="off"
+          placeholder=${t('ui.timePlaceholder')}
+          .value=${this.timeFieldValue('edit')}
+          @ionInput=${(e: any) => this.onTimeFieldInput('edit', e.target.value ?? '')}
+          @ionChange=${() => this.commitTimeDraft('edit')}
         ></ion-input>
         <ion-input
           data-testid="appointments-series-duration"
@@ -706,7 +741,8 @@ export class ErpAppointmentsSeries extends LitElement {
       <ok-inline-feedback data-testid="appointments-series-scope-hint" tone="info" icon="information-circle-outline"
         >${t('ui.seriesScopeHint', { from: this.fromOccurrence })}</ok-inline-feedback
       >
-      <ion-button data-testid="appointments-series-submit" type="submit" expand="block" .disabled=${this.saving}>${t('ui.seriesSave')}</ion-button>
+      <!-- A half-typed time is not a time: saving would silently keep the old one (appointments#217). -->
+      <ion-button data-testid="appointments-series-submit" type="submit" expand="block" .disabled=${this.saving || !this.editTime}>${t('ui.seriesSave')}</ion-button>
     </form>`;
   }
 
@@ -726,7 +762,8 @@ export class ErpAppointmentsSeries extends LitElement {
   private onCreateStartDateKeydown(e: KeyboardEvent): void {
     if (e.key !== ' ' && e.key !== ',' && e.key !== 't' && e.key !== 'T') return;
     const value = (e.target as { value?: unknown }).value;
-    if (typeof value !== 'string' || !value) return;
+    // appointments#217: a text field now — only a COMPLETE day hands the caret over.
+    if (typeof value !== 'string' || !parseTypedStart(value, erplora().locale)?.date) return;
     e.preventDefault();
     const timeField = this.renderRoot.querySelector('ion-input[data-role="series-start-time"]') as
       | (HTMLElement & { setFocus?: () => Promise<void> })
@@ -741,8 +778,84 @@ export class ErpAppointmentsSeries extends LitElement {
     const parsed: TypedStart | null = parseTypedStart(text, erplora().locale);
     if (!parsed) return;
     e.preventDefault();
-    if (parsed.date) this.newStartDate = parsed.date;
-    if (parsed.time) this.newStartTime = parsed.time;
+    if (parsed.date) {
+      this.newStartDate = parsed.date;
+      this.dateDraft = { ...this.dateDraft, start: null };
+    }
+    if (parsed.time) {
+      this.newStartTime = parsed.time;
+      this.timeDraft = { ...this.timeDraft, new: null };
+    }
+  }
+
+  /** appointments#217 — what a date field shows: the raw text while it is being typed, the date in
+   *  the hub's day/month order otherwise. */
+  private dateFieldValue(field: 'start' | 'end'): string {
+    return this.dateDraft[field] ?? formatTypedDate(field === 'start' ? this.newStartDate : this.newEndDate, erplora().locale);
+  }
+
+  /** appointments#217 — `ionInput` on a date field: the text is kept as the draft and the ISO date
+   *  follows it exactly, back to `''` while it is not (yet) a date — a half-typed day never keeps
+   *  the last valid one. */
+  private onDateFieldInput(field: 'start' | 'end', text: string): void {
+    this.dateDraft = { ...this.dateDraft, [field]: text };
+    const iso = parseTypedStart(text, erplora().locale)?.date ?? '';
+    if (field === 'start') this.newStartDate = iso;
+    else this.newEndDate = iso;
+  }
+
+  /** appointments#217 — blur/Enter on a date field: forget the draft so it repaints the committed date. */
+  private commitDateDraft(field: 'start' | 'end'): void {
+    this.dateDraft = { ...this.dateDraft, [field]: null };
+  }
+
+  /** appointments#217 — what a time field shows: the draft while typing, the hub clock otherwise. */
+  private timeFieldValue(form: 'new' | 'edit'): string {
+    return this.timeDraft[form] ?? formatTypedTime(form === 'new' ? this.newStartTime : this.editTime, erplora().locale);
+  }
+
+  /** appointments#217 — `ionInput` on a time field: the time follows the text exactly, `''` while it
+   *  is not (yet) a time. */
+  private onTimeFieldInput(form: 'new' | 'edit', text: string): void {
+    this.timeDraft = { ...this.timeDraft, [form]: text };
+    const time = parseTypedStart(text, erplora().locale)?.time ?? '';
+    if (form === 'new') this.newStartTime = time;
+    else this.editTime = time;
+  }
+
+  /** appointments#217 — blur/Enter on a time field: repaint the committed time in the hub clock. */
+  private commitTimeDraft(form: 'new' | 'edit'): void {
+    this.timeDraft = { ...this.timeDraft, [form]: null };
+  }
+
+  private toggleDateCalendar(field: 'start' | 'end'): void {
+    this.calendarOpen = this.calendarOpen === field ? '' : field;
+  }
+
+  /** appointments#217 — `ok-date-select` of an inline `ok-calendar`: applies the tapped day like a
+   *  typed one, forgets the draft and closes the calendar. */
+  private onDateCalendarPick(field: 'start' | 'end', iso: string): void {
+    if (field === 'start') this.newStartDate = iso;
+    else this.newEndDate = iso;
+    this.dateDraft = { ...this.dateDraft, [field]: null };
+    this.calendarOpen = '';
+  }
+
+  /** `ok-calendar`'s labels default to English only: hand it the module's own catalog keys. */
+  private calendarLabels(t: (k: string) => string): Record<string, string> {
+    return {
+      month: t('ui.calendarMonth'),
+      agenda: t('ui.calendarAgenda'),
+      agendaEmpty: t('ui.calendarAgendaEmpty'),
+      more: t('ui.calendarMore'),
+      prevMonth: t('ui.calendarPrevMonth'),
+      nextMonth: t('ui.calendarNextMonth'),
+    };
+  }
+
+  /** An «Until» typed but not (yet) a date: submitting would create a series with NO end. */
+  private get endDateIncomplete(): boolean {
+    return !this.newEndDate && !!this.dateDraft.end?.trim();
   }
 
   /** Everything the NEW-series draft holds, back to a blank form (appointments#209). */
@@ -758,6 +871,9 @@ export class ErpAppointmentsSeries extends LitElement {
     this.newEndDate = '';
     this.newOccurrences = '';
     this.createError = '';
+    this.dateDraft = { start: null, end: null };
+    this.timeDraft = { ...this.timeDraft, new: null };
+    this.calendarOpen = '';
   }
 
   private renderCreateForm(t: (k: string, p?: Record<string, unknown>) => string) {
@@ -772,6 +888,7 @@ export class ErpAppointmentsSeries extends LitElement {
       !!staff &&
       !!this.newStartDate &&
       !!this.newStartTime &&
+      !this.endDateIncomplete &&
       Number.isFinite(duration) &&
       duration >= 1;
     return html`<form slot="create" data-testid="appointments-series-create-form" data-mode="series-create" class="form" @submit=${(e: Event) => this.createSeries(e)}>
@@ -849,12 +966,31 @@ export class ErpAppointmentsSeries extends LitElement {
           mode="md"
           label=${t('ui.fieldDate')}
           label-placement="floating"
-          type="date"
-          .value=${this.newStartDate}
-          @ionInput=${(e: any) => (this.newStartDate = e.target.value ?? '')}
+          type="text"
+          inputmode="numeric"
+          autocomplete="off"
+          placeholder=${t('ui.datePlaceholder')}
+          .value=${this.dateFieldValue('start')}
+          @ionInput=${(e: any) => this.onDateFieldInput('start', e.target.value ?? '')}
+          @ionChange=${() => this.commitDateDraft('start')}
           @keydown=${(e: KeyboardEvent) => this.onCreateStartDateKeydown(e)}
           @paste=${(e: Event) => this.onCreateStartPaste(e)}
-        ></ion-input>
+        >
+          <ion-button slot="end" type="button" fill="clear" size="small" data-testid="appointments-series-create-start-calendar" aria-label=${t('ui.openCalendar')} @click=${() => this.toggleDateCalendar('start')}>
+            <ion-icon slot="icon-only" name="calendar-outline"></ion-icon>
+          </ion-button>
+        </ion-input>
+        ${this.calendarOpen === 'start'
+          ? html`<div class="field-calendar">
+              <ok-calendar
+                data-testid="appointments-series-create-start-calendar-picker"
+                locale=${erplora().locale || 'es'}
+                .value=${this.newStartDate || todayISO()}
+                .labels=${this.calendarLabels(t)}
+                @ok-date-select=${(e: CustomEvent<{ date: string }>) => this.onDateCalendarPick('start', e.detail.date)}
+              ></ok-calendar>
+            </div>`
+          : nothing}
         <ion-input
           data-testid="appointments-series-create-start-time"
           data-role="series-start-time"
@@ -862,9 +998,13 @@ export class ErpAppointmentsSeries extends LitElement {
           mode="md"
           label=${t('ui.fieldTime')}
           label-placement="floating"
-          type="time"
-          .value=${this.newStartTime}
-          @ionInput=${(e: any) => (this.newStartTime = e.target.value ?? '')}
+          type="text"
+          inputmode="numeric"
+          autocomplete="off"
+          placeholder=${t('ui.timePlaceholder')}
+          .value=${this.timeFieldValue('new')}
+          @ionInput=${(e: any) => this.onTimeFieldInput('new', e.target.value ?? '')}
+          @ionChange=${() => this.commitTimeDraft('new')}
           @paste=${(e: Event) => this.onCreateStartPaste(e)}
         ></ion-input>
         <ion-input
@@ -886,10 +1026,30 @@ export class ErpAppointmentsSeries extends LitElement {
           mode="md"
           label=${t('ui.fieldEndDate')}
           label-placement="floating"
-          type="date"
-          .value=${this.newEndDate}
-          @ionInput=${(e: any) => (this.newEndDate = e.target.value ?? '')}
-        ></ion-input>
+          type="text"
+          inputmode="numeric"
+          autocomplete="off"
+          placeholder=${t('ui.datePlaceholder')}
+          .value=${this.dateFieldValue('end')}
+          @ionInput=${(e: any) => this.onDateFieldInput('end', e.target.value ?? '')}
+          @ionChange=${() => this.commitDateDraft('end')}
+        >
+          <ion-button slot="end" type="button" fill="clear" size="small" data-testid="appointments-series-create-end-calendar" aria-label=${t('ui.openCalendar')} @click=${() => this.toggleDateCalendar('end')}>
+            <ion-icon slot="icon-only" name="calendar-outline"></ion-icon>
+          </ion-button>
+        </ion-input>
+        ${this.calendarOpen === 'end'
+          ? html`<div class="field-calendar">
+              <!-- Before an «Until» is picked, the calendar opens on the series' first day. -->
+              <ok-calendar
+                data-testid="appointments-series-create-end-calendar-picker"
+                locale=${erplora().locale || 'es'}
+                .value=${this.newEndDate || this.newStartDate || todayISO()}
+                .labels=${this.calendarLabels(t)}
+                @ok-date-select=${(e: CustomEvent<{ date: string }>) => this.onDateCalendarPick('end', e.detail.date)}
+              ></ok-calendar>
+            </div>`
+          : nothing}
         <ion-input
           data-testid="appointments-series-create-occurrences"
           data-role="series-create-occurrences"
@@ -929,6 +1089,7 @@ export class ErpAppointmentsSeries extends LitElement {
       !staff ||
       !this.newStartDate ||
       !this.newStartTime ||
+      this.endDateIncomplete ||
       !Number.isFinite(duration) ||
       duration < 1
     ) {
