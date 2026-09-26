@@ -27,6 +27,7 @@
       "appointments.appointments.reschedule",
       "appointments.appointments.start",
       "appointments.recurring.activate",
+      "appointments.recurring.create",
       "appointments.recurring.deactivate",
       "appointments.recurring.delete",
       "appointments.recurring.materialize",
