@@ -140,24 +140,3 @@ export function formatTypedDate(iso: string, locale: string): string {
   }
   return `${pad2(day)}/${pad2(month)}/${String(year).padStart(4, '0')}`;
 }
-
-/** The first day of the week the given locale expects an inline `ion-datetime` calendar to open
- *  on: `0` = Sunday, `1` = Monday. Reads `Intl.Locale`'s week info (`firstDay` is `1`..`7`, `7`
- *  meaning Sunday) when the runtime offers it; falls back to the language alone (`en` → Sunday,
- *  everything else → Monday) when it does not. */
-export function firstDayOfWeek(locale: string): number {
-  if (locale) {
-    try {
-      const info = new Intl.Locale(locale) as Intl.Locale & {
-        getWeekInfo?: () => { firstDay: number };
-        weekInfo?: { firstDay: number };
-      };
-      const weekInfo = info.getWeekInfo ? info.getWeekInfo() : info.weekInfo;
-      const firstDay = weekInfo?.firstDay;
-      if (typeof firstDay === 'number') return firstDay === 7 ? 0 : firstDay;
-    } catch {
-      // Intl.Locale threw (or has no week info) on the given locale: fall through below.
-    }
-  }
-  return (locale || '').toLowerCase().startsWith('en') ? 0 : 1;
-}

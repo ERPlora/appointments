@@ -3,6 +3,10 @@ import { state } from 'lit/decorators.js';
 import { define } from '@erplora/outfitkit/define';
 import '@erplora/outfitkit/ok-inline-feedback';
 import '@erplora/outfitkit/ok-data-table';
+// appointments#205 — the hub shell does not register `ion-datetime` (a closed list of Ionic
+// components), so an inline `<ion-datetime>` opened as an empty 0×0 box on a real hub. The module
+// bundles `ok-calendar` itself, so it works regardless of what the shell registers.
+import '@erplora/outfitkit/ok-calendar';
 // Vista por profesional: se REUTILIZA el timeline de recursos que OutfitKit ya trae
 // (appointments#21) en vez de inventar una rejilla propia — una fila por profesional,
 // bloques posicionados por hora, navegación de día incluida.
@@ -35,7 +39,7 @@ import {
 } from '../../lib/business-time';
 // appointments#204: a start typed or pasted as one string ("26/09/2026 10:00") is read in the
 // active language's day/month order and split into the date + time fields.
-import { parseTypedStart, formatTypedDate, firstDayOfWeek, type TypedStart } from '../../lib/typed-start';
+import { parseTypedStart, formatTypedDate, type TypedStart } from '../../lib/typed-start';
 const CATALOG: Record<string, unknown> = { es: esLocale, en: enLocale };
 
 interface ErploraClientLike {
@@ -301,11 +305,11 @@ export class ErpAppointmentsList extends LitElement {
     .form .actions { display:flex; gap:.5rem; justify-content:flex-end; align-items:center; }
     .form .actions ion-button { align-self:auto; }
     .err { color:#d9480f; font-weight:600; }
-    /* appointments#205 — the inline ion-datetime calendar of a date field: no ion-popover/
+    /* appointments#205 — the inline ok-calendar of a date field: no ion-popover/
        ion-modal (an overlay would teleport out of the shadow root and lose its styles, hub#2162),
        so it is painted right where it opens instead. */
     .day-calendar, .field-calendar { display:flex; justify-content:flex-start; margin:0 0 .5rem; }
-    ion-datetime { --background: var(--ion-background-color, #fff); border-radius: 8px; }
+    ok-calendar { flex: 1 1 auto; max-width: 28rem; }
   `;
 
   @state() items: Appointment[] = [];
@@ -335,7 +339,7 @@ export class ErpAppointmentsList extends LitElement {
     reschedule: null,
   };
 
-  /** appointments#205 — which of the three date fields has its inline `ion-datetime` calendar
+  /** appointments#205 — which of the three date fields has its inline `ok-calendar` calendar
    *  open; `''` = none. Only one at a time — a second calendar open would be two conflicting
    *  answers to "what day is this". */
   @state() private calendarOpen: '' | 'day' | 'new' | 'reschedule' = '';
@@ -750,20 +754,19 @@ export class ErpAppointmentsList extends LitElement {
     this.dateDraft = { ...this.dateDraft, [field]: null };
   }
 
-  /** appointments#205 — opens/closes the inline `ion-datetime` calendar of one date field. Only
+  /** appointments#205 — opens/closes the inline `ok-calendar` calendar of one date field. Only
    *  one at a time: two open calendars would be two conflicting answers to "what day is this". */
   private toggleDateCalendar(field: 'day' | 'new' | 'reschedule'): void {
     this.calendarOpen = this.calendarOpen === field ? '' : field;
   }
 
-  /** appointments#205 — `ionChange` of an inline `ion-datetime` calendar: `detail.value` is a
-   *  `YYYY-MM-DD` (or, in range/multiple presentations Ionic does not use here, an array of them);
-   *  only the calendar date matters, so the first 10 characters are all that is read. Applies it
-   *  like a typed date, forgets the draft and closes the calendar — no ion-popover/ion-modal
-   *  wrapper: an overlay would teleport out of the shadow root and lose its styles (hub#2162). */
-  private onDateCalendarPick(field: 'day' | 'new' | 'reschedule', value: string | string[] | null | undefined): void {
-    const raw = Array.isArray(value) ? value[0] : value;
-    const iso = parseTypedStart(String(raw ?? '').slice(0, 10), 'en')?.date ?? '';
+  /** appointments#205 — `ok-date-select` of an inline `ok-calendar`: `detail.date` is a
+   *  `YYYY-MM-DD`; only the calendar date matters, so the first 10 characters are all that is
+   *  read. Applies it like a typed date, forgets the draft and closes the calendar — no
+   *  ion-popover/ion-modal wrapper: an overlay would teleport out of the shadow root and lose its
+   *  styles (hub#2162). */
+  private onDateCalendarPick(field: 'day' | 'new' | 'reschedule', date: string | null | undefined): void {
+    const iso = parseTypedStart(String(date ?? '').slice(0, 10), 'en')?.date ?? '';
     if (field === 'day') {
       // A cleared calendar is not a day: the agenda always shows one.
       if (!iso) {
@@ -779,6 +782,27 @@ export class ErpAppointmentsList extends LitElement {
     }
     this.dateDraft = { ...this.dateDraft, [field]: null };
     this.calendarOpen = '';
+  }
+
+  /** appointments#205 — `ok-calendar`'s own labels default to English only (OutfitKit has no
+   *  i18n of its own); this hands it the module's own `ui.calendar*` catalog keys so every
+   *  visible word of the calendar follows the hub language, never OutfitKit's English defaults. */
+  private calendarLabels(t: (k: string) => string): {
+    month: string;
+    agenda: string;
+    agendaEmpty: string;
+    more: string;
+    prevMonth: string;
+    nextMonth: string;
+  } {
+    return {
+      month: t('ui.calendarMonth'),
+      agenda: t('ui.calendarAgenda'),
+      agendaEmpty: t('ui.calendarAgendaEmpty'),
+      more: t('ui.calendarMore'),
+      prevMonth: t('ui.calendarPrevMonth'),
+      nextMonth: t('ui.calendarNextMonth'),
+    };
   }
 
   /** Has the chosen time already passed? Asked against the SALON clock, which is the one that
@@ -1354,14 +1378,13 @@ export class ErpAppointmentsList extends LitElement {
              instead. -->
         ${this.calendarOpen === 'day'
           ? html`<div class="day-calendar">
-              <ion-datetime
+              <ok-calendar
                 data-testid="appointments-list-day-calendar-picker"
-                presentation="date"
                 locale=${erplora().locale || 'es'}
-                first-day-of-week=${firstDayOfWeek(erplora().locale)}
-                .value=${this.day || undefined}
-                @ionChange=${(e: CustomEvent<{ value: string | string[] | null }>) => this.onDateCalendarPick('day', e.detail.value)}
-              ></ion-datetime>
+                .value=${this.day || ''}
+                .labels=${this.calendarLabels(t)}
+                @ok-date-select=${(e: CustomEvent<{ date: string }>) => this.onDateCalendarPick('day', e.detail.date)}
+              ></ok-calendar>
             </div>`
           : nothing}
         <!-- appointments#12: el aparato NO manda, pero tampoco se le engaña en silencio. Si el
@@ -1474,14 +1497,13 @@ export class ErpAppointmentsList extends LitElement {
       </ion-input>
       ${this.calendarOpen === 'reschedule'
         ? html`<div class="field-calendar">
-            <ion-datetime
+            <ok-calendar
               data-testid="appointments-list-reschedule-start-calendar-picker"
-              presentation="date"
               locale=${erplora().locale || 'es'}
-              first-day-of-week=${firstDayOfWeek(erplora().locale)}
-              .value=${this.rescheduleStartDate || undefined}
-              @ionChange=${(e: CustomEvent<{ value: string | string[] | null }>) => this.onDateCalendarPick('reschedule', e.detail.value)}
-            ></ion-datetime>
+              .value=${this.rescheduleStartDate || ''}
+              .labels=${this.calendarLabels(t)}
+              @ok-date-select=${(e: CustomEvent<{ date: string }>) => this.onDateCalendarPick('reschedule', e.detail.date)}
+            ></ok-calendar>
           </div>`
         : nothing}
       <ion-input data-testid="appointments-list-reschedule-start-time" data-role="reschedule-start-time" fill="outline" mode="md" label-placement="floating" label=${t('ui.fieldTime')} type="time" .value=${this.rescheduleStartTime} @ionInput=${(e: any) => (this.rescheduleStartTime = e.target.value ?? '')} @paste=${(e: Event) => this.onStartPaste('reschedule', e)}></ion-input>
@@ -1536,14 +1558,16 @@ export class ErpAppointmentsList extends LitElement {
             </ion-input>
             ${this.calendarOpen === 'new'
               ? html`<div class="field-calendar">
-                  <ion-datetime
+                  <!-- appointments#205 — before a day is picked, the calendar opens on the day the
+                       agenda is already showing (this.day), not the device's real "today": the
+                       receptionist is adding this appointment while looking at that day. -->
+                  <ok-calendar
                     data-testid="appointments-list-start-calendar-picker"
-                    presentation="date"
                     locale=${erplora().locale || 'es'}
-                    first-day-of-week=${firstDayOfWeek(erplora().locale)}
-                    .value=${this.newStartDate || undefined}
-                    @ionChange=${(e: CustomEvent<{ value: string | string[] | null }>) => this.onDateCalendarPick('new', e.detail.value)}
-                  ></ion-datetime>
+                    .value=${this.newStartDate || this.day}
+                    .labels=${this.calendarLabels(t)}
+                    @ok-date-select=${(e: CustomEvent<{ date: string }>) => this.onDateCalendarPick('new', e.detail.date)}
+                  ></ok-calendar>
                 </div>`
               : nothing}
             <ion-input data-testid="appointments-list-start-time" data-role="start-time" fill="outline" mode="md" label-placement="floating" label=${t('ui.fieldTime')} type="time" .value=${this.newStartTime} @ionInput=${(e: any) => (this.newStartTime = e.target.value ?? '')} @paste=${(e: Event) => this.onStartPaste('new', e)}></ion-input>
