@@ -13,6 +13,8 @@ import esLocale from '../../../locales/es.json';
 import enLocale from '../../../locales/en.json';
 
 const commands: { name: string; payload: Record<string, unknown> }[] = [];
+/** The booked occurrences `appointments.recurring.occurrences` answers with (none by default). */
+let occurrenceRows: Record<string, unknown>[] = [];
 
 const SERIES_ROW = {
   id: 'r1',
@@ -39,8 +41,14 @@ function lookup(catalog: unknown, key: string): string | undefined {
   return typeof value === 'string' ? value : undefined;
 }
 
+/** `{name}` placeholders filled from the params, the way the shell's `t` does. */
+function interpolate(text: string, params?: Record<string, unknown>): string {
+  return params ? text.replace(/\{(\w+)\}/g, (whole, name: string) => (name in params ? String(params[name]) : whole)) : text;
+}
+
 function install(locale: 'es' | 'en') {
   commands.length = 0;
+  occurrenceRows = [];
   document.body.innerHTML = '';
   (globalThis as Record<string, unknown>).erplora = {
     timezone: 'Europe/Madrid',
@@ -51,7 +59,7 @@ function install(locale: 'es' | 'en') {
         case 'appointments.recurring.get':
           return [SERIES_TEMPLATE];
         case 'appointments.recurring.occurrences':
-          return [];
+          return occurrenceRows;
         case 'customers.list':
           return { rows: [{ id: 'c2', name: 'Bea Ruiz' }], total: 1 };
         case 'services.services.list':
@@ -70,7 +78,8 @@ function install(locale: 'es' | 'en') {
     notify: () => {},
     locale,
     // The real resolution the shell does: active language, then English, then the key.
-    t: (_catalog: unknown, key: string) => lookup(CATALOGS[locale], key) ?? lookup(CATALOGS.en, key) ?? key,
+    t: (_catalog: unknown, key: string, params?: Record<string, unknown>) =>
+      interpolate(lookup(CATALOGS[locale], key) ?? lookup(CATALOGS.en, key) ?? key, params),
   };
 }
 
@@ -196,6 +205,7 @@ const EXPECTED = {
     shownStart: '05/10/2099',
     shownEnd: '31/03/2100',
     pickedStart: '07/10/2099',
+    cutoff: '12/10/2099',
   },
   en: {
     typedStart: '10/05/2099',
@@ -207,6 +217,7 @@ const EXPECTED = {
     shownStart: '10/05/2099',
     shownEnd: '03/31/2100',
     pickedStart: '10/07/2099',
+    cutoff: '10/12/2099',
   },
 } as const;
 
@@ -388,6 +399,44 @@ for (const locale of ['es', 'en'] as const) {
       expect((field(el, 'appointments-series-submit') as HTMLElement & { disabled: boolean }).disabled).toBe(true);
       await submitEdit(el);
       expect(commands.some((c) => c.name === 'appointments.recurring.update')).toBe(false);
+    });
+  });
+
+  describe(`appointments#220 — the date the change applies from, in the hub language (${locale})`, () => {
+    beforeEach(() => {
+      install(locale);
+      occurrenceRows = [
+        { id: 'o1', occurrence_date: '2099-10-12', status: 'confirmed', converted_sale_id: null },
+        { id: 'o2', occurrence_date: '2099-10-19', status: 'confirmed', converted_sale_id: null },
+      ];
+    });
+
+    const text = (el: Wc, testid: string) => (field(el, testid)?.textContent ?? '').replace(/\s+/g, ' ');
+
+    it('the booked count names the cut-off day in the hub date order, not as a raw ISO date', async () => {
+      const el = await mount();
+      await tapEdit(el);
+      const counts = (el.shadowRoot.querySelector('[data-role="series-counts"]')?.textContent ?? '').replace(/\s+/g, ' ');
+      expect(counts).toContain(want.cutoff);
+      expect(counts).not.toContain('2099-10-12');
+    });
+
+    it('the scope hint names the same cut-off day in the hub date order', async () => {
+      const el = await mount();
+      await tapEdit(el);
+      const hint = text(el, 'appointments-series-scope-hint');
+      expect(hint).toContain(want.cutoff);
+      expect(hint).not.toContain('2099-10-12');
+    });
+
+    it('the update still cuts at the ISO date the server reads', async () => {
+      const el = await mount();
+      await tapEdit(el);
+      await type(el, 'appointments-series-time', want.typedTime);
+      await leave(el, 'appointments-series-time');
+      await submitEdit(el);
+      const update = commands.find((c) => c.name === 'appointments.recurring.update');
+      expect(update?.payload).toMatchObject({ from_occurrence_date: '2099-10-12' });
     });
   });
 

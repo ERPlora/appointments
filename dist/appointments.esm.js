@@ -7148,7 +7148,7 @@ var ErpAppointmentsSeries = class extends i3 {
             >${t5("ui.seriesSplitFrom", { id: tmpl.split_from_id })}</ok-inline-feedback
           >` : A}
       <p class="ctx" data-role="series-counts">
-        ${t5("ui.seriesBookedCount", { booked, from: this.fromOccurrence, upcoming })}
+        ${t5("ui.seriesBookedCount", { booked, from: this.shownDate(this.fromOccurrence), upcoming })}
       </p>
       <!-- EL RECUENTO ANTES DE CONFIRMAR. Mover el día de una serie le cambia TODAS las citas a la
            clienta; un aviso genérico no basta, y lo que ya está cobrado no se toca — se nombra. -->
@@ -7203,7 +7203,7 @@ var ErpAppointmentsSeries = class extends i3 {
         ></ion-input>
       </div>
       <ok-inline-feedback data-testid="appointments-series-scope-hint" tone="info" icon="information-circle-outline"
-        >${t5("ui.seriesScopeHint", { from: this.fromOccurrence })}</ok-inline-feedback
+        >${t5("ui.seriesScopeHint", { from: this.shownDate(this.fromOccurrence) })}</ok-inline-feedback
       >
       <!-- A half-typed time is not a time: saving would silently keep the old one (appointments#217). -->
       <ion-button data-testid="appointments-series-submit" type="submit" expand="block" .disabled=${this.saving || !this.editTime}>${t5("ui.seriesSave")}</ion-button>
