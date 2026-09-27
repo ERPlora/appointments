@@ -138,16 +138,39 @@ async function openCalendar(el: Wc, testid: string): Promise<Calendar> {
   expect(picker!.tagName.toLowerCase(), 'ion-datetime is not registered by the hub shell').toBe('ok-calendar');
   expect(customElements.get('ok-calendar'), 'the module bundle registers ok-calendar itself').toBeTruthy();
   await picker!.updateComplete;
+  expectDatePicker(picker!, testid);
   return picker!;
+}
+
+/** appointments#223 — a date field opens OutfitKit's compact DATE PICKER, not the events
+ *  calendar: no Month/Agenda switch (its Agenda view is empty here), days are real buttons (one
+ *  tab stop, arrow keys), and the module CSS does not stretch it past the picker's 20rem. */
+function expectDatePicker(picker: Calendar, testid: string) {
+  expect((picker as Calendar & { picker?: boolean }).picker, `${testid} is in date picker mode`).toBe(true);
+  expect(picker.hasAttribute('picker'), `${testid} carries the picker attribute`).toBe(true);
+  const root = picker.shadowRoot!;
+  expect(root.querySelector('.toggle'), `${testid} has no Month/Agenda switch`).toBeNull();
+  const days = root.querySelectorAll('button[data-date]');
+  expect(days.length, `${testid} paints its days as buttons`).toBeGreaterThanOrEqual(28);
+  expect(root.querySelectorAll('button[data-date][tabindex="0"]').length, `${testid} has a single tab stop`).toBe(1);
+  expect(moduleCalendarMaxWidth(picker), `${testid} keeps the compact picker width`).toBe('20rem');
+}
+
+/** The `max-width` the MODULE's own CSS gives `ok-calendar`. In a browser a rule of the host's
+ *  shadow root beats the calendar's own `:host([picker]) { max-width: 20rem }`, so a wider value
+ *  here would stretch the picker again; happy-dom resolves it the other way round, hence the
+ *  stylesheet text and not `getComputedStyle`. */
+function moduleCalendarMaxWidth(calendar: HTMLElement): string | undefined {
+  const host = (calendar.getRootNode() as ShadowRoot).host;
+  const styles = (host.constructor as unknown as { styles: { cssText: string } | { cssText: string }[] }).styles;
+  const css = [styles].flat().map((sheet) => sheet.cssText).join('\n');
+  return css.match(/(?:^|[}\s])ok-calendar\s*\{[^}]*max-width:\s*([^;}]+)/)?.[1].trim();
 }
 
 /** Taps the cell of `iso` (a day of the month the calendar shows) the way a finger does. */
 async function pickInCalendar(el: Wc, testid: string, iso: string) {
   const picker = await openCalendar(el, testid);
-  const dayOfMonth = Number(iso.slice(8, 10));
-  const cell = [...picker.shadowRoot!.querySelectorAll<HTMLElement>('.day:not(.other-month)')].find(
-    (c) => Number(c.querySelector('.daynum')?.textContent?.trim()) === dayOfMonth,
-  );
+  const cell = picker.shadowRoot!.querySelector<HTMLElement>(`button[data-date="${iso}"]:not(.other-month)`);
   expect(cell, `day ${iso} must be a cell of the open month`).toBeTruthy();
   cell!.click();
   await el.updateComplete;
@@ -156,8 +179,10 @@ async function pickInCalendar(el: Wc, testid: string, iso: string) {
 }
 
 const EXPECTED = {
-  es: { day: '17/08/2026', typed: '18/08/2026', placeholder: 'dd/mm/aaaa', month: 'agosto de 2026', weekday: 'lun' },
-  en: { day: '08/17/2026', typed: '08/18/2026', placeholder: 'mm/dd/yyyy', month: 'August 2026', weekday: 'Mon' },
+  // OutfitKit writes the month in sentence case, and the week starts where the hub language
+  // starts it: Monday in Spanish, Sunday in US English (outfitkit#209).
+  es: { day: '17/08/2026', typed: '18/08/2026', placeholder: 'dd/mm/aaaa', month: 'Agosto de 2026', weekday: 'lun' },
+  en: { day: '08/17/2026', typed: '08/18/2026', placeholder: 'mm/dd/yyyy', month: 'August 2026', weekday: 'Sun' },
 } as const;
 
 for (const locale of ['es', 'en'] as const) {
@@ -227,7 +252,7 @@ for (const locale of ['es', 'en'] as const) {
       const el = await mount();
       await click(el, 'appointments-list-day-calendar');
       const picker = await openCalendar(el, 'appointments-list-day-calendar-picker');
-      expect(picker.shadowRoot!.querySelector('.day.selected .daynum')?.textContent?.trim()).toBe('17');
+      expect(picker.shadowRoot!.querySelector('button[aria-pressed="true"]')?.textContent?.trim()).toBe('17');
       await click(el, 'appointments-list-day-calendar');
       expect(byTestId(el, 'appointments-list-day-calendar-picker')).toBeNull();
       expect(el.day).toBe('2026-08-17');
@@ -297,7 +322,7 @@ for (const locale of ['es', 'en'] as const) {
       await click(el, 'appointments-list-reschedule-start-calendar');
       const picker = await openCalendar(el, 'appointments-list-reschedule-start-calendar-picker');
       expect(picker.locale).toBe(locale);
-      expect(picker.shadowRoot!.querySelector('.day.selected .daynum')?.textContent?.trim()).toBe('7');
+      expect(picker.shadowRoot!.querySelector('button[aria-pressed="true"]')?.textContent?.trim()).toBe('7');
       await pickInCalendar(el, 'appointments-list-reschedule-start-calendar-picker', '2026-08-18');
       expect(el.rescheduleStart).toBe('2026-08-18T10:00');
       expect(byTestId(el, 'appointments-list-reschedule-start')?.value).toBe(want.typed);

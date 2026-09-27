@@ -309,7 +309,8 @@ export class ErpAppointmentsList extends LitElement {
        ion-modal (an overlay would teleport out of the shadow root and lose its styles, hub#2162),
        so it is painted right where it opens instead. */
     .day-calendar, .field-calendar { display:flex; justify-content:flex-start; margin:0 0 .5rem; }
-    ok-calendar { flex: 1 1 auto; max-width: 28rem; }
+    /* appointments#223 — the compact date picker of OutfitKit: never wider than its 20rem. */
+    ok-calendar { flex: 1 1 auto; max-width: 20rem; }
   `;
 
   @state() items: Appointment[] = [];
@@ -1409,6 +1410,7 @@ export class ErpAppointmentsList extends LitElement {
           ? html`<div class="day-calendar">
               <ok-calendar
                 data-testid="appointments-list-day-calendar-picker"
+                picker
                 locale=${erplora().locale || 'es'}
                 .value=${this.day || ''}
                 .labels=${this.calendarLabels(t)}
@@ -1528,6 +1530,7 @@ export class ErpAppointmentsList extends LitElement {
         ? html`<div class="field-calendar">
             <ok-calendar
               data-testid="appointments-list-reschedule-start-calendar-picker"
+              picker
               locale=${erplora().locale || 'es'}
               .value=${this.rescheduleStartDate || ''}
               .labels=${this.calendarLabels(t)}
@@ -1592,6 +1595,7 @@ export class ErpAppointmentsList extends LitElement {
                        receptionist is adding this appointment while looking at that day. -->
                   <ok-calendar
                     data-testid="appointments-list-start-calendar-picker"
+                    picker
                     locale=${erplora().locale || 'es'}
                     .value=${this.newStartDate || this.day}
                     .labels=${this.calendarLabels(t)}

@@ -152,16 +152,32 @@ async function paste(el: Wc, testid: string, text: string): Promise<Event> {
 
 type Calendar = HTMLElement & { value: string; locale: string; updateComplete: Promise<unknown> };
 
+/** The `max-width` the MODULE's own CSS gives `ok-calendar`. In a browser a rule of the host's
+ *  shadow root beats the calendar's own `:host([picker]) { max-width: 20rem }`, so a wider value
+ *  here would stretch the picker again; happy-dom resolves it the other way round, hence the
+ *  stylesheet text and not `getComputedStyle`. */
+function moduleCalendarMaxWidth(calendar: HTMLElement): string | undefined {
+  const host = (calendar.getRootNode() as ShadowRoot).host;
+  const styles = (host.constructor as unknown as { styles: { cssText: string } | { cssText: string }[] }).styles;
+  const css = [styles].flat().map((sheet) => sheet.cssText).join('\n');
+  return css.match(/(?:^|[}\s])ok-calendar\s*\{[^}]*max-width:\s*([^;}]+)/)?.[1].trim();
+}
+
 /** Taps the cell of `iso` in the open inline calendar, the way a finger does. */
 async function pickInCalendar(el: Wc, testid: string, iso: string) {
   const picker = field(el, testid) as Calendar | null;
   expect(picker, `${testid} must be open`).toBeTruthy();
   expect(picker!.tagName.toLowerCase(), 'ion-datetime is not registered by the hub shell').toBe('ok-calendar');
   await picker!.updateComplete;
-  const dayOfMonth = Number(iso.slice(8, 10));
-  const cell = [...picker!.shadowRoot!.querySelectorAll<HTMLElement>('.day:not(.other-month)')].find(
-    (c) => Number(c.querySelector('.daynum')?.textContent?.trim()) === dayOfMonth,
-  );
+  // appointments#223 — a date field opens OutfitKit's compact DATE PICKER, not the events
+  // calendar: no Month/Agenda switch, days are real buttons with one tab stop, and the module CSS
+  // does not stretch it past the picker's 20rem.
+  expect((picker as Calendar & { picker?: boolean }).picker, `${testid} is in date picker mode`).toBe(true);
+  expect(picker!.hasAttribute('picker'), `${testid} carries the picker attribute`).toBe(true);
+  expect(picker!.shadowRoot!.querySelector('.toggle'), `${testid} has no Month/Agenda switch`).toBeNull();
+  expect(picker!.shadowRoot!.querySelectorAll('button[data-date][tabindex="0"]').length, `${testid} has a single tab stop`).toBe(1);
+  expect(moduleCalendarMaxWidth(picker!), `${testid} keeps the compact picker width`).toBe('20rem');
+  const cell = picker!.shadowRoot!.querySelector<HTMLElement>(`button[data-date="${iso}"]:not(.other-month)`);
   expect(cell, `day ${iso} must be a cell of the open month`).toBeTruthy();
   cell!.click();
   await settle(el);
