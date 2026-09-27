@@ -113,6 +113,7 @@ type Wc = HTMLElement & {
   submitEdit: (e: Event) => Promise<void>;
   createSeries: (e: Event) => Promise<void>;
   materializeSeries: (row: Record<string, unknown>) => Promise<void>;
+  deleteSeries: (row: Record<string, unknown>) => Promise<void>;
 };
 
 async function settle(el: Wc): Promise<void> {
@@ -251,6 +252,45 @@ describe('a refused change to a series is seen inside the edit panel (pm#513)', 
     await settle(el);
     expect(onPage(el), 'two refusals on screen, one of them about something else, read as one').toBeNull();
     expect(inForm(el, 'series-edit', 'appointments-series-form-error')).not.toBeNull();
+  });
+});
+
+describe('what goes wrong OUTSIDE a panel save stays on the page (pm#513)', () => {
+  // With no panel open, a message inside the edit form is painted nowhere: these must keep `error`.
+  it('a refused delete (a row action) is said on the page', async () => {
+    refusals['appointments.recurring.delete'] = new Error('appointments.delete_refused');
+    const el = await mount();
+    await el.deleteSeries(SERIES_ROW);
+    await settle(el);
+
+    expect(onPage(el)?.textContent).toContain('appointments.delete_refused');
+  });
+
+  it('a series that no longer exists is said on the page: the panel never opened', async () => {
+    const api = (globalThis as { erplora: { query: (n: string, p?: unknown) => Promise<unknown> } }).erplora;
+    const answer = api.query;
+    api.query = async (name: string, p?: unknown) => (name === 'appointments.recurring.get' ? [] : answer(name, p));
+    const el = await mount();
+    await el.openSeries(SERIES_ROW);
+    await settle(el);
+
+    expect(el.editingId).toBe('');
+    expect(onPage(el)?.textContent).toContain(esLocale.ui.seriesNotFound);
+  });
+
+  it('a series that fails to load is said on the page: the panel never opened', async () => {
+    const api = (globalThis as { erplora: { query: (n: string, p?: unknown) => Promise<unknown> } }).erplora;
+    const answer = api.query;
+    api.query = async (name: string, p?: unknown) => {
+      if (name === 'appointments.recurring.get') throw new Error('appointments.load_refused');
+      return answer(name, p);
+    };
+    const el = await mount();
+    await el.openSeries(SERIES_ROW);
+    await settle(el);
+
+    expect(el.editingId).toBe('');
+    expect(onPage(el)?.textContent).toContain('appointments.load_refused');
   });
 });
 
