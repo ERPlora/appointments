@@ -97,20 +97,24 @@ describe('money display goes through the shared formatter (pm#289)', () => {
   it('no hand-formatted amount in ui/ outside the triaged non-display cases', () => {
     const uiRoot = join(moduleRoot(), 'ui');
     const found: string[] = [];
-    const sources = uiSources(uiRoot);
-    // The control that keeps this from passing vacuously: the two screens that carry
-    // `service_price` (the appointments list and the customer's appointment history) — where an
-    // amount would be painted first — are always scanned.
-    expect(sources.map((f) => f.slice(uiRoot.length + 1))).toEqual(
+    // The control that keeps this from passing vacuously: this module paints no amount, so an empty
+    // `found` proves nothing by itself. The two screens that carry `service_price` (the
+    // appointments list and the customer's appointment history) — where an amount would be painted
+    // first — must be scanned AND the code the detector reads (comments stripped) must still name
+    // it: a scan over empty or over-stripped content would otherwise stay green forever.
+    const carriers: string[] = [];
+    for (const f of uiSources(uiRoot)) {
+      const rel = f.slice(uiRoot.length + 1);
+      const src = readFileSync(f, 'utf8');
+      if (stripComments(src).includes('service_price')) carriers.push(rel);
+      for (const h of handFormattedMoney(src)) found.push(`${rel}: ${h}`);
+    }
+    expect(carriers).toEqual(
       expect.arrayContaining([
         'components/erp-appointments-list/erp-appointments-list.ts',
         'components/erp-appointments-customer-history/erp-appointments-customer-history.ts',
       ]),
     );
-    for (const f of sources) {
-      const rel = f.slice(uiRoot.length + 1);
-      for (const h of handFormattedMoney(readFileSync(f, 'utf8'))) found.push(`${rel}: ${h}`);
-    }
     const unexpected = unexpectedHits(found, NOT_DISPLAY);
     expect(
       unexpected,
@@ -168,11 +172,17 @@ describe('OutfitKit comes in by entry point, not by the barrel (bundle size)', (
   it('no value import from `@erplora/outfitkit` in ui/', () => {
     const uiRoot = join(moduleRoot(), 'ui');
     const found: string[] = [];
+    // Non-vacuity control: the scan must read at least one OutfitKit import (the screens import
+    // their entry points and `import type` from the barrel), or it would pass on empty content.
+    let okImports = 0;
     for (const f of uiSources(uiRoot)) {
       const rel = f.slice(uiRoot.length + 1);
-      for (const h of barrelValueImports(readFileSync(f, 'utf8'))) found.push(`${rel}: ${h}`);
+      const src = readFileSync(f, 'utf8');
+      if (stripComments(src).includes("'@erplora/outfitkit")) okImports++;
+      for (const h of barrelValueImports(src)) found.push(`${rel}: ${h}`);
     }
-    expect(found, 'import it from @erplora/outfitkit/<component> (the barrel drags every ok-* into dist/)').toEqual([]);
+    expect(okImports, 'the scan read no OutfitKit import: it would pass on empty files').toBeGreaterThan(0);
+    expect(found,'import it from @erplora/outfitkit/<component> (the barrel drags every ok-* into dist/)').toEqual([]);
   });
 
   it('the detector catches the positive and lets type-only imports through', () => {
