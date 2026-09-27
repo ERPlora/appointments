@@ -693,6 +693,8 @@ export class ErpAppointmentsSeries extends LitElement {
       <div class="grid">
         <ion-select
           data-testid="appointments-series-frequency"
+          fill="outline"
+          mode="md"
           data-role="series-frequency"
           label=${t('ui.fieldFrequency')}
           label-placement="floating"
@@ -704,6 +706,8 @@ export class ErpAppointmentsSeries extends LitElement {
         ${ALIGNS_TO_WEEKDAY.includes(this.editFrequency)
           ? html`<ion-select
               data-testid="appointments-series-day"
+              fill="outline"
+              mode="md"
               data-role="series-day"
               label=${t('ui.fieldWeekday')}
               label-placement="floating"
@@ -717,6 +721,8 @@ export class ErpAppointmentsSeries extends LitElement {
         <!-- appointments#217: text in the hub clock, not the native time input (browser clock). -->
         <ion-input
           data-testid="appointments-series-time"
+          fill="outline"
+          mode="md"
           data-role="series-time"
           label=${t('ui.fieldTime')}
           label-placement="floating"
@@ -730,6 +736,8 @@ export class ErpAppointmentsSeries extends LitElement {
         ></ion-input>
         <ion-input
           data-testid="appointments-series-duration"
+          fill="outline"
+          mode="md"
           data-role="series-duration"
           label=${t('ui.fieldMinutes')}
           label-placement="floating"

@@ -277,6 +277,11 @@ export class ErpAppointmentsList extends LitElement {
        below that the browser clips the year under the icon. Fixed width, so on a wide desktop the
        step forward stays next to the day it changes. */
     .filters .daynav ion-input { flex:0 0 auto; width:9rem; min-width:9rem; }
+    /* appointments#221: the box (outline, md) adds 16 px of padding per side, which clipped the
+       year under the calendar icon («26/09/2»). Tighter padding keeps the same 9rem — wider, and
+       on a 390 px phone the view switch drops to a second line. */
+    .filters .daynav ion-input { --padding-start:10px; --padding-end:0px; }
+    .filters .daynav ion-input ion-button[slot="end"] { --padding-start:6px; --padding-end:6px; margin-inline:0; }
     /* 44×44 es el suelo táctil (Ionic lo aplica a sus propios controles y es lo que exige el QA de
        las tres ventanas): un paso de día de 28 px se falla con el pulgar en una tablet de barra. */
     .filters .daynav ion-button { flex:0 0 auto; height:44px; width:44px; --padding-start:.25rem; --padding-end:.25rem; margin:0; }
@@ -1366,7 +1371,7 @@ export class ErpAppointmentsList extends LitElement {
                  BROWSER/OS locale (a Spanish hub in an English browser read «09/26/2026»), and
                  there is no attribute that changes it. This paints the date itself, in the hub's
                  language, with an inline calendar for the mouse. -->
-            <ion-input data-testid="appointments-list-day" data-role="day" aria-label=${t('ui.fieldDate')} type="text" inputmode="numeric" autocomplete="off" placeholder=${t('ui.datePlaceholder')} .value=${this.dateFieldValue('day')} @ionInput=${(e: any) => this.onDateFieldInput('day', e.target.value ?? '')} @ionChange=${() => this.commitDateDraft('day')}>
+            <ion-input data-testid="appointments-list-day" data-role="day" fill="outline" mode="md" aria-label=${t('ui.fieldDate')} type="text" inputmode="numeric" autocomplete="off" placeholder=${t('ui.datePlaceholder')} .value=${this.dateFieldValue('day')} @ionInput=${(e: any) => this.onDateFieldInput('day', e.target.value ?? '')} @ionChange=${() => this.commitDateDraft('day')}>
               <ion-button slot="end" data-role="day-calendar" type="button" fill="clear" size="small" data-testid="appointments-list-day-calendar" aria-label=${t('ui.openCalendar')} @click=${() => this.toggleDateCalendar('day')}>
                 <ion-icon slot="icon-only" name="calendar-outline"></ion-icon>
               </ion-button>
@@ -1375,7 +1380,7 @@ export class ErpAppointmentsList extends LitElement {
               <ion-icon slot="icon-only" name="chevron-forward-outline"></ion-icon>
             </ion-button>
           </div>
-          <ion-select data-testid="appointments-list-status-filter" data-role="status" aria-label=${t('ui.filterStatus')} placeholder=${t('ui.allStatuses')} .value=${this.statusFilter} @ionChange=${(e: any) => {
+          <ion-select data-testid="appointments-list-status-filter" data-role="status" fill="outline" mode="md" aria-label=${t('ui.filterStatus')} placeholder=${t('ui.allStatuses')} .value=${this.statusFilter} @ionChange=${(e: any) => {
               this.statusFilter = e.target.value;
               this.refresh();
             }}>
