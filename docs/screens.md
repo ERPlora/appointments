@@ -16,7 +16,9 @@ of the screen to 39 %.
 The date, in the day stepper and in every booking form, is a **text field painted in the hub's own
 language** (not a native browser date input, which paints the device's locale regardless of the
 hub's — appointments#205), with a small calendar button next to it for picking the day with the
-mouse.
+mouse. That button opens a compact date picker (appointments#223): one month, no Month/Agenda
+switch, the week starting where the hub language starts it (Monday in Spanish, Sunday in US
+English), and days you can move through with the arrow keys and pick with Enter.
 
 Every field of the agenda — the day and the status filter in the bar, and every field of every
 panel — is drawn **in its box** (an outlined field), so it is obvious where to type or pick
