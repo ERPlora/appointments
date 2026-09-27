@@ -1,4 +1,5 @@
 import { LitElement, html, css, nothing } from 'lit';
+import type { PropertyValues } from 'lit';
 import { state } from 'lit/decorators.js';
 import { define } from '@erplora/outfitkit/define';
 import '@erplora/outfitkit/ok-inline-feedback';
@@ -219,6 +220,11 @@ export class ErpAppointmentsSeries extends LitElement {
    *  panel covers it whole (same reasoning as `formError` in `erp-appointments-list`). */
   @state() createError = '';
 
+  /** pm#513 — the same for the EDIT form: a refused change to a series is painted inside that form.
+   *  It used to go to `error`, the page banner, and on a phone the full-screen sheet covered it:
+   *  the receptionist pressed «Save» and saw nothing at all. Row actions keep using `error`. */
+  @state() editError = '';
+
   /** appointments#217 — the raw text of a date field while it is being typed; `null` otherwise, so
    *  the field paints `formatTypedDate(iso, locale)` in the hub's day/month order (a native `date`
    *  input paints the BROWSER's). A half-typed date stays on screen without becoming a date. */
@@ -303,6 +309,21 @@ export class ErpAppointmentsSeries extends LitElement {
     this.renderRoot.addEventListener('panelClose', () => this.editSeq++);
   }
 
+  /** pm#513: a refusal appears ABOVE the button that was pressed, at the foot of a form that can be
+   *  taller than a phone — bring it into view once it has painted itself: scrolled before, the
+   *  banner still measures 0 px and ends up under the tab bar. */
+  updated(changed: PropertyValues<this>): void {
+    super.updated(changed);
+    if (changed.has('editError') && this.editError) void this.revealRefusal('[data-testid="appointments-series-form-error"]');
+    if (changed.has('createError') && this.createError) void this.revealRefusal('[data-testid="appointments-series-create-error"]');
+  }
+
+  private async revealRefusal(selector: string): Promise<void> {
+    const banner = this.renderRoot.querySelector(selector) as (HTMLElement & { updateComplete?: Promise<unknown> }) | null;
+    await banner?.updateComplete;
+    banner?.scrollIntoView?.({ block: 'center' });
+  }
+
   private onTableAddClick(e: Event): void {
     const tappedAdd = e
       .composedPath()
@@ -338,6 +359,7 @@ export class ErpAppointmentsSeries extends LitElement {
     // (or failure) for an earlier tap is dropped, or a submit would rewrite the wrong series.
     const seq = ++this.editSeq;
     this.error = '';
+    this.editError = '';
     try {
       const [tmpl, occ] = await Promise.all([
         this.loadTemplate(id),
@@ -427,7 +449,8 @@ export class ErpAppointmentsSeries extends LitElement {
       return;
     }
     this.saving = true;
-    this.error = '';
+    this.editError = '';
+    this.error = ''; // a save is the next thing the person did: an older row refusal is stale
     try {
       const result = (await erplora().command('appointments.recurring.update', {
         recurring_id: this.editingId,
@@ -447,7 +470,7 @@ export class ErpAppointmentsSeries extends LitElement {
       this.closePanel();
       await this.refresh();
     } catch (e) {
-      this.error = e instanceof Error && e.message ? e.message : erplora().t(CATALOG, 'ui.seriesSaveError');
+      this.editError = e instanceof Error && e.message ? e.message : erplora().t(CATALOG, 'ui.seriesSaveError');
     } finally {
       this.saving = false;
     }
@@ -750,6 +773,11 @@ export class ErpAppointmentsSeries extends LitElement {
       <ok-inline-feedback data-testid="appointments-series-scope-hint" tone="info" icon="information-circle-outline"
         >${t('ui.seriesScopeHint', { from: this.shownDate(this.fromOccurrence) })}</ok-inline-feedback
       >
+      <!-- pm#513: the refusal travels WITH the form — on a phone the panel is a full-screen sheet
+           and a banner on the page underneath it is never seen. -->
+      ${this.editError
+        ? html`<ok-inline-feedback data-testid="appointments-series-form-error" tone="danger" icon="alert-circle-outline">${this.editError}</ok-inline-feedback>`
+        : nothing}
       <!-- A half-typed time is not a time: saving would silently keep the old one (appointments#217). -->
       <ion-button data-testid="appointments-series-submit" type="submit" expand="block" .disabled=${this.saving || !this.editTime}>${t('ui.seriesSave')}</ion-button>
     </form>`;

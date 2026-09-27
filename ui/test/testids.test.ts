@@ -156,6 +156,7 @@ const COVERED: Record<
       'appointments-series-duration',
       'appointments-series-error',
       'appointments-series-form',
+      'appointments-series-form-error',
       'appointments-series-frequency',
       'appointments-series-locked',
       'appointments-series-scope-hint',
