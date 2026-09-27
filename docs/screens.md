@@ -16,7 +16,14 @@ of the screen to 39 %.
 The date, in the day stepper and in every booking form, is a **text field painted in the hub's own
 language** (not a native browser date input, which paints the device's locale regardless of the
 hub's — appointments#205), with a small calendar button next to it for picking the day with the
-mouse.
+mouse. That button opens a compact date picker (appointments#223): one month, no Month/Agenda
+switch, the week starting where the hub language starts it (Monday in Spanish, Sunday in US
+English), and days you can move through with the arrow keys and pick with Enter.
+
+Every field of the agenda — the day and the status filter in the bar, and every field of every
+panel — is drawn **in its box** (an outlined field), so it is obvious where to type or pick
+(appointments#204, appointments#221). The bar's day keeps its width and still shows the whole date,
+year included, next to its calendar button.
 
 The time of a booking (new appointment and «Move») is painted the same way: a text field in the
 **hub language's own clock** — 24 h in Spanish, «02:30 PM» in English — typed in one go (`hh:mm`,
@@ -171,6 +178,9 @@ painted in the hub's day/month order and clock (`dd/mm/aaaa` and 24 h in Spanish
 **Day** and **Until** have the same calendar button. A half-typed date or time is not taken: the
 save button stays off (an «Until» left half-typed never becomes a series with no end). The list
 shows the pattern's time, the start and the end the same way.
+
+Every field of both panels — new series and edit series (frequency, weekday, time, minutes) — is
+drawn in its box, like the new-appointment panel (appointments#221).
 
 Opening a series shows how many appointments it already has on the books, from which date the change
 will apply, how many are still ahead, and — when the series came out of a split — that it continues

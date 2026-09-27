@@ -170,7 +170,8 @@ export class ErpAppointmentsSeries extends LitElement {
     /* appointments#217 — the inline ok-calendar of a date field, painted right where it opens (an
        overlay would teleport out of the shadow root and lose its styles, hub#2162), full width. */
     .field-calendar { grid-column: 1 / -1; display:flex; justify-content:flex-start; }
-    ok-calendar { flex: 1 1 auto; max-width: 28rem; }
+    /* appointments#223 — the compact date picker of OutfitKit: never wider than its 20rem. */
+    ok-calendar { flex: 1 1 auto; max-width: 20rem; }
   `;
 
   @state() series: Series[] = [];
@@ -692,6 +693,8 @@ export class ErpAppointmentsSeries extends LitElement {
       <div class="grid">
         <ion-select
           data-testid="appointments-series-frequency"
+          fill="outline"
+          mode="md"
           data-role="series-frequency"
           label=${t('ui.fieldFrequency')}
           label-placement="floating"
@@ -703,6 +706,8 @@ export class ErpAppointmentsSeries extends LitElement {
         ${ALIGNS_TO_WEEKDAY.includes(this.editFrequency)
           ? html`<ion-select
               data-testid="appointments-series-day"
+              fill="outline"
+              mode="md"
               data-role="series-day"
               label=${t('ui.fieldWeekday')}
               label-placement="floating"
@@ -716,6 +721,8 @@ export class ErpAppointmentsSeries extends LitElement {
         <!-- appointments#217: text in the hub clock, not the native time input (browser clock). -->
         <ion-input
           data-testid="appointments-series-time"
+          fill="outline"
+          mode="md"
           data-role="series-time"
           label=${t('ui.fieldTime')}
           label-placement="floating"
@@ -729,6 +736,8 @@ export class ErpAppointmentsSeries extends LitElement {
         ></ion-input>
         <ion-input
           data-testid="appointments-series-duration"
+          fill="outline"
+          mode="md"
           data-role="series-duration"
           label=${t('ui.fieldMinutes')}
           label-placement="floating"
@@ -984,6 +993,7 @@ export class ErpAppointmentsSeries extends LitElement {
           ? html`<div class="field-calendar">
               <ok-calendar
                 data-testid="appointments-series-create-start-calendar-picker"
+                picker
                 locale=${erplora().locale || 'es'}
                 .value=${this.newStartDate || todayISO()}
                 .labels=${this.calendarLabels(t)}
@@ -1043,6 +1053,7 @@ export class ErpAppointmentsSeries extends LitElement {
               <!-- Before an «Until» is picked, the calendar opens on the series' first day. -->
               <ok-calendar
                 data-testid="appointments-series-create-end-calendar-picker"
+                picker
                 locale=${erplora().locale || 'es'}
                 .value=${this.newEndDate || this.newStartDate || todayISO()}
                 .labels=${this.calendarLabels(t)}
