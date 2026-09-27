@@ -2991,6 +2991,69 @@ var o6 = e4(class extends i4 {
   }
 });
 
+// @erplora/outfitkit/dist/shared/anchor.js
+function shadowAnchorEvent(ev) {
+  const el = ev.currentTarget ?? ev.target;
+  return new CustomEvent("ok-popover-anchor", { detail: { ionShadowTarget: el } });
+}
+
+// @erplora/outfitkit/dist/shared/ion-tone.js
+var DEFAULT_HEX = {
+  primary: "#0054e9",
+  secondary: "#0163aa",
+  tertiary: "#6030ff",
+  success: "#2dd55b",
+  warning: "#ffc409",
+  danger: "#c5000f",
+  light: "#f4f5f8",
+  medium: "#636469",
+  dark: "#222428"
+};
+var DEFAULT_CONTRAST = {
+  primary: "#fff",
+  secondary: "#fff",
+  tertiary: "#fff",
+  success: "#000",
+  warning: "#000",
+  danger: "#fff",
+  light: "#000",
+  medium: "#fff",
+  dark: "#fff"
+};
+var TONE_NAME = /^[a-z][a-z0-9-]*$/;
+function tokenChain(okName, ionName, hex) {
+  return `var(--ok-${okName}, var(--ion-color-${ionName}${hex ? `, ${hex}` : ""}))`;
+}
+function ionTone(tone, variant) {
+  if (!tone || !TONE_NAME.test(tone)) return void 0;
+  const value = tokenChain(tone, tone, DEFAULT_HEX[tone]);
+  switch (variant) {
+    case "text":
+      return `color: ${value};`;
+    case "clear":
+      return `--color: ${value};`;
+    case "outline":
+      return `--color: ${value}; --border-color: ${value}; --background-activated: ${value}; --background-focused: ${value};`;
+    case "solid": {
+      const contrast = tokenChain(`${tone}-contrast`, `${tone}-contrast`, DEFAULT_CONTRAST[tone]);
+      return `--background: ${value}; --color: ${contrast}; --background-hover: var(--ion-color-${tone}-tint, ${value}); --background-activated: var(--ion-color-${tone}-shade, ${value}); --background-focused: var(--ion-color-${tone}-shade, ${value});`;
+    }
+  }
+}
+
+// @erplora/outfitkit/dist/shared/searchbar-name.js
+function syncSearchbarInputName(root, name) {
+  const bar = root?.querySelector("ion-searchbar");
+  if (!bar) return;
+  void customElements.whenDefined("ion-searchbar").then(() => bar.getInputElement?.()).then((input) => {
+    const n6 = name();
+    if (input && input.getAttribute("aria-label") !== n6) {
+      input.setAttribute("aria-label", n6);
+    }
+  }).catch(() => {
+  });
+}
+
 // @erplora/outfitkit/dist/ok-data-table.js
 var CSV_BOM = "\uFEFF";
 var WINDOWS_1252_C1 = [
@@ -3068,6 +3131,7 @@ var DEFAULT_LABELS2 = {
   filters: "Filters",
   clear: "Clear",
   apply: "Apply",
+  showResults: "Show results",
   selected: "{n} selected",
   importCsv: "Import CSV",
   exportCsv: "Export CSV",
@@ -3082,6 +3146,7 @@ var DEFAULT_LABELS2 = {
   actions: "Actions",
   close: "Close",
   newRecord: "New",
+  editRecord: "Edit",
   form: "Form",
   filterPlaceholder: "Filter\u2026",
   from: "From",
@@ -3097,7 +3162,9 @@ var DEFAULT_LABELS2 = {
   showing: "Showing {from}\u2013{to} of",
   recordSingular: "record",
   recordPlural: "records",
-  loadMore: "Load more"
+  loadMore: "Load more",
+  noMatches: "No results match your search or filters",
+  showAll: "Show all"
 };
 var ES_LABELS = {
   search: "Buscar\u2026",
@@ -3105,6 +3172,7 @@ var ES_LABELS = {
   filters: "Filtros",
   clear: "Limpiar",
   apply: "Aplicar",
+  showResults: "Ver resultados",
   selected: "{n} seleccionados",
   importCsv: "Importar CSV",
   exportCsv: "Exportar CSV",
@@ -3119,6 +3187,7 @@ var ES_LABELS = {
   actions: "Acciones",
   close: "Cerrar",
   newRecord: "Nuevo",
+  editRecord: "Editar",
   form: "Formulario",
   filterPlaceholder: "Filtrar\u2026",
   from: "Desde",
@@ -3134,7 +3203,9 @@ var ES_LABELS = {
   showing: "Mostrando {from}\u2013{to} de",
   recordSingular: "registro",
   recordPlural: "registros",
-  loadMore: "Cargar m\xE1s"
+  loadMore: "Cargar m\xE1s",
+  noMatches: "Ning\xFAn resultado coincide con la b\xFAsqueda o los filtros",
+  showAll: "Mostrar todo"
 };
 var _OkDataTable = class _OkDataTable2 extends i3 {
   constructor() {
@@ -3177,6 +3248,7 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
     this.filterDraft = {};
     this.serverFilters = {};
     this.panel = "none";
+    this.panelTitle = "";
     this.viewMode = "table";
     this.viewChosenByUser = false;
     this.isMobile = false;
@@ -3185,14 +3257,22 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
     this.rowActionsCollapsed = false;
     this.fitDecidedAtWidth = -1;
     this.rowMenuOpen = false;
-    this.hiddenKeys = /* @__PURE__ */ new Set();
+    this.columnChoice = /* @__PURE__ */ new Map();
     this.internalSelection = /* @__PURE__ */ new Set();
     this.menuOpen = false;
     this.onLocaleChanged = () => this.requestUpdate();
+    this.onKeydown = (e5) => {
+      if (e5.key !== "Escape" || e5.defaultPrevented || this.panel === "none") return;
+      e5.preventDefault();
+      e5.stopPropagation();
+      this.closePanel("escape");
+    };
     this.onWindowResize = () => {
       this.measureXOverflow();
       this.measureRowActionsFit();
+      this.syncSheetInsets();
     };
+    this.sheetContent = null;
     this.onSearch = (ev) => {
       const value = ev.target.value ?? "";
       if (this.serverSide) {
@@ -3270,7 +3350,7 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
        position:fixed dentro de ion-content se ancla al área de contenido (contain), que es justo el hueco
        bajo la cabecera de la app: el usuario conserva el título de la página. */
     @media (max-width: 833.98px) {
-      .drawer { position: fixed; inset: 0; top: var(--ok-sheet-top, 0px); width: 100%; max-width: none; height: auto; border-left: 0; z-index: 1000; }
+      .drawer { position: fixed; inset: 0; top: var(--ok-sheet-top, 0px); bottom: var(--ok-sheet-bottom, 0px); width: 100%; max-width: none; height: auto; border-left: 0; z-index: 1000; }
       .tk-scrim { display: none; }
     }
     .drawer .dh { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between;
@@ -3285,6 +3365,8 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
     /* Pie del drawer de filtros: Limpiar / Aplicar. */
     .df { flex: 0 0 auto; display: flex; align-items: center; justify-content: flex-end; gap: 0.4rem; padding: 0.6rem 0.85rem; border-top: 1px solid var(--border-color); }
     .df .df-clear { margin-right: auto; }
+    /* #207 — Server-mode «Show results»: the one button of the footer, as wide as the sheet. */
+    .df .df-done { flex: 1 1 auto; }
 
     /* Modo fill: la tabla ocupa el alto del contenedor; filas con scroll interno; pager fijo. */
     :host([fill]) { display: flex; flex-direction: column; height: 100%; min-height: 0; }
@@ -3550,6 +3632,7 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
   }
   connectedCallback() {
     super.connectedCallback();
+    this.addEventListener("keydown", this.onKeydown);
     if (typeof window !== "undefined") {
       window.addEventListener("erplora:locale-changed", this.onLocaleChanged);
       window.addEventListener("resize", this.onWindowResize);
@@ -3588,8 +3671,9 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
       if (this.actionsTrackPx !== 0) this.actionsTrackPx = 0;
       return;
     }
-    const el = this.renderRoot?.querySelector?.(".grow-data .gcell.actions-col .actions");
-    const width = el ? Math.ceil(el.scrollWidth) : 0;
+    const boxes = this.renderRoot?.querySelectorAll?.(".grow-data .gcell.actions-col .actions") ?? [];
+    let width = 0;
+    for (const el of boxes) width = Math.max(width, Math.ceil(el.scrollWidth));
     if (width > 0 && width !== this.actionsTrackPx) this.actionsTrackPx = width;
   }
   /** #122 — Decide si los botones de acción de la fila caben o se pliegan en el menú «⋮».
@@ -3624,22 +3708,31 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
   updated(changed) {
     this.observeXOverflow();
     this.measureXOverflow();
-    if (changed.has("columns") || changed.has("actions") || changed.has("hiddenKeys") || changed.has("selectable")) {
+    if (changed.has("columns") || changed.has("actions") || changed.has("columnChoice") || changed.has("selectable")) {
       this.fitDecidedAtWidth = -1;
     }
     this.measureActionsTrack();
     this.measureRowActionsFit();
-    if (changed.has("panel")) this.syncSheetTop();
+    if (changed.has("panel")) this.syncSheetInsets();
+    syncSearchbarInputName(this.shadowRoot, () => this.effSearchPlaceholder);
   }
-  /** #75 — Where the mobile sheet starts. `position: fixed; inset: 0` painted it from y=0 and the
-   *  app's `ion-header` (its own stacking context, above the content) covered the sheet's title and
-   *  its only Close button — measured at 390×844 in the Appointments parity page. CSS inside a
-   *  shadow root cannot know where the content area begins, so on open the table measures the
-   *  closest `ion-content` (walking through shadow hosts) and hands the offset over as a custom
-   *  property; on close it is removed. Without an `ion-content` around, the sheet keeps y=0. */
-  syncSheetTop() {
+  /** #75/#197 — Where the mobile sheet starts and ends. `position: fixed; inset: 0` painted it from
+   *  y=0 to the screen edge: the app's `ion-header` (its own stacking context, above the content)
+   *  covered the sheet's title and its only Close button — measured at 390×844 in the Appointments
+   *  parity page — and the module tab bar (an `ion-footer` OUTSIDE `ion-content`) covered the last
+   *  66px (ios) / 72px (md) of the sheet, so its Save button could not be tapped (inventory#105).
+   *  CSS inside a shadow root cannot know where the content area begins or ends, so on open the
+   *  table measures the closest `ion-content` (walking through shadow hosts) and hands both offsets
+   *  over as custom properties, re-measuring them while the sheet stays open whenever the content
+   *  resizes (rotation, a tab bar mounted late) or the window resizes; on close both are removed and
+   *  the content stops being observed. Without an `ion-content` around, the sheet keeps the screen
+   *  edge on both ends. */
+  syncSheetInsets() {
     if (this.panel === "none") {
       this.style.removeProperty("--ok-sheet-top");
+      this.style.removeProperty("--ok-sheet-bottom");
+      this.sheetObserver?.disconnect();
+      this.sheetContent = null;
       return;
     }
     let node = this;
@@ -3650,15 +3743,31 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
       node = parent === node ? null : parent;
     }
     const top = content ? Math.max(0, Math.round(content.getBoundingClientRect().top)) : 0;
+    const bottom = content ? Math.max(0, Math.round(window.innerHeight - content.getBoundingClientRect().bottom)) : 0;
     this.style.setProperty("--ok-sheet-top", `${top}px`);
+    this.style.setProperty("--ok-sheet-bottom", `${bottom}px`);
+    if (typeof ResizeObserver !== "undefined") {
+      this.sheetObserver ??= new ResizeObserver(() => {
+        if (this.panel !== "none") this.syncSheetInsets();
+      });
+      if (content !== this.sheetContent) {
+        this.sheetObserver.disconnect();
+        if (content) this.sheetObserver.observe(content);
+        this.sheetContent = content;
+      }
+    }
   }
   disconnectedCallback() {
+    this.removeEventListener("keydown", this.onKeydown);
     if (typeof window !== "undefined") {
       window.removeEventListener("erplora:locale-changed", this.onLocaleChanged);
       window.removeEventListener("resize", this.onWindowResize);
     }
     this.xObserver?.disconnect();
     this.xObserver = void 0;
+    this.sheetObserver?.disconnect();
+    this.sheetObserver = void 0;
+    this.sheetContent = null;
     if (this.mq) {
       const handler = this._mqHandler;
       if (handler) this.mq.removeEventListener("change", handler);
@@ -3678,6 +3787,10 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
   /** Mensaje efectivo de estado vacío (prop explícita → label i18n → default inglés). */
   get effEmptyMessage() {
     return this.emptyMessage ?? this.t.empty;
+  }
+  /** #171 — Effective "no matches" message (explicit prop → i18n label → English default). */
+  get effNoMatchesMessage() {
+    return this.noMatchesMessage ?? this.t.noMatches;
   }
   // ── Resolución de alias (compat + documentados) ──────────────────────────────────────────
   get effPageSizes() {
@@ -3702,13 +3815,15 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
     if (Array.isArray(this.views)) return this.views.some((v3) => v3 === "cards" || v3 === "card");
     return this.views === true;
   }
-  /** Columnas actualmente visibles (respeta el column chooser). */
+  /** Columns painted now: the person's pick in the column chooser, else the column's own `hidden`.
+   *  A hidden column is only not painted — it still filters, sorts and keeps its filter control
+   *  (hub#2245), which read `columns`. */
   get visibleColumns() {
-    return this.hiddenKeys.size ? this.columns.filter((c5) => !this.hiddenKeys.has(c5.key)) : this.columns;
+    return this.columns.filter((c5) => this.columnChoice.get(c5.key) ?? c5.hidden !== true);
   }
   setVisibleColumns(keys) {
     const visible = new Set(keys);
-    this.hiddenKeys = new Set(this.columns.map((c5) => c5.key).filter((k2) => !visible.has(k2)));
+    this.columnChoice = new Map(this.columns.map((c5) => [c5.key, visible.has(c5.key)]));
     this.emit("columnsChange", { visible: keys });
   }
   // ── Selección ─────────────────────────────────────────────────────────────────────────────
@@ -3764,8 +3879,9 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
     a3.download = this.csvName;
     a3.click();
     URL.revokeObjectURL(url);
-    this.emit("csvExport", { rows: this.rows.length });
-    this.emit("export", { rows: this.rows.length });
+    const count = this.rows.length;
+    this.emit("csvExport", { rows: count, count });
+    this.emit("export", { rows: count, count });
   }
   parseCsv(text) {
     const out = [];
@@ -3807,15 +3923,29 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
     if (!file) return;
     const text = decodeCsvBuffer(await file.arrayBuffer());
     const { headers, rows: rows5 } = this.parseCsv(text);
-    this.emit("csvImport", { headers, rows: rows5 });
-    this.emit("import", { headers, rows: rows5 });
+    this.emit("csvImport", { headers, rows: rows5, count: rows5.length });
+    this.emit("import", { headers, rows: rows5, count: rows5.length });
     input.value = "";
   }
   toggle(p4) {
+    this.panelTitle = "";
     if (p4 === "filters" && this.panel !== "filters") {
       this.filterDraft = this.cloneFilters(this.clientFilters);
     }
-    this.panel = this.panel === p4 ? "none" : p4;
+    if (this.panel === p4) this.closePanel("toggle");
+    else this.panel = p4;
+  }
+  /** Closes the side panel and, if one was actually open, emits `panelClose` with the panel that
+   *  was open and the reason it closed. No-op (no event) when the panel is already `'none'`.
+   *
+   *  outfitkit#195 — modules that load the edit form after an `await` (read the full row, then
+   *  fill the form) listen to `panelClose` to discard that pending load if the person closes the
+   *  panel meanwhile (X, backdrop, Escape) before the reply arrives. */
+  closePanel(reason) {
+    if (this.panel === "none") return;
+    const panel = this.panel;
+    this.panel = "none";
+    this.emit("panelClose", { panel, reason });
   }
   // ── Filtros en memoria (modo cliente): borrador → aplicar. ───────────────────────────────────
   cloneFilters(src) {
@@ -3846,11 +3976,22 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
     this.clientFilters = clean;
     this.clientPage = 0;
     this.mobileShown = 0;
-    this.panel = "none";
+    this.closePanel("apply");
     this.emit("filterChange", { filters: this.serializeFilters(clean) });
   }
   clearFilters() {
     this.filterDraft = {};
+  }
+  /** #171 — "Show all" under the no-matches state: drops the search AND the column filters, so
+   *  every row is back in one tap. Consumers listening to `filterChange` hear the reset. */
+  resetSearchAndFilters() {
+    const hadFilters = Object.keys(this.clientFilters).length > 0;
+    this.q = "";
+    this.clientFilters = {};
+    this.filterDraft = {};
+    this.clientPage = 0;
+    this.mobileShown = 0;
+    if (hadFilters) this.emit("filterChange", { filters: {} });
   }
   serializeFilters(src) {
     const out = {};
@@ -3860,13 +4001,16 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
     }
     return out;
   }
-  /** Abre el panel lateral (API pública para el módulo, p.ej. "editar" abre el form pre-rellenado). */
-  open(panel = "create") {
+  /** Opens the side panel (public API for the module, e.g. "edit" opens the pre-filled form).
+   *  `mode` sets the default header («New» / «Edit»); `opts.title` replaces it (e.g. «Editing service — Brushing»). */
+  open(panel = "create", opts = {}) {
+    this.panelTitle = panel === "filters" ? "" : (opts.title ?? "").trim();
     this.panel = panel;
   }
-  /** Cierra el panel lateral. */
+  /** Closes the side panel (public API for the module). Emits `panelClose` with reason `'api'`
+   *  when a panel was actually open (outfitkit#195); no-op when it was already closed. */
   close() {
-    this.panel = "none";
+    this.closePanel("api");
   }
   emit(type, detail) {
     this.dispatchEvent(new CustomEvent(type, { detail, bubbles: true, composed: true }));
@@ -4072,16 +4216,19 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
     }
     this.setClientFilter(col.key, { [edge]: v3 || void 0 });
   }
-  // Menú overflow: ancla el popover al botón vía el evento de click (compatible con Shadow DOM).
+  // Overflow menu: anchor the popover to the tapped button via Ionic's `ionShadowTarget`
+  // (the retargeted `ev.target` after dispatch would be the whole table, since `trigger` does not
+  // resolve inside Shadow DOM).
   openMenu(ev) {
-    this.menuEv = ev;
+    this.menuEv = shadowAnchorEvent(ev);
     this.menuOpen = true;
   }
-  /** #122 — Abre el menú «⋮» de UNA fila. Un solo popover para toda la tabla (uno por fila serían
-   *  tantos como filas), anclado por evento porque `trigger` no resuelve dentro de Shadow DOM. */
+  /** #122 — Opens the «⋮» menu of ONE row. A single popover for the whole table (one per row would
+   *  be as many as there are rows), anchored to the tapped button via Ionic's `ionShadowTarget`
+   *  (the retargeted `ev.target` after dispatch would be the whole table). */
   openRowMenu(ev, row) {
     ev.stopPropagation();
-    this.rowMenuEv = ev;
+    this.rowMenuEv = shadowAnchorEvent(ev);
     this.rowMenuRow = row;
     this.rowMenuOpen = true;
   }
@@ -4090,6 +4237,7 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
   renderRowMenu() {
     const row = this.rowMenuRow;
     if (!this.actions.length || !row) return A;
+    const actions = this.visibleActions(row);
     const key = this.keyOf(row);
     return b2`
       <ion-popover
@@ -4101,7 +4249,7 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
       >
         <ion-content>
           <ion-list lines="none">
-            ${this.actions.map((a3) => {
+            ${actions.map((a3) => {
       const disabled = a3.loading?.(row) === true || a3.disabled?.(row) === true;
       const label = typeof a3.label === "function" ? a3.label(row) : a3.label;
       return b2`
@@ -4122,8 +4270,8 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
         this.emit("rowAction", { actionId: a3.id, row });
       }}
                 >
-                  ${a3.icon ? b2`<ion-icon slot="start" .icon=${okIcon(a3.icon)} color=${a3.color ?? A}></ion-icon>` : A}
-                  <ion-label color=${a3.color ?? A}>${label}</ion-label>
+                  ${a3.icon ? b2`<ion-icon slot="start" .icon=${okIcon(a3.icon)} style=${ionTone(a3.color, "text") ?? A}></ion-icon>` : A}
+                  <ion-label style=${ionTone(a3.color, "text") ?? A}>${label}</ion-label>
                 </ion-item>
               `;
     })}
@@ -4160,7 +4308,17 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
         this.mobileShown = 0;
       }
     }
-    if (!this.serverSide && changed.has("rows") && this.mobileShown !== 0) this.mobileShown = 0;
+    if (!this.serverSide && changed.has("rows") && this.mobileShown !== 0 && !this.sameRecords(changed.get("rows"), this.rows))
+      this.mobileShown = 0;
+  }
+  /** hub#2245 — Same records, same order, told apart by their key. Rows without a key cannot be
+   *  told apart, so they never count as the same (the window starts again, as before). */
+  sameRecords(before, after) {
+    if (!before || before.length !== after.length) return false;
+    return after.every((row, i7) => {
+      const key = this.keyOf(row);
+      return key !== "" && key === this.keyOf(before[i7]);
+    });
   }
   applyInitialView() {
     if (this.viewChosenByUser) return;
@@ -4305,8 +4463,8 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
         this.menuOpen = false;
         this.emit("menuAction", { actionId: a3.id });
       }}>
-                  ${a3.icon ? b2`<ion-icon slot="start" .icon=${okIcon(a3.icon)} color=${a3.color ?? A}></ion-icon>` : A}
-                  <ion-label color=${a3.color ?? A}>${a3.label}</ion-label>
+                  ${a3.icon ? b2`<ion-icon slot="start" .icon=${okIcon(a3.icon)} style=${ionTone(a3.color, "text") ?? A}></ion-icon>` : A}
+                  <ion-label style=${ionTone(a3.color, "text") ?? A}>${a3.label}</ion-label>
                 </ion-item>
               `
     )}
@@ -4326,16 +4484,22 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
   // appointment carries, the row asks for 380px and the card gives 379px at 411dp, 237px at 768px
   // and 272px at 1440px — so the first button hung off the card at ALL THREE widths, not just on
   // a phone. If you add a view that lays these buttons out, MEASURE it.
+  /** hub#2014 — The row actions that exist for THIS row (`hidden` filtered out), in their order. */
+  visibleActions(row) {
+    return this.actions.filter((a3) => a3.hidden?.(row) !== true);
+  }
   actionButtons(row, collapsible = false) {
     if (!this.actions.length) return A;
     const key = this.keyOf(row);
+    const actions = this.visibleActions(row);
     if (collapsible && this.rowActionsCollapsed) {
+      if (!actions.length) return b2`<div class="actions"></div>`;
       return b2`
         <div class="actions">
           <ion-button
             size="small"
             fill="clear"
-            color="medium"
+            style=${ionTone("medium", "clear")}
             data-testid=${this.tid(`row-${key}-menu`)}
             aria-label=${this.t.moreActions}
             title=${this.t.moreActions}
@@ -4349,7 +4513,7 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
     }
     return b2`
       <div class="actions">
-        ${this.actions.map(
+        ${actions.map(
       (a3) => {
         const loading = a3.loading?.(row) === true;
         const disabled = loading || a3.disabled?.(row) === true;
@@ -4358,7 +4522,7 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
             <ion-button
               size="small"
               fill="clear"
-              color=${a3.color ?? "medium"}
+              style=${ionTone(a3.color ?? "medium", "clear") ?? A}
               data-testid=${this.tid(`row-${key}-${a3.id}`)}
               ?disabled=${disabled}
               aria-disabled=${disabled ? "true" : A}
@@ -4443,6 +4607,7 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
     }
     const served = this.serverSide ? (current + 1) * ps : Math.min(this.mobileShown || ps, count);
     const canLoadMore = this.isMobile && served < count;
+    const rangeTo = this.isMobile && !this.serverSide ? Math.min(served, count) : Math.min((current + 1) * ps, count);
     const loadMore = () => {
       if (this.serverSide) this.emit("pageChange", current + 1);
       else this.mobileShown = Math.min((this.mobileShown || ps) + ps, count);
@@ -4551,7 +4716,7 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
               <div class="pager">
                 <div class="left">
                   <span>
-                    ${pages > 1 ? b2`${this.t.showing.replace("{from}", String(this.isMobile && !this.serverSide ? 1 : current * ps + 1)).replace("{to}", String(Math.min(served, count)))} ` : A}
+                    ${pages > 1 ? b2`${this.t.showing.replace("{from}", String(this.isMobile && !this.serverSide ? 1 : current * ps + 1)).replace("{to}", String(rangeTo))} ` : A}
                     <span class="strong">${count}</span> ${count === 1 ? this.t.recordSingular : this.t.recordPlural}
                   </span>
                   ${!showTopbar && this.effPageSizes.length ? b2`
@@ -4580,12 +4745,14 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
   renderDrawer() {
     const isFilters = this.panel === "filters";
     const clientFilters = isFilters && !this.serverSide;
+    const serverFilters = isFilters && this.serverSide;
+    const title = isFilters ? this.t.filters : this.panelTitle || (this.panel === "edit" ? this.t.editRecord : this.t.newRecord);
     return b2`
-      <div class="tk-scrim" @click=${() => this.close()}></div>
-      <aside class="drawer" role="dialog" aria-label=${isFilters ? this.t.filters : this.t.form}>
+      <div class="tk-scrim" @click=${() => this.closePanel("backdrop")}></div>
+      <aside class="drawer" role="dialog" aria-label=${title}>
         <header class="dh">
-          <strong>${isFilters ? this.t.filters : this.t.newRecord}</strong>
-          <ion-button fill="clear" size="small" aria-label=${this.t.close} @click=${() => this.close()}><ion-icon slot="icon-only" .icon=${iconClose}></ion-icon></ion-button>
+          <strong>${title}</strong>
+          <ion-button fill="clear" size="small" aria-label=${this.t.close} @click=${() => this.closePanel("close-button")}><ion-icon slot="icon-only" .icon=${iconClose}></ion-icon></ion-button>
         </header>
         <div class="db">
           ${isFilters ? clientFilters ? this.filterColumns.map((c5) => this.renderClientFilter(c5)) : this.filterColumns.map((c5) => b2`<div class="fblock">${this.renderFilterControl(c5)}</div>`) : b2`<slot name="create"></slot>`}
@@ -4595,7 +4762,11 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
                 <button class="sel-clear df-clear" ?disabled=${Object.keys(this.filterDraft).length === 0} @click=${() => this.clearFilters()}>${this.t.clear}</button>
                 <ion-button class="primary-btn" size="small" @click=${() => this.applyFilters()}>${this.t.apply}</ion-button>
               </footer>
-            ` : A}
+            ` : serverFilters ? b2`
+                <footer class="df">
+                  <ion-button class="primary-btn df-done" expand="block" data-testid=${this.tid("filters-show-results")} @click=${() => this.closePanel("apply")}>${this.t.showResults}</ion-button>
+                </footer>
+              ` : A}
       </aside>
     `;
   }
@@ -4642,10 +4813,12 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
     this.emit("rowClick", { row });
   }
   emptyState() {
+    const noMatches = this.rows.length > 0;
     return b2`
       <div class="empty">
         <span class="empty-ic"><ion-icon .icon=${iconFileTrayOutline}></ion-icon></span>
-        <span>${this.effEmptyMessage}</span>
+        <span>${noMatches ? this.effNoMatchesMessage : this.effEmptyMessage}</span>
+        ${noMatches ? b2`<ion-button fill="clear" size="small" data-role="no-matches-reset" data-testid=${this.tid("show-all")} @click=${() => this.resetSearchAndFilters()}>${this.t.showAll}</ion-button>` : A}
       </div>
     `;
   }
@@ -4714,6 +4887,16 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
       ${this.renderRowMenu()}
     `;
   }
+  /** #205 — The column a card's title already shows, so the default body does not repeat it
+   *  («Tarifa mayorista 1» as the title and again as «Nombre»). Decided per card: the first visible
+   *  column whose cell reads exactly like the title. Only text is compared: a title given as a
+   *  template, or a column with its own `render`, is never matched. */
+  cardTitleColumn(title, row) {
+    if (typeof title !== "string" && typeof title !== "number") return void 0;
+    const text = String(title).trim();
+    if (!text) return void 0;
+    return this.visibleColumns.find((c5) => !c5.render && String(this.cell(c5, row) ?? "").trim() === text);
+  }
   renderCards(visible) {
     if (visible.length === 0) return this.emptyState();
     const hasHead = !!this.cardTitle || !!this.cardIcon || this.selectable;
@@ -4726,6 +4909,8 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
         const key = this.keyOf(row);
         const selected = this.selectable && this.selection.has(key);
         const icon = this.cardIcon?.(row);
+        const title = this.cardTitle?.(row);
+        const titleColumn = this.cardTitleColumn(title, row);
         return b2`
               <ion-card
                 class=${`rcard${selected ? " selected" : ""}${this.rowClickable ? " clickable" : ""}`}
@@ -4738,12 +4923,12 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
                 ${hasHead ? b2`
                       <ion-card-header class="rcard-head">
                         ${icon != null && icon !== "" ? b2`<span class="rc-icon">${typeof icon === "string" ? b2`<ion-icon .icon=${okIcon(icon)}></ion-icon>` : icon}</span>` : A}
-                        <span class="rc-title">${this.cardTitle ? this.cardTitle(row) : A}</span>
+                        <span class="rc-title">${this.cardTitle ? title : A}</span>
                         ${this.selectable ? b2`<ion-checkbox .checked=${selected} aria-label=${this.t.select} @click=${(e5) => e5.stopPropagation()} @ionChange=${() => this.toggleRow(key)}></ion-checkbox>` : A}
                       </ion-card-header>
                     ` : A}
                 <ion-card-content class="rcard-body">
-                  ${this.renderCard ? this.renderCard(row) : this.visibleColumns.map(
+                  ${this.renderCard ? this.renderCard(row) : this.visibleColumns.filter((c5) => c5 !== titleColumn).map(
           (c5) => b2`<div class="rrow"><span class="rk">${c5.header}</span><span class="rv">${c5.render ? c5.render(row) : this.cell(c5, row)}</span></div>`
         )}
                 </ion-card-content>
@@ -4777,6 +4962,9 @@ __decorateClass4([
 __decorateClass4([
   n4({ attribute: "empty-message" })
 ], _OkDataTable.prototype, "emptyMessage");
+__decorateClass4([
+  n4({ attribute: "no-matches-message" })
+], _OkDataTable.prototype, "noMatchesMessage");
 __decorateClass4([
   n4({ attribute: "search-placeholder" })
 ], _OkDataTable.prototype, "searchPlaceholder");
@@ -4911,6 +5099,9 @@ __decorateClass4([
 ], _OkDataTable.prototype, "panel");
 __decorateClass4([
   r5()
+], _OkDataTable.prototype, "panelTitle");
+__decorateClass4([
+  r5()
 ], _OkDataTable.prototype, "viewMode");
 __decorateClass4([
   r5()
@@ -4929,7 +5120,7 @@ __decorateClass4([
 ], _OkDataTable.prototype, "rowMenuOpen");
 __decorateClass4([
   r5()
-], _OkDataTable.prototype, "hiddenKeys");
+], _OkDataTable.prototype, "columnChoice");
 __decorateClass4([
   r5()
 ], _OkDataTable.prototype, "internalSelection");
@@ -4957,7 +5148,25 @@ var DEFAULT_LABELS3 = {
   prevMonth: "Previous month",
   nextMonth: "Next month"
 };
-var WEEKDAY_REF = new Date(2021, 1, 1);
+var SUNDAY_REF = new Date(2021, 0, 31);
+var SUNDAY_REGIONS = new Set(
+  "AG AS BD BR BS BT BW BZ CA CN CO DM DO ET GT GU HK HN ID IL IN JM JP KE KH KR LA MH MM MO MT MX MZ NI NP PA PE PH PK PR PT PY SA SG SV TH TT TW UM US VE VI WS YE ZA ZW".split(" ")
+);
+var SATURDAY_REGIONS = new Set("AE AF BH DJ DZ EG IQ IR JO KW LY OM QA SD SY".split(" "));
+var FRIDAY_REGIONS = /* @__PURE__ */ new Set(["MV"]);
+function localeFirstDayOfWeek(locale) {
+  try {
+    const loc = new Intl.Locale(locale);
+    const info = loc.getWeekInfo?.() ?? loc.weekInfo;
+    if (info && info.firstDay >= 1 && info.firstDay <= 7) return info.firstDay % 7;
+    const region = loc.maximize().region ?? "";
+    if (SUNDAY_REGIONS.has(region)) return 0;
+    if (SATURDAY_REGIONS.has(region)) return 6;
+    if (FRIDAY_REGIONS.has(region)) return 5;
+  } catch {
+  }
+  return 1;
+}
 var OkCalendar = class extends i3 {
   constructor() {
     super(...arguments);
@@ -4967,8 +5176,10 @@ var OkCalendar = class extends i3 {
     this.maxPerDay = 3;
     this.locale = "en-US";
     this.labels = {};
+    this.picker = false;
     this.cursor = /* @__PURE__ */ new Date();
     this.seeded = false;
+    this.focusKey = "";
   }
   static {
     this.styles = i`
@@ -5016,7 +5227,6 @@ var OkCalendar = class extends i3 {
       text-align: center;
       font-weight: 600;
       font-size: 1.05rem;
-      text-transform: capitalize;
     }
     .toggle {
       display: inline-flex;
@@ -5175,7 +5385,6 @@ var OkCalendar = class extends i3 {
       font-size: 0.8rem;
       font-weight: 600;
       color: var(--color-muted);
-      text-transform: capitalize;
       border-bottom: 1px solid var(--border-color);
       padding-bottom: 0.25rem;
     }
@@ -5221,6 +5430,74 @@ var OkCalendar = class extends i3 {
       }
     }
 
+    /* ── Picker mode (outfitkit#198) ─────────────────────────────── */
+    :host([picker]) {
+      max-width: 20rem;
+    }
+    :host([picker]) .header {
+      flex-wrap: nowrap;
+      margin-bottom: 0.25rem;
+    }
+    :host([picker]) .nav {
+      width: 100%;
+      justify-content: space-between;
+    }
+    :host([picker]) .title {
+      min-width: 0;
+      font-size: 1rem;
+    }
+    :host([picker]) .grid {
+      gap: 0;
+      background: none;
+      border: 0;
+      border-radius: 0;
+      /* The focus outline is drawn outside the day: do not clip it on the edge columns. */
+      overflow: visible;
+    }
+    :host([picker]) .weekday {
+      background: none;
+      padding: 0.25rem 0;
+    }
+    .pday {
+      appearance: none;
+      border: 0;
+      margin: 0 auto;
+      padding: 0;
+      width: 100%;
+      max-width: 2.75rem;
+      height: 2.75rem;
+      border-radius: 999px;
+      background: none;
+      color: inherit;
+      font: inherit;
+      font-variant-numeric: tabular-nums;
+      cursor: pointer;
+      transition: background-color var(--ok-transition, 150ms ease),
+        color var(--ok-transition, 150ms ease), box-shadow var(--ok-transition, 150ms ease);
+    }
+    @media (hover: hover) {
+      .pday:hover {
+        background: var(--hover-bg);
+      }
+    }
+    .pday.other-month {
+      opacity: 0.4;
+    }
+    .pday.today {
+      box-shadow: inset 0 0 0 1px var(--primary-color);
+      color: var(--primary-color);
+      font-weight: 600;
+    }
+    .pday[aria-pressed='true'] {
+      background: var(--primary-color);
+      color: var(--primary-contrast);
+      font-weight: 600;
+    }
+    .pday:focus-visible {
+      outline: 2px solid var(--primary-color);
+      outline-offset: 1px;
+    }
+
     /* ── Responsive (móvil) ─────────────────────────────────────── */
     @media (max-width: 540px) {
       .day {
@@ -5245,13 +5522,23 @@ var OkCalendar = class extends i3 {
   get t() {
     return { ...DEFAULT_LABELS3, ...this.labels };
   }
-  // Nombres cortos de los días (Lun–Dom) según el locale actual.
+  // Effective first day of the week (0 = Sunday … 6 = Saturday).
+  firstDay() {
+    const f3 = this.firstDayOfWeek;
+    return typeof f3 === "number" && Number.isInteger(f3) && f3 >= 0 && f3 <= 6 ? f3 : localeFirstDayOfWeek(this.locale);
+  }
+  // Short weekday names, starting on the first day of the week.
   weekdays() {
     const fmt = new Intl.DateTimeFormat(this.locale, { weekday: "short" });
+    const first = this.firstDay();
     return Array.from(
       { length: 7 },
-      (_2, i7) => fmt.format(new Date(WEEKDAY_REF.getFullYear(), WEEKDAY_REF.getMonth(), 1 + i7))
+      (_2, i7) => fmt.format(new Date(SUNDAY_REF.getFullYear(), SUNDAY_REF.getMonth(), SUNDAY_REF.getDate() + (first + i7) % 7))
     );
+  }
+  // Sentence case: only the first letter up («Octubre de 2026», never «Octubre De 2026»).
+  sentenceCase(s5) {
+    return s5.charAt(0).toLocaleUpperCase(this.locale) + s5.slice(1);
   }
   // Normaliza una fecha (`YYYY-MM-DD` o ISO) a clave local `YYYY-MM-DD`.
   dayKey(d3) {
@@ -5281,7 +5568,10 @@ var OkCalendar = class extends i3 {
   }
   // Cambia el mes visible (delta en meses) y emite `ok-nav`.
   navMonth(delta) {
-    const next = new Date(this.cursor.getFullYear(), this.cursor.getMonth() + delta, 1);
+    this.showMonth(new Date(this.cursor.getFullYear(), this.cursor.getMonth() + delta, 1));
+  }
+  // Shows the month of `next` and emits `ok-nav`.
+  showMonth(next) {
     this.cursor = next;
     this.dispatchEvent(
       new CustomEvent("ok-nav", {
@@ -5306,6 +5596,7 @@ var OkCalendar = class extends i3 {
   // Selecciona un día y emite `ok-date-select`.
   selectDay(key) {
     this.value = key;
+    this.focusKey = key;
     this.dispatchEvent(
       new CustomEvent("ok-date-select", {
         detail: { date: key },
@@ -5325,16 +5616,16 @@ var OkCalendar = class extends i3 {
       })
     );
   }
-  // Etiqueta de mes/año del cursor (capitalizada vía CSS).
+  // Etiqueta de mes/año del cursor, en sentence case.
   monthLabel() {
-    return this.cursor.toLocaleDateString(this.locale, { month: "long", year: "numeric" });
+    return this.sentenceCase(this.cursor.toLocaleDateString(this.locale, { month: "long", year: "numeric" }));
   }
-  // Construye la matriz de días visibles (semanas que empiezan en lunes).
+  // Construye la matriz de días visibles (semanas que empiezan en el primer día del locale).
   buildDays() {
     const year = this.cursor.getFullYear();
     const month = this.cursor.getMonth();
     const first = new Date(year, month, 1);
-    const offset = (first.getDay() + 6) % 7;
+    const offset = (first.getDay() - this.firstDay() + 7) % 7;
     const start = new Date(year, month, 1 - offset);
     const days = [];
     for (let i7 = 0; i7 < 42; i7++) {
@@ -5379,6 +5670,90 @@ var OkCalendar = class extends i3 {
     })}
     </div>`;
   }
+  // Picker: the day holding the single tab stop — the keyboard-focused day, else the selected
+  // day, else today, else the 1st; only while it belongs to the visible month.
+  tabStopKey() {
+    const inMonth = (key) => {
+      if (!key) return false;
+      const d3 = this.parseDate(key);
+      return d3.getFullYear() === this.cursor.getFullYear() && d3.getMonth() === this.cursor.getMonth();
+    };
+    for (const key of [this.focusKey, this.value, this.dayKey(/* @__PURE__ */ new Date())]) if (inMonth(key)) return key;
+    return this.dayKey(new Date(this.cursor.getFullYear(), this.cursor.getMonth(), 1));
+  }
+  // Picker keyboard (WAI-ARIA APG date picker grid). Moves the focus; picking stays on
+  // Enter / Space / click, which the native <button> already turns into a click.
+  onDayKey(e5, key) {
+    const d3 = this.parseDate(key);
+    const y3 = d3.getFullYear();
+    const m4 = d3.getMonth();
+    const day = d3.getDate();
+    const back = (d3.getDay() - this.firstDay() + 7) % 7;
+    const inMonth = (delta) => {
+      const last = new Date(y3, m4 + delta + 1, 0).getDate();
+      return new Date(y3, m4 + delta, Math.min(day, last));
+    };
+    const moves = {
+      ArrowLeft: () => new Date(y3, m4, day - 1),
+      ArrowRight: () => new Date(y3, m4, day + 1),
+      ArrowUp: () => new Date(y3, m4, day - 7),
+      ArrowDown: () => new Date(y3, m4, day + 7),
+      Home: () => new Date(y3, m4, day - back),
+      End: () => new Date(y3, m4, day + 6 - back),
+      PageUp: () => inMonth(-1),
+      PageDown: () => inMonth(1)
+    };
+    const move = moves[e5.key];
+    if (!move) return;
+    e5.preventDefault();
+    void this.focusDay(move());
+  }
+  async focusDay(d3) {
+    const key = this.dayKey(d3);
+    this.focusKey = key;
+    if (d3.getFullYear() !== this.cursor.getFullYear() || d3.getMonth() !== this.cursor.getMonth()) {
+      this.showMonth(new Date(d3.getFullYear(), d3.getMonth(), 1));
+    }
+    await this.updateComplete;
+    this.renderRoot.querySelector(`button[data-date="${key}"]`)?.focus();
+  }
+  // Render of the PICKER grid: compact buttons, no chips.
+  renderPicker() {
+    const todayKey = this.dayKey(/* @__PURE__ */ new Date());
+    const month = this.cursor.getMonth();
+    const tabStop = this.tabStopKey();
+    const dayLabel = new Intl.DateTimeFormat(this.locale, {
+      weekday: "long",
+      day: "numeric",
+      month: "long",
+      year: "numeric"
+    });
+    return b2`<div class="grid" role="group" aria-label=${this.monthLabel()}>
+      ${this.weekdays().map((w2) => b2`<div class="weekday" aria-hidden="true">${w2}</div>`)}
+      ${c4(
+      this.buildDays(),
+      // Keyed by date: a recycled button would fade its old picked/today state onto another day.
+      (d3) => this.dayKey(d3),
+      (d3) => {
+        const key = this.dayKey(d3);
+        const classes = ["pday", d3.getMonth() !== month ? "other-month" : "", key === todayKey ? "today" : ""].filter(Boolean).join(" ");
+        return b2`<button
+            type="button"
+            class=${classes}
+            data-date=${key}
+            tabindex=${key === tabStop ? 0 : -1}
+            aria-pressed=${key === this.value ? "true" : "false"}
+            aria-current=${key === todayKey ? "date" : A}
+            aria-label=${dayLabel.format(d3)}
+            @click=${() => this.selectDay(key)}
+            @keydown=${(e5) => this.onDayKey(e5, key)}
+          >
+            ${d3.getDate()}
+          </button>`;
+      }
+    )}
+    </div>`;
+  }
   // Render de la vista AGENDA: próximos eventos (hoy en adelante) agrupados por día.
   renderAgenda(byDay) {
     const todayKey = this.dayKey(/* @__PURE__ */ new Date());
@@ -5389,11 +5764,13 @@ var OkCalendar = class extends i3 {
     return b2`<div class="agenda">
       ${keys.map((key) => {
       const d3 = this.parseDate(key);
-      const label = d3.toLocaleDateString(this.locale, {
-        weekday: "long",
-        day: "numeric",
-        month: "long"
-      });
+      const label = this.sentenceCase(
+        d3.toLocaleDateString(this.locale, {
+          weekday: "long",
+          day: "numeric",
+          month: "long"
+        })
+      );
       return b2`<div class="agenda-group">
           <div class="agenda-date">${label}</div>
           ${byDay.get(key).map(
@@ -5433,7 +5810,7 @@ var OkCalendar = class extends i3 {
             <ion-icon slot="icon-only" .icon=${iconChevronForwardOutline}></ion-icon>
           </ion-button>
         </div>
-        <div class="toggle" role="tablist">
+        ${this.picker ? A : b2`<div class="toggle" role="tablist">
           <button
             type="button"
             class=${this.view === "month" ? "active" : ""}
@@ -5448,9 +5825,9 @@ var OkCalendar = class extends i3 {
           >
             ${this.t.agenda}
           </button>
-        </div>
+        </div>`}
       </div>
-      ${this.view === "agenda" ? this.renderAgenda(byDay) : this.renderMonth(byDay)}`;
+      ${this.picker ? this.renderPicker() : this.view === "agenda" ? this.renderAgenda(byDay) : this.renderMonth(byDay)}`;
   }
 };
 __decorateClass5([
@@ -5472,8 +5849,17 @@ __decorateClass5([
   n4({ attribute: false })
 ], OkCalendar.prototype, "labels");
 __decorateClass5([
+  n4({ type: Boolean, reflect: true })
+], OkCalendar.prototype, "picker");
+__decorateClass5([
+  n4({ type: Number, attribute: "first-day-of-week" })
+], OkCalendar.prototype, "firstDayOfWeek");
+__decorateClass5([
   r5()
 ], OkCalendar.prototype, "cursor");
+__decorateClass5([
+  r5()
+], OkCalendar.prototype, "focusKey");
 define("ok-calendar", OkCalendar);
 
 // @erplora/outfitkit/dist/ok-scheduler.js
@@ -6778,7 +7164,8 @@ var ErpAppointmentsSeries = class extends i3 {
     /* appointments#217 — the inline ok-calendar of a date field, painted right where it opens (an
        overlay would teleport out of the shadow root and lose its styles, hub#2162), full width. */
     .field-calendar { grid-column: 1 / -1; display:flex; justify-content:flex-start; }
-    ok-calendar { flex: 1 1 auto; max-width: 28rem; }
+    /* appointments#223 — the compact date picker of OutfitKit: never wider than its 20rem. */
+    ok-calendar { flex: 1 1 auto; max-width: 20rem; }
   `;
   }
   async connectedCallback() {
@@ -7418,6 +7805,7 @@ var ErpAppointmentsSeries = class extends i3 {
         ${this.calendarOpen === "start" ? b2`<div class="field-calendar">
               <ok-calendar
                 data-testid="appointments-series-create-start-calendar-picker"
+                picker
                 locale=${erplora3().locale || "es"}
                 .value=${this.newStartDate || todayISO()}
                 .labels=${this.calendarLabels(t5)}
@@ -7475,6 +7863,7 @@ var ErpAppointmentsSeries = class extends i3 {
               <!-- Before an «Until» is picked, the calendar opens on the series' first day. -->
               <ok-calendar
                 data-testid="appointments-series-create-end-calendar-picker"
+                picker
                 locale=${erplora3().locale || "es"}
                 .value=${this.newEndDate || this.newStartDate || todayISO()}
                 .labels=${this.calendarLabels(t5)}
@@ -7821,7 +8210,8 @@ var ErpAppointmentsList = class extends i3 {
        ion-modal (an overlay would teleport out of the shadow root and lose its styles, hub#2162),
        so it is painted right where it opens instead. */
     .day-calendar, .field-calendar { display:flex; justify-content:flex-start; margin:0 0 .5rem; }
-    ok-calendar { flex: 1 1 auto; max-width: 28rem; }
+    /* appointments#223 — the compact date picker of OutfitKit: never wider than its 20rem. */
+    ok-calendar { flex: 1 1 auto; max-width: 20rem; }
   `;
   }
   get newStart() {
@@ -8699,6 +9089,7 @@ var ErpAppointmentsList = class extends i3 {
         ${this.calendarOpen === "day" ? b2`<div class="day-calendar">
               <ok-calendar
                 data-testid="appointments-list-day-calendar-picker"
+                picker
                 locale=${erplora4().locale || "es"}
                 .value=${this.day || ""}
                 .labels=${this.calendarLabels(t5)}
@@ -8801,6 +9192,7 @@ var ErpAppointmentsList = class extends i3 {
       ${this.calendarOpen === "reschedule" ? b2`<div class="field-calendar">
             <ok-calendar
               data-testid="appointments-list-reschedule-start-calendar-picker"
+              picker
               locale=${erplora4().locale || "es"}
               .value=${this.rescheduleStartDate || ""}
               .labels=${this.calendarLabels(t5)}
@@ -8860,6 +9252,7 @@ var ErpAppointmentsList = class extends i3 {
                        receptionist is adding this appointment while looking at that day. -->
                   <ok-calendar
                     data-testid="appointments-list-start-calendar-picker"
+                    picker
                     locale=${erplora4().locale || "es"}
                     .value=${this.newStartDate || this.day}
                     .labels=${this.calendarLabels(t5)}
