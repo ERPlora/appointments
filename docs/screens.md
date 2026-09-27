@@ -182,6 +182,12 @@ shows the pattern's time, the start and the end the same way.
 Every field of both panels — new series and edit series (frequency, weekday, time, minutes) — is
 drawn in its box, like the new-appointment panel (appointments#221).
 
+If the hub refuses a save — creating a series or changing one — the reason shows **inside the
+panel**, right above the save button, and the panel scrolls to it (pm#513). On a phone the panel
+covers the whole screen, so a message on the list underneath would never be seen. What goes wrong in
+a row action (**Book appointments**, **Delete**, pausing a series) shows on the list, and the next
+save clears it.
+
 Opening a series shows how many appointments it already has on the books, from which date the change
 will apply, how many are still ahead, and — when the series came out of a split — that it continues
 an earlier one. Appointments that are **already charged** are named before you save, because they

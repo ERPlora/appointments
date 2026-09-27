@@ -7142,6 +7142,7 @@ var ErpAppointmentsSeries = class extends i3 {
     this.newEndDate = "";
     this.newOccurrences = "";
     this.createError = "";
+    this.editError = "";
     this.dateDraft = { start: null, end: null };
     this.timeDraft = { new: null, edit: null };
     this.calendarOpen = "";
@@ -7219,6 +7220,19 @@ var ErpAppointmentsSeries = class extends i3 {
     this.renderRoot.addEventListener("click", (e5) => this.onTableAddClick(e5));
     this.renderRoot.addEventListener("panelClose", () => this.editSeq++);
   }
+  /** pm#513: a refusal appears ABOVE the button that was pressed, at the foot of a form that can be
+   *  taller than a phone — bring it into view once it has painted itself: scrolled before, the
+   *  banner still measures 0 px and ends up under the tab bar. */
+  updated(changed) {
+    super.updated(changed);
+    if (changed.has("editError") && this.editError) void this.revealRefusal('[data-testid="appointments-series-form-error"]');
+    if (changed.has("createError") && this.createError) void this.revealRefusal('[data-testid="appointments-series-create-error"]');
+  }
+  async revealRefusal(selector) {
+    const banner = this.renderRoot.querySelector(selector);
+    await banner?.updateComplete;
+    banner?.scrollIntoView?.({ block: "center" });
+  }
   onTableAddClick(e5) {
     const tappedAdd = e5.composedPath().some((node) => node.getAttribute?.("data-testid") === "appointments-series-table-add");
     if (!tappedAdd) return;
@@ -7242,6 +7256,7 @@ var ErpAppointmentsSeries = class extends i3 {
     if (!id) return;
     const seq = ++this.editSeq;
     this.error = "";
+    this.editError = "";
     try {
       const [tmpl, occ] = await Promise.all([
         this.loadTemplate(id),
@@ -7319,6 +7334,7 @@ var ErpAppointmentsSeries = class extends i3 {
       return;
     }
     this.saving = true;
+    this.editError = "";
     this.error = "";
     try {
       const result = await erplora3().command("appointments.recurring.update", {
@@ -7334,7 +7350,7 @@ var ErpAppointmentsSeries = class extends i3 {
       this.closePanel();
       await this.refresh();
     } catch (e5) {
-      this.error = e5 instanceof Error && e5.message ? e5.message : erplora3().t(CATALOG3, "ui.seriesSaveError");
+      this.editError = e5 instanceof Error && e5.message ? e5.message : erplora3().t(CATALOG3, "ui.seriesSaveError");
     } finally {
       this.saving = false;
     }
@@ -7600,6 +7616,9 @@ var ErpAppointmentsSeries = class extends i3 {
       <ok-inline-feedback data-testid="appointments-series-scope-hint" tone="info" icon="information-circle-outline"
         >${t5("ui.seriesScopeHint", { from: this.shownDate(this.fromOccurrence) })}</ok-inline-feedback
       >
+      <!-- pm#513: the refusal travels WITH the form — on a phone the panel is a full-screen sheet
+           and a banner on the page underneath it is never seen. -->
+      ${this.editError ? b2`<ok-inline-feedback data-testid="appointments-series-form-error" tone="danger" icon="alert-circle-outline">${this.editError}</ok-inline-feedback>` : A}
       <!-- A half-typed time is not a time: saving would silently keep the old one (appointments#217). -->
       <ion-button data-testid="appointments-series-submit" type="submit" expand="block" .disabled=${this.saving || !this.editTime}>${t5("ui.seriesSave")}</ion-button>
     </form>`;
@@ -8040,6 +8059,9 @@ __decorateClass([
 __decorateClass([
   r5()
 ], ErpAppointmentsSeries.prototype, "createError", 2);
+__decorateClass([
+  r5()
+], ErpAppointmentsSeries.prototype, "editError", 2);
 __decorateClass([
   r5()
 ], ErpAppointmentsSeries.prototype, "dateDraft", 2);
