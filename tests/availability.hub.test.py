@@ -48,6 +48,8 @@ way round — is the bug this pair exists to make impossible.
 
 The PROFESSIONAL's own shift is enforced by `create` and answered by `appointments.availability.check`
 (`outside_staff_hours`, appointments#98); the batch, the series and `reschedule` are appointments#229.
+§6 pins the LIST cut to that shift through the real kernel (appointments#230): the read
+`staff.availability.day_at` is keyed by the list's bare DATE, which only a real binding proves.
 
 Usage: tests/availability.hub.test.py   (exit 0 = green)
   Needs a live runtime with `taxes`+`customers`+`services`+`staff`+`appointments` installed:
@@ -55,6 +57,7 @@ Usage: tests/availability.hub.test.py   (exit 0 = green)
   battery that excuses itself is a green that proves nothing.
 """
 
+import datetime
 import sys
 
 from hub_harness import (
@@ -249,12 +252,88 @@ def main() -> int:
         (len(times), 0),
     )
 
+    # ── 6 · THE LIST cut to the PROFESSIONAL's shift (appointments#230) ───────────────────
+    #
+    # #98 closed the door on the hours a professional does not work; the list kept offering them,
+    # so the assistant or a WhatsApp recipe picked one and `create` refused it one step later. The
+    # list now reads `staff.availability.day_at` keyed by its bare DATE — the business opens
+    # 09:00-18:00 (§4) and this professional works only 10:00-13:00 that weekday.
+    print("§6 the LIST of free slots respects the professional's own shift")
+    shift = seed_links(hub, "shift", duration_minutes=DURATION)
+    hub.run(
+        "staff.schedules.create",
+        {
+            "staff_id": shift.staff_id,
+            "name": "Mornings",
+            "is_default": 1,
+            "working_hours": [
+                {
+                    "day_of_week": datetime.date.fromisoformat(day).weekday(),
+                    "start_time": "10:00:00",
+                    "end_time": "13:00:00",
+                }
+            ],
+        },
+    )
+    page = hub.result(
+        "appointments.availability.slots",
+        {"date": day, "staff_id": shift.staff_id, "duration_minutes": DURATION},
+    )
+    times = [r["start_time"] for r in page["rows"]]
+    ends = [r["end_time"] for r in page["rows"]]
+    hub.check(
+        "§6 the list opens and closes with her shift, not with the business",
+        (times[:1], times[-1:]),
+        (["10:00"], ["12:30"]),
+    )
+    hub.check(
+        "§6 …and nothing runs past 13:00, the end of her shift",
+        [e for e in ends if e > "13:00"],
+        [],
+    )
+    hub.check(
+        "§6 …and `total` counts what came back",
+        page["total"],
+        len(times),
+    )
+    # THE DOOR agrees at both edges: the first hour the list offers books, the hour it dropped is
+    # refused with the professional's own word — not the business's.
+    hub.refused(
+        "§6 14:00 (business open, she is not) is refused by the door",
+        "appointments.appointments.create",
+        {
+            "customer_id": shift.customer_id,
+            "customer_name": "Cliente",
+            "service_id": shift.service_id,
+            "service_name": shift.service_name,
+            "staff_id": shift.staff_id,
+            "staff_name": "no-lo-decide-el-payload",
+            "start_datetime": business_instant(hub, day, "14:00"),
+            "duration_minutes": DURATION,
+        },
+        "appointments.outside_staff_hours",
+    )
+    first = book(hub, shift, shift.staff_id, business_instant(hub, day, "10:00"), DURATION)
+    hub.check_true(
+        "§6 …and 10:00, the first hour the list offers, books", bool(first), f"got id {first!r}"
+    )
+    # A professional with NO schedule has not set her hours up: the list stays the business's.
+    other = hub.result(
+        "appointments.availability.slots",
+        {"date": day, "staff_id": shift.other_staff_id, "duration_minutes": DURATION},
+    )
+    hub.check(
+        "§6 a professional with no schedule keeps the business's day (09:00 first)",
+        [r["start_time"] for r in other["rows"]][:1],
+        ["09:00"],
+    )
+
     return hub.finish(
         "the availability engine refuses the overlap per professional, keeps the other "
         "professional free, honours the `allow_overlapping` toggle at the engine AND at the door, "
         "and the booking door enforces the opening hours `schedules` owns — the same ones "
         "`day_opening` hands the screen, the same ones `availability.check` now answers, and the "
-        "same ones the LIST of free slots is cut to"
+        "same ones the LIST of free slots is cut to, together with the professional's own shift"
     )
 
 
