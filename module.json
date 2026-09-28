@@ -57,7 +57,7 @@
     "services",
     {
       "id": "staff",
-      "min_version": "2.3.2"
+      "min_version": "2.3.3"
     }
   ],
   "permissions": [
@@ -523,6 +523,14 @@
           "required": true
         },
         {
+          "query": "staff.availability.days_ahead",
+          "params": {
+            "staff_id": "payload.staff_id",
+            "days": "400"
+          },
+          "required": true
+        },
+        {
           "query": "schedules.business_hours.list",
           "required": true
         },
@@ -780,6 +788,13 @@
         },
         {
           "query": "appointments.blocked_times.upcoming",
+          "required": true
+        },
+        {
+          "query": "staff.availability.team_day_at",
+          "params": {
+            "at": "payload.start_datetime"
+          },
           "required": true
         },
         {
@@ -1123,6 +1138,14 @@
           "query": "appointments.appointments.upcoming_for_staff",
           "params": {
             "staff_id": "payload.staff_id"
+          },
+          "required": true
+        },
+        {
+          "query": "staff.availability.days_ahead",
+          "params": {
+            "staff_id": "payload.staff_id",
+            "days": "400"
           },
           "required": true
         },

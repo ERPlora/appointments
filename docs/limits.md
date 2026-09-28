@@ -11,7 +11,7 @@
 | `appointments.cannot_mark_no_show` | Its state does not allow it | Check the state |
 | Slot not available — `overlap` | That professional is already booked | Pick another time or another professional |
 | Slot not available — `outside_schedule` | You are not open then — your **Schedules** hours, special days and overrides, read on the business clock and refused by every door, not just the screen. Since appointments#105 the booking screen no longer offers those times at all | Fix it in **Schedules** (a bank holiday there closes the agenda too); a hub with no hours anywhere still books at any hour |
-| Slot not available — `outside_staff_hours` | That professional does not work then — their working schedule in **Staff** (shifts and break) or an approved leave covers it. Checked when booking one appointment, and the list of free slots for one professional leaves those times out (appointments#230); a professional with no schedule set up for that day is not refused. The batch, the recurring series and moving an appointment do not check it yet (appointments#229) | Pick another time or another professional, or fix their schedule in **Staff** |
+| Slot not available — `outside_staff_hours` | That professional does not work then — their working schedule in **Staff** (shifts and break) or an approved leave covers it. Checked when booking one appointment, and the list of free slots for one professional leaves those times out (appointments#230); a professional with no schedule set up for that day is not refused. Booking a batch, booking a recurring series and moving an appointment check it too (appointments#229): the batch is refused whole, the series skips that occurrence and books the rest | Pick another time or another professional, or fix their schedule in **Staff** |
 | Slot not available — `blocked` | Holiday, vacation, break or maintenance | Remove the block or book elsewhere |
 | Slot not available — `too_soon` / `too_far` | Breaks the minimum notice or the maximum advance. The front desk is never refused as `too_soon`, neither when it books nor when it moves an appointment: the minimum notice applies to customer bookings only (appointments#157, #165). An automation (a flow or an API key) is not the front desk: it always keeps the minimum notice and can never book or move into the past (appointments#177) | Adjust the booking or the settings |
 | Slot not available — `invalid_start` | The start is in the past or malformed. The front desk may book or move an appointment into the past (appointments#155, #156); customer channels may not | Pick a valid future time |
@@ -48,6 +48,7 @@ A refused transition rolls back **everything**: no row change, no history entry 
 | Appointments per bulk creation | 50 |
 | Appointments per bulk deletion | 50 |
 | Appointments materialised per run of a recurring template | 50 |
+| How far ahead a run of a recurring template books | 400 days (the professional's hours are checked that far; later occurrences are booked by a later run) |
 | Rows per page (blocked time, recurring) | 50 |
 | Maximum rows a paginated request may ask for | 500 |
 | Appointments per day per hub, by numbering | 9999 |

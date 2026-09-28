@@ -47,7 +47,8 @@ keep saying the same thing: a screen that greys out an hour the door would accep
 way round — is the bug this pair exists to make impossible.
 
 The PROFESSIONAL's own shift is enforced by `create` and answered by `appointments.availability.check`
-(`outside_staff_hours`, appointments#98); the batch, the series and `reschedule` are appointments#229.
+(`outside_staff_hours`, appointments#98); the batch, the series and `reschedule` enforce it too
+(appointments#229), and §7 proves it through the real kernel.
 §6 pins the LIST cut to that shift through the real kernel (appointments#230): the read
 `staff.availability.day_at` is keyed by the list's bare DATE, which only a real binding proves.
 

@@ -1112,16 +1112,25 @@ fn schedule_refusal(input: &Value, tz: chrono_tz::Tz, start: &Dt, end: &Dt) -> O
 /// The professional's business day at the booking's instant, from its OWNER (appointments#98):
 /// `staff.availability.day_at` keyed by `payload.staff_id` + `payload.start_datetime`.
 const STAFF_DAY_READ: &str = "staff.availability.day_at";
+/// Her days from today onwards (appointments#229), for the doors that book across many days:
+/// `staff.availability.days_ahead` keyed by `payload.staff_id`, `day_at`'s rows day after day.
+const STAFF_DAYS_READ: &str = "staff.availability.days_ahead";
+/// The whole team's day at the new hour (appointments#229), for `reschedule`, whose payload names
+/// the appointment and not its professional: `staff.availability.team_day_at` keyed by
+/// `payload.start_datetime`, `day_at`'s rows for every member, each carrying its `staff_id`.
+const STAFF_TEAM_READ: &str = "staff.availability.team_day_at";
 const OUTSIDE_STAFF_HOURS: &str = "appointments.outside_staff_hours";
 const STAFF_HOURS_UNAVAILABLE: &str = "appointments.staff_hours_unavailable";
 
-/// Which booking doors enforce the professional's hours. `create` does; the batch and the series
-/// book across several days and `staff.availability.day_at` answers ONE day, so they cannot yet —
-/// declared, not forgotten: appointments#229 (with `reschedule`, whose payload has no staff).
+/// Where a booking door reads the professional's day from. Every door judges it with the same
+/// [`staff_day_verdict`]; they differ only in which read their payload can key (appointments#229).
 #[derive(Clone, Copy, PartialEq)]
 enum StaffHoursGate {
-    Enforce,
-    NotDeclared,
+    /// `create` and `availability.check`: `day_at`, the one day the booking falls on.
+    OneDay,
+    /// The batch and the series, which book across many days: `days_ahead`, the rows of the
+    /// booking's own business date picked out of her days from today.
+    DaysAhead,
 }
 
 /// The PROFESSIONAL's working hours, enforced (appointments#98) and read from their owner.
@@ -1140,8 +1149,68 @@ enum StaffHoursGate {
 ///
 /// Missing read, no `day` row, or a restricting answer about ANOTHER day = refusal
 /// (`staff_hours_unavailable`), never an open door and never a verdict about the wrong day.
-fn staff_hours_refusal(input: &Value, tz: chrono_tz::Tz, start: &Dt, end: &Dt) -> Option<DomainError> {
-    let day = match staff_day_of(input) {
+fn staff_hours_refusal(
+    input: &Value,
+    gate: StaffHoursGate,
+    tz: chrono_tz::Tz,
+    start: &Dt,
+    end: &Dt,
+) -> Option<DomainError> {
+    let day = match gate {
+        StaffHoursGate::OneDay => staff_day_of(input),
+        // The rows of the booking's own business date. A date the read does not answer (beyond
+        // the days it covers) has no `day` row, and that is a refusal, never «she is free».
+        StaffHoursGate::DaysAhead => match (
+            read_rows(input, STAFF_DAYS_READ),
+            business_wall_stamp(start, tz),
+        ) {
+            (Some(rows), Some(from)) => staff_day_in(
+                &rows
+                    .into_iter()
+                    .filter(|row| row.get("day").map(as_str).unwrap_or_default() == from.date)
+                    .cloned()
+                    .collect::<Vec<_>>(),
+            ),
+            _ => Err(staff_hours_unavailable()),
+        },
+    };
+    staff_day_verdict(day, tz, start, end)
+}
+
+/// The move of an appointment (appointments#229), judged on its OWN professional: her rows picked
+/// out of `staff.availability.team_day_at` by `staff_id`. An appointment with no professional has
+/// nobody's day to judge; a professional the read does not list is a refusal, never an open door.
+fn team_member_hours_refusal(
+    input: &Value,
+    staff_id: &str,
+    tz: chrono_tz::Tz,
+    start: &Dt,
+    end: &Dt,
+) -> Option<DomainError> {
+    if staff_id.is_empty() {
+        return None;
+    }
+    let day = match read_rows(input, STAFF_TEAM_READ) {
+        None => Err(staff_hours_unavailable()),
+        Some(rows) => staff_day_in(
+            &rows
+                .into_iter()
+                .filter(|row| row.get("staff_id").map(as_str).unwrap_or_default() == staff_id)
+                .cloned()
+                .collect::<Vec<_>>(),
+        ),
+    };
+    staff_day_verdict(day, tz, start, end)
+}
+
+/// The fit of `[start, end]` in the professional's day, whichever read it came from.
+fn staff_day_verdict(
+    day: Result<Option<StaffDay>, DomainError>,
+    tz: chrono_tz::Tz,
+    start: &Dt,
+    end: &Dt,
+) -> Option<DomainError> {
+    let day = match day {
         Err(refusal) => return Some(refusal),
         Ok(None) => return None,
         Ok(Some(day)) => day,
@@ -1180,10 +1249,15 @@ struct StaffDay {
 /// professional who has not configured her hours). A missing read or one without its `day` row is
 /// a refusal, never an open door.
 fn staff_day_of(input: &Value) -> Result<Option<StaffDay>, DomainError> {
+    match read_rows(input, STAFF_DAY_READ) {
+        Some(rows) => staff_day_in(&rows),
+        None => Err(staff_hours_unavailable()),
+    }
+}
+
+/// ONE professional's ONE day out of any of the three reads — they all answer with `day_at`'s rows.
+fn staff_day_in(rows: &[Value]) -> Result<Option<StaffDay>, DomainError> {
     let kind = |row: &Value| row.get("kind").map(as_str).unwrap_or_default();
-    let Some(rows) = read_rows(input, STAFF_DAY_READ) else {
-        return Err(staff_hours_unavailable());
-    };
     let Some(day) = rows.iter().find(|r| kind(r) == "day") else {
         return Err(staff_hours_unavailable());
     };
@@ -1433,7 +1507,7 @@ pub fn check_availability_pure(input: Value) -> Result<Output, String> {
     // appointments#98: the professional's hours, in the rank the door gives them. Asked about the
     // whole agenda (no professional), there is nobody's day to judge.
     if !str_or(&payload, "staff_id", "").trim().is_empty() {
-        match staff_hours_refusal(&input, business_tz(&input), &start, &end) {
+        match staff_hours_refusal(&input, StaffHoursGate::OneDay, business_tz(&input), &start, &end) {
             Some(refusal) if refusal.code == OUTSIDE_STAFF_HOURS => {
                 return Ok(verdict(0, "outside_staff_hours"));
             }
@@ -1955,10 +2029,8 @@ fn prepare_appointment(
     }
     // appointments#98: the professional's hours, right below the business's — the same rank
     // `availability.check` gives them.
-    if staff_hours == StaffHoursGate::Enforce {
-        if let Some(refusal) = staff_hours_refusal(input, business_tz(input), &start, &end) {
-            return Err(PrepareError::Domain(refusal));
-        }
+    if let Some(refusal) = staff_hours_refusal(input, staff_hours, business_tz(input), &start, &end) {
+        return Err(PrepareError::Domain(refusal));
     }
 
     if let Some(refusal) = blocked_refusal(input, &resolved.staff_id, &start, &end) {
@@ -2415,6 +2487,10 @@ pub fn reschedule_appointment_pure(input: Value) -> Result<Output, String> {
     if let Some(refusal) = schedule_refusal(&input, ctx.tz, &start, &end) {
         return Ok(Output::new().with_error(refusal));
     }
+    // appointments#229: her hours, right below the business's — the rank `create` gives them.
+    if let Some(refusal) = team_member_hours_refusal(&input, &staff_id, ctx.tz, &start, &end) {
+        return Ok(Output::new().with_error(refusal));
+    }
 
     if let Some(refusal) = blocked_refusal(&input, &staff_id, &start, &end) {
         return Ok(Output::new().with_error(refusal));
@@ -2522,7 +2598,7 @@ pub fn create_appointment_pure(input: Value) -> Result<Output, String> {
         } else {
             CounterDeclaration::from_request(&input, &payload)
         },
-        StaffHoursGate::Enforce,
+        StaffHoursGate::OneDay,
     ) {
         Ok(ops) => ops,
         Err(PrepareError::Domain(refusal)) => return Ok(Output::new().with_error(refusal)),
@@ -2618,8 +2694,8 @@ pub fn bulk_create_pure(input: Value) -> Result<Output, String> {
             "Cita creada (lote)",
             None,
             CounterDeclaration::NONE,
-            // Several days, one-day read: appointments#229.
-            StaffHoursGate::NotDeclared,
+            // appointments#229: a batch books across many days, each judged on its own date.
+            StaffHoursGate::DaysAhead,
         ) {
             Ok(item_ops) => {
                 // appointments#138: every booked slot is announced like a one-by-one booking —
@@ -3365,6 +3441,18 @@ pub fn materialize_recurring_pure(input: Value) -> Result<Output, String> {
     // Each occurrence is just a SLOT: who, what and for how much is the resolved booking, shared
     // by the whole series (appointments#54) — the template's denormalized copy is only what the
     // list screen shows, and it can be stale.
+    // appointments#229: her days are read up to a horizon (`days_ahead`'s last `day` row). An
+    // occurrence past it is left for a later run — the series is materialized as its window
+    // advances, exactly like the 50-per-call cap — instead of being booked unjudged.
+    let Some(horizon) = read_rows(&input, STAFF_DAYS_READ).and_then(|rows| {
+        rows.iter()
+            .filter(|row| row.get("kind").map(as_str).unwrap_or_default() == "day")
+            .map(|row| row.get("day").map(as_str).unwrap_or_default())
+            .max()
+    }) else {
+        return Ok(Output::new().with_error(staff_hours_unavailable()));
+    };
+
     let mut skipped_as_booked = 0usize;
     for days in occurrence_days {
         if created >= 50 {
@@ -3375,6 +3463,9 @@ pub fn materialize_recurring_pure(input: Value) -> Result<Output, String> {
         if booked.iter().any(|b| *b == occurrence_date) {
             skipped_as_booked += 1;
             continue;
+        }
+        if occurrence_date > horizon {
+            break;
         }
         // appointments#12 — THE SERIES KEEPS ITS WALL TIME across a DST change. The template
         // stores `HH:MM` on the salon clock; expanding it by adding days to an instant would drag
@@ -3411,8 +3502,8 @@ pub fn materialize_recurring_pure(input: Value) -> Result<Output, String> {
             &desc,
             Some(&stamp),
             CounterDeclaration::NONE,
-            // A series spans many days, one-day read: appointments#229.
-            StaffHoursGate::NotDeclared,
+            // appointments#229: each occurrence judged on its own date, like the batch.
+            StaffHoursGate::DaysAhead,
         ) {
             Ok(item_ops) => {
                 // appointments#172: every booked occurrence is announced like the other doors (#138,
@@ -3422,8 +3513,14 @@ pub fn materialize_recurring_pure(input: Value) -> Result<Output, String> {
                 ops.extend(item_ops);
                 created += 1;
             }
-            // Ocurrencias pasadas (hoy ya empezadas), solapadas o en un día bloqueado: se saltan,
-            // no abortan — una serie de un año no se cae porque una de sus fechas sea festivo.
+            // appointments#229: her hours that could not be read are not «she is free» — the
+            // whole series stops with the code, nothing written, instead of skipping blind.
+            Err(PrepareError::Domain(refusal)) if refusal.code == STAFF_HOURS_UNAVAILABLE => {
+                return Ok(Output::new().with_error(refusal));
+            }
+            // Past occurrences (already begun today), overlapping ones, or ones on a blocked day
+            // or outside her hours: skipped, never aborting — a year-long series does not fall
+            // because one of its dates is a holiday or her day off.
             Err(_) => continue,
         }
     }
@@ -3527,7 +3624,13 @@ mod tests {
             // appointments#229: `required` for the batch and the series, which book across many
             // days. Every date the fixtures book on, with NO template governing it: Bea has not
             // configured her hours, so they refuse nothing; the cases that care plant theirs.
-            "staff.availability.days_ahead": ungoverned_days(2026, 7, 1, 550)
+            "staff.availability.days_ahead": ungoverned_days(2026, 1, 1, 800),
+            // appointments#229: `reschedule` reads the whole team at the new hour; Bea's day, with
+            // nothing governing it, refuses no move — the cases that care plant theirs.
+            "staff.availability.team_day_at": [
+                { "kind": "day", "staff_id": "s1", "day": "2026-07-31", "schedule_id": null,
+                  "start_time": null, "end_time": null, "is_full_day": 0 }
+            ]
         })
     }
 
@@ -4519,8 +4622,8 @@ mod tests {
     //
     // THE PROFESSIONAL's own working hours are a door too since appointments#98: `create` reads
     // `staff.availability.day_at` (keyed by the payload's `staff_id` + instant; the runtime derives
-    // the day on `:timezone`) and [`staff_hours_refusal`] decides the fit. Still NOT here: the batch,
-    // the series and `reschedule` (whose payload carries no `staff_id`) — appointments#229.
+    // the day on `:timezone`) and [`staff_hours_refusal`] decides the fit. The batch, the series and
+    // `reschedule` judge with the same function from their own reads since appointments#229.
 
     /// Settings row that switches both lead-time limits OFF (`0` = no limit), which is what the
     /// tests that are about something else need.
@@ -10015,8 +10118,11 @@ mod tests {
     // there: a five-session pass, a weekly series and a move could all land on her day off, her
     // break or after her shift. The batch and the series book across many days, so they read
     // `staff.availability.days_ahead` (the SAME rows as `day_at`, one business day after another)
-    // and judge each date with the very function `create` runs; `reschedule` names the
-    // appointment's own professional in its payload so it can read `day_at` like `create`.
+    // and judge each date with the very function `create` runs. `reschedule`'s payload names the
+    // appointment, not its professional — and the agenda's drag, the edit panel and the WhatsApp
+    // recipes already activated on hubs send exactly that — so it reads the whole team at the new
+    // hour (`staff.availability.team_day_at`, `day_at`'s rows per member) and judges the rows of
+    // the professional its row names.
 
     const DAYS_READ: &str = "staff.availability.days_ahead";
 
@@ -10216,15 +10322,42 @@ mod tests {
         assert!(out.operations.is_empty());
     }
 
-    fn move_bea(start: &str, day: Value) -> Output {
-        let mut payload = move_to(start, None);
-        payload["staff_id"] = json!("s1");
+    const TEAM_READ: &str = "staff.availability.team_day_at";
+
+    /// One professional's day as `staff.availability.team_day_at` lists it: `day_at`'s rows, each
+    /// naming its professional.
+    fn of_staff(staff_id: &str, day: Value) -> Vec<Value> {
+        day.as_array()
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|mut row| {
+                row["staff_id"] = json!(staff_id);
+                row
+            })
+            .collect()
+    }
+
+    /// The whole team at the new hour: Bea (`s1`, the appointment's own) with `day`, and Carla
+    /// (`s2`) working the whole day — so a verdict about the wrong professional cannot pass unseen.
+    fn team_with_bea(day: Value) -> Value {
+        let date = day[0]["day"].as_str().unwrap_or("2026-08-07").to_string();
+        let mut rows = of_staff("s1", day);
+        rows.extend(of_staff("s2", staff_day(&date, &[("00:00:00", "23:59:00")], json!([]))));
+        Value::Array(rows)
+    }
+
+    fn move_with_team(start: &str, row: Value, team: Value) -> Output {
         reschedule_appointment_pure(reschedule_input(
-            payload,
-            booked_row("2026-08-06T11:00:00Z", 30, "confirmed"),
-            Some(json!({ STAFF_DAY_READ: day })),
+            move_to(start, None),
+            row,
+            Some(json!({ TEAM_READ: team })),
         ))
         .unwrap()
+    }
+
+    fn move_bea(start: &str, day: Value) -> Output {
+        move_with_team(start, booked_row("2026-08-06T11:00:00Z", 30, "confirmed"), team_with_bea(day))
     }
 
     /// 🔴 THE SYMPTOM, move. Bea finishes at 18:00 on Friday: the appointment was moved to 19:00.
@@ -10253,54 +10386,95 @@ mod tests {
         assert_eq!(domain_code(&off).as_deref(), Some(OUTSIDE_STAFF_HOURS), "her day off");
     }
 
+    /// The move is judged on the appointment's OWN professional, read from its row — never on
+    /// whoever else works that hour. Carla (`s2`) is off all day and Bea works: the move goes.
+    #[test]
+    fn reschedule_judges_the_appointments_own_professional_and_nobody_else() {
+        let mut team = of_staff("s1", bea_friday());
+        team.extend(of_staff(
+            "s2",
+            staff_day("2026-08-07", &[("09:00:00", "18:00:00")], full_day_off("2026-08-07")),
+        ));
+        let out = move_with_team(
+            "2026-08-07T10:00:00+02:00",
+            booked_row("2026-08-06T11:00:00Z", 30, "confirmed"),
+            Value::Array(team),
+        );
+        assert!(out.error.is_none(), "{:?}", out.error);
+
+        // The same team, the appointment Carla's: refused on HER day off.
+        let mut carlas = booked_row("2026-08-06T11:00:00Z", 30, "confirmed");
+        carlas["staff_id"] = json!("s2");
+        let mut team = of_staff("s1", bea_friday());
+        team.extend(of_staff(
+            "s2",
+            staff_day("2026-08-07", &[("09:00:00", "18:00:00")], full_day_off("2026-08-07")),
+        ));
+        let out = move_with_team("2026-08-07T10:00:00+02:00", carlas, Value::Array(team));
+        assert_eq!(domain_code(&out).as_deref(), Some(OUTSIDE_STAFF_HOURS));
+    }
+
+    /// The read is `required`; missing anyway, or silent about the appointment's professional
+    /// (a professional the team read does not list), the move is refused as unreadable — never
+    /// moved as if she were in.
     #[test]
     fn reschedule_refuses_when_the_professionals_day_could_not_be_read() {
-        let mut payload = move_to("2026-08-07T10:00:00+02:00", None);
-        payload["staff_id"] = json!("s1");
-        let mut inp = reschedule_input(payload, booked_row("2026-08-06T11:00:00Z", 30, "confirmed"), None);
-        inp["context"]["reads"].as_object_mut().unwrap().remove(STAFF_DAY_READ);
+        let mut inp = reschedule_input(
+            move_to("2026-08-07T10:00:00+02:00", None),
+            booked_row("2026-08-06T11:00:00Z", 30, "confirmed"),
+            None,
+        );
+        inp["context"]["reads"].as_object_mut().unwrap().remove(TEAM_READ);
         let out = reschedule_appointment_pure(inp).unwrap();
         assert_eq!(domain_code(&out).as_deref(), Some(STAFF_HOURS_UNAVAILABLE));
         assert!(out.operations.is_empty());
+
+        let only_carla = Value::Array(of_staff("s2", bea_friday()));
+        let out = move_with_team(
+            "2026-08-07T10:00:00+02:00",
+            booked_row("2026-08-06T11:00:00Z", 30, "confirmed"),
+            only_carla,
+        );
+        assert_eq!(domain_code(&out).as_deref(), Some(STAFF_HOURS_UNAVAILABLE), "not listed");
+        assert!(out.operations.is_empty());
     }
 
-    /// The read is keyed by the payload's `staff_id`, so the payload has to name the
-    /// appointment's OWN professional: another one — or none — would have the door judge
-    /// somebody else's day. `reschedule` never changes who attends.
+    /// An answer about ANOTHER day (the read keyed by a different instant) is no verdict about
+    /// this one.
     #[test]
-    fn reschedule_refuses_a_professional_that_is_not_the_appointments_own() {
-        for staff in [json!("s2"), json!(""), Value::Null] {
-            let mut payload = move_to("2026-08-07T10:00:00+02:00", None);
-            payload["staff_id"] = staff.clone();
-            let out = reschedule_appointment_pure(reschedule_input(
-                payload,
-                booked_row("2026-08-06T11:00:00Z", 30, "confirmed"),
-                Some(json!({ STAFF_DAY_READ: bea_friday() })),
-            ))
-            .unwrap();
-            assert_eq!(domain_code(&out).as_deref(), Some("appointments.staff_mismatch"), "{staff}");
-            assert!(out.operations.is_empty(), "{staff}");
-        }
-        let mut payload = move_to("2026-08-07T10:00:00+02:00", None);
-        payload.as_object_mut().unwrap().remove("staff_id");
-        let out = reschedule_appointment_pure(reschedule_input(
-            payload,
-            booked_row("2026-08-06T11:00:00Z", 30, "confirmed"),
-            None,
-        ))
-        .unwrap();
-        assert_eq!(domain_code(&out).as_deref(), Some("appointments.staff_mismatch"), "absent");
+    fn reschedule_refuses_a_verdict_about_another_day() {
+        let out = move_bea(
+            "2026-08-07T10:00:00+02:00",
+            staff_day("2026-08-06", &[("09:00:00", "18:00:00")], json!([])),
+        );
+        assert_eq!(domain_code(&out).as_deref(), Some(STAFF_HOURS_UNAVAILABLE));
+    }
+
+    /// Moved to 23:30 for an hour, the appointment runs into the next day: it is measured past
+    /// midnight (1440 + 30), so only a piece that runs past midnight holds it.
+    #[test]
+    fn reschedule_measures_a_move_that_runs_past_midnight_on_its_own_day() {
+        let mut row = booked_row("2026-08-06T11:00:00Z", 60, "confirmed");
+        row["duration_minutes"] = json!(60);
+        let night = staff_day("2026-08-07", &[("20:00:00", "23:59:00")], json!([]));
+        let out = move_with_team("2026-08-07T23:30:00+02:00", row.clone(), team_with_bea(night));
+        assert_eq!(domain_code(&out).as_deref(), Some(OUTSIDE_STAFF_HOURS), "ends 00:30 next day");
+        let overnight = staff_day("2026-08-07", &[("20:00:00", "24:45:00")], json!([]));
+        let out = move_with_team("2026-08-07T23:30:00+02:00", row, team_with_bea(overnight));
+        assert!(out.error.is_none(), "{:?}", out.error);
     }
 
     /// An appointment with no professional (a row from before the links were required) has
-    /// nobody's day to judge: the payload names that same «nobody».
+    /// nobody's day to judge: nothing refuses it, whatever the team's day says.
     #[test]
-    fn reschedule_of_an_appointment_without_a_professional_names_nobody() {
+    fn reschedule_of_an_appointment_without_a_professional_judges_nobody() {
         let mut row = booked_row("2026-08-06T11:00:00Z", 30, "confirmed");
         row["staff_id"] = Value::Null;
-        let mut payload = move_to("2026-08-07T10:00:00+02:00", None);
-        payload["staff_id"] = Value::Null;
-        let out = reschedule_appointment_pure(reschedule_input(payload, row, None)).unwrap();
+        let team = Value::Array(of_staff(
+            "s1",
+            staff_day("2026-08-07", &[("09:00:00", "18:00:00")], full_day_off("2026-08-07")),
+        ));
+        let out = move_with_team("2026-08-07T10:00:00+02:00", row, team);
         assert!(out.error.is_none(), "{:?}", out.error);
     }
 
@@ -10313,8 +10487,8 @@ mod tests {
              json!({ "staff_id": "payload.staff_id", "days": "400" })),
             ("appointments.recurring.materialize", DAYS_READ,
              json!({ "staff_id": "payload.staff_id", "days": "400" })),
-            ("appointments.appointments.reschedule", STAFF_DAY_READ,
-             json!({ "staff_id": "payload.staff_id", "at": "payload.start_datetime" })),
+            ("appointments.appointments.reschedule", TEAM_READ,
+             json!({ "at": "payload.start_datetime" })),
         ] {
             let reads = manifest["commands"][cmd]["reads"].as_array().cloned().unwrap_or_default();
             let read = reads.iter().find(|r| r["query"] == query);
@@ -10322,16 +10496,6 @@ mod tests {
             assert_eq!(read.unwrap()["required"], json!(true), "{cmd}");
             assert_eq!(read.unwrap()["params"], params, "{cmd}");
         }
-    }
-
-    /// `reschedule`'s schema makes the caller name the professional (the assistant and the
-    /// flows build the payload from it).
-    #[test]
-    fn the_reschedule_schema_requires_the_professional() {
-        let schema: Value = serde_json::from_str(include_str!("../../schemas/appointment_reschedule.json"))
-            .expect("schema parses");
-        let required = schema["required"].as_array().cloned().unwrap_or_default();
-        assert!(required.contains(&json!("staff_id")), "{required:?}");
     }
 
     /// The batch and the series abort EVERY call with `ReadUnavailable` on a `staff` without
