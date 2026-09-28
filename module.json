@@ -57,7 +57,7 @@
     "services",
     {
       "id": "staff",
-      "min_version": "2.3.0"
+      "min_version": "2.3.2"
     }
   ],
   "permissions": [
@@ -897,7 +897,7 @@
         "function": "available_slots"
       },
       "ai": {
-        "description": "Lists the free booking slots of a given date (optionally for one staff member and a duration), crossing the calendar window and booking-notice settings, blocked time and existing appointments. It answers the SAME opening hours the booking door enforces, read from the `schedules` module, so an hour this offers is an hour a booking will be accepted at — the business being shut that date comes back as an empty list."
+        "description": "Lists the free booking slots of a given date (optionally for one staff member and a duration), crossing the calendar window and booking-notice settings, blocked time and existing appointments. It answers the SAME opening hours the booking door enforces, read from the `schedules` module, so an hour this offers is an hour a booking will be accepted at — the business being shut that date comes back as an empty list. With `staff_id` it also keeps only the hours that professional works (their shift, outside their break and any approved leave), read from the `staff` module."
       },
       "reads": [
         {
@@ -906,6 +906,14 @@
             "date": "payload.date",
             "duration_minutes": "payload.duration_minutes",
             "staff_id": "payload.staff_id"
+          },
+          "required": true
+        },
+        {
+          "query": "staff.availability.day_at",
+          "params": {
+            "staff_id": "payload.staff_id",
+            "at": "payload.date"
           },
           "required": true
         },

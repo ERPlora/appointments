@@ -147,13 +147,13 @@ must not mean «I cannot take bookings» — the same call the trade makes (Setm
 toggle, Acuity and Square let the counter book anyway). It is a state a fresh hub should never
 reach, which is why `schedules` is a hard dependency from the version that seeds the week on.
 
-The **professional's** own hours are a second door (appointments#98): booking one appointment, or
-asking whether a slot is free for a given professional, also checks that person's shifts, breaks
-and approved leave in Staff — `outside_staff_hours` when they do not work then. A professional
+The **professional's** own hours are a second door (appointments#98): booking one appointment,
+asking whether a slot is free for a given professional, or listing the free slots of a day for one
+professional (appointments#230), also checks that person's shifts, breaks and approved leave in
+Staff — `outside_staff_hours` when they do not work then. A professional
 with no working schedule set up for that day is not refused (only an approved absence refuses
 there), for the same reason as above. The batch, the recurring series and moving an appointment
-do not check it yet (appointments#229), and the list of free slots does not filter by it yet
-(appointments#230).
+do not check it yet (appointments#229).
 
 ## Blocked time with no professional blocks everybody
 
