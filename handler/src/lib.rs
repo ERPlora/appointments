@@ -1141,31 +1141,17 @@ enum StaffHoursGate {
 /// Missing read, no `day` row, or a restricting answer about ANOTHER day = refusal
 /// (`staff_hours_unavailable`), never an open door and never a verdict about the wrong day.
 fn staff_hours_refusal(input: &Value, tz: chrono_tz::Tz, start: &Dt, end: &Dt) -> Option<DomainError> {
-    let unavailable = || {
-        DomainError::new(
-            STAFF_HOURS_UNAVAILABLE,
-            "The professional's working hours could not be read; nothing was booked.",
-        )
+    let day = match staff_day_of(input) {
+        Err(refusal) => return Some(refusal),
+        Ok(None) => return None,
+        Ok(Some(day)) => day,
     };
-    let kind = |row: &Value| row.get("kind").map(as_str).unwrap_or_default();
-    let Some(rows) = read_rows(input, STAFF_DAY_READ) else {
-        return Some(unavailable());
-    };
-    let Some(day) = rows.iter().find(|r| kind(r) == "day") else {
-        return Some(unavailable());
-    };
-    let governed = !day.get("schedule_id").map(as_str).unwrap_or_default().is_empty();
-    let absences: Vec<&Value> = rows.iter().filter(|r| kind(r) == "off").collect();
-    if !governed && absences.is_empty() {
-        return None;
-    }
-
     let (Some(from), Some(to)) = (business_wall_stamp(start, tz), business_wall_stamp(end, tz))
     else {
-        return Some(unavailable());
+        return Some(staff_hours_unavailable());
     };
-    if day.get("day").map(as_str).unwrap_or_default() != from.date {
-        return Some(unavailable());
+    if day.date != from.date {
+        return Some(staff_hours_unavailable());
     }
     // Measured from midnight of the booking's own date, like `schedule_refusal`.
     let window_end = match day_offset(&from.date, &to.date) {
@@ -1173,36 +1159,91 @@ fn staff_hours_refusal(input: &Value, tz: chrono_tz::Tz, start: &Dt, end: &Dt) -
         Some(1) => to.minute + 1440,
         _ => return Some(outside_staff_hours()),
     };
+    day.refusal(from.minute, window_end)
+}
 
-    let minutes = |row: &Value, col: &str| {
-        row.get(col)
-            .map(as_str)
-            .and_then(|text| wall_minutes(&text))
+/// The professional's business day as `staff.availability.day_at` answers it, read ONCE for the
+/// door ([`staff_hours_refusal`]) and the list ([`available_slots_pure`], appointments#230): the
+/// two can only agree if they judge with the same piece.
+struct StaffDay {
+    /// The business day the read answered, `YYYY-MM-DD`.
+    date: String,
+    /// A template governs the day: only its working pieces can take a booking.
+    governed: bool,
+    /// Rows of kind `shift`, in the read's order.
+    shifts: Vec<Value>,
+    /// Rows of kind `off` — the approved absences — in the read's order.
+    absences: Vec<Value>,
+}
+
+/// `Ok(None)` when the day restricts nothing (no template governs it and no absence covers it: a
+/// professional who has not configured her hours). A missing read or one without its `day` row is
+/// a refusal, never an open door.
+fn staff_day_of(input: &Value) -> Result<Option<StaffDay>, DomainError> {
+    let kind = |row: &Value| row.get("kind").map(as_str).unwrap_or_default();
+    let Some(rows) = read_rows(input, STAFF_DAY_READ) else {
+        return Err(staff_hours_unavailable());
     };
-    for absence in absences {
-        if as_bool(absence.get("is_full_day").unwrap_or(&Value::Null)) {
-            return Some(outside_staff_hours());
-        }
-        let (Some(s), Some(e)) = (minutes(absence, "start_time"), minutes(absence, "end_time")) else {
-            return Some(unavailable());
-        };
-        if s < window_end && e > from.minute {
-            return Some(outside_staff_hours());
-        }
+    let Some(day) = rows.iter().find(|r| kind(r) == "day") else {
+        return Err(staff_hours_unavailable());
+    };
+    let governed = !day.get("schedule_id").map(as_str).unwrap_or_default().is_empty();
+    let absences: Vec<Value> = rows.iter().filter(|r| kind(r) == "off").cloned().collect();
+    if !governed && absences.is_empty() {
+        return Ok(None);
     }
+    Ok(Some(StaffDay {
+        date: day.get("day").map(as_str).unwrap_or_default(),
+        governed,
+        shifts: rows.iter().filter(|r| kind(r) == "shift").cloned().collect(),
+        absences,
+    }))
+}
 
-    if governed {
-        let fits = rows.iter().filter(|r| kind(r) == "shift").any(|piece| {
-            match (minutes(piece, "start_time"), minutes(piece, "end_time")) {
-                (Some(s), Some(e)) => s <= from.minute && window_end <= e,
-                _ => false,
+impl StaffDay {
+    /// Does she work `[from, window_end]`, in minutes from midnight of the day's own date (past
+    /// 1440 when it runs into the next day)?
+    ///
+    ///   * an approved absence overlapping it refuses — full day, or `[s, e)` crossing it;
+    ///   * on a day a template governs, it must fit WHOLE inside one piece, both ends included.
+    fn refusal(&self, from: i64, window_end: i64) -> Option<DomainError> {
+        let minutes = |row: &Value, col: &str| {
+            row.get(col)
+                .map(as_str)
+                .and_then(|text| wall_minutes(&text))
+        };
+        for absence in &self.absences {
+            if as_bool(absence.get("is_full_day").unwrap_or(&Value::Null)) {
+                return Some(outside_staff_hours());
             }
-        });
-        if !fits {
-            return Some(outside_staff_hours());
+            let (Some(s), Some(e)) = (minutes(absence, "start_time"), minutes(absence, "end_time"))
+            else {
+                return Some(staff_hours_unavailable());
+            };
+            if s < window_end && e > from {
+                return Some(outside_staff_hours());
+            }
         }
+        if self.governed {
+            let fits = self.shifts.iter().any(|piece| {
+                match (minutes(piece, "start_time"), minutes(piece, "end_time")) {
+                    (Some(s), Some(e)) => s <= from && window_end <= e,
+                    _ => false,
+                }
+            });
+            if !fits {
+                return Some(outside_staff_hours());
+            }
+        }
+        None
     }
-    None
+}
+
+fn staff_hours_unavailable() -> DomainError {
+    DomainError::new(
+        STAFF_HOURS_UNAVAILABLE,
+        "The professional's working hours could not be read; nothing was booked.",
+    )
 }
 
 fn outside_staff_hours() -> DomainError {
@@ -1489,23 +1530,62 @@ pub fn available_slots_pure(input: Value) -> Result<Output, String> {
     let spans = match opening {
         // The authority is silent about the date: nothing to filter by, and filtering by nothing
         // would empty a day the door books.
-        None => return Ok(slot_page(rows.clone())),
-        Some(DayOpening::Closed) => Vec::new(),
-        Some(DayOpening::Open(spans)) => spans,
+        None => None,
+        Some(DayOpening::Closed) => Some(Vec::new()),
+        Some(DayOpening::Open(spans)) => Some(spans),
+    };
+
+    // appointments#230: the professional's day, judged by the piece the door judges with. Asked
+    // for the whole agenda (no professional), there is nobody's day to judge.
+    let staff_day = if str_or(&payload, "staff_id", "").trim().is_empty() {
+        None
+    } else {
+        match staff_day_of(&input) {
+            Err(refusal) => return Ok(Output::new().with_error(refusal)),
+            // A restricting answer about ANOTHER date is never applied to this list.
+            Ok(Some(day)) if day.date != at.date => {
+                return Ok(Output::new().with_error(staff_hours_unavailable()));
+            }
+            Ok(day) => day,
+        }
     };
 
     let mut kept = Vec::with_capacity(rows.len());
     for row in rows {
         // A row OUR OWN SQL returned in a shape nobody can judge is a fault, not a slot to drop
         // quietly: a shorter list would hide a broken read behind an answer that looks fine.
-        let Some(inside) = slot_inside(row, &spans) else {
+        let inside = match &spans {
+            None => Some(true),
+            Some(spans) => slot_inside(row, spans),
+        };
+        let Some(inside) = inside else {
             return Ok(Output::new().with_error(availability_unavailable()));
         };
-        if inside {
-            kept.push(row.clone());
+        if !inside {
+            continue;
         }
+        if let Some(day) = &staff_day {
+            let Some((from, window_end)) = slot_window(row) else {
+                return Ok(Output::new().with_error(availability_unavailable()));
+            };
+            match day.refusal(from, window_end) {
+                None => {}
+                Some(refusal) if refusal.code == OUTSIDE_STAFF_HOURS => continue,
+                Some(refusal) => return Ok(Output::new().with_error(refusal)),
+            }
+        }
+        kept.push(row.clone());
     }
     Ok(slot_page(kept))
+}
+
+/// The slot as minutes from midnight of the listed date: `start_time` and its end, measured past
+/// 1440 when the `HH:MM` end wraps into the next day — the same reading the door gives a booking
+/// that ends after midnight. `None` when the row cannot be read.
+fn slot_window(row: &Value) -> Option<(i64, i64)> {
+    let start = wall_minutes(&as_str(row.get("start_time")?))?;
+    let end = wall_minutes(&as_str(row.get("end_time")?))?;
+    Some((start, if end < start { end + 1440 } else { end }))
 }
 
 
@@ -8427,6 +8507,13 @@ mod tests {
     fn slots_input(date: &str, own: Value, reads: Value) -> Value {
         let mut merged = reads;
         merged["appointments.availability.own_slots"] = own;
+        // appointments#230: `required` for the list too. A day NO template governs = Bea has not
+        // configured her hours, so they narrow nothing; the cases that care plant their own.
+        if merged.get(STAFF_DAY_READ).is_none() {
+            merged[STAFF_DAY_READ] = json!([{ "kind": "day", "day": date, "schedule_id": null,
+                                              "start_time": null, "end_time": null,
+                                              "is_full_day": 0 }]);
+        }
         json!({
             "payload": { "date": date, "duration_minutes": 30, "staff_id": "s1" },
             "context": { "hub_id": "h1", "now": "2026-07-01T08:00:00Z", "new_ids": [],
@@ -9481,6 +9568,17 @@ mod tests {
         assert!(!out.operations.is_empty());
     }
 
+    /// The same measure against a SHIFT: Bea works until 23:59, so 23:45 + 30 runs past the end
+    /// of her piece. Read as 00:15 of the same day it would «fit» and be booked.
+    #[test]
+    fn a_booking_that_runs_past_the_end_of_a_late_shift_is_refused() {
+        let late = || staff_day("2026-08-07", &[("20:00:00", "23:59:00")], json!([]));
+        let out = create_with_staff_day("2026-08-07T23:45:00+02:00", 30, late());
+        assert_eq!(domain_code(&out).as_deref(), Some(OUTSIDE_STAFF_HOURS));
+        let inside = create_with_staff_day("2026-08-07T23:00:00+02:00", 30, late());
+        assert_eq!(domain_code(&inside), None);
+    }
+
     /// 2026-10-25 is the day Madrid goes back to +01:00. Bea works 09:00–10:00. 08:15Z is 09:15
     /// on the wall (in); 07:30Z is 08:30 (out). Guessing the summer offset (+02:00) swaps BOTH
     /// answers — a correct booking refused and a wrong one accepted.
@@ -9600,5 +9698,294 @@ mod tests {
             .filter_map(|n| n.parse().ok())
             .collect();
         assert!(floor >= vec![2, 3, 0], "staff min_version is {:?}", staff["min_version"]);
+    }
+
+    // ── appointments#230 · the LIST offers only the hours the professional works ─────────────
+    //
+    // #98 closed the door: `create` refuses an hour Bea does not work. The list of free slots kept
+    // offering those hours, so the assistant, a WhatsApp recipe or the API picked one and was
+    // refused one step later — the screen contradicting the door, as #127 was for the business
+    // hours. The list now reads the same `staff.availability.day_at` (keyed by the list's DATE)
+    // and judges each slot with the very function the door runs.
+
+    /// The list of `date` with the salon open Monday–Friday 09:00–18:00 and Bea's day as given.
+    fn slots_with_staff_day(date: &str, day: Value) -> Output {
+        let mut reads = sched_hours(sched_weekdays_nine_to_six());
+        reads[STAFF_DAY_READ] = day;
+        available_slots_pure(slots_input(date, own_slots_calendar_day(date, 30), reads)).unwrap()
+    }
+
+    /// 🔴 THE SYMPTOM OF THE ISSUE. The salon opens 09:00–18:00 but Bea works 10:00–14:00 on
+    /// Friday: the list offered 09:00 and 16:00, and `create` refused them one step later.
+    #[test]
+    fn slots_offers_only_the_hours_the_professional_works() {
+        let out = slots_with_staff_day(
+            "2026-08-07",
+            staff_day("2026-08-07", &[("10:00:00", "14:00:00")], json!([])),
+        );
+        let times = offered(&out);
+        assert_eq!(times.first().map(String::as_str), Some("10:00"));
+        assert_eq!(times.last().map(String::as_str), Some("13:30"));
+        for gone in ["09:00", "09:45", "13:45", "16:00", "17:30"] {
+            assert!(!times.iter().any(|t| t == gone), "{gone} is outside Bea's shift");
+        }
+        let total = as_i64(&out.result.clone().unwrap()["total"], -1);
+        assert_eq!(total, times.len() as i64, "`total` counts what the caller gets");
+    }
+
+    /// Her break carves the list like the door: 12:45 runs into it, 14:00 is the minute she is back.
+    #[test]
+    fn slots_carves_the_professionals_break_out() {
+        let times = offered(&slots_with_staff_day("2026-08-07", bea_friday()));
+        for kept in ["12:30", "14:00"] {
+            assert!(times.iter().any(|t| t == kept), "{kept} fits one of her pieces");
+        }
+        for gone in ["12:45", "13:00", "13:30"] {
+            assert!(!times.iter().any(|t| t == gone), "{gone} runs into her break");
+        }
+    }
+
+    /// A day her template governs with no working piece (her day off) offers nothing.
+    #[test]
+    fn slots_offers_nothing_on_the_professionals_day_off() {
+        let out = slots_with_staff_day("2026-08-07", staff_day("2026-08-07", &[], json!([])));
+        assert_eq!(offered(&out), Vec::<String>::new());
+    }
+
+    /// An approved absence takes its hours off the list: all of them when it is the whole day, and
+    /// only those that touch it when it is part of the day — 09:30 ends as she leaves, 11:00 is
+    /// the minute she is back.
+    #[test]
+    fn slots_drops_the_hours_of_an_approved_absence() {
+        let mut full = bea_friday();
+        full.as_array_mut().unwrap().extend(full_day_off("2026-08-07").as_array().unwrap().clone());
+        assert_eq!(offered(&slots_with_staff_day("2026-08-07", full)), Vec::<String>::new());
+
+        let partial = staff_day(
+            "2026-08-07",
+            &[("09:00:00", "13:00:00"), ("14:00:00", "18:00:00")],
+            partial_off("2026-08-07", "10:00:00", "11:00:00"),
+        );
+        let times = offered(&slots_with_staff_day("2026-08-07", partial));
+        for kept in ["09:30", "11:00"] {
+            assert!(times.iter().any(|t| t == kept), "{kept} does not touch the absence");
+        }
+        for gone in ["09:45", "10:00", "10:30"] {
+            assert!(!times.iter().any(|t| t == gone), "{gone} touches the absence");
+        }
+    }
+
+    /// 🔴 THE DEGRADATION THAT MUST NOT BREAK. No template governs Bea's day: she has not set
+    /// her hours up, so they narrow nothing and the list is the business's — the #98 rule.
+    #[test]
+    fn slots_is_not_narrowed_by_a_professional_with_no_schedule() {
+        let business_only = offered(&slots_with_staff_day(
+            "2026-08-07",
+            staff_day_ungoverned("2026-08-07", json!([])),
+        ));
+        assert_eq!(business_only.first().map(String::as_str), Some("09:00"));
+        assert_eq!(business_only.last().map(String::as_str), Some("17:30"));
+        // …but an approved absence is an absence, template or not.
+        let off = offered(&slots_with_staff_day(
+            "2026-08-07",
+            staff_day_ungoverned("2026-08-07", full_day_off("2026-08-07")),
+        ));
+        assert_eq!(off, Vec::<String>::new());
+    }
+
+    /// The same degradation when the BUSINESS has no hours either: the authority is silent, so
+    /// the whole calendar day stays — except what Bea's own day takes off.
+    #[test]
+    fn slots_narrows_by_the_professional_even_when_the_business_has_no_hours() {
+        let mut reads = sched_hours(json!([]));
+        reads[STAFF_DAY_READ] = staff_day("2026-08-07", &[("10:00:00", "12:00:00")], json!([]));
+        let out = available_slots_pure(slots_input(
+            "2026-08-07",
+            own_slots_calendar_day("2026-08-07", 30),
+            reads,
+        ))
+        .unwrap();
+        let times = offered(&out);
+        assert_eq!(times.first().map(String::as_str), Some("10:00"));
+        assert_eq!(times.last().map(String::as_str), Some("11:30"));
+    }
+
+    /// Asked for the whole agenda (no professional), there is nobody's day to judge — even if a
+    /// read about someone arrived, and even if none did.
+    #[test]
+    fn slots_for_the_whole_agenda_does_not_judge_anyones_hours() {
+        let expected = offered(&slots_with_staff_day(
+            "2026-08-07",
+            staff_day_ungoverned("2026-08-07", json!([])),
+        ));
+        let mut reads = sched_hours(sched_weekdays_nine_to_six());
+        reads[STAFF_DAY_READ] = staff_day("2026-08-07", &[], full_day_off("2026-08-07"));
+        let mut inp = slots_input("2026-08-07", own_slots_calendar_day("2026-08-07", 30), reads);
+        inp["payload"]["staff_id"] = json!("");
+        assert_eq!(offered(&available_slots_pure(inp.clone()).unwrap()), expected);
+        inp["payload"].as_object_mut().unwrap().remove("staff_id");
+        inp["context"]["reads"].as_object_mut().unwrap().remove(STAFF_DAY_READ);
+        assert_eq!(offered(&available_slots_pure(inp).unwrap()), expected);
+    }
+
+    /// The read is `required`. Missing anyway — or with no `day` row — the list is refused like
+    /// the door refuses, never handed back unfiltered.
+    #[test]
+    fn slots_refuses_when_the_professionals_day_could_not_be_read() {
+        let mut inp = slots_input(
+            "2026-08-07",
+            own_slots_calendar_day("2026-08-07", 30),
+            sched_hours(sched_weekdays_nine_to_six()),
+        );
+        inp["context"]["reads"].as_object_mut().unwrap().remove(STAFF_DAY_READ);
+        let out = available_slots_pure(inp).unwrap();
+        assert_eq!(domain_code(&out).as_deref(), Some(STAFF_HOURS_UNAVAILABLE));
+        assert!(out.result.is_none(), "a refusal lists nothing");
+        let out = slots_with_staff_day("2026-08-07", json!([]));
+        assert_eq!(domain_code(&out).as_deref(), Some(STAFF_HOURS_UNAVAILABLE), "no day row");
+    }
+
+    /// A restricting answer about ANOTHER date is never applied to this list.
+    #[test]
+    fn slots_refuses_a_professionals_day_that_is_not_the_listed_date() {
+        let out = slots_with_staff_day(
+            "2026-08-07",
+            staff_day("2026-08-06", &[("09:00:00", "18:00:00")], json!([])),
+        );
+        assert_eq!(domain_code(&out).as_deref(), Some(STAFF_HOURS_UNAVAILABLE));
+    }
+
+    /// An absence nobody can place is refused as unreadable, never skipped as if Bea were in.
+    #[test]
+    fn slots_refuses_an_absence_with_unreadable_times() {
+        let out = slots_with_staff_day(
+            "2026-08-07",
+            staff_day_ungoverned("2026-08-07", partial_off("2026-08-07", "", "12:00:00")),
+        );
+        assert_eq!(domain_code(&out).as_deref(), Some(STAFF_HOURS_UNAVAILABLE));
+    }
+
+    /// With the business silent about its hours, Bea's day is the only judge — and a row nobody
+    /// can place on her day is a fault, not a slot to drop quietly.
+    #[test]
+    fn slots_refuses_a_row_it_cannot_place_on_the_professionals_day() {
+        let mut reads = sched_hours(json!([]));
+        reads[STAFF_DAY_READ] = bea_friday();
+        let out = available_slots_pure(slots_input(
+            "2026-08-07",
+            json!([{ "slot_start": "2026-08-07T09:00:00", "slot_end": "2026-08-07T09:30:00" }]),
+            reads,
+        ))
+        .unwrap();
+        assert_eq!(
+            domain_code(&out).as_deref(),
+            Some("appointments.availability_unavailable")
+        );
+    }
+
+    /// A late slot that ends after midnight is measured past 24:00, like the door does: 23:45 +
+    /// 30 runs into an absence that starts at 23:50, while 23:00 + 30 does not.
+    #[test]
+    fn slots_measures_a_slot_that_ends_after_midnight_past_24_00() {
+        let row = |from: &str, to: &str| {
+            json!({ "slot_start": format!("2026-08-07T{from}:00"),
+                    "slot_end": format!("2026-08-07T{to}:00"),
+                    "start_time": from, "end_time": to })
+        };
+        let mut reads = sched_hours(json!([]));
+        reads[STAFF_DAY_READ] =
+            staff_day_ungoverned("2026-08-07", partial_off("2026-08-07", "23:50:00", "23:59:00"));
+        let out = available_slots_pure(slots_input(
+            "2026-08-07",
+            json!([row("23:00", "23:30"), row("23:45", "00:15")]),
+            reads,
+        ))
+        .unwrap();
+        assert_eq!(offered(&out), vec!["23:00".to_string()]);
+    }
+
+    /// 🔒 THE REGRESSION GUARD of appointments#230. Quarter-hour by quarter-hour, with the
+    /// business's lunch, Bea's own pieces and an approved absence all in play, what the list
+    /// OFFERS is exactly what `create` ACCEPTS for her — and the walk has to meet both refusals
+    /// on the way, or it proves nothing.
+    #[test]
+    fn slots_offers_exactly_what_the_door_accepts_for_the_professional() {
+        let hours = json!([json!({ "id": "bh-lunch", "day_of_week": 0, "position": 0,
+                                   "open_time": "09:00", "close_time": "18:00", "is_closed": 0,
+                                   "break_start": "14:00", "break_end": "16:00" })]);
+        let day = "2026-08-03";
+        let mut reads = sched_hours(hours);
+        reads[STAFF_DAY_READ] = staff_day(
+            day,
+            &[("10:00:00", "13:00:00"), ("15:00:00", "19:00:00")],
+            partial_off(day, "16:30:00", "17:00:00"),
+        );
+        let out = available_slots_pure(slots_input(day, own_slots_calendar_day(day, 30), reads.clone()))
+            .unwrap();
+        let times = offered(&out);
+
+        let mut refusals = std::collections::BTreeSet::new();
+        let mut offered_any = false;
+        let mut m = 8 * 60;
+        while m + 30 <= 20 * 60 {
+            let at = format!("{day}T{:02}:{:02}:00+02:00", m / 60, m % 60);
+            let hhmm = format!("{:02}:{:02}", m / 60, m % 60);
+            let in_list = times.iter().any(|t| *t == hhmm);
+            let door = create_appointment_pure(input(item(&at, 30, "s1"), Some(reads.clone())))
+                .unwrap();
+            let refusal = domain_code(&door);
+            offered_any |= in_list;
+            if let Some(code) = &refusal {
+                refusals.insert(code.clone());
+            }
+            assert_eq!(
+                in_list,
+                refusal.is_none(),
+                "the list and the door disagree at {at}: offered={in_list}, door={refusal:?}"
+            );
+            m += 15;
+        }
+        assert!(offered_any, "a walk where nothing is offered proves nothing");
+        assert_eq!(
+            refusals.into_iter().collect::<Vec<_>>(),
+            vec!["appointments.outside_schedule".to_string(), OUTSIDE_STAFF_HOURS.to_string()],
+            "the walk must meet the business being shut AND Bea not working"
+        );
+    }
+
+    /// The list declares the professional's day, `required`, keyed by what ITS payload carries:
+    /// a date, not an instant.
+    #[test]
+    fn slots_declares_the_professionals_day_as_a_required_read_keyed_by_its_date() {
+        let manifest: Value = serde_json::from_str(MANIFEST).expect("module.json parses");
+        let reads = manifest["commands"]["appointments.availability.slots"]["reads"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default();
+        let read = reads.iter().find(|r| r["query"] == STAFF_DAY_READ).cloned();
+        assert!(read.is_some(), "slots does not declare {STAFF_DAY_READ}");
+        let read = read.unwrap();
+        assert_eq!(read["required"], json!(true));
+        assert_eq!(read["params"], json!({ "staff_id": "payload.staff_id", "at": "payload.date" }));
+    }
+
+    /// `staff.availability.day_at` reads a bare `YYYY-MM-DD` as that very business day only
+    /// from staff 2.3.2; an older one takes it for midnight UTC — the day BEFORE on every zone
+    /// west of Greenwich — and the list would be refused (or judged by the wrong day) there.
+    #[test]
+    fn the_staff_dependency_floor_reads_a_bare_date_as_the_business_day() {
+        let manifest: Value = serde_json::from_str(MANIFEST).expect("module.json parses");
+        let staff = manifest["depends_on"]
+            .as_array()
+            .and_then(|deps| deps.iter().find(|d| d["id"] == "staff"))
+            .cloned()
+            .unwrap_or(Value::Null);
+        let floor: Vec<u64> = staff["min_version"]
+            .as_str()
+            .unwrap_or_default()
+            .split('.')
+            .filter_map(|n| n.parse().ok())
+            .collect();
+        assert!(floor >= vec![2, 3, 2], "staff min_version is {:?}", staff["min_version"]);
     }
 }
