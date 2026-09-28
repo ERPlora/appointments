@@ -26,6 +26,7 @@
       "appointments.appointments.no_show",
       "appointments.appointments.reschedule",
       "appointments.appointments.start",
+      "appointments.availability.slots",
       "appointments.recurring.activate",
       "appointments.recurring.create",
       "appointments.recurring.deactivate",

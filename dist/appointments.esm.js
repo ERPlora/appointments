@@ -1960,6 +1960,12 @@ var es_default = {
     fieldDate: "D\xEDa",
     datePlaceholder: "dd/mm/aaaa",
     timePlaceholder: "hh:mm",
+    freeSlotsLabel: "Horas libres",
+    freeSlotsHint: "Elige servicio, profesional y d\xEDa para ver las horas libres.",
+    freeSlotsLoading: "Buscando horas libres\u2026",
+    freeSlotsEmpty: "No quedan horas libres ese d\xEDa para este profesional. Puedes escribir una hora igualmente.",
+    freeSlotsError: "No se han podido cargar las horas libres. Puedes escribir una hora igualmente.",
+    freeSlotsRetry: "Reintentar",
     openCalendar: "Abrir calendario",
     calendarMonth: "Mes",
     calendarAgenda: "Agenda",
@@ -2200,6 +2206,12 @@ var en_default = {
     fieldDate: "Day",
     datePlaceholder: "mm/dd/yyyy",
     timePlaceholder: "hh:mm",
+    freeSlotsLabel: "Free times",
+    freeSlotsHint: "Pick a service, a professional and a day to see the free times.",
+    freeSlotsLoading: "Looking for free times\u2026",
+    freeSlotsEmpty: "No free times that day for this professional. You can still type a time.",
+    freeSlotsError: "The free times could not be loaded. You can still type a time.",
+    freeSlotsRetry: "Try again",
     openCalendar: "Open calendar",
     calendarMonth: "Month",
     calendarAgenda: "Agenda",
@@ -8175,6 +8187,13 @@ var ErpAppointmentsList = class extends i3 {
     this.newStartDate = "";
     this.newStartTime = "";
     this.newDuration = "";
+    this.freeSlots = [];
+    this.freeSlotsState = "idle";
+    this.freeSlotsError = "";
+    /** The question the painted answer belongs to (`date|staff|minutes`); '' = none asked. */
+    this.freeSlotsKey = "";
+    /** Bumped on every question: an answer that arrives after a newer question is dropped. */
+    this.freeSlotsRequest = 0;
     this.rescheduleId = "";
     this.rescheduleStartDate = "";
     this.rescheduleStartTime = "";
@@ -8244,6 +8263,13 @@ var ErpAppointmentsList = class extends i3 {
     .form .ctx { margin:0; font-size:.9rem; color: var(--ion-color-medium, #92949c); }
     .form .actions { display:flex; gap:.5rem; justify-content:flex-end; align-items:center; }
     .form .actions ion-button { align-self:auto; }
+    /* appointments#232 — the free times of the day, as buttons under the time field. */
+    .slots { display:flex; flex-direction:column; gap:.35rem; }
+    .slots-label { font-size:.85rem; color: var(--ion-color-medium, #92949c); }
+    .slots-grid { display:flex; flex-wrap:wrap; gap:.4rem; }
+    .form .slots-grid ion-button { align-self:auto; margin:0; min-width:4.5rem; }
+    .slots-hint { display:flex; align-items:center; gap:.4rem; margin:0; font-size:.85rem; color: var(--ion-color-medium, #92949c); }
+    .slots-state { display:flex; flex-direction:column; gap:.35rem; }
     .err { color:#d9480f; font-weight:600; }
     /* appointments#205 — the inline ok-calendar of a date field: no ion-popover/
        ion-modal (an overlay would teleport out of the shadow root and lose its styles, hub#2162),
@@ -8288,6 +8314,53 @@ var ErpAppointmentsList = class extends i3 {
     if (Number.isFinite(fromService) && fromService >= 1) return fromService;
     const fromSettings = Number(this.settings.default_duration);
     return Number.isFinite(fromSettings) && fromSettings >= 1 ? fromSettings : 60;
+  }
+  /** appointments#232 — after every render: when the create form holds a complete question
+   *  (service + professional + day) that has not been asked yet, ask it. The minutes count too: a
+   *  longer visit fits in fewer places. */
+  updated(changed) {
+    super.updated?.(changed);
+    if (changed.has("newServiceId") || changed.has("newStaffId") || changed.has("newStartDate") || changed.has("newDuration") || changed.has("settings")) {
+      void this.loadFreeSlots();
+    }
+  }
+  get freeSlotsQuestion() {
+    if (!this.newServiceId || !this.newStaffId || !this.newStartDate) return "";
+    return `${this.newStartDate}|${this.newStaffId}|${this.effectiveDuration}`;
+  }
+  async loadFreeSlots(force = false) {
+    const key = this.freeSlotsQuestion;
+    if (!force && key === this.freeSlotsKey) return;
+    this.freeSlotsKey = key;
+    const request = ++this.freeSlotsRequest;
+    if (!key) {
+      this.freeSlots = [];
+      this.freeSlotsState = "idle";
+      this.freeSlotsError = "";
+      return;
+    }
+    this.freeSlotsState = "loading";
+    this.freeSlotsError = "";
+    try {
+      const answer = await erplora4().command("appointments.availability.slots", {
+        date: this.newStartDate,
+        staff_id: this.newStaffId,
+        duration_minutes: this.effectiveDuration
+      });
+      if (request !== this.freeSlotsRequest) return;
+      const slots = answer?.result;
+      this.freeSlots = rows4(slots).filter((slot) => typeof slot?.start_time === "string");
+      this.freeSlotsState = "ready";
+    } catch (e5) {
+      if (request !== this.freeSlotsRequest) return;
+      this.freeSlotsError = domainErrorText(e5, "ui.freeSlotsError");
+      this.freeSlotsState = "error";
+    }
+  }
+  /** appointments#232 — a tap on a free time is the hour that will be booked. */
+  pickFreeSlot(time) {
+    this.newStartTime = time;
+    this.timeDraft = { ...this.timeDraft, new: null };
   }
   /** appointments#75: elegir servicio PRERRELLENA «Min.» con su duración de catálogo. La
    *  pantalla ya la sabía (viajaba en el payload) pero el campo quedaba VACÍO con el número
@@ -9262,6 +9335,44 @@ var ErpAppointmentsList = class extends i3 {
       <erp-appointments-history data-testid="appointments-list-history" .hideTitle=${true} .appointmentId=${this.historyId}></erp-appointments-history>
     </div>`;
   }
+  /** appointments#232 — the free times under the time field: buttons in the hub clock, one tap
+   *  fills the hour; typing another one stays possible. Loading, empty and error are said in
+   *  words: an empty list and a failed read must never look alike. */
+  renderFreeSlots(t5) {
+    switch (this.freeSlotsState) {
+      case "idle":
+        return b2`<p class="slots-hint" data-testid="appointments-list-slots-hint">${t5("ui.freeSlotsHint")}</p>`;
+      case "loading":
+        return b2`<div class="slots-hint" data-testid="appointments-list-slots-loading" role="status">
+          <ion-spinner name="dots"></ion-spinner><span>${t5("ui.freeSlotsLoading")}</span>
+        </div>`;
+      case "error":
+        return b2`<div class="slots-state">
+          <ok-inline-feedback data-testid="appointments-list-slots-error" tone="danger" icon="alert-circle-outline">${this.freeSlotsError}</ok-inline-feedback>
+          <ion-button data-testid="appointments-list-slots-retry" type="button" size="small" fill="clear" @click=${() => void this.loadFreeSlots(true)}>${t5("ui.freeSlotsRetry")}</ion-button>
+        </div>`;
+      default:
+        if (this.freeSlots.length === 0) {
+          return b2`<ok-inline-feedback data-testid="appointments-list-slots-empty" tone="info" icon="time-outline">${t5("ui.freeSlotsEmpty")}</ok-inline-feedback>`;
+        }
+        return b2`<div class="slots" role="group" aria-label=${t5("ui.freeSlotsLabel")} data-testid="appointments-list-slots">
+          <span class="slots-label">${t5("ui.freeSlotsLabel")}</span>
+          <div class="slots-grid">
+            ${this.freeSlots.map((slot) => {
+          const chosen = slot.start_time === this.newStartTime;
+          return b2`<ion-button
+                data-testid=${`appointments-list-slot-${slot.start_time.replace(":", "")}`}
+                type="button"
+                size="small"
+                fill=${chosen ? "solid" : "outline"}
+                aria-pressed=${chosen ? "true" : "false"}
+                @click=${() => this.pickFreeSlot(slot.start_time)}
+              >${formatTypedTime(slot.start_time, erplora4().locale)}</ion-button>`;
+        })}
+          </div>
+        </div>`;
+    }
+  }
   /** Alta de cita: se proyecta SIEMPRE (aunque el panel esté cerrado); si solo se pintara
    *  al abrirlo, el «+» desplegaría un panel vacío en el primer clic.
    *  Cliente, servicio y profesional se ELIGEN de sus módulos (appointments#21): con
@@ -9299,6 +9410,7 @@ var ErpAppointmentsList = class extends i3 {
                   ></ok-calendar>
                 </div>` : A}
             <ion-input data-testid="appointments-list-start-time" data-role="start-time" fill="outline" mode="md" label-placement="floating" label=${t5("ui.fieldTime")} type="text" inputmode="numeric" autocomplete="off" placeholder=${t5("ui.timePlaceholder")} .value=${this.timeFieldValue("new")} @ionInput=${(e5) => this.onTimeFieldInput("new", e5.target.value ?? "")} @ionChange=${() => this.commitTimeDraft("new")} @paste=${(e5) => this.onStartPaste("new", e5)}></ion-input>
+            ${this.renderFreeSlots(t5)}
             <!-- Minutos se PRERRELLENA al elegir servicio (appointments#75): la duración que la
                  reserva va a tener tiene que estar EN PANTALLA; se teclea solo para excepciones
                  (una clienta que necesita más tiempo). -->
@@ -9376,6 +9488,15 @@ __decorateClass([
 __decorateClass([
   r5()
 ], ErpAppointmentsList.prototype, "newDuration", 2);
+__decorateClass([
+  r5()
+], ErpAppointmentsList.prototype, "freeSlots", 2);
+__decorateClass([
+  r5()
+], ErpAppointmentsList.prototype, "freeSlotsState", 2);
+__decorateClass([
+  r5()
+], ErpAppointmentsList.prototype, "freeSlotsError", 2);
 __decorateClass([
   r5()
 ], ErpAppointmentsList.prototype, "rescheduleId", 2);

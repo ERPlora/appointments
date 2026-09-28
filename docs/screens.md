@@ -49,9 +49,15 @@ Requires `appointments.view_appointment`.
 1. Press to create. **Customer, service and professional are all required** — you pick them from
    real lists, not by typing a name.
 2. The **service decides the duration** by default; you can override it for this one booking.
-3. Pick the start: a **Day** field and a **Time** field. The form does not list the free times of
-   the day yet (appointments#232); the door refuses a time that is taken, outside your hours or
-   outside the professional's shift, with the reason. Both can be typed from the keyboard — typing
+3. Pick the start: a **Day** field and a **Time** field. Once the service, the professional and the
+   day are chosen, the **free times** of that day for that professional appear as buttons under
+   **Time** (`appointments.availability.slots`, the same list the assistant and WhatsApp offer: it
+   already leaves out the closed hours, blocked time, the agenda and the professional's shift and
+   leave). Tapping one fills the time; changing the service, the minutes, the professional or the
+   day asks again. The list leaves out the next hours inside the online **minimum notice**, which the
+   counter may still book: type those by hand (appointments#234). Any other time can still be typed; the door refuses
+   a time that is taken, outside your hours or outside the professional's shift, with the reason.
+   Both can be typed from the keyboard — typing
    «26/09/2026 10:00» in one go works (the space after the date jumps to the time) — and pasting a
    whole start («26/09/2026 10:00», or `2026-09-26T10:00`) fills both. The date is read in the
    order of the hub's language (day/month in Spanish).
