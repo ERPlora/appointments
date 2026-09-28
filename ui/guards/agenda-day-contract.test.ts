@@ -139,6 +139,8 @@ describe('the day list feeds the per-professional view and downstream flows', ()
 
 describe('the staff module is a declared dependency (the agenda books against it)', () => {
   it('depends_on includes staff', () => {
-    expect(manifest.depends_on).toContain('staff');
+    // A dependency is either its id or `{ id, min_version }` (appointments#98 pins staff's floor).
+    const ids = manifest.depends_on.map((d: string | { id: string }) => (typeof d === 'string' ? d : d.id));
+    expect(ids).toContain('staff');
   });
 });

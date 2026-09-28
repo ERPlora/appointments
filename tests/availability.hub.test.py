@@ -46,8 +46,8 @@ appointments#89 and is pinned by the Rust cases in `handler/src/lib.rs`, DST inc
 keep saying the same thing: a screen that greys out an hour the door would accept — or the other
 way round — is the bug this pair exists to make impossible.
 
-What is still ADVISORY: whether that particular PROFESSIONAL works that hour. The business being
-open is enforced; the person's own shift is appointments#98, blocked on `reads.params`.
+The PROFESSIONAL's own shift is enforced by `create` and answered by `appointments.availability.check`
+(`outside_staff_hours`, appointments#98); the batch, the series and `reschedule` are appointments#229.
 
 Usage: tests/availability.hub.test.py   (exit 0 = green)
   Needs a live runtime with `taxes`+`customers`+`services`+`staff`+`appointments` installed:

@@ -221,6 +221,8 @@
     "appointments.recurring_mismatch": "La cita recurrente no coincide con el cliente, el servicio o el profesional enviados; no se ha reservado nada.",
     "appointments.cannot_reschedule": "Esta cita ya no se puede mover en su estado actual.",
     "appointments.outside_schedule": "Esa hora está fuera del horario de apertura del negocio.",
+    "appointments.outside_staff_hours": "Ese profesional no trabaja a esa hora. Elige otra hora u otro profesional.",
+    "appointments.staff_hours_unavailable": "No se ha podido leer el horario del profesional; no se ha reservado nada.",
     "appointments.overlapping_appointment": "Ese profesional ya tiene una cita en esa franja. Elige otra hora u otro profesional.",
     "appointments.invalid_local_time": "Esa hora no existe en el reloj del negocio: el cambio de hora la salta. Elige otra.",
     "appointments.cannot_complete": "Esta cita no se puede completar: no se ha iniciado.",

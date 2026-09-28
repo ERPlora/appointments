@@ -19,6 +19,8 @@
     "appointments.customer_not_found": {},
     "appointments.invalid_start": {},
     "appointments.outside_schedule": {},
+    "appointments.outside_staff_hours": {},
+    "appointments.staff_hours_unavailable": {},
     "appointments.overlapping_appointment": {},
     "appointments.recurring_inactive": {},
     "appointments.recurring_mismatch": {},
@@ -53,7 +55,10 @@
       "min_version": "2.0.28"
     },
     "services",
-    "staff"
+    {
+      "id": "staff",
+      "min_version": "2.3.0"
+    }
   ],
   "permissions": [
     "appointments.view_appointment",
@@ -671,6 +676,14 @@
           "required": true
         },
         {
+          "query": "staff.availability.day_at",
+          "params": {
+            "staff_id": "payload.staff_id",
+            "at": "payload.start_datetime"
+          },
+          "required": true
+        },
+        {
           "query": "appointments.blocked_times.overlapping",
           "params": {
             "staff_id": "payload.staff_id",
@@ -833,7 +846,7 @@
         "function": "check_availability"
       },
       "ai": {
-        "description": "Checks whether a specific date/time slot is available for booking and returns the reason when it is not (outside_schedule, invalid_start, too_soon, too_far, blocked or overlap — `outside_schedule` means the business is shut at that hour). It answers the SAME opening hours the booking door enforces, read from the `schedules` module, so an hour this says is free is an hour a booking will be accepted at."
+        "description": "Checks whether a specific date/time slot is available for booking and returns the reason when it is not (outside_schedule, outside_staff_hours, invalid_start, too_soon, too_far, blocked or overlap — `outside_schedule` means the business is shut at that hour, `outside_staff_hours` that the asked professional does not work then: off-shift, on their break or on approved leave). It answers the SAME opening hours the booking door enforces, read from the `schedules` module, so an hour this says is free is an hour a booking will be accepted at. With `staff_id` it also answers that professional's working hours, read from the `staff` module."
       },
       "reads": [
         {
@@ -847,6 +860,14 @@
         },
         {
           "query": "appointments.settings.get",
+          "required": true
+        },
+        {
+          "query": "staff.availability.day_at",
+          "params": {
+            "staff_id": "payload.staff_id",
+            "at": "payload.start_datetime"
+          },
           "required": true
         },
         {
