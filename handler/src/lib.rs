@@ -9468,6 +9468,19 @@ mod tests {
         assert_eq!(domain_code(&out).as_deref(), Some(OUTSIDE_STAFF_HOURS));
     }
 
+    /// A late booking that ends after midnight is measured past 24:00, not refused for crossing
+    /// the day: with no schedule and a morning absence, 23:45 + 30 touches nothing of hers.
+    #[test]
+    fn a_booking_that_ends_after_midnight_is_judged_by_its_minutes_not_refused_for_the_date() {
+        let out = create_with_staff_day(
+            "2026-08-07T23:45:00+02:00",
+            30,
+            staff_day_ungoverned("2026-08-07", partial_off("2026-08-07", "09:00:00", "10:00:00")),
+        );
+        assert_eq!(domain_code(&out), None);
+        assert!(!out.operations.is_empty());
+    }
+
     /// 2026-10-25 is the day Madrid goes back to +01:00. Bea works 09:00–10:00. 08:15Z is 09:15
     /// on the wall (in); 07:30Z is 08:30 (out). Guessing the summer offset (+02:00) swaps BOTH
     /// answers — a correct booking refused and a wrong one accepted.
