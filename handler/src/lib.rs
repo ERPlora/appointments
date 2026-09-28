@@ -3523,8 +3523,28 @@ mod tests {
             "staff.availability.day_at": [
                 { "kind": "day", "day": "2026-07-31", "schedule_id": null,
                   "start_time": null, "end_time": null, "is_full_day": 0 }
-            ]
+            ],
+            // appointments#229: `required` for the batch and the series, which book across many
+            // days. Every date the fixtures book on, with NO template governing it: Bea has not
+            // configured her hours, so they refuse nothing; the cases that care plant theirs.
+            "staff.availability.days_ahead": ungoverned_days(2026, 7, 1, 550)
         })
+    }
+
+    /// `n` consecutive business days from `y-m-d`, as `staff.availability.days_ahead` answers a
+    /// professional with no template: one `day` row each, nothing else.
+    fn ungoverned_days(y: i64, m: i64, d: i64, n: i64) -> Value {
+        let first = days_from_civil(y, m, d);
+        Value::Array(
+            (first..first + n)
+                .map(|days| {
+                    let (y, m, d) = civil_from_days(days);
+                    json!({ "kind": "day", "day": format!("{y:04}-{m:02}-{d:02}"),
+                            "schedule_id": null, "start_time": null, "end_time": null,
+                            "is_full_day": 0 })
+                })
+                .collect(),
+        )
     }
 
     fn item(start: &str, dur: i64, staff: &str) -> Value {
@@ -9987,5 +10007,349 @@ mod tests {
             .filter_map(|n| n.parse().ok())
             .collect();
         assert!(floor >= vec![2, 3, 2], "staff min_version is {:?}", staff["min_version"]);
+    }
+
+    // ── appointments#229 · the batch, the series and `reschedule` respect her hours too ──────
+    //
+    // #98 closed `create` on the hours Bea does not work; the other three doors kept booking
+    // there: a five-session pass, a weekly series and a move could all land on her day off, her
+    // break or after her shift. The batch and the series book across many days, so they read
+    // `staff.availability.days_ahead` (the SAME rows as `day_at`, one business day after another)
+    // and judge each date with the very function `create` runs; `reschedule` names the
+    // appointment's own professional in its payload so it can read `day_at` like `create`.
+
+    const DAYS_READ: &str = "staff.availability.days_ahead";
+
+    /// Several of Bea's days glued together, as `staff.availability.days_ahead` answers them.
+    fn staff_days(days: &[Value]) -> Value {
+        Value::Array(days.iter().flat_map(|d| d.as_array().cloned().unwrap_or_default()).collect())
+    }
+
+    /// Bea works Friday 07/08 and Monday 10/08, 09:00–13:00 and 14:00–18:00.
+    fn bea_friday_and_monday() -> Value {
+        let week = [("09:00:00", "13:00:00"), ("14:00:00", "18:00:00")];
+        staff_days(&[
+            staff_day("2026-08-07", &week, json!([])),
+            staff_day("2026-08-10", &week, json!([])),
+        ])
+    }
+
+    fn batch_with_days(slots: Value, days: Value) -> Output {
+        bulk_create_pure(batch_input(batch(slots), Some(json!({ DAYS_READ: days })))).unwrap()
+    }
+
+    /// 🔴 THE SYMPTOM, batch. Monday 19:00 is after Bea's shift: the pass was booked whole.
+    #[test]
+    fn bulk_create_refuses_a_batch_with_a_slot_outside_the_professionals_shift() {
+        let out = batch_with_days(
+            json!([slot("2026-08-07T10:00:00+02:00"), slot("2026-08-10T19:00:00+02:00")]),
+            bea_friday_and_monday(),
+        );
+        assert_eq!(domain_code(&out).as_deref(), Some(OUTSIDE_STAFF_HOURS));
+        assert!(out.operations.is_empty(), "a refused batch writes nothing");
+    }
+
+    #[test]
+    fn bulk_create_books_a_batch_whose_every_slot_is_inside_her_shifts() {
+        let out = batch_with_days(
+            json!([slot("2026-08-07T10:00:00+02:00"), slot("2026-08-10T17:30:00+02:00")]),
+            bea_friday_and_monday(),
+        );
+        assert!(out.error.is_none(), "{:?}", out.error);
+        assert_eq!(insert_ops(&out).len(), 2);
+    }
+
+    /// The batch that crosses her approved day off: the same hour she works on Friday is refused
+    /// on the Monday she is away.
+    #[test]
+    fn bulk_create_refuses_a_batch_that_crosses_her_approved_day_off() {
+        let days = staff_days(&[
+            bea_friday(),
+            staff_day("2026-08-10", &[("09:00:00", "18:00:00")], full_day_off("2026-08-10")),
+        ]);
+        let out = batch_with_days(
+            json!([slot("2026-08-07T10:00:00+02:00"), slot("2026-08-10T10:00:00+02:00")]),
+            days,
+        );
+        assert_eq!(domain_code(&out).as_deref(), Some(OUTSIDE_STAFF_HOURS));
+        assert!(out.operations.is_empty());
+    }
+
+    /// Her break inside a working day refuses too, judged per date: the Friday slot fits, the
+    /// Monday one lands on a part-day absence.
+    #[test]
+    fn bulk_create_refuses_a_slot_on_her_part_day_absence() {
+        let days = staff_days(&[
+            bea_friday(),
+            staff_day(
+                "2026-08-10",
+                &[("09:00:00", "18:00:00")],
+                partial_off("2026-08-10", "10:00:00", "12:00:00"),
+            ),
+        ]);
+        let out = batch_with_days(
+            json!([slot("2026-08-07T10:00:00+02:00"), slot("2026-08-10T11:00:00+02:00")]),
+            days,
+        );
+        assert_eq!(domain_code(&out).as_deref(), Some(OUTSIDE_STAFF_HOURS));
+    }
+
+    /// A day NO template governs is a professional who has not set her hours up: nothing to refuse.
+    #[test]
+    fn bulk_create_books_any_hour_on_a_day_no_template_governs() {
+        let out = batch_with_days(
+            json!([slot("2026-08-07T21:00:00+02:00")]),
+            staff_day_ungoverned("2026-08-07", json!([])),
+        );
+        assert!(out.error.is_none(), "{:?}", out.error);
+        assert_eq!(insert_ops(&out).len(), 1);
+    }
+
+    /// The read is `required`; missing anyway, or silent about a date the batch books on (beyond
+    /// the days it answers), the batch is refused as unreadable — never booked as if she were in.
+    #[test]
+    fn bulk_create_refuses_when_the_professionals_days_could_not_be_read() {
+        let mut inp = batch_input(batch(json!([slot("2026-08-07T10:00:00+02:00")])), None);
+        inp["context"]["reads"].as_object_mut().unwrap().remove(DAYS_READ);
+        let out = bulk_create_pure(inp).unwrap();
+        assert_eq!(domain_code(&out).as_deref(), Some(STAFF_HOURS_UNAVAILABLE));
+        assert!(out.operations.is_empty());
+
+        let out = batch_with_days(
+            json!([slot("2026-08-07T10:00:00+02:00"), slot("2026-08-10T10:00:00+02:00")]),
+            bea_friday(),
+        );
+        assert_eq!(
+            domain_code(&out).as_deref(),
+            Some(STAFF_HOURS_UNAVAILABLE),
+            "a date the read does not answer is not a date she is free"
+        );
+        assert!(out.operations.is_empty());
+    }
+
+    /// The day of the clock change (25/10, +02 → +01 at 01:00Z): the slot is placed on the
+    /// BUSINESS day and wall hour, so 07:30Z is 08:30 in Madrid — before her 09:00 start — and
+    /// 08:00Z is 09:00 on the dot.
+    #[test]
+    fn bulk_create_judges_the_clock_change_day_on_the_business_clock() {
+        let day = || staff_day("2026-10-25", &[("09:00:00", "18:00:00")], json!([]));
+        let early = batch_with_days(json!([slot("2026-10-25T07:30:00Z")]), day());
+        assert_eq!(domain_code(&early).as_deref(), Some(OUTSIDE_STAFF_HOURS));
+        let on_time = batch_with_days(json!([slot("2026-10-25T08:00:00Z")]), day());
+        assert!(on_time.error.is_none(), "{:?}", on_time.error);
+    }
+
+    fn series_with_days(days: Value) -> Output {
+        materialize_recurring_pure(series_input(
+            series_payload(),
+            json!([template(json!({}))]),
+            Some(json!({ DAYS_READ: days })),
+        ))
+        .unwrap()
+    }
+
+    fn booked_starts(out: &Output) -> Vec<String> {
+        insert_ops(out)
+            .iter()
+            .filter_map(|op| op.params.get("start_datetime").and_then(|v| v.as_str().map(String::from)))
+            .collect()
+    }
+
+    /// 🔴 THE SYMPTOM, series. Weekly on Monday at 11:00: the 03/08 falls on Bea's approved day
+    /// off and was booked anyway. It is skipped — like a blocked day — and the rest still books.
+    #[test]
+    fn materialize_skips_an_occurrence_on_her_day_off_and_books_the_rest() {
+        let week = [("09:00:00", "13:00:00"), ("14:00:00", "18:00:00")];
+        let out = series_with_days(staff_days(&[
+            staff_day("2026-08-03", &week, full_day_off("2026-08-03")),
+            staff_day("2026-08-10", &week, json!([])),
+        ]));
+        assert!(out.error.is_none(), "{:?}", out.error);
+        assert_eq!(booked_starts(&out), vec!["2026-08-10T11:00:00+02:00"]);
+    }
+
+    /// An occurrence outside her shift (she only works afternoons on the 10th) is skipped too.
+    #[test]
+    fn materialize_skips_an_occurrence_outside_her_shift() {
+        let out = series_with_days(staff_days(&[
+            staff_day("2026-08-03", &[("09:00:00", "18:00:00")], json!([])),
+            staff_day("2026-08-10", &[("14:00:00", "18:00:00")], json!([])),
+        ]));
+        assert!(out.error.is_none(), "{:?}", out.error);
+        assert_eq!(booked_starts(&out), vec!["2026-08-03T11:00:00+02:00"]);
+    }
+
+    /// Without her days the series books nothing and says why — skipping every occurrence
+    /// would read as «nothing to book», which is a lie about a read that failed.
+    #[test]
+    fn materialize_refuses_when_the_professionals_days_could_not_be_read() {
+        let mut inp = series_input(series_payload(), json!([template(json!({}))]), None);
+        inp["context"]["reads"].as_object_mut().unwrap().remove(DAYS_READ);
+        let out = materialize_recurring_pure(inp).unwrap();
+        assert_eq!(domain_code(&out).as_deref(), Some(STAFF_HOURS_UNAVAILABLE));
+        assert!(out.operations.is_empty());
+
+        let out = series_with_days(json!([]));
+        assert_eq!(domain_code(&out).as_deref(), Some(STAFF_HOURS_UNAVAILABLE), "no day row");
+        assert!(out.operations.is_empty());
+    }
+
+    /// Her days are read up to a horizon. An occurrence past the last day the read answers is
+    /// left for a later run — the series is materialized as its window advances, exactly like
+    /// the 50-per-call cap — instead of being booked unjudged or failing the whole series.
+    #[test]
+    fn materialize_leaves_the_occurrences_past_the_read_for_a_later_run() {
+        let out = series_with_days(staff_day("2026-08-03", &[("09:00:00", "18:00:00")], json!([])));
+        assert!(out.error.is_none(), "{:?}", out.error);
+        assert_eq!(booked_starts(&out), vec!["2026-08-03T11:00:00+02:00"]);
+    }
+
+    /// An absence whose times cannot be read inside the horizon is not «she is free»: the series
+    /// stops with the code, nothing written.
+    #[test]
+    fn materialize_refuses_an_unreadable_absence_instead_of_skipping_it() {
+        let out = series_with_days(staff_days(&[
+            staff_day_ungoverned("2026-08-03", partial_off("2026-08-03", "", "12:00:00")),
+            staff_day_ungoverned("2026-08-10", json!([])),
+        ]));
+        assert_eq!(domain_code(&out).as_deref(), Some(STAFF_HOURS_UNAVAILABLE));
+        assert!(out.operations.is_empty());
+    }
+
+    fn move_bea(start: &str, day: Value) -> Output {
+        let mut payload = move_to(start, None);
+        payload["staff_id"] = json!("s1");
+        reschedule_appointment_pure(reschedule_input(
+            payload,
+            booked_row("2026-08-06T11:00:00Z", 30, "confirmed"),
+            Some(json!({ STAFF_DAY_READ: day })),
+        ))
+        .unwrap()
+    }
+
+    /// 🔴 THE SYMPTOM, move. Bea finishes at 18:00 on Friday: the appointment was moved to 19:00.
+    #[test]
+    fn reschedule_refuses_a_move_outside_the_professionals_shift() {
+        let out = move_bea("2026-08-07T19:00:00+02:00", bea_friday());
+        assert_eq!(domain_code(&out).as_deref(), Some(OUTSIDE_STAFF_HOURS));
+        assert!(out.operations.is_empty());
+    }
+
+    #[test]
+    fn reschedule_moves_inside_her_shift() {
+        let out = move_bea("2026-08-07T17:30:00+02:00", bea_friday());
+        assert!(out.error.is_none(), "{:?}", out.error);
+        assert!(!out.operations.is_empty());
+    }
+
+    #[test]
+    fn reschedule_refuses_a_move_onto_her_break_or_her_day_off() {
+        let lunch = move_bea("2026-08-07T13:00:00+02:00", bea_friday());
+        assert_eq!(domain_code(&lunch).as_deref(), Some(OUTSIDE_STAFF_HOURS), "her break");
+        let off = move_bea(
+            "2026-08-07T10:00:00+02:00",
+            staff_day("2026-08-07", &[("09:00:00", "18:00:00")], full_day_off("2026-08-07")),
+        );
+        assert_eq!(domain_code(&off).as_deref(), Some(OUTSIDE_STAFF_HOURS), "her day off");
+    }
+
+    #[test]
+    fn reschedule_refuses_when_the_professionals_day_could_not_be_read() {
+        let mut payload = move_to("2026-08-07T10:00:00+02:00", None);
+        payload["staff_id"] = json!("s1");
+        let mut inp = reschedule_input(payload, booked_row("2026-08-06T11:00:00Z", 30, "confirmed"), None);
+        inp["context"]["reads"].as_object_mut().unwrap().remove(STAFF_DAY_READ);
+        let out = reschedule_appointment_pure(inp).unwrap();
+        assert_eq!(domain_code(&out).as_deref(), Some(STAFF_HOURS_UNAVAILABLE));
+        assert!(out.operations.is_empty());
+    }
+
+    /// The read is keyed by the payload's `staff_id`, so the payload has to name the
+    /// appointment's OWN professional: another one — or none — would have the door judge
+    /// somebody else's day. `reschedule` never changes who attends.
+    #[test]
+    fn reschedule_refuses_a_professional_that_is_not_the_appointments_own() {
+        for staff in [json!("s2"), json!(""), Value::Null] {
+            let mut payload = move_to("2026-08-07T10:00:00+02:00", None);
+            payload["staff_id"] = staff.clone();
+            let out = reschedule_appointment_pure(reschedule_input(
+                payload,
+                booked_row("2026-08-06T11:00:00Z", 30, "confirmed"),
+                Some(json!({ STAFF_DAY_READ: bea_friday() })),
+            ))
+            .unwrap();
+            assert_eq!(domain_code(&out).as_deref(), Some("appointments.staff_mismatch"), "{staff}");
+            assert!(out.operations.is_empty(), "{staff}");
+        }
+        let mut payload = move_to("2026-08-07T10:00:00+02:00", None);
+        payload.as_object_mut().unwrap().remove("staff_id");
+        let out = reschedule_appointment_pure(reschedule_input(
+            payload,
+            booked_row("2026-08-06T11:00:00Z", 30, "confirmed"),
+            None,
+        ))
+        .unwrap();
+        assert_eq!(domain_code(&out).as_deref(), Some("appointments.staff_mismatch"), "absent");
+    }
+
+    /// An appointment with no professional (a row from before the links were required) has
+    /// nobody's day to judge: the payload names that same «nobody».
+    #[test]
+    fn reschedule_of_an_appointment_without_a_professional_names_nobody() {
+        let mut row = booked_row("2026-08-06T11:00:00Z", 30, "confirmed");
+        row["staff_id"] = Value::Null;
+        let mut payload = move_to("2026-08-07T10:00:00+02:00", None);
+        payload["staff_id"] = Value::Null;
+        let out = reschedule_appointment_pure(reschedule_input(payload, row, None)).unwrap();
+        assert!(out.error.is_none(), "{:?}", out.error);
+    }
+
+    /// Each door declares its read `required`, keyed by what its payload carries.
+    #[test]
+    fn the_batch_the_series_and_reschedule_declare_the_professionals_days() {
+        let manifest: Value = serde_json::from_str(MANIFEST).expect("module.json parses");
+        for (cmd, query, params) in [
+            ("appointments.appointments.bulk_create", DAYS_READ,
+             json!({ "staff_id": "payload.staff_id", "days": "400" })),
+            ("appointments.recurring.materialize", DAYS_READ,
+             json!({ "staff_id": "payload.staff_id", "days": "400" })),
+            ("appointments.appointments.reschedule", STAFF_DAY_READ,
+             json!({ "staff_id": "payload.staff_id", "at": "payload.start_datetime" })),
+        ] {
+            let reads = manifest["commands"][cmd]["reads"].as_array().cloned().unwrap_or_default();
+            let read = reads.iter().find(|r| r["query"] == query);
+            assert!(read.is_some(), "{cmd} does not declare {query}");
+            assert_eq!(read.unwrap()["required"], json!(true), "{cmd}");
+            assert_eq!(read.unwrap()["params"], params, "{cmd}");
+        }
+    }
+
+    /// `reschedule`'s schema makes the caller name the professional (the assistant and the
+    /// flows build the payload from it).
+    #[test]
+    fn the_reschedule_schema_requires_the_professional() {
+        let schema: Value = serde_json::from_str(include_str!("../../schemas/appointment_reschedule.json"))
+            .expect("schema parses");
+        let required = schema["required"].as_array().cloned().unwrap_or_default();
+        assert!(required.contains(&json!("staff_id")), "{required:?}");
+    }
+
+    /// The batch and the series abort EVERY call with `ReadUnavailable` on a `staff` without
+    /// `staff.availability.days_ahead`: the floor must be the first `staff` that ships it.
+    #[test]
+    fn the_staff_dependency_floor_ships_the_days_ahead_read() {
+        let manifest: Value = serde_json::from_str(MANIFEST).expect("module.json parses");
+        let staff = manifest["depends_on"]
+            .as_array()
+            .and_then(|deps| deps.iter().find(|d| d["id"] == "staff"))
+            .cloned()
+            .unwrap_or(Value::Null);
+        let floor: Vec<u64> = staff["min_version"]
+            .as_str()
+            .unwrap_or_default()
+            .split('.')
+            .filter_map(|n| n.parse().ok())
+            .collect();
+        assert!(floor >= vec![2, 3, 3], "staff min_version is {:?}", staff["min_version"]);
     }
 }
