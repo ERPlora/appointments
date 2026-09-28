@@ -78,6 +78,7 @@ beforeEach(() => {
 type Wc = HTMLElement & {
   shadowRoot: ShadowRoot;
   updateComplete: Promise<unknown>;
+  newServiceId: string;
   newStaffId: string;
   newStartDate: string;
   newStartTime: string;
@@ -148,6 +149,10 @@ describe('the create form offers the free times of the day', () => {
     const [first, second] = slotButtons(el);
     expect(second.getAttribute('aria-pressed')).toBe('true');
     expect(first.getAttribute('aria-pressed')).toBe('false');
+    expect([first.getAttribute('fill'), second.getAttribute('fill')], 'the chosen hour is painted apart').toEqual([
+      'outline',
+      'solid',
+    ]);
     const timeField = form(el).querySelector('ion-input[data-role="start-time"]') as HTMLElement & { value: string };
     expect(timeField.value, 'the field repaints the chosen hour').toBe('11:15');
   });
@@ -191,6 +196,22 @@ describe('the create form offers the free times of the day', () => {
       duration_minutes: 90,
     });
     expect(slotCalls().length).toBe(4);
+  });
+
+  it('drops the painted hours when the question stops being complete (the form empties after a booking)', async () => {
+    const el = await mount();
+    await pick(el);
+    expect(slotButtons(el).length).toBe(2);
+
+    // What a successful booking does to the form: the next one must not open showing the hours of
+    // the last professional — the one just booked among them — as if they were still free.
+    el.newServiceId = '';
+    el.newStaffId = '';
+    await settle(el);
+
+    expect(slotButtons(el).length).toBe(0);
+    expect(form(el).querySelector('[data-testid="appointments-list-slots-hint"]')?.textContent).toContain('ui.freeSlotsHint');
+    expect(slotCalls().length, 'an incomplete question is not asked').toBe(1);
   });
 
   it('asks again when the minutes are typed by hand', async () => {
