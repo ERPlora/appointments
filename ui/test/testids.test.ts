@@ -109,6 +109,14 @@ const COVERED: Record<
       'appointments-list-reschedule-submit',
       'appointments-list-series-scope',
       'appointments-list-service',
+      // appointments#232 — the free times of the day under the time field: the group, one button
+      // per time (`appointments-list-slot-<HHMM>`, computed), and its hint/loading/empty/error states.
+      'appointments-list-slots',
+      'appointments-list-slots-empty',
+      'appointments-list-slots-error',
+      'appointments-list-slots-hint',
+      'appointments-list-slots-loading',
+      'appointments-list-slots-retry',
       'appointments-list-staff',
       'appointments-list-start',
       // appointments#205 — same calendar, on the create panel's date field.
@@ -122,6 +130,7 @@ const COVERED: Record<
       'appointments-list-view-series',
       'appointments-list-view-staff',
     ],
+    computed: ['appointments-list-slot-'],
     tables: ['appointments-list-table'],
   },
   // Recurring series (`/m/appointments/list`, the «series» view): the table of series plus the

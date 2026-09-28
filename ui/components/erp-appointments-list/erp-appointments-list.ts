@@ -53,6 +53,12 @@ interface ErploraClientLike {
   notify?(n: { type: string; message: string }): void;
 }
 
+/** One free time of `appointments.availability.slots` (`HH:MM`, the salon's wall clock). */
+interface FreeSlot {
+  start_time: string;
+  end_time: string;
+}
+
 interface Appointment {
   id: string;
   appointment_number: string;
@@ -309,6 +315,13 @@ export class ErpAppointmentsList extends LitElement {
     .form .ctx { margin:0; font-size:.9rem; color: var(--ion-color-medium, #92949c); }
     .form .actions { display:flex; gap:.5rem; justify-content:flex-end; align-items:center; }
     .form .actions ion-button { align-self:auto; }
+    /* appointments#232 — the free times of the day, as buttons under the time field. */
+    .slots { display:flex; flex-direction:column; gap:.35rem; }
+    .slots-label { font-size:.85rem; color: var(--ion-color-medium, #92949c); }
+    .slots-grid { display:flex; flex-wrap:wrap; gap:.4rem; }
+    .form .slots-grid ion-button { align-self:auto; margin:0; min-width:4.5rem; }
+    .slots-hint { display:flex; align-items:center; gap:.4rem; margin:0; font-size:.85rem; color: var(--ion-color-medium, #92949c); }
+    .slots-state { display:flex; flex-direction:column; gap:.35rem; }
     .err { color:#d9480f; font-weight:600; }
     /* appointments#205 — the inline ok-calendar of a date field: no ion-popover/
        ion-modal (an overlay would teleport out of the shadow root and lose its styles, hub#2162),
@@ -397,6 +410,22 @@ export class ErpAppointmentsList extends LitElement {
 
   @state() newDuration = '';
 
+  /** appointments#232 — the free times of the chosen day for the chosen professional and service,
+   *  as `appointments.availability.slots` answers them. The engine is the one the assistant and
+   *  WhatsApp read (opening hours #127, blocked time, agenda, the professional's shift #230): the
+   *  form never computes a slot of its own. `idle` = the question is not complete yet. */
+  @state() private freeSlots: FreeSlot[] = [];
+
+  @state() private freeSlotsState: 'idle' | 'loading' | 'ready' | 'error' = 'idle';
+
+  @state() private freeSlotsError = '';
+
+  /** The question the painted answer belongs to (`date|staff|minutes`); '' = none asked. */
+  private freeSlotsKey = '';
+
+  /** Bumped on every question: an answer that arrives after a newer question is dropped. */
+  private freeSlotsRequest = 0;
+
   // ── Reprogramar (appointments#42) ──────────────────────────────────────────────────────────
   // The panel is THE SAME one as the create panel: `ok-data-table.open('edit', { title })` paints
   // the `create` slot under its own header (pm#450). With `rescheduleId` set, that slot paints the
@@ -479,6 +508,64 @@ export class ErpAppointmentsList extends LitElement {
     if (Number.isFinite(fromService) && fromService >= 1) return fromService;
     const fromSettings = Number(this.settings.default_duration);
     return Number.isFinite(fromSettings) && fromSettings >= 1 ? fromSettings : 60;
+  }
+
+  /** appointments#232 — after every render: when the create form holds a complete question
+   *  (service + professional + day) that has not been asked yet, ask it. The minutes count too: a
+   *  longer visit fits in fewer places. */
+  protected updated(changed: Map<string, unknown>): void {
+    super.updated?.(changed);
+    if (
+      changed.has('newServiceId') ||
+      changed.has('newStaffId') ||
+      changed.has('newStartDate') ||
+      changed.has('newDuration') ||
+      changed.has('settings')
+    ) {
+      void this.loadFreeSlots();
+    }
+  }
+
+  private get freeSlotsQuestion(): string {
+    if (!this.newServiceId || !this.newStaffId || !this.newStartDate) return '';
+    return `${this.newStartDate}|${this.newStaffId}|${this.effectiveDuration}`;
+  }
+
+  private async loadFreeSlots(force = false): Promise<void> {
+    const key = this.freeSlotsQuestion;
+    if (!force && key === this.freeSlotsKey) return;
+    this.freeSlotsKey = key;
+    const request = ++this.freeSlotsRequest;
+    if (!key) {
+      this.freeSlots = [];
+      this.freeSlotsState = 'idle';
+      this.freeSlotsError = '';
+      return;
+    }
+    this.freeSlotsState = 'loading';
+    this.freeSlotsError = '';
+    try {
+      const answer = await erplora().command('appointments.availability.slots', {
+        date: this.newStartDate,
+        staff_id: this.newStaffId,
+        duration_minutes: this.effectiveDuration,
+      });
+      if (request !== this.freeSlotsRequest) return;
+      // A command resolves with the dispatcher's envelope; the engine's read-back is its `result`.
+      const slots = (answer as { result?: unknown } | null)?.result;
+      this.freeSlots = rows<FreeSlot>(slots).filter((slot) => typeof slot?.start_time === 'string');
+      this.freeSlotsState = 'ready';
+    } catch (e) {
+      if (request !== this.freeSlotsRequest) return;
+      this.freeSlotsError = domainErrorText(e, 'ui.freeSlotsError');
+      this.freeSlotsState = 'error';
+    }
+  }
+
+  /** appointments#232 — a tap on a free time is the hour that will be booked. */
+  private pickFreeSlot(time: string): void {
+    this.newStartTime = time;
+    this.timeDraft = { ...this.timeDraft, new: null };
   }
 
   /** appointments#75: elegir servicio PRERRELLENA «Min.» con su duración de catálogo. La
@@ -1570,6 +1657,45 @@ export class ErpAppointmentsList extends LitElement {
     </div>`;
   }
 
+  /** appointments#232 — the free times under the time field: buttons in the hub clock, one tap
+   *  fills the hour; typing another one stays possible. Loading, empty and error are said in
+   *  words: an empty list and a failed read must never look alike. */
+  private renderFreeSlots(t: (k: string) => string) {
+    switch (this.freeSlotsState) {
+      case 'idle':
+        return html`<p class="slots-hint" data-testid="appointments-list-slots-hint">${t('ui.freeSlotsHint')}</p>`;
+      case 'loading':
+        return html`<div class="slots-hint" data-testid="appointments-list-slots-loading" role="status">
+          <ion-spinner name="dots"></ion-spinner><span>${t('ui.freeSlotsLoading')}</span>
+        </div>`;
+      case 'error':
+        return html`<div class="slots-state">
+          <ok-inline-feedback data-testid="appointments-list-slots-error" tone="danger" icon="alert-circle-outline">${this.freeSlotsError}</ok-inline-feedback>
+          <ion-button data-testid="appointments-list-slots-retry" type="button" size="small" fill="clear" @click=${() => void this.loadFreeSlots(true)}>${t('ui.freeSlotsRetry')}</ion-button>
+        </div>`;
+      default:
+        if (this.freeSlots.length === 0) {
+          return html`<ok-inline-feedback data-testid="appointments-list-slots-empty" tone="info" icon="time-outline">${t('ui.freeSlotsEmpty')}</ok-inline-feedback>`;
+        }
+        return html`<div class="slots" role="group" aria-label=${t('ui.freeSlotsLabel')} data-testid="appointments-list-slots">
+          <span class="slots-label">${t('ui.freeSlotsLabel')}</span>
+          <div class="slots-grid">
+            ${this.freeSlots.map((slot) => {
+              const chosen = slot.start_time === this.newStartTime;
+              return html`<ion-button
+                data-testid=${`appointments-list-slot-${slot.start_time.replace(':', '')}`}
+                type="button"
+                size="small"
+                fill=${chosen ? 'solid' : 'outline'}
+                aria-pressed=${chosen ? 'true' : 'false'}
+                @click=${() => this.pickFreeSlot(slot.start_time)}
+              >${formatTypedTime(slot.start_time, erplora().locale)}</ion-button>`;
+            })}
+          </div>
+        </div>`;
+    }
+  }
+
   /** Alta de cita: se proyecta SIEMPRE (aunque el panel esté cerrado); si solo se pintara
    *  al abrirlo, el «+» desplegaría un panel vacío en el primer clic.
    *  Cliente, servicio y profesional se ELIGEN de sus módulos (appointments#21): con
@@ -1609,6 +1735,7 @@ export class ErpAppointmentsList extends LitElement {
                 </div>`
               : nothing}
             <ion-input data-testid="appointments-list-start-time" data-role="start-time" fill="outline" mode="md" label-placement="floating" label=${t('ui.fieldTime')} type="text" inputmode="numeric" autocomplete="off" placeholder=${t('ui.timePlaceholder')} .value=${this.timeFieldValue('new')} @ionInput=${(e: any) => this.onTimeFieldInput('new', e.target.value ?? '')} @ionChange=${() => this.commitTimeDraft('new')} @paste=${(e: Event) => this.onStartPaste('new', e)}></ion-input>
+            ${this.renderFreeSlots(t)}
             <!-- Minutos se PRERRELLENA al elegir servicio (appointments#75): la duración que la
                  reserva va a tener tiene que estar EN PANTALLA; se teclea solo para excepciones
                  (una clienta que necesita más tiempo). -->
