@@ -88,6 +88,7 @@ When a slot is not free, the availability check tells you **why**:
 | Reason | Meaning |
 |---|---|
 | `outside_schedule` | You are closed at that hour |
+| `outside_staff_hours` | You asked about one professional, and they do not work then: off-shift, on their break or on approved leave |
 | `overlap` | That professional is already booked then |
 | `blocked` | Holiday, vacation, break or maintenance covers it |
 | `too_soon` | It breaks the minimum booking notice |
@@ -146,8 +147,13 @@ must not mean «I cannot take bookings» — the same call the trade makes (Setm
 toggle, Acuity and Square let the counter book anyway). It is a state a fresh hub should never
 reach, which is why `schedules` is a hard dependency from the version that seeds the week on.
 
-Still advisory, and tracked in appointments#98: whether that particular **professional** works that
-hour. The business being open is what the door checks today.
+The **professional's** own hours are a second door (appointments#98): booking one appointment, or
+asking whether a slot is free for a given professional, also checks that person's shifts, breaks
+and approved leave in Staff — `outside_staff_hours` when they do not work then. A professional
+with no working schedule set up for that day is not refused (only an approved absence refuses
+there), for the same reason as above. The batch, the recurring series and moving an appointment
+do not check it yet (appointments#229), and the list of free slots does not filter by it yet
+(appointments#230).
 
 ## Blocked time with no professional blocks everybody
 

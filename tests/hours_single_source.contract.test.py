@@ -115,10 +115,16 @@ REASONS_SECTION = "Availability has reasons"
 # (appointments#122). It is the one reason of the table the `CASE` cannot produce.
 HOURS_REASON = "outside_schedule"
 
+# The PROFESSIONAL's hours (appointments#98): the second word only a handler can add, and only when it
+# reads their owner. The business being open says nothing about whether that person works then.
+STAFF_HOURS_REASON = "outside_staff_hours"
+STAFF_DAY_READ = "staff.availability.day_at"
+
 # The engine whose `CASE` the doc table describes. It is the SQL half of
 # `appointments.availability.check`, which since appointments#122 answers through the handler
 # so it can add the opening hours the SQL cannot reach.
 AVAILABILITY_CHECK = "appointments.availability.own_rules"
+CHECK_COMMAND = "appointments.availability.check"
 
 # The six operations appointments#117 retired. Cheap half of the check — kept by name so the diff
 # that brings one back is readable, but the SQL scan below is what actually holds the line.
@@ -584,7 +590,8 @@ def answerable_reasons(name: str, spec: dict) -> set[str]:
     A query answers its own `CASE ... END AS reason`. A handler COMMAND answers the `CASE` of the
     query it takes as its verdict — the `reads` it declares inside this family — plus the one word
     only a handler can add: `outside_schedule`, and only when it reads the authority that owns the
-    hours. That is what `appointments.availability.check` became in appointments#122.
+    hours. That is what `appointments.availability.check` became in appointments#122. Likewise
+    `outside_staff_hours`, only when it reads the professional's day from `staff` (appointments#98).
     """
     reasons = emitted_reasons(sql_of(spec))
     for query in declared_reads(spec):
@@ -593,6 +600,8 @@ def answerable_reasons(name: str, spec: dict) -> set[str]:
             reasons |= emitted_reasons(sql_of(sub))
     if reads_the_authority(name, spec):
         reasons.add(HOURS_REASON)
+    if STAFF_DAY_READ in declared_reads(spec):
+        reasons.add(STAFF_HOURS_REASON)
     return reasons
 
 
@@ -632,10 +641,12 @@ def check_the_reason_readers_find_the_positive() -> None:
             f"no reason row found in the «{REASONS_SECTION}» table of {CONCEPTS}: the doc check "
             "passes on an empty set"
         )
-    # What the engine can answer: the SQL half's own `CASE`, plus the hours the handler adds
-    # (appointments#122). The table is read by whoever plans a screen around those reasons, so it
-    # must be neither more nor less than that.
-    answerable = emitted_reasons(sql_of(engine)) | {HOURS_REASON}
+    # What the engine can answer: the SQL half's own `CASE`, plus what the handler of
+    # `availability.check` adds from the reads it declares — the business hours (appointments#122)
+    # and the professional's (appointments#98). The table is read by whoever plans a screen around
+    # those reasons, so it must be neither more nor less than that.
+    check = MANIFEST.get("commands", {}).get(CHECK_COMMAND) or {}
+    answerable = emitted_reasons(sql_of(engine)) | answerable_reasons(CHECK_COMMAND, check)
     for reason in sorted(table - answerable):
         fail(
             f"{CONCEPTS} lists `{reason}` as an answer of the availability engine, which can only "
