@@ -10478,6 +10478,20 @@ mod tests {
         assert!(out.error.is_none(), "{:?}", out.error);
     }
 
+    /// The rows are picked by the BUSINESS date, not the UTC one: 22:30Z on Sunday 09/08 is 00:30
+    /// on Monday 10/08 in Madrid, so Monday's shift judges it (refused, before her 09:00) — read
+    /// by the UTC date it would fall on the Sunday nothing governs and be booked blind.
+    #[test]
+    fn bulk_create_picks_her_day_by_the_business_date_not_the_utc_one() {
+        let days = staff_days(&[
+            staff_day_ungoverned("2026-08-09", json!([])),
+            staff_day("2026-08-10", &[("09:00:00", "18:00:00")], json!([])),
+        ]);
+        let out = batch_with_days(json!([slot("2026-08-09T22:30:00Z")]), days);
+        assert_eq!(domain_code(&out).as_deref(), Some(OUTSIDE_STAFF_HOURS));
+        assert!(out.operations.is_empty());
+    }
+
     /// Each door declares its read `required`, keyed by what its payload carries.
     #[test]
     fn the_batch_the_series_and_reschedule_declare_the_professionals_days() {
