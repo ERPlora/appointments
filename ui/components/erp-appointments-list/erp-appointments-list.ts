@@ -549,6 +549,9 @@ export class ErpAppointmentsList extends LitElement {
         date: this.newStartDate,
         staff_id: this.newStaffId,
         duration_minutes: this.effectiveDuration,
+        // appointments#234: this form is the counter, and the counter books inside the customer
+        // notice (#157) — so it is offered those hours too, as `create` below declares.
+        allow_short_notice: true,
       });
       if (request !== this.freeSlotsRequest) return;
       // A command resolves with the dispatcher's envelope; the engine's read-back is its `result`.

@@ -1624,8 +1624,16 @@ pub fn available_slots_pure(input: Value) -> Result<Output, String> {
         }
     };
 
+    // appointments#234: the hours inside the minimum notice (flagged by the SQL when the payload
+    // declares `allow_short_notice`) are the counter's, and only a PERSON of the team is the
+    // counter — the same door `create` applies. A flow or an API key keeps the customer's list.
+    let counter = CounterDeclaration::from_request(&input, &payload);
+
     let mut kept = Vec::with_capacity(rows.len());
     for row in rows {
+        if !counter.short_notice && row.get("within_min_notice").map(as_bool).unwrap_or(false) {
+            continue;
+        }
         // A row OUR OWN SQL returned in a shape nobody can judge is a fault, not a slot to drop
         // quietly: a shorter list would hide a broken read behind an answer that looks fine.
         let inside = match &spans {
@@ -8723,6 +8731,74 @@ mod tests {
         let out = available_slots_pure(slots_input("2026-08-30", day, sched_hours(json!([]))))
             .unwrap();
         assert_eq!(offered(&out).len(), expected);
+    }
+
+    // ── appointments#234: the counter sees the hours inside the minimum notice ──────────────────
+    //
+    // `min_booking_notice` is the CUSTOMER's window, and since #157 the counter may book inside
+    // it. When the payload declares `allow_short_notice`, the SQL stops dropping those hours and
+    // flags them `within_min_notice`; the list keeps them only for a PERSON of the team — the very
+    // door `create` applies (#177/#180) — and drops them for anybody else, whatever they declare.
+
+    /// A morning seen at 10:00 with a 60 minute notice: 10:15 and 10:45 are inside the notice,
+    /// 11:00 is not.
+    fn counter_morning() -> Value {
+        let mut soon = own_slot("2026-08-31", 10 * 60 + 15, 30);
+        soon["within_min_notice"] = json!(1);
+        let mut later = own_slot("2026-08-31", 10 * 60 + 45, 30);
+        later["within_min_notice"] = json!(1);
+        let mut outside = own_slot("2026-08-31", 11 * 60, 30);
+        outside["within_min_notice"] = json!(0);
+        json!([soon, later, outside])
+    }
+
+    fn counter_slots_by(declared: bool, context: Value) -> Vec<String> {
+        let mut inp = slots_input("2026-08-31", counter_morning(), sched_hours(json!([])));
+        if declared {
+            inp["payload"]["allow_short_notice"] = json!(true);
+        }
+        for (key, value) in context.as_object().unwrap() {
+            inp["context"][key] = value.clone();
+        }
+        offered(&available_slots_pure(inp).unwrap())
+    }
+
+    /// 🔴 THE SYMPTOM OF THE ISSUE. The receptionist asks for today's free hours and the next hour
+    /// was missing, although `create` accepts it from her.
+    #[test]
+    fn slots_offer_the_counter_the_hours_inside_the_minimum_notice() {
+        let offered = counter_slots_by(
+            true,
+            json!({ "principal": "human", "current_user_id": A_PERSON_LIKE_ID }),
+        );
+        assert_eq!(offered, vec!["10:15", "10:45", "11:00"]);
+    }
+
+    #[test]
+    fn slots_keep_the_minimum_notice_when_nobody_declares_it() {
+        let offered = counter_slots_by(
+            false,
+            json!({ "principal": "human", "current_user_id": A_PERSON_LIKE_ID }),
+        );
+        assert_eq!(offered, vec!["11:00"]);
+    }
+
+    /// A WhatsApp recipe or any flow cannot borrow the counter's declaration: the hour it would
+    /// offer a customer is an hour that customer cannot book.
+    #[test]
+    fn a_flow_cannot_borrow_the_counters_short_notice_on_the_list() {
+        let offered = counter_slots_by(
+            true,
+            json!({ "principal": "flow", "current_user_id": "flow:run-1" }),
+        );
+        assert_eq!(offered, vec!["11:00"]);
+    }
+
+    /// An older hub sends no `principal`: the shape of `current_user_id` decides, as in `create`.
+    #[test]
+    fn an_api_key_cannot_borrow_the_counters_short_notice_on_the_list() {
+        let offered = counter_slots_by(true, json!({ "current_user_id": "apikey:k1" }));
+        assert_eq!(offered, vec!["11:00"]);
     }
 
     /// The envelope the caller already reads does not change (appointments#127): `slots` was a

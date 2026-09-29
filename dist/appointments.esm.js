@@ -8345,7 +8345,10 @@ var ErpAppointmentsList = class extends i3 {
       const answer = await erplora4().command("appointments.availability.slots", {
         date: this.newStartDate,
         staff_id: this.newStaffId,
-        duration_minutes: this.effectiveDuration
+        duration_minutes: this.effectiveDuration,
+        // appointments#234: this form is the counter, and the counter books inside the customer
+        // notice (#157) — so it is offered those hours too, as `create` below declares.
+        allow_short_notice: true
       });
       if (request !== this.freeSlotsRequest) return;
       const slots = answer?.result;

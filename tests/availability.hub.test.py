@@ -314,9 +314,13 @@ def main() -> int:
         },
         "appointments.outside_staff_hours",
     )
-    first = book(hub, shift, shift.staff_id, business_instant(hub, day, "10:00"), DURATION)
+    first = book(
+        hub, shift, shift.staff_id, business_instant(hub, day, "10:00"), DURATION
+    )
     hub.check_true(
-        "§6 …and 10:00, the first hour the list offers, books", bool(first), f"got id {first!r}"
+        "§6 …and 10:00, the first hour the list offers, books",
+        bool(first),
+        f"got id {first!r}",
     )
     # A professional with NO schedule has not set her hours up: the list stays the business's.
     other = hub.result(
@@ -468,6 +472,55 @@ def main() -> int:
         ok and bool(rows),
         f"ok={ok} occurrences={[r['occurrence_date'] for r in rows]}",
     )
+
+    # ── 8 · THE COUNTER's LIST reaches inside the minimum notice (appointments#234) ────────
+    #
+    # `min_booking_notice` is the customer's window, and since #157 the counter books inside it —
+    # but the list kept dropping those hours, so the create form never offered the walk-in who
+    # wants an hour «now» a button for it. A notice of 30 days puts the whole of `day` (a week or
+    # more ahead) inside it, which keeps this section away from the clock of whoever runs it. What
+    # makes it work end to end is the wiring the unit tests cannot see: the schema admitting the
+    # declaration, the read binding it into the SQL, and the kernel telling the handler a PERSON
+    # is calling (this harness logs in as one).
+    print("§8 the counter's list reaches inside the minimum notice")
+    walk_in = seed_links(hub, "notice234", duration_minutes=DURATION)
+    set_booking_policy(hub, allow_overlapping=False, min_booking_notice=30 * 24 * 60)
+    ask = {"date": day, "staff_id": walk_in.staff_id, "duration_minutes": DURATION}
+    customer_list = hub.result("appointments.availability.slots", ask)
+    hub.check(
+        "§8 without the declaration the whole day is inside the notice: nothing offered",
+        [r["start_time"] for r in customer_list["rows"]],
+        [],
+    )
+    counter_list = hub.result(
+        "appointments.availability.slots", {**ask, "allow_short_notice": True}
+    )
+    counter_times = [r["start_time"] for r in counter_list["rows"]]
+    hub.check(
+        "§8 the counter is offered the day, still cut to the opening hours (09:00 first)",
+        counter_times[:1],
+        ["09:00"],
+    )
+    booked = hub.run(
+        "appointments.appointments.create",
+        {
+            "customer_id": walk_in.customer_id,
+            "customer_name": "Cliente",
+            "service_id": walk_in.service_id,
+            "service_name": walk_in.service_name,
+            "staff_id": walk_in.staff_id,
+            "staff_name": "no-lo-decide-el-payload",
+            "start_datetime": business_instant(hub, day, "09:00"),
+            "duration_minutes": DURATION,
+            "allow_short_notice": True,
+        },
+    )
+    hub.check_true(
+        "§8 …and the door books the first hour the counter was offered",
+        bool(booked),
+        f"got {booked!r}",
+    )
+    set_booking_policy(hub, allow_overlapping=False)
 
     return hub.finish(
         "the availability engine refuses the overlap per professional, keeps the other "

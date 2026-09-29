@@ -19,6 +19,10 @@
     "staff_id": {
       "type": "string",
       "description": "List ONE professional's free slots. Absent = the whole agenda: any appointment or block of the hub counts."
+    },
+    "allow_short_notice": {
+      "type": "boolean",
+      "description": "appointments#234 — the COUNTER asks: list also the hours inside `min_booking_notice`, the customer's window that the counter may book inside (the same declaration `create` takes, appointments#157). Honoured only when a person of the team is calling, the same rule as `create`: a flow or an API key keeps the notice whatever it sends. The past and the maximum advance stay shut."
     }
   }
 }

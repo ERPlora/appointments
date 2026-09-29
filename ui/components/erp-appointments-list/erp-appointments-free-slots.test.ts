@@ -123,7 +123,22 @@ describe('the create form offers the free times of the day', () => {
     await pick(el);
 
     expect(slotCalls().length, 'the free times come from the engine, not from the browser').toBe(1);
-    expect(slotCalls()[0].payload).toEqual({ date: '2026-10-05', staff_id: 's1', duration_minutes: 30 });
+    expect(slotCalls()[0].payload).toEqual({
+      date: '2026-10-05',
+      staff_id: 's1',
+      duration_minutes: 30,
+      allow_short_notice: true,
+    });
+  });
+
+  it('asks as the counter: the hours inside the customer notice are offered too (appointments#234)', async () => {
+    const el = await mount();
+    await pick(el);
+
+    expect(
+      slotCalls()[0].payload.allow_short_notice,
+      'the minimum notice is the customer window; the counter books inside it, as `create` already declares',
+    ).toBe(true);
   });
 
   it('paints one button per free time, in the hub clock', async () => {
@@ -182,11 +197,11 @@ describe('the create form offers the free times of the day', () => {
 
     el.newStaffId = 's2';
     await settle(el);
-    expect(slotCalls().at(-1)!.payload).toEqual({ date: '2026-10-05', staff_id: 's2', duration_minutes: 30 });
+    expect(slotCalls().at(-1)!.payload).toEqual({ date: '2026-10-05', staff_id: 's2', duration_minutes: 30, allow_short_notice: true });
 
     el.newStartDate = '2026-10-06';
     await settle(el);
-    expect(slotCalls().at(-1)!.payload).toEqual({ date: '2026-10-06', staff_id: 's2', duration_minutes: 30 });
+    expect(slotCalls().at(-1)!.payload).toEqual({ date: '2026-10-06', staff_id: 's2', duration_minutes: 30, allow_short_notice: true });
 
     el.onServiceChange('sv2');
     await settle(el);
@@ -194,6 +209,7 @@ describe('the create form offers the free times of the day', () => {
       date: '2026-10-06',
       staff_id: 's2',
       duration_minutes: 90,
+      allow_short_notice: true,
     });
     expect(slotCalls().length).toBe(4);
   });

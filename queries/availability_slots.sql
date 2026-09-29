@@ -13,7 +13,8 @@
 --     `allow_overlapping`.
 --
 -- Binds: :date (YYYY-MM-DD, requerido) · :staff_id (opcional; ausente = agenda global)
---        · :duration_minutes (opcional; default = settings.default_duration).
+--        · :duration_minutes (opcional; default = settings.default_duration)
+--        · :allow_short_notice (optional; 1 = the counter asks, see appointments#234 below).
 -- Runtime inyecta :hub_id y :now. Un bind ausente llega como NULL (centinela del adapter).
 -- :staff_id va CASTEADO (`CAST(:staff_id AS TEXT)`) y no es estilo: Postgres fija el tipo de un
 -- bind en su PRIMERA aparición y `IS [NOT] NULL` no aporta ninguno, así que sin :staff_id —la
@@ -50,7 +51,8 @@ cfg AS (
            COALESCE(COALESCE(:duration_minutes, MAX(default_duration)), 60) AS dur,
            COALESCE(MAX(min_booking_notice),  60)  AS notice_min,
            COALESCE(MAX(max_advance_booking), 90)  AS advance_days,
-           COALESCE(MAX(allow_overlapping),    0)  AS allow_overlapping
+           COALESCE(MAX(allow_overlapping),    0)  AS allow_overlapping,
+           COALESCE(CAST(:allow_short_notice AS BIGINT), 0) AS counter
     FROM appointments_settings
     WHERE hub_id = :hub_id AND is_deleted = 0
 ),
@@ -63,14 +65,19 @@ cand AS (
     SELECT s.m AS start_min,
            s.m + c.dur AS end_min,
            :date || 'T' || erp_timefmt(s.m / 60, s.m % 60) || ':00' AS slot_start,
-           :date || 'T' || erp_timefmt((s.m + c.dur) / 60, (s.m + c.dur) % 60) || ':00' AS slot_end
+           :date || 'T' || erp_timefmt((s.m + c.dur) / 60, (s.m + c.dur) % 60) || ':00' AS slot_end,
+           -- The instant of the slot, in the salon: see appointments#88 in the WHERE below.
+           ((:date || 'T' || erp_timefmt(s.m / 60, s.m % 60) || ':00')::timestamp
+               AT TIME ZONE COALESCE(NULLIF(TRIM(CAST(:timezone AS TEXT)), ''), 'UTC')) AS slot_at
     FROM slots s, cfg c
     WHERE s.m + c.dur <= c.end_hour * 60
 )
 SELECT c.slot_start,
        c.slot_end,
        erp_timefmt(c.start_min / 60, c.start_min % 60) AS start_time,
-       erp_timefmt(c.end_min / 60, c.end_min % 60)     AS end_time
+       erp_timefmt(c.end_min / 60, c.end_min % 60)     AS end_time,
+       CASE WHEN c.slot_at < erp_dateadd(:now, cfg.notice_min, 'minutes') THEN 1 ELSE 0 END
+           AS within_min_notice
 FROM cand c, cfg
 WHERE
     -- antelación mínima / máxima respecto a :now. `advance_days = 0` DESACTIVA el tope
@@ -94,8 +101,15 @@ WHERE
     -- El COALESCE degrada a `UTC` igual que el runtime (`timezone_name()`) y NO es defensivo por
     -- gusto: `AT TIME ZONE NULL` devuelve NULL, la comparación se vuelve NULL y la query saldría
     -- SIN NINGÚN HUECO — una agenda vacía y muda, que es peor que una agenda desplazada.
-    (c.slot_start::timestamp AT TIME ZONE COALESCE(NULLIF(TRIM(CAST(:timezone AS TEXT)), ''), 'UTC'))
-        >= erp_dateadd(:now, cfg.notice_min, 'minutes')
+    -- That instant is `c.slot_at`, computed once in `cand`.
+    --
+    -- 🔴 appointments#234 — THE COUNTER REACHES INSIDE THE NOTICE. `min_booking_notice` is the
+    -- window of the customer; since #157 the counter books inside it. With `:allow_short_notice` the
+    -- floor drops to NOW (the past stays shut) and every hour inside the notice comes back flagged
+    -- `within_min_notice = 1`. This SQL does NOT decide who may keep those rows — the bind comes
+    -- from the payload, which a flow can write too: the handler of `availability.slots` drops them
+    -- unless a PERSON of the team is calling, the same door `create` applies (#177/#180).
+    c.slot_at >= erp_dateadd(:now, CASE WHEN cfg.counter = 1 THEN 0 ELSE cfg.notice_min END, 'minutes')
     AND (cfg.advance_days = 0
          OR erp_date(:date) <= erp_date(erp_dateadd(:now, cfg.advance_days, 'days')))
     -- 🔴 appointments#118 — EL HORARIO NO SE FILTRA AQUÍ. Hasta #117 esta query recortaba la
