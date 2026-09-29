@@ -432,8 +432,10 @@ def main() -> int:
     hub.check_true("§7 …and a colleague without a schedule still moves to 15:00", True)
 
     # THE SERIES: every weekly occurrence at 14:00 falls outside her shift, so nothing is
-    # booked; the same series at 12:00 books.
-    def series(at: str) -> tuple[bool, list]:
+    # booked; the same series at 12:00 books. Since appointments#247 a series with every
+    # date refused answers `ok` + a report naming each date and why, not a bare
+    # `no_occurrences` — so the proof is what got booked and what the report says.
+    def series(at: str) -> tuple[bool, list, dict]:
         recurring_id = hub.new_id(
             "appointments.recurring.create",
             {
@@ -455,18 +457,26 @@ def main() -> int:
             {**batch, "recurring_id": recurring_id},
         )
         ok = status == 200 and bool((body or {}).get("ok"))
+        report = ((body or {}).get("data") or {}).get("result") or {}
         rows = hub.query(
             "appointments.recurring.occurrences", {"recurring_id": recurring_id}
         )
-        return ok, rows
+        return ok, rows, report
 
-    ok, rows = series("14:00")
+    ok, rows, report = series("14:00")
+    skipped = report.get("skipped") or []
     hub.check(
         "§7 a weekly series at 14:00 books no occurrence",
-        (ok, [r["occurrence_date"] for r in rows]),
-        (False, []),
+        (ok, [r["occurrence_date"] for r in rows], report.get("booked")),
+        (True, [], 0),
     )
-    ok, rows = series("12:00")
+    hub.check_true(
+        "§7 …and the report names every date as outside her shift",
+        bool(skipped)
+        and {s.get("code") for s in skipped} == {"appointments.outside_staff_hours"},
+        f"skipped={skipped}",
+    )
+    ok, rows, _ = series("12:00")
     hub.check_true(
         "§7 …and the same series at 12:00 books",
         ok and bool(rows),
