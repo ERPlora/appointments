@@ -281,6 +281,15 @@ describe('«Book appointments» on a row reports the dates left out (appointment
     expect(byTestId(el, 'appointments-series-skipped')).toBeNull();
   });
 
+  it('a result without the list of skipped dates is still a success, not a crash', async () => {
+    materializeResult = { booked: 4, already_booked: 0 };
+    const el = await mount();
+    await tapBook(el);
+    expect(toasts.map((n) => n.message)).toContain(ES.seriesMaterialized);
+    expect(el.error).toBe('');
+    expect(byTestId(el, 'appointments-series-skipped')).toBeNull();
+  });
+
   it('with every date booked it keeps the plain success', async () => {
     const el = await mount();
     await tapBook(el);
