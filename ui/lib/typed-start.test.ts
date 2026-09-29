@@ -31,6 +31,52 @@ describe('parseTypedStart (appointments#204)', () => {
     expect(parseTypedStart('7:05 pm', 'en-US')).toEqual({ date: '', time: '19:05' });
   });
 
+  // appointments#239 — the time fields open the phone's numeric keypad (`inputmode="numeric"`),
+  // and on an iPhone that keypad has no «:». A time must be typeable with digits alone, or with the
+  // dot some people write («14.30»), the way schedules#50 reads an opening time.
+  it('reads a time typed on a keypad without a colon', () => {
+    expect(parseTypedStart('1430', 'es')).toEqual({ date: '', time: '14:30' });
+    expect(parseTypedStart('930', 'es')).toEqual({ date: '', time: '09:30' });
+    expect(parseTypedStart('0930', 'es')).toEqual({ date: '', time: '09:30' });
+    expect(parseTypedStart('9', 'es')).toEqual({ date: '', time: '09:00' });
+    expect(parseTypedStart('14', 'es')).toEqual({ date: '', time: '14:00' });
+    expect(parseTypedStart('14.30', 'es')).toEqual({ date: '', time: '14:30' });
+    expect(parseTypedStart('9.05', 'es')).toEqual({ date: '', time: '09:05' });
+    expect(parseTypedStart('230 pm', 'en-US')).toEqual({ date: '', time: '14:30' });
+    expect(parseTypedStart('26/09/2026 1430', 'es')).toEqual({ date: '2026-09-26', time: '14:30' });
+  });
+
+  it('a keypad time that is not a real time, or is still half-typed, is not a time', () => {
+    expect(parseTypedStart('2400', 'es')).toBeNull();
+    expect(parseTypedStart('1460', 'es')).toBeNull();
+    expect(parseTypedStart('24', 'es')).toBeNull();
+    expect(parseTypedStart('12345', 'es')).toBeNull();
+    expect(parseTypedStart('14.', 'es')).toBeNull();
+    expect(parseTypedStart('14:', 'es')).toBeNull();
+    expect(parseTypedStart('14.3', 'es')).toBeNull();
+    expect(parseTypedStart('1300 pm', 'en-US')).toBeNull();
+  });
+
+  // appointments#240 — the date fields open the same numeric keypad, with no «/» either. A date
+  // typed as eight digits is read in the hub's day/month order, the way schedules#54 reads a day.
+  it('reads a date typed on a keypad without a slash, in the hub order', () => {
+    expect(parseTypedStart('03042026', 'es')).toEqual({ date: '2026-04-03', time: '' });
+    expect(parseTypedStart('03042026', 'en-US')).toEqual({ date: '2026-03-04', time: '' });
+    expect(parseTypedStart('18082026 1430', 'es')).toEqual({ date: '2026-08-18', time: '14:30' });
+    expect(parseTypedStart('08182026 2:30 pm', 'en-US')).toEqual({ date: '2026-08-18', time: '14:30' });
+  });
+
+  it('a keypad date that is half-typed or not a real day is not a date', () => {
+    expect(parseTypedStart('0304202', 'es')).toBeNull();
+    // Seven digits are always half-typed, even when they could spell a real day (2/11/2202).
+    expect(parseTypedStart('2112202', 'es')).toBeNull();
+    expect(parseTypedStart('31022026', 'es')).toBeNull();
+    expect(parseTypedStart('18132026', 'es')).toBeNull();
+    expect(parseTypedStart('18082026', 'en-US')).toBeNull();
+    expect(parseTypedStart('180820261', 'es')).toBeNull();
+    expect(parseTypedStart('18082026 2500', 'es')).toBeNull();
+  });
+
   it('refuses what is not a real date or time', () => {
     expect(parseTypedStart('31/02/2026 10:00', 'es')).toBeNull();
     expect(parseTypedStart('26/13/2026', 'es')).toBeNull();

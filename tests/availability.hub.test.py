@@ -47,7 +47,8 @@ keep saying the same thing: a screen that greys out an hour the door would accep
 way round — is the bug this pair exists to make impossible.
 
 The PROFESSIONAL's own shift is enforced by `create` and answered by `appointments.availability.check`
-(`outside_staff_hours`, appointments#98); the batch, the series and `reschedule` are appointments#229.
+(`outside_staff_hours`, appointments#98); the batch, the series and `reschedule` enforce it too
+(appointments#229), and §7 proves it through the real kernel.
 §6 pins the LIST cut to that shift through the real kernel (appointments#230): the read
 `staff.availability.day_at` is keyed by the list's bare DATE, which only a real binding proves.
 
@@ -328,12 +329,153 @@ def main() -> int:
         ["09:00"],
     )
 
+    # ── 7 · THE BATCH, THE MOVE and THE SERIES keep to her shift too (appointments#229) ───
+    #
+    # §6 closed `create`; the other three doors that put an appointment on her agenda kept
+    # booking at 14:00 — the business open, she not. Each is proven here through the real
+    # kernel, because what makes them work is the READ each one binds: `days_ahead` for a batch
+    # or a series (several dates in one call), `team_day_at` for a move (whose payload carries no
+    # professional — the WhatsApp recipe moves without one).
+    print("§7 the batch, the move and the series respect the professional's own shift")
+    hours = seed_links(hub, "hours229", duration_minutes=DURATION)
+    hub.run(
+        "staff.schedules.create",
+        {
+            "staff_id": hours.staff_id,
+            "name": "Mornings",
+            "is_default": 1,
+            "working_hours": [
+                {
+                    "day_of_week": datetime.date.fromisoformat(day).weekday(),
+                    "start_time": "10:00:00",
+                    "end_time": "13:00:00",
+                }
+            ],
+        },
+    )
+    batch = {
+        "customer_id": hours.customer_id,
+        "service_id": hours.service_id,
+        "staff_id": hours.staff_id,
+    }
+    # One slot out of her shift refuses the WHOLE batch: a five-session pass is one decision.
+    hub.refused(
+        "§7 a batch with 14:00 in it (business open, she is not) is refused",
+        "appointments.appointments.bulk_create",
+        {
+            **batch,
+            "appointments": [
+                {
+                    "start_datetime": business_instant(hub, day, "10:30"),
+                    "duration_minutes": DURATION,
+                },
+                {
+                    "start_datetime": business_instant(hub, day, "14:00"),
+                    "duration_minutes": DURATION,
+                },
+            ],
+        },
+        "appointments.outside_staff_hours",
+    )
+    booked = (
+        hub.run(
+            "appointments.appointments.bulk_create",
+            {
+                **batch,
+                "appointments": [
+                    {
+                        "start_datetime": business_instant(hub, day, "10:00"),
+                        "duration_minutes": DURATION,
+                    }
+                ],
+            },
+        ).get("new_ids")
+        or []
+    )
+    hub.check("§7 …and the same batch inside her shift books", len(booked), 1)
+
+    # THE MOVE: the appointment's own professional is judged, found in the team's day.
+    moving = booked[0] if booked else ""
+    hub.refused(
+        "§7 moving her 10:00 to 14:30 is refused",
+        "appointments.appointments.reschedule",
+        {
+            "appointment_id": moving,
+            "start_datetime": business_instant(hub, day, "14:30"),
+        },
+        "appointments.outside_staff_hours",
+    )
+    hub.run(
+        "appointments.appointments.reschedule",
+        {
+            "appointment_id": moving,
+            "start_datetime": business_instant(hub, day, "11:00"),
+        },
+    )
+    hub.check_true("§7 …and moving it to 11:00, inside her shift, is accepted", True)
+    # …while a colleague with NO schedule keeps the business's day: the move judges the
+    # appointment's professional, not whoever else the team read returns.
+    colleague = book(
+        hub, hours, hours.other_staff_id, business_instant(hub, day, "14:00"), DURATION
+    )
+    hub.run(
+        "appointments.appointments.reschedule",
+        {
+            "appointment_id": colleague,
+            "start_datetime": business_instant(hub, day, "15:00"),
+        },
+    )
+    hub.check_true("§7 …and a colleague without a schedule still moves to 15:00", True)
+
+    # THE SERIES: every weekly occurrence at 14:00 falls outside her shift, so nothing is
+    # booked; the same series at 12:00 books.
+    def series(at: str) -> tuple[bool, list]:
+        recurring_id = hub.new_id(
+            "appointments.recurring.create",
+            {
+                "customer_id": hours.customer_id,
+                "customer_name": "Cliente",
+                "service_id": hours.service_id,
+                "service_name": hours.service_name,
+                "staff_id": hours.staff_id,
+                "staff_name": hours.staff_name,
+                "frequency": "weekly",
+                "day_of_week": datetime.date.fromisoformat(day).weekday(),
+                "time": at,
+                "duration_minutes": DURATION,
+                "start_date": datetime.date.today().isoformat(),
+            },
+        )
+        status, body = hub.command(
+            "appointments.recurring.materialize",
+            {**batch, "recurring_id": recurring_id},
+        )
+        ok = status == 200 and bool((body or {}).get("ok"))
+        rows = hub.query(
+            "appointments.recurring.occurrences", {"recurring_id": recurring_id}
+        )
+        return ok, rows
+
+    ok, rows = series("14:00")
+    hub.check(
+        "§7 a weekly series at 14:00 books no occurrence",
+        (ok, [r["occurrence_date"] for r in rows]),
+        (False, []),
+    )
+    ok, rows = series("12:00")
+    hub.check_true(
+        "§7 …and the same series at 12:00 books",
+        ok and bool(rows),
+        f"ok={ok} occurrences={[r['occurrence_date'] for r in rows]}",
+    )
+
     return hub.finish(
         "the availability engine refuses the overlap per professional, keeps the other "
         "professional free, honours the `allow_overlapping` toggle at the engine AND at the door, "
         "and the booking door enforces the opening hours `schedules` owns — the same ones "
         "`day_opening` hands the screen, the same ones `availability.check` now answers, and the "
-        "same ones the LIST of free slots is cut to, together with the professional's own shift"
+        "same ones the LIST of free slots is cut to, together with the professional's own shift — "
+        "which the batch, the move and the series now keep to as well"
     )
 
 
