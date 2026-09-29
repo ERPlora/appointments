@@ -28,7 +28,7 @@ A refused transition rolls back **everything**: no row change, no history entry 
 | Reschedule | `appointment_id`, `start_datetime`, `end_datetime`, `duration_minutes` |
 | Cancel | `appointment_id` (plus the reason) |
 | Create blocked time | `title`, `start_datetime`, `end_datetime` |
-| Create a recurring template | `customer_name`, `service_name`, `frequency`, `time`, `duration_minutes`, `start_date` |
+| Create a recurring template | `customer_id`, `customer_name`, `service_id`, `service_name`, `staff_id`, `frequency`, `time`, `duration_minutes`, `start_date` |
 
 ## Accepted values
 
@@ -124,3 +124,8 @@ it is given literally. It must be handed local wall-clock time, not a UTC instan
 **"I materialised a recurring template and got fewer appointments than expected."** Occurrences in
 the past and occurrences that clash are skipped, the window is bounded by your maximum advance
 booking, and a single run creates at most 50.
+
+**"«Book appointments» on a series says it has no professional."** The series was saved without one
+(before appointments#246 the assistant and the API could create it that way; the screen never
+could), and a series is booked for a customer, a service and a professional from your records.
+Delete it and create it again choosing who does it.

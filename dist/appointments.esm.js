@@ -2054,6 +2054,9 @@ var es_default = {
     seriesLoadError: "No se han podido cargar las citas peri\xF3dicas.",
     seriesSaveError: "No se ha podido guardar la cita peri\xF3dica.",
     seriesMaterializeError: "No se han podido reservar las citas de esta serie.",
+    seriesNoStaff: "Esta serie no tiene profesional y sus citas no se pueden reservar. B\xF3rrala y vuelve a crearla eligiendo qui\xE9n la atiende.",
+    seriesNoCustomer: "Esta serie no tiene un cliente de tu lista y sus citas no se pueden reservar. B\xF3rrala y vuelve a crearla eligiendo el cliente.",
+    seriesNoService: "Esta serie no tiene un servicio de tu lista y sus citas no se pueden reservar. B\xF3rrala y vuelve a crearla eligiendo el servicio.",
     seriesDeleteError: "No se ha podido borrar la cita peri\xF3dica.",
     seriesDeleteTitle: "\xBFBorrar la serie de citas de {name}?",
     seriesDeleteMessage: "Las citas ya reservadas se conservan. La serie dejar\xE1 de reservar citas nuevas.",
@@ -2309,6 +2312,9 @@ var en_default = {
     seriesLoadError: "Repeating appointments could not be loaded.",
     seriesSaveError: "The repeating appointment could not be saved.",
     seriesMaterializeError: "The appointments of this series could not be booked.",
+    seriesNoStaff: "This series has no professional, so its appointments cannot be booked. Delete it and create it again choosing who does it.",
+    seriesNoCustomer: "This series has no customer from your list, so its appointments cannot be booked. Delete it and create it again choosing the customer.",
+    seriesNoService: "This series has no service from your list, so its appointments cannot be booked. Delete it and create it again choosing the service.",
     seriesDeleteError: "The repeating appointment could not be deleted.",
     seriesDeleteTitle: "Delete {name}'s repeating appointments?",
     seriesDeleteMessage: "Appointments already booked are kept. This series will stop booking new ones.",
@@ -6955,7 +6961,9 @@ var DATA_TABLE_LABELS_ES = {
   select: "Seleccionar",
   showing: "Mostrando {from}\u2013{to} de",
   recordSingular: "registro",
-  recordPlural: "registros"
+  recordPlural: "registros",
+  loadError: "No se han podido cargar los datos",
+  retry: "Reintentar"
 };
 var DATA_TABLE_LABELS_EN = {
   search: "Search\u2026",
@@ -6991,7 +6999,9 @@ var DATA_TABLE_LABELS_EN = {
   select: "Select",
   showing: "Showing {from}\u2013{to} of",
   recordSingular: "record",
-  recordPlural: "records"
+  recordPlural: "records",
+  loadError: "Couldn't load the data",
+  retry: "Retry"
 };
 function dataTableLabels(locale = "es") {
   return locale.toLowerCase().startsWith("en") ? DATA_TABLE_LABELS_EN : DATA_TABLE_LABELS_ES;
@@ -7152,6 +7162,11 @@ function bookingReport(answer) {
     }))
   };
 }
+var MISSING_LINK_KEYS = [
+  ["staff_id", "ui.seriesNoStaff"],
+  ["customer_id", "ui.seriesNoCustomer"],
+  ["service_id", "ui.seriesNoService"]
+];
 var FREQUENCIES = ["daily", "weekly", "biweekly", "monthly"];
 var FREQUENCY_KEYS = {
   daily: "ui.freqDaily",
@@ -7431,12 +7446,14 @@ var ErpAppointmentsSeries = class extends i3 {
     erplora3().notify?.({ type: "success", message });
   }
   async bookWindow(recurringId, tmpl) {
+    const missing = MISSING_LINK_KEYS.find(([field]) => !tmpl[field]);
+    if (missing) throw new Error(erplora3().t(CATALOG3, missing[1]));
     return bookingReport(
       await erplora3().command("appointments.recurring.materialize", {
         recurring_id: recurringId,
-        customer_id: tmpl.customer_id ?? "",
-        service_id: tmpl.service_id ?? "",
-        staff_id: tmpl.staff_id ?? ""
+        customer_id: tmpl.customer_id,
+        service_id: tmpl.service_id,
+        staff_id: tmpl.staff_id
       })
     );
   }
