@@ -7028,7 +7028,7 @@ function isDayFirstLocale(locale) {
   }
 }
 var ISO_DATE = /^(\d{4})-(\d{2})-(\d{2})(?:[T\s]+(.+))?$/;
-var NUMERIC_DATE = /^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})(?:[\s,T]+(.+))?$/;
+var NUMERIC_DATE = /^(?:(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})|(\d{2})(\d{2})(\d{4}))(?:[\s,T]+(.+))?$/;
 function parseTypedStart(text, locale) {
   const trimmed = text.trim();
   if (!trimmed) return null;
@@ -7043,7 +7043,10 @@ function parseTypedStart(text, locale) {
   }
   const numeric = trimmed.match(NUMERIC_DATE);
   if (numeric) {
-    const [, first, second, yearText, rest] = numeric;
+    const [, sepFirst, sepSecond, sepYear, packedFirst, packedSecond, packedYear, rest] = numeric;
+    const first = sepFirst ?? packedFirst;
+    const second = sepSecond ?? packedSecond;
+    const yearText = sepYear ?? packedYear;
     const dayFirst = isDayFirstLocale(locale);
     const day = Number(dayFirst ? first : second);
     const month = Number(dayFirst ? second : first);
