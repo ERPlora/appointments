@@ -7479,7 +7479,7 @@ var ErpAppointmentsSeries = class extends i3 {
         report = await this.bookWindow(String(result?.recurring_id ?? this.editingId), booked);
       }
       const notMoved = result && Array.isArray(result.skipped) ? skippedDates(result) : [];
-      this.notifyOutcome(result, notMoved.length > 0);
+      if (!gotItsFirstProfessional) this.notifyOutcome(result, notMoved.length > 0);
       this.closePanel();
       await this.refresh();
       this.moveReport = notMoved.length > 0 ? {
@@ -7487,7 +7487,9 @@ var ErpAppointmentsSeries = class extends i3 {
         skipped: notMoved,
         ...staffChange && result?.staff_changed === true ? { staff: staffChange.name } : {}
       } : null;
-      this.showSkipped(report);
+      if (!this.showSkipped(report) && gotItsFirstProfessional) {
+        erplora3().notify?.({ type: "success", message: erplora3().t(CATALOG3, "ui.seriesMaterialized") });
+      }
     } catch (e5) {
       this.editError = e5 instanceof Error && e5.message ? e5.message : erplora3().t(CATALOG3, "ui.seriesSaveError");
     } finally {
