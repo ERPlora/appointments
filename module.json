@@ -1,7 +1,7 @@
 {
   "id": "appointments",
   "name": "Appointments",
-  "version": "1.1.121",
+  "version": "1.1.122",
   "errors": {
     "appointments.availability_unavailable": {},
     "appointments.blocked": {},
@@ -1018,7 +1018,7 @@
         "appointments.recurring.created"
       ],
       "ai": {
-        "description": "Creates a recurring appointment template with its repetition pattern. The customer, the service and the professional are required by id, from the hub's records: a series without any of them could never have its appointments booked, so ask for the professional before calling. It does not book any occurrence by itself \u2014 that is `materialize`."
+        "description": "Creates a recurring appointment template with its repetition pattern. The customer, the service and the professional are required by id, from the hub's records: a series without any of them could never have its appointments booked, so ask for the professional before calling. It does not book any occurrence by itself — that is `materialize`."
       }
     },
     "appointments.recurring.delete": {
