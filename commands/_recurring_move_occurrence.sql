@@ -14,11 +14,17 @@
 -- statement of this SAME `_recurring_move_occurrence` command, never as a separate operation, and
 -- finds this row by that same mark — so a move that does not happen leaves NO audit trail (a
 -- separate operation would never match the pin, appointments#196).
+--
+-- appointments#248: when the edit hands the series to another professional the occurrence follows
+-- her (id and name); an EMPTY `:staff_id` keeps whoever it has, so an edit that changes no
+-- professional never reassigns an occurrence.
 UPDATE appointments_appointment
    SET recurring_id   = :recurring_id,
        start_datetime = :start_datetime,
        end_datetime   = :end_datetime,
        duration_minutes = :duration_minutes,
+       staff_id       = COALESCE(NULLIF(:staff_id, ''), staff_id),
+       staff_name     = CASE WHEN COALESCE(:staff_id, '') = '' THEN staff_name ELSE :staff_name END,
        updated_by     = :current_user_id,
        updated_at     = :now
  WHERE hub_id = :hub_id
