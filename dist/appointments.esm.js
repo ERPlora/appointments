@@ -8227,18 +8227,22 @@ var ErpAppointmentsList = class extends i3 {
     .filters { display:flex; gap:.5rem; row-gap:.25rem; align-items:center; margin:0 0 .5rem; flex-wrap:wrap; }
     /* The day: step back · date · step forward, as a single control that never shrinks. */
     .filters .daynav { display:flex; align-items:center; gap:.15rem; flex:0 0 auto; }
-    /* A full date plus the native calendar icon measures 138 px in Chromium es-ES («26/09/2026»);
-       below that the browser clips the year under the icon. Fixed width, so on a wide desktop the
-       step forward stays next to the day it changes. */
-    .filters .daynav ion-input { flex:0 0 auto; width:9rem; min-width:9rem; }
+    /* The field is as wide as its own budget: a 10-character date («29/09/2026») in the font's own
+       digit width (ch) + padding-start (10px) + the calendar button (40px) + 4px of rounding room.
+       appointments#243: a fixed 9rem clipped the last digit of the year on desktop («09/29/202»)
+       with Chromium's Linux/Android font, whose date is 93 px; in ch, a wider font widens the
+       field instead. Fixed (not flex), so on a wide desktop the step forward stays next to the day. */
+    .filters .daynav ion-input { flex:0 0 auto; width:calc(10ch + 10px + 40px + 4px); min-width:calc(10ch + 10px + 40px + 4px); }
     /* appointments#221: the box (outline, md) adds 16 px of padding per side, which clipped the
-       year under the calendar icon («26/09/2»). Tighter padding keeps the same 9rem — wider, and
-       on a 390 px phone the view switch drops to a second line. */
+       year under the calendar icon («26/09/2»). */
     .filters .daynav ion-input { --padding-start:10px; --padding-end:0px; }
-    .filters .daynav ion-input ion-button[slot="end"] { --padding-start:6px; --padding-end:6px; margin-inline:0; }
-    /* 44×44 es el suelo táctil (Ionic lo aplica a sus propios controles y es lo que exige el QA de
-       las tres ventanas): un paso de día de 28 px se falla con el pulgar en una tablet de barra. */
-    .filters .daynav ion-button { flex:0 0 auto; height:44px; width:44px; --padding-start:.25rem; --padding-end:.25rem; margin:0; }
+    /* The calendar button is part of the field budget above: one width at every viewport. */
+    .filters .daynav ion-input ion-button[slot="end"] { height:44px; width:40px; --padding-start:6px; --padding-end:6px; margin:0; }
+    /* 44×44 is the touch floor (Ionic applies it to its own controls and the three-viewport QA
+       requires it): a 28 px day step is missed with the thumb on a counter tablet. Direct children
+       only — appointments#243: as a descendant rule it also widened the calendar button inside the
+       field to 44 px on desktop, which ate the year's last digit. */
+    .filters .daynav > ion-button { flex:0 0 auto; height:44px; width:44px; --padding-start:.25rem; --padding-end:.25rem; margin:0; }
     .filters ion-select { flex:0 1 9rem; min-width:5.5rem; }
     /* Ionic gives the ion-segment host width:100% (alone, it IS a whole row). In md it is also a
        grid of minmax(auto, 360px) columns, so with width:auto every button grew to 360 px:
@@ -8253,7 +8257,7 @@ var ErpAppointmentsList = class extends i3 {
       .filters ion-segment-button ion-label { display:none; }
       .filters ion-segment-button { --padding-start:.2rem; --padding-end:.2rem; min-width:2.3rem; }
       /* 40 px wide, 44 tall: the touch floor is kept. */
-      .filters .daynav ion-button { width:40px; }
+      .filters .daynav > ion-button { width:40px; }
       .filters ion-select { order:3; }
     }
     /* Formulario del panel de alta (drawer estrecho) → una columna, no en fila. */
