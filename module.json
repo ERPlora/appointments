@@ -920,7 +920,8 @@
           "params": {
             "date": "payload.date",
             "duration_minutes": "payload.duration_minutes",
-            "staff_id": "payload.staff_id"
+            "staff_id": "payload.staff_id",
+            "allow_short_notice": "payload.allow_short_notice"
           },
           "required": true
         },
