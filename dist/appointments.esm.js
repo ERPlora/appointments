@@ -2071,6 +2071,9 @@ var es_default = {
     seriesSkipTooSoon: "demasiado pronto para reservarla",
     seriesSkipTooFar: "demasiado lejos para reservarla",
     seriesSkipOther: "no se ha podido reservar",
+    seriesMovedSkipped: "{moved} citas movidas \xB7 {skipped} no se han podido mover y se quedan a su hora:",
+    seriesSkipStaffUnknown: "no se ha podido comprobar el horario del profesional para esa cita",
+    seriesMoveSkipOther: "no se ha podido mover",
     seriesSplitFrom: "Esta serie contin\xFAa a otra anterior ({id}): se parti\xF3 cuando alguien la edit\xF3 de una cita en adelante.",
     seriesBookedCount: "{booked} citas reservadas \xB7 el cambio se aplica desde el {from} ({upcoming} por delante)",
     seriesLockedInvoiced: "{invoiced} de las citas por delante ya est\xE1n cobradas y no se van a tocar.",
@@ -2326,6 +2329,9 @@ var en_default = {
     seriesSkipTooSoon: "too close to now to book",
     seriesSkipTooFar: "too far ahead to book",
     seriesSkipOther: "it could not be booked",
+    seriesMovedSkipped: "{moved} appointments moved \xB7 {skipped} could not be moved and keep their time:",
+    seriesSkipStaffUnknown: "the professional's hours could not be checked for it",
+    seriesMoveSkipOther: "it could not be moved",
     seriesSplitFrom: "This series continues an earlier one ({id}): it was split when someone edited it from one occurrence onwards.",
     seriesBookedCount: "{booked} appointments booked \xB7 the change applies from {from} ({upcoming} upcoming)",
     seriesLockedInvoiced: "{invoiced} of the upcoming appointments are already charged and will not be touched.",
@@ -7138,18 +7144,27 @@ var SKIP_REASON_KEYS = {
   "appointments.too_soon": "ui.seriesSkipTooSoon",
   "appointments.too_far": "ui.seriesSkipTooFar"
 };
-function bookingReport(answer) {
+var NOT_MOVED_REASON_KEYS = {
+  ...SKIP_REASON_KEYS,
+  "appointments.staff_hours_unavailable": "ui.seriesSkipStaffUnknown"
+};
+function handlerAnswer(answer) {
   const result = answer && typeof answer === "object" ? answer.result : null;
-  if (!result || typeof result !== "object") return null;
-  const a3 = result;
-  if (!Array.isArray(a3.skipped)) return null;
+  return result && typeof result === "object" ? result : null;
+}
+function skippedDates(a3) {
+  return a3.skipped.map((s5) => ({
+    occurrence_date: String(s5?.occurrence_date ?? ""),
+    code: String(s5?.code ?? "")
+  }));
+}
+function bookingReport(answer) {
+  const a3 = handlerAnswer(answer);
+  if (!a3 || !Array.isArray(a3.skipped)) return null;
   return {
     booked: Number(a3.booked ?? 0),
     already_booked: Number(a3.already_booked ?? 0),
-    skipped: a3.skipped.map((s5) => ({
-      occurrence_date: String(s5?.occurrence_date ?? ""),
-      code: String(s5?.code ?? "")
-    }))
+    skipped: skippedDates(a3)
   };
 }
 var FREQUENCIES = ["daily", "weekly", "biweekly", "monthly"];
@@ -7176,6 +7191,7 @@ var ErpAppointmentsSeries = class extends i3 {
     this.loading = true;
     this.error = "";
     this.bookingReport = null;
+    this.moveReport = null;
     this.saving = false;
     this.busySeriesId = "";
     this.editingId = "";
@@ -7260,6 +7276,7 @@ var ErpAppointmentsSeries = class extends i3 {
     this.loading = true;
     this.error = "";
     this.bookingReport = null;
+    this.moveReport = null;
     try {
       this.series = rows3(await erplora3().query("appointments.recurring.list"));
     } catch (e5) {
@@ -7399,19 +7416,26 @@ var ErpAppointmentsSeries = class extends i3 {
     this.editError = "";
     this.error = "";
     try {
-      const result = await erplora3().command("appointments.recurring.update", {
-        recurring_id: this.editingId,
-        scope: "this_and_following",
-        from_occurrence_date: this.fromOccurrence,
-        ...changed
-      });
+      const result = handlerAnswer(
+        await erplora3().command("appointments.recurring.update", {
+          recurring_id: this.editingId,
+          // appointments#236: the series' professional as SELECTOR (the handler refuses another
+          // one) — every occurrence it moves is judged on HER agenda and working days.
+          staff_id: tmpl.staff_id ?? "",
+          scope: "this_and_following",
+          from_occurrence_date: this.fromOccurrence,
+          ...changed
+        })
+      );
       let report = null;
       if (result?.pattern_changed === true) {
         report = await this.bookWindow(String(result.recurring_id ?? this.editingId), tmpl);
       }
-      this.notifyOutcome(result);
+      const notMoved = result && Array.isArray(result.skipped) ? skippedDates(result) : [];
+      this.notifyOutcome(result, notMoved.length > 0);
       this.closePanel();
       await this.refresh();
+      this.moveReport = notMoved.length > 0 ? { moved: Number(result?.moved ?? 0), skipped: notMoved } : null;
       this.showSkipped(report);
     } catch (e5) {
       this.editError = e5 instanceof Error && e5.message ? e5.message : erplora3().t(CATALOG3, "ui.seriesSaveError");
@@ -7420,7 +7444,7 @@ var ErpAppointmentsSeries = class extends i3 {
     }
   }
   /** Lo que NO se movió se DICE. Callarlo es el fallo nº1 que reportan los foros de este gesto. */
-  notifyOutcome(result) {
+  notifyOutcome(result, leftBehind) {
     if (!result) return;
     const t5 = (k2, p4) => erplora3().t(CATALOG3, k2, p4);
     const message = t5("ui.seriesUpdateOutcome", {
@@ -7428,7 +7452,7 @@ var ErpAppointmentsSeries = class extends i3 {
       cancelled: Number(result.cancelled_pattern_change ?? 0),
       locked: Number(result.locked_invoiced ?? 0)
     });
-    erplora3().notify?.({ type: "success", message });
+    erplora3().notify?.({ type: leftBehind ? "warning" : "success", message });
   }
   async bookWindow(recurringId, tmpl) {
     return bookingReport(
@@ -7452,6 +7476,7 @@ var ErpAppointmentsSeries = class extends i3 {
     if (!id) return;
     this.error = "";
     this.bookingReport = null;
+    this.moveReport = null;
     try {
       const tmpl = await this.loadTemplate(id);
       if (!tmpl) {
@@ -7591,6 +7616,7 @@ var ErpAppointmentsSeries = class extends i3 {
     const t5 = (k2, p4) => erplora3().t(CATALOG3, k2, p4);
     return b2`<div class="page">
       ${this.error ? b2`<ok-inline-feedback data-testid="appointments-series-error" tone="danger" icon="alert-circle-outline">${this.error}</ok-inline-feedback>` : A}
+      ${this.moveReport ? this.renderMoveReport(this.moveReport, t5) : A}
       ${this.bookingReport ? this.renderBookingReport(this.bookingReport, t5) : A}
       <ok-data-table
         testid="appointments-series-table"
@@ -7624,6 +7650,20 @@ var ErpAppointmentsSeries = class extends i3 {
         ${report.skipped.map(
       (s5) => b2`<li data-testid=${`appointments-series-skipped-${s5.occurrence_date}`}>
             ${this.shownDate(s5.occurrence_date)} — ${t5(SKIP_REASON_KEYS[s5.code] ?? "ui.seriesSkipOther")}
+          </li>`
+    )}
+      </ul>
+    </ok-inline-feedback>`;
+  }
+  /** appointments#236 — «N moved · M could not be moved and keep their time:» and one line per date
+   *  with its reason, as Mindbody or SimplyBook.me say it when a repeating edit leaves dates out. */
+  renderMoveReport(report, t5) {
+    return b2`<ok-inline-feedback data-testid="appointments-series-not-moved" tone="warning" icon="alert-circle-outline">
+      <strong>${t5("ui.seriesMovedSkipped", { moved: report.moved, skipped: report.skipped.length })}</strong>
+      <ul class="skipped">
+        ${report.skipped.map(
+      (s5) => b2`<li data-testid=${`appointments-series-not-moved-${s5.occurrence_date}`}>
+            ${this.shownDate(s5.occurrence_date)} — ${t5(NOT_MOVED_REASON_KEYS[s5.code] ?? "ui.seriesMoveSkipOther")}
           </li>`
     )}
       </ul>
@@ -8086,6 +8126,9 @@ __decorateClass([
 __decorateClass([
   r5()
 ], ErpAppointmentsSeries.prototype, "bookingReport", 2);
+__decorateClass([
+  r5()
+], ErpAppointmentsSeries.prototype, "moveReport", 2);
 __decorateClass([
   r5()
 ], ErpAppointmentsSeries.prototype, "saving", 2);
@@ -9158,6 +9201,20 @@ var ErpAppointmentsList = class extends i3 {
   cancelSeriesScope() {
     this.askingSeriesScope = false;
   }
+  /** appointments#236 — the occurrences «this and following» could not move stay on their own slot;
+   *  the receptionist is told which dates and why, instead of finding out the day of each one. */
+  notifyNotMoved(answer) {
+    const skipped = answer && Array.isArray(answer.skipped) ? skippedDates(answer) : [];
+    if (skipped.length === 0) return;
+    const t5 = (k2, p4) => erplora4().t(CATALOG4, k2, p4);
+    const lines = skipped.map(
+      (s5) => `${formatTypedDate(s5.occurrence_date, erplora4().locale) || s5.occurrence_date} \u2014 ${t5(
+        NOT_MOVED_REASON_KEYS[s5.code] ?? "ui.seriesMoveSkipOther"
+      )}`
+    );
+    const head = t5("ui.seriesMovedSkipped", { moved: Number(answer?.moved ?? 0), skipped: skipped.length });
+    erplora4().notify?.({ type: "warning", message: `${head} ${lines.join(" \xB7 ")}` });
+  }
   /** Escribe el movimiento con el alcance elegido.
    *
    *  `this_only` mueve UNA cita, que es lo que esta pantalla hacía siempre. `this_and_following`
@@ -9171,16 +9228,23 @@ var ErpAppointmentsList = class extends i3 {
     this.formError = "";
     try {
       if (scope === "this_and_following") {
-        await erplora4().command("appointments.recurring.update", {
-          recurring_id: this.rescheduleSeriesId,
-          scope,
-          from_occurrence_date: this.rescheduleOccurrence,
-          // HORA DE PARED, no un instante: la hora de una plantilla es una lectura de reloj y no
-          // se guarda convertida (appointments#12). El servidor la sitúa en la zona del negocio
-          // día a día, que es lo que conserva la hora al cruzar el cambio de hora.
-          time: this.rescheduleStart.slice(11, 16),
-          duration_minutes: minutes
-        });
+        const template = rows4(
+          await erplora4().query("appointments.recurring.get", { recurring_id: this.rescheduleSeriesId })
+        )[0];
+        const answer = handlerAnswer(
+          await erplora4().command("appointments.recurring.update", {
+            recurring_id: this.rescheduleSeriesId,
+            staff_id: template?.staff_id ?? "",
+            scope,
+            from_occurrence_date: this.rescheduleOccurrence,
+            // HORA DE PARED, no un instante: la hora de una plantilla es una lectura de reloj y no
+            // se guarda convertida (appointments#12). El servidor la sitúa en la zona del negocio
+            // día a día, que es lo que conserva la hora al cruzar el cambio de hora.
+            time: this.rescheduleStart.slice(11, 16),
+            duration_minutes: minutes
+          })
+        );
+        this.notifyNotMoved(answer);
       } else {
         const startIso = wallToBusinessIso(this.rescheduleStart);
         if (!await this.overlapAccepted(startIso, minutes, this.rescheduleStaffId, this.rescheduleId)) {
