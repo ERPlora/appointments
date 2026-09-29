@@ -189,13 +189,16 @@ describe('appointments#206 · on a phone the header wraps instead of overlapping
     expect(css).toMatch(noShrink('\\.filters \\.daynav ion-input'));
   });
 
-  it('the date box is wide enough for a full date and its calendar icon (138 px measured)', async () => {
+  // appointments#243: this used to pin a fixed ≥ 8.625rem (138 px measured with the macOS font),
+  // and that is exactly what clipped the year on desktop with the Linux/Android font. How wide the
+  // box is now lives in agenda-day-fits-the-date.test.ts (10ch + padding + calendar button); what
+  // stays here is the #206 half: the box cannot be squeezed below that width.
+  it('the date box cannot be squeezed below the width it needs for a full date', async () => {
     const css = styles(await mount());
     const rule = css.match(/\.filters \.daynav ion-input\s*\{([^}]*)\}/)?.[1] ?? '';
-    const rem = (prop: string): number => Number(rule.match(new RegExp(`(?:^|;)\\s*${prop}:\\s*([\\d.]+)rem`))?.[1] ?? 0);
-    // 138 px / 16 = 8.625rem: the measured minimum for «26/09/2026» + icon in Chromium es-ES.
-    expect(rem('width'), 'the date box width').toBeGreaterThanOrEqual(8.625);
-    expect(rem('min-width'), 'and it cannot be squeezed below it').toBeGreaterThanOrEqual(8.625);
+    const value = (prop: string): string => rule.match(new RegExp(`(?:^|;)\\s*${prop}:\\s*([^;]+)`))?.[1].trim() ?? '';
+    expect(value('width'), 'the date box width').toMatch(/\dch\b/);
+    expect(value('min-width'), 'and it cannot be squeezed below it').toBe(value('width'));
   });
 
   it('the view segment sizes its buttons to their content, not to Ionic md\'s 360 px columns', async () => {
