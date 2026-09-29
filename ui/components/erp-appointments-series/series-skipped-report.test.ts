@@ -48,6 +48,16 @@ const NONE_SKIPPED = { booked: 4, already_booked: 0, skipped: [] };
 
 let materializeResult: unknown = NONE_SKIPPED;
 let failing = '';
+const UPDATE_PATTERN_CHANGED = {
+  recurring_id: 'r2',
+  split: true,
+  pattern_changed: true,
+  moved: 0,
+  cancelled_pattern_change: 0,
+  locked_invoiced: 0,
+  skipped: [],
+};
+let updateResult: Record<string, unknown> = UPDATE_PATTERN_CHANGED;
 
 /** The shell's `t`: looks the key up and fills `{placeholders}`, like the real client. */
 function translate(cat: Record<string, { ui?: Record<string, string> }>, key: string, params?: Record<string, unknown>) {
@@ -59,6 +69,7 @@ beforeEach(() => {
   commands.length = 0;
   toasts.length = 0;
   materializeResult = NONE_SKIPPED;
+  updateResult = UPDATE_PATTERN_CHANGED;
   failing = '';
   document.body.innerHTML = '';
   (globalThis as Record<string, unknown>).erplora = {
@@ -91,7 +102,8 @@ beforeEach(() => {
         return { ok: true, new_ids: ['a4', 'a5'], operations: 6, ...(materializeResult === undefined ? {} : { result: materializeResult }) };
       }
       if (name === 'appointments.recurring.update') {
-        return { recurring_id: 'r2', split: true, pattern_changed: true, moved: 0, cancelled_pattern_change: 0, locked_invoiced: 0 };
+        // Same envelope: the handler's answer is in `result`, never at the top (appointments#236).
+        return { ok: true, operations: 1, new_ids: [], result: updateResult };
       }
       return { ok: true };
     },
@@ -111,6 +123,7 @@ type Wc = HTMLElement & {
   shadowRoot: ShadowRoot;
   error: string;
   editFrequency: string;
+  editTime: string;
   openSeries: (row: Record<string, unknown>) => Promise<void>;
   submitEdit: (e: Event) => Promise<void>;
 };
@@ -355,6 +368,118 @@ describe('every new visible string of appointments#238 exists in en AND es', () 
     'seriesSkipTooFar',
     'seriesSkipOther',
   ])('%s', (key) => {
+    expect(EN[key], `en ${key}`).toBeTruthy();
+    expect(ES[key], `es ${key}`).toBeTruthy();
+  });
+});
+
+// appointments#236 — «this and following» now judges every occurrence it moves like a single
+// reschedule (opening hours, her shift, blocked time, another appointment, the past, the lead time)
+// and LEAVES on its own slot the ones that do not fit, as Mindbody, Acuity or SimplyBook.me do.
+// The command answers them in `result.skipped`; the screen has to say which dates stayed and why —
+// Square moves them on top of other appointments without a word, and that is the complaint.
+const TWO_NOT_MOVED = {
+  recurring_id: 'r2',
+  split: true,
+  pattern_changed: false,
+  moved: 1,
+  cancelled_pattern_change: 0,
+  locked_invoiced: 0,
+  skipped: [
+    { occurrence_date: '2099-10-13', code: 'appointments.blocked' },
+    { occurrence_date: '2099-10-20', code: 'appointments.outside_schedule' },
+  ],
+};
+
+async function moveTheTime(el: Wc) {
+  await el.openSeries(SERIES_ROW);
+  el.editTime = '12:30';
+  await el.submitEdit(new Event('submit'));
+  await settle(el);
+}
+
+describe('moving a series lists the dates that stayed where they were (appointments#236)', () => {
+  it('names each date left on its slot with the reason, after saving', async () => {
+    updateResult = TWO_NOT_MOVED;
+    const el = await mount();
+    await moveTheTime(el);
+
+    const report = byTestId(el, 'appointments-series-not-moved');
+    expect(report, 'the dates that could not be moved are on screen').toBeTruthy();
+    expect(report!.getAttribute('tone')).toBe('warning');
+    const text = report!.textContent?.replace(/\s+/g, ' ') ?? '';
+    expect(text).toContain(translate({ es: esLocale } as never, 'ui.seriesMovedSkipped', { moved: 1, skipped: 2 }));
+    const first = byTestId(el, 'appointments-series-not-moved-2099-10-13')?.textContent?.replace(/\s+/g, ' ') ?? '';
+    expect(first).toContain('13/10/2099');
+    expect(first).toContain(ES.seriesSkipBlocked);
+    const second = byTestId(el, 'appointments-series-not-moved-2099-10-20')?.textContent?.replace(/\s+/g, ' ') ?? '';
+    expect(second).toContain('20/10/2099');
+    expect(second).toContain(ES.seriesSkipClosed);
+    // A time change books nothing: only the move ran.
+    expect(commands.map((c) => c.name)).toEqual(['appointments.recurring.update']);
+  });
+
+  it('the counts of the toast are the ones the command answered, not zero', async () => {
+    updateResult = { ...TWO_NOT_MOVED, moved: 3, skipped: [] };
+    const el = await mount();
+    await moveTheTime(el);
+    expect(byTestId(el, 'appointments-series-not-moved')).toBeNull();
+    expect(toasts.at(-1)?.message).toBe(
+      translate({ es: esLocale } as never, 'ui.seriesUpdateOutcome', { moved: 3, cancelled: 0, locked: 0 }),
+    );
+    expect(toasts.at(-1)?.type).toBe('success');
+  });
+
+  it('with dates left behind the toast is a warning, not a success', async () => {
+    updateResult = TWO_NOT_MOVED;
+    const el = await mount();
+    await moveTheTime(el);
+    expect(toasts.at(-1)?.type).toBe('warning');
+  });
+
+  it('an occurrence handed to another professional and an unknown code read as sentences, never the raw code', async () => {
+    updateResult = {
+      ...TWO_NOT_MOVED,
+      skipped: [
+        { occurrence_date: '2099-10-13', code: 'appointments.staff_hours_unavailable' },
+        { occurrence_date: '2099-10-20', code: 'appointments.something_new' },
+      ],
+    };
+    const el = await mount();
+    await moveTheTime(el);
+    const first = byTestId(el, 'appointments-series-not-moved-2099-10-13')?.textContent ?? '';
+    expect(first).toContain(ES.seriesSkipStaffUnknown);
+    const second = byTestId(el, 'appointments-series-not-moved-2099-10-20')?.textContent ?? '';
+    expect(second).toContain(ES.seriesMoveSkipOther);
+    expect(first + second).not.toContain('appointments.');
+  });
+
+  it('a pattern change paints BOTH: the dates not moved and the new dates not booked', async () => {
+    updateResult = { ...TWO_NOT_MOVED, pattern_changed: true };
+    materializeResult = TWO_SKIPPED;
+    const el = await mount();
+    await el.openSeries(SERIES_ROW);
+    el.editFrequency = 'biweekly';
+    await el.submitEdit(new Event('submit'));
+    await settle(el);
+    expect(commands.map((c) => c.name)).toEqual(['appointments.recurring.update', 'appointments.recurring.materialize']);
+    expect(byTestId(el, 'appointments-series-not-moved')).toBeTruthy();
+    expectReportOfTwoSkipped(el);
+  });
+
+  it('the next action clears an old «not moved» report', async () => {
+    updateResult = TWO_NOT_MOVED;
+    const el = await mount();
+    await moveTheTime(el);
+    expect(byTestId(el, 'appointments-series-not-moved')).toBeTruthy();
+    updateResult = { ...TWO_NOT_MOVED, skipped: [] };
+    await moveTheTime(el);
+    expect(byTestId(el, 'appointments-series-not-moved')).toBeNull();
+  });
+});
+
+describe('every new visible string of appointments#236 exists in en AND es', () => {
+  it.each(['seriesMovedSkipped', 'seriesSkipStaffUnknown', 'seriesMoveSkipOther'])('%s', (key) => {
     expect(EN[key], `en ${key}`).toBeTruthy();
     expect(ES[key], `es ${key}`).toBeTruthy();
   });

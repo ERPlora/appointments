@@ -96,21 +96,44 @@ const SKIP_REASON_KEYS: Record<string, string> = {
   'appointments.too_far': 'ui.seriesSkipTooFar',
 };
 
+/** appointments#236 — the reasons of an occurrence a series edit could NOT move. The move is judged
+ *  like a single reschedule, so the codes are the booking ones, plus the occurrence whose
+ *  professional's hours were not read (handed by hand to another one); anything else still reads
+ *  as «could not be moved», never as «could not be booked». */
+const NOT_MOVED_REASON_KEYS: Record<string, string> = {
+  ...SKIP_REASON_KEYS,
+  'appointments.staff_hours_unavailable': 'ui.seriesSkipStaffUnknown',
+};
+
 /** `erplora().command` resolves to the dispatcher's `data`; the handler's own answer (the report)
  *  travels in its `result`. */
-function bookingReport(answer: unknown): SeriesBookingReport | null {
+function handlerAnswer(answer: unknown): Record<string, unknown> | null {
   const result = answer && typeof answer === 'object' ? (answer as Record<string, unknown>).result : null;
-  if (!result || typeof result !== 'object') return null;
-  const a = result as Record<string, unknown>;
-  if (!Array.isArray(a.skipped)) return null;
+  return result && typeof result === 'object' ? (result as Record<string, unknown>) : null;
+}
+
+function skippedDates(a: Record<string, unknown>): { occurrence_date: string; code: string }[] {
+  return (a.skipped as Record<string, unknown>[]).map((s) => ({
+    occurrence_date: String(s?.occurrence_date ?? ''),
+    code: String(s?.code ?? ''),
+  }));
+}
+
+function bookingReport(answer: unknown): SeriesBookingReport | null {
+  const a = handlerAnswer(answer);
+  if (!a || !Array.isArray(a.skipped)) return null;
   return {
     booked: Number(a.booked ?? 0),
     already_booked: Number(a.already_booked ?? 0),
-    skipped: (a.skipped as Record<string, unknown>[]).map((s) => ({
-      occurrence_date: String(s?.occurrence_date ?? ''),
-      code: String(s?.code ?? ''),
-    })),
+    skipped: skippedDates(a),
   };
+}
+
+/** appointments#236 — what `appointments.recurring.update` answers about the occurrences it moved
+ *  and the ones it left on their own slot. */
+interface SeriesMoveReport {
+  moved: number;
+  skipped: { occurrence_date: string; code: string }[];
 }
 
 /** Una plantilla como la pinta `appointments.recurring.list`. */
@@ -217,6 +240,8 @@ export class ErpAppointmentsSeries extends LitElement {
   @state() error = '';
   /** appointments#238 — the dates the last booking left out; painted until the next action. */
   @state() bookingReport: SeriesBookingReport | null = null;
+  /** appointments#236 — the dates a series edit left on their own slot, with the reason. */
+  @state() moveReport: SeriesMoveReport | null = null;
   @state() saving = false;
   /** Series whose status toggle has a command in flight ('' = none). While it lasts the toggles
    *  render disabled and a second tap fires nothing — that is the toggle's loading state. */
@@ -317,6 +342,7 @@ export class ErpAppointmentsSeries extends LitElement {
     this.loading = true;
     this.error = '';
     this.bookingReport = null;
+    this.moveReport = null;
     try {
       this.series = rows<Series>(await erplora().query('appointments.recurring.list'));
     } catch (e) {
@@ -492,12 +518,17 @@ export class ErpAppointmentsSeries extends LitElement {
     this.editError = '';
     this.error = ''; // a save is the next thing the person did: an older row refusal is stale
     try {
-      const result = (await erplora().command('appointments.recurring.update', {
-        recurring_id: this.editingId,
-        scope: 'this_and_following',
-        from_occurrence_date: this.fromOccurrence,
-        ...changed,
-      })) as Record<string, unknown> | undefined;
+      const result = handlerAnswer(
+        await erplora().command('appointments.recurring.update', {
+          recurring_id: this.editingId,
+          // appointments#236: the series' professional as SELECTOR (the handler refuses another
+          // one) — every occurrence it moves is judged on HER agenda and working days.
+          staff_id: tmpl.staff_id ?? '',
+          scope: 'this_and_following',
+          from_occurrence_date: this.fromOccurrence,
+          ...changed,
+        }),
+      );
 
       // CAMBIO DE PAUTA → hay que RESERVAR. El command mueve lo que sigue cabiendo y cancela lo
       // que no, pero no reserva los días nuevos: eso es `materialize`, que es quien tiene las
@@ -507,10 +538,13 @@ export class ErpAppointmentsSeries extends LitElement {
       if (result?.pattern_changed === true) {
         report = await this.bookWindow(String(result.recurring_id ?? this.editingId), tmpl);
       }
-      this.notifyOutcome(result);
+      const notMoved = result && Array.isArray(result.skipped) ? skippedDates(result) : [];
+      this.notifyOutcome(result, notMoved.length > 0);
       this.closePanel();
       await this.refresh();
-      // After refresh(), which clears it: the new days that could not be booked are said.
+      // After refresh(), which clears them: the dates left on their slot and the new days that
+      // could not be booked are said.
+      this.moveReport = notMoved.length > 0 ? { moved: Number(result?.moved ?? 0), skipped: notMoved } : null;
       this.showSkipped(report);
     } catch (e) {
       this.editError = e instanceof Error && e.message ? e.message : erplora().t(CATALOG, 'ui.seriesSaveError');
@@ -520,7 +554,7 @@ export class ErpAppointmentsSeries extends LitElement {
   }
 
   /** Lo que NO se movió se DICE. Callarlo es el fallo nº1 que reportan los foros de este gesto. */
-  private notifyOutcome(result: Record<string, unknown> | undefined): void {
+  private notifyOutcome(result: Record<string, unknown> | null, leftBehind: boolean): void {
     if (!result) return;
     const t = (k: string, p?: Record<string, unknown>): string => erplora().t(CATALOG, k, p);
     const message = t('ui.seriesUpdateOutcome', {
@@ -528,7 +562,8 @@ export class ErpAppointmentsSeries extends LitElement {
       cancelled: Number(result.cancelled_pattern_change ?? 0),
       locked: Number(result.locked_invoiced ?? 0),
     });
-    erplora().notify?.({ type: 'success', message });
+    // Some date stayed where it was: the move did not do all it was asked, so it is not a success.
+    erplora().notify?.({ type: leftBehind ? 'warning' : 'success', message });
   }
 
   private async bookWindow(recurringId: string, tmpl: SeriesTemplate): Promise<SeriesBookingReport | null> {
@@ -557,6 +592,7 @@ export class ErpAppointmentsSeries extends LitElement {
     if (!id) return;
     this.error = '';
     this.bookingReport = null;
+    this.moveReport = null;
     try {
       const tmpl = await this.loadTemplate(id);
       if (!tmpl) {
@@ -721,6 +757,7 @@ export class ErpAppointmentsSeries extends LitElement {
       ${this.error
         ? html`<ok-inline-feedback data-testid="appointments-series-error" tone="danger" icon="alert-circle-outline">${this.error}</ok-inline-feedback>`
         : nothing}
+      ${this.moveReport ? this.renderMoveReport(this.moveReport, t) : nothing}
       ${this.bookingReport ? this.renderBookingReport(this.bookingReport, t) : nothing}
       <ok-data-table
         testid="appointments-series-table"
@@ -755,6 +792,21 @@ export class ErpAppointmentsSeries extends LitElement {
         ${report.skipped.map(
           (s) => html`<li data-testid=${`appointments-series-skipped-${s.occurrence_date}`}>
             ${this.shownDate(s.occurrence_date)} — ${t(SKIP_REASON_KEYS[s.code] ?? 'ui.seriesSkipOther')}
+          </li>`,
+        )}
+      </ul>
+    </ok-inline-feedback>`;
+  }
+
+  /** appointments#236 — «N moved · M could not be moved and keep their time:» and one line per date
+   *  with its reason, as Mindbody or SimplyBook.me say it when a repeating edit leaves dates out. */
+  private renderMoveReport(report: SeriesMoveReport, t: (k: string, p?: Record<string, unknown>) => string) {
+    return html`<ok-inline-feedback data-testid="appointments-series-not-moved" tone="warning" icon="alert-circle-outline">
+      <strong>${t('ui.seriesMovedSkipped', { moved: report.moved, skipped: report.skipped.length })}</strong>
+      <ul class="skipped">
+        ${report.skipped.map(
+          (s) => html`<li data-testid=${`appointments-series-not-moved-${s.occurrence_date}`}>
+            ${this.shownDate(s.occurrence_date)} — ${t(NOT_MOVED_REASON_KEYS[s.code] ?? 'ui.seriesMoveSkipOther')}
           </li>`,
         )}
       </ul>

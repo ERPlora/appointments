@@ -94,7 +94,12 @@ beforeEach(() => {
     command: async (name: string, payload: Record<string, unknown>) => {
       commands.push({ name, payload });
       if (failing === name) throw new Error('boom');
-      return name === 'appointments.recurring.update' ? updateResult : { ok: true };
+      // What `erplora().command` really resolves to: the dispatcher's `data`, where the WASM
+      // handler's own answer travels in `result` (hub commands.rs — appointments#236 found the
+      // screen reading it one level too high, so a pattern change never booked the new days).
+      return name === 'appointments.recurring.update'
+        ? { ok: true, operations: 2, new_ids: [], result: updateResult }
+        : { ok: true };
     },
     on: () => () => {},
     t: (cat: Record<string, { ui?: Record<string, string> }>, key: string) =>
@@ -203,6 +208,9 @@ describe('cambiar la PAUTA desde la pantalla de series (appointments#90)', () =>
     const sent = commands.find((c) => c.name === 'appointments.recurring.update');
     expect(sent?.payload).toEqual({
       recurring_id: 'r1',
+      // appointments#236: the series' professional as SELECTOR — every moved occurrence is judged
+      // on HER agenda and working days, like a single reschedule is.
+      staff_id: 's1',
       scope: 'this_and_following',
       from_occurrence_date: '2099-01-05',
       frequency: 'biweekly',
