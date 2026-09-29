@@ -276,6 +276,8 @@ describe('changing the professional of a series (appointments#248)', () => {
     const materialize = commands.find((c) => c.name === 'appointments.recurring.materialize');
     expect(materialize, 'nothing of it was ever booked: saving books it').toBeTruthy();
     expect(materialize!.payload).toEqual({ recurring_id: 'r1', customer_id: 'c1', service_id: 'sv1', staff_id: 's2' });
+    // What happened is that its appointments were booked — not «0 moved · 0 cancelled».
+    expect(toasts).toEqual([{ type: 'success', message: ES.seriesMaterialized }]);
   });
 
   it('«Book appointments» on a series without a professional says how to fix it: edit it', () => {

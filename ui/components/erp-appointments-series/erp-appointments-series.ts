@@ -582,7 +582,8 @@ export class ErpAppointmentsSeries extends LitElement {
         report = await this.bookWindow(String(result?.recurring_id ?? this.editingId), booked);
       }
       const notMoved = result && Array.isArray(result.skipped) ? skippedDates(result) : [];
-      this.notifyOutcome(result, notMoved.length > 0);
+      // Nothing of it was booked before: «0 moved · 0 cancelled» would say nothing happened.
+      if (!gotItsFirstProfessional) this.notifyOutcome(result, notMoved.length > 0);
       this.closePanel();
       await this.refresh();
       // After refresh(), which clears them: the dates left on their slot and the new days that
@@ -595,7 +596,9 @@ export class ErpAppointmentsSeries extends LitElement {
               ...(staffChange && result?.staff_changed === true ? { staff: staffChange.name } : {}),
             }
           : null;
-      this.showSkipped(report);
+      if (!this.showSkipped(report) && gotItsFirstProfessional) {
+        erplora().notify?.({ type: 'success', message: erplora().t(CATALOG, 'ui.seriesMaterialized') });
+      }
     } catch (e) {
       this.editError = e instanceof Error && e.message ? e.message : erplora().t(CATALOG, 'ui.seriesSaveError');
     } finally {
