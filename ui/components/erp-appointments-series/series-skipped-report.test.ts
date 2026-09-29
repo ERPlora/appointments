@@ -272,6 +272,38 @@ describe('«Book appointments» on a row reports the dates left out (appointment
     expect(toasts.some((n) => n.message === ES.seriesMaterialized)).toBe(false);
   });
 
+  // Every refusal code the handler sends for a skipped occurrence has its own reason on screen: a
+  // mistyped or dropped entry of the map would fall back to «could not be booked» in silence.
+  it.each([
+    ['appointments.outside_staff_hours', 'seriesSkipStaffHours'],
+    ['appointments.outside_schedule', 'seriesSkipClosed'],
+    ['appointments.blocked', 'seriesSkipBlocked'],
+    ['appointments.overlapping_appointment', 'seriesSkipTaken'],
+    ['appointments.invalid_start', 'seriesSkipPast'],
+    ['appointments.too_soon', 'seriesSkipTooSoon'],
+    ['appointments.too_far', 'seriesSkipTooFar'],
+  ])('%s reads as its own reason', async (code, key) => {
+    materializeResult = { booked: 1, already_booked: 0, skipped: [{ occurrence_date: '2099-10-13', code }] };
+    const el = await mount();
+    await tapBook(el);
+    expect(byTestId(el, 'appointments-series-skipped-2099-10-13')?.textContent).toContain(ES[key]);
+  });
+
+  // A retry finds the dates a previous run booked already on the agenda: they are booked, so the
+  // header counts them — «0 appointments booked» would read as if the series had none.
+  it('a retry counts the dates already on the agenda as booked', async () => {
+    materializeResult = {
+      booked: 0,
+      already_booked: 3,
+      skipped: [{ occurrence_date: '2099-10-13', code: 'appointments.blocked' }],
+    };
+    const el = await mount();
+    await tapBook(el);
+    expect(byTestId(el, 'appointments-series-skipped')?.textContent?.replace(/\s+/g, ' ')).toContain(
+      translate({ es: esLocale } as never, 'ui.seriesBookedSkipped', { booked: 3, skipped: 1 }),
+    );
+  });
+
   it('an answer that carries no report is still a success, not a failure', async () => {
     materializeResult = undefined;
     const el = await mount();

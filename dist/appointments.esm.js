@@ -7613,7 +7613,11 @@ var ErpAppointmentsSeries = class extends i3 {
    *  as Fresha or Square say it when a repeating booking leaves dates out. */
   renderBookingReport(report, t5) {
     return b2`<ok-inline-feedback data-testid="appointments-series-skipped" tone="warning" icon="alert-circle-outline">
-      <strong>${t5("ui.seriesBookedSkipped", { booked: report.booked, skipped: report.skipped.length })}</strong>
+      <strong>${t5("ui.seriesBookedSkipped", {
+      // What a previous run already booked is on the agenda too: a retry must not read «0 booked».
+      booked: report.booked + report.already_booked,
+      skipped: report.skipped.length
+    })}</strong>
       <ul class="skipped">
         ${report.skipped.map(
       (s5) => b2`<li data-testid=${`appointments-series-skipped-${s5.occurrence_date}`}>

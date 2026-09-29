@@ -746,7 +746,11 @@ export class ErpAppointmentsSeries extends LitElement {
    *  as Fresha or Square say it when a repeating booking leaves dates out. */
   private renderBookingReport(report: SeriesBookingReport, t: (k: string, p?: Record<string, unknown>) => string) {
     return html`<ok-inline-feedback data-testid="appointments-series-skipped" tone="warning" icon="alert-circle-outline">
-      <strong>${t('ui.seriesBookedSkipped', { booked: report.booked, skipped: report.skipped.length })}</strong>
+      <strong>${t('ui.seriesBookedSkipped', {
+        // What a previous run already booked is on the agenda too: a retry must not read «0 booked».
+        booked: report.booked + report.already_booked,
+        skipped: report.skipped.length,
+      })}</strong>
       <ul class="skipped">
         ${report.skipped.map(
           (s) => html`<li data-testid=${`appointments-series-skipped-${s.occurrence_date}`}>
