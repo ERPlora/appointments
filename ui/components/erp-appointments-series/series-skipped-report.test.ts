@@ -47,6 +47,7 @@ const TWO_SKIPPED = {
 const NONE_SKIPPED = { booked: 4, already_booked: 0, skipped: [] };
 
 let materializeResult: unknown = NONE_SKIPPED;
+let failing = '';
 
 /** The shell's `t`: looks the key up and fills `{placeholders}`, like the real client. */
 function translate(cat: Record<string, { ui?: Record<string, string> }>, key: string, params?: Record<string, unknown>) {
@@ -58,6 +59,7 @@ beforeEach(() => {
   commands.length = 0;
   toasts.length = 0;
   materializeResult = NONE_SKIPPED;
+  failing = '';
   document.body.innerHTML = '';
   (globalThis as Record<string, unknown>).erplora = {
     timezone: 'Europe/Madrid',
@@ -81,6 +83,7 @@ beforeEach(() => {
     },
     command: async (name: string, payload: Record<string, unknown>) => {
       commands.push({ name, payload });
+      if (failing === name) throw new Error('boom');
       if (name === 'appointments.recurring.create') return { ok: true, new_ids: ['r1'] };
       if (name === 'appointments.recurring.materialize') return materializeResult;
       if (name === 'appointments.recurring.update') {
@@ -226,6 +229,34 @@ describe('creating a series whose dates could not all be booked (appointments#23
     await tapBook(el);
     expect(byTestId(el, 'appointments-series-skipped')).toBeNull();
   });
+
+  it('a later booking that FAILS does not leave the old report standing next to its error', async () => {
+    materializeResult = TWO_SKIPPED;
+    const el = await mount();
+    await createThroughTheForm(el);
+    expect(byTestId(el, 'appointments-series-skipped')).toBeTruthy();
+    failing = 'appointments.recurring.materialize';
+    await tapBook(el);
+    expect(byTestId(el, 'appointments-series-error')?.textContent?.trim()).toBe('boom');
+    expect(byTestId(el, 'appointments-series-skipped')).toBeNull();
+  });
+
+  it('switching a series on or off (which reloads the list) clears the old report', async () => {
+    materializeResult = TWO_SKIPPED;
+    const el = await mount();
+    await createThroughTheForm(el);
+    expect(byTestId(el, 'appointments-series-skipped')).toBeTruthy();
+    await table(el).updateComplete;
+    const toggle = table(el).shadowRoot?.querySelector('[data-testid="appointments-series-active-r1"]') as
+      | (HTMLElement & { checked: boolean })
+      | null;
+    expect(toggle, 'the real active toggle of the row').toBeTruthy();
+    toggle!.checked = false;
+    toggle!.dispatchEvent(new CustomEvent('ionChange', { detail: { checked: false }, bubbles: true, composed: true }));
+    await settle(el);
+    expect(commands.some((c) => c.name === 'appointments.recurring.deactivate')).toBe(true);
+    expect(byTestId(el, 'appointments-series-skipped')).toBeNull();
+  });
 });
 
 describe('«Book appointments» on a row reports the dates left out (appointments#238)', () => {
@@ -235,6 +266,15 @@ describe('«Book appointments» on a row reports the dates left out (appointment
     await tapBook(el);
     expectReportOfTwoSkipped(el);
     expect(toasts.some((n) => n.message === ES.seriesMaterialized)).toBe(false);
+  });
+
+  it('an answer that carries no report is still a success, not a failure', async () => {
+    materializeResult = { ok: true };
+    const el = await mount();
+    await tapBook(el);
+    expect(toasts.map((n) => n.message)).toContain(ES.seriesMaterialized);
+    expect(el.error).toBe('');
+    expect(byTestId(el, 'appointments-series-skipped')).toBeNull();
   });
 
   it('with every date booked it keeps the plain success', async () => {
