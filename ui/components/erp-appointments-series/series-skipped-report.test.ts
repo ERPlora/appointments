@@ -476,6 +476,23 @@ describe('moving a series lists the dates that stayed where they were (appointme
     await moveTheTime(el);
     expect(byTestId(el, 'appointments-series-not-moved')).toBeNull();
   });
+
+  it('switching a series on or off (which reloads the list) clears the old «not moved» report', async () => {
+    updateResult = TWO_NOT_MOVED;
+    const el = await mount();
+    await moveTheTime(el);
+    expect(byTestId(el, 'appointments-series-not-moved')).toBeTruthy();
+    await table(el).updateComplete;
+    const toggle = table(el).shadowRoot?.querySelector('[data-testid="appointments-series-active-r1"]') as
+      | (HTMLElement & { checked: boolean })
+      | null;
+    expect(toggle, 'the real active toggle of the row').toBeTruthy();
+    toggle!.checked = false;
+    toggle!.dispatchEvent(new CustomEvent('ionChange', { detail: { checked: false }, bubbles: true, composed: true }));
+    await settle(el);
+    expect(commands.some((c) => c.name === 'appointments.recurring.deactivate')).toBe(true);
+    expect(byTestId(el, 'appointments-series-not-moved')).toBeNull();
+  });
 });
 
 describe('every new visible string of appointments#236 exists in en AND es', () => {
