@@ -77,6 +77,39 @@ function rows<T>(r: unknown): T[] {
   return [];
 }
 
+/** appointments#238 — what `appointments.recurring.materialize` answers: how many occurrences it
+ *  booked, how many were already on the agenda, and every date it skipped with the refusal code. */
+interface SeriesBookingReport {
+  booked: number;
+  already_booked: number;
+  skipped: { occurrence_date: string; code: string }[];
+}
+
+/** The short reason painted next to each skipped date; any other code reads as «could not be booked». */
+const SKIP_REASON_KEYS: Record<string, string> = {
+  'appointments.outside_staff_hours': 'ui.seriesSkipStaffHours',
+  'appointments.outside_schedule': 'ui.seriesSkipClosed',
+  'appointments.blocked': 'ui.seriesSkipBlocked',
+  'appointments.overlapping_appointment': 'ui.seriesSkipTaken',
+  'appointments.invalid_start': 'ui.seriesSkipPast',
+  'appointments.too_soon': 'ui.seriesSkipTooSoon',
+  'appointments.too_far': 'ui.seriesSkipTooFar',
+};
+
+function bookingReport(answer: unknown): SeriesBookingReport | null {
+  if (!answer || typeof answer !== 'object') return null;
+  const a = answer as Record<string, unknown>;
+  if (!Array.isArray(a.skipped)) return null;
+  return {
+    booked: Number(a.booked ?? 0),
+    already_booked: Number(a.already_booked ?? 0),
+    skipped: (a.skipped as Record<string, unknown>[]).map((s) => ({
+      occurrence_date: String(s?.occurrence_date ?? ''),
+      code: String(s?.code ?? ''),
+    })),
+  };
+}
+
 /** Una plantilla como la pinta `appointments.recurring.list`. */
 interface Series {
   id: string;
@@ -165,6 +198,7 @@ export class ErpAppointmentsSeries extends LitElement {
        is ~360 px, so a viewport media query would cut every field in half. */
     .grid { display:grid; grid-template-columns:1fr; gap:.75rem; }
     @container (min-width: 540px) { .grid { grid-template-columns:1fr 1fr; } }
+    .skipped { margin:.25rem 0 0; padding-left:1.25rem; }
     .ctx { margin:0; font-size:.9rem; color: var(--ion-color-medium, #8b897f); }
     .ctx strong { color: var(--ion-text-color, #1c1b18); }
     .loading, .empty { color: var(--ion-color-medium, #8b897f); font-size:.9rem; margin:.25rem 0; }
@@ -178,6 +212,8 @@ export class ErpAppointmentsSeries extends LitElement {
   @state() series: Series[] = [];
   @state() loading = true;
   @state() error = '';
+  /** appointments#238 — the dates the last booking left out; painted until the next action. */
+  @state() bookingReport: SeriesBookingReport | null = null;
   @state() saving = false;
   /** Series whose status toggle has a command in flight ('' = none). While it lasts the toggles
    *  render disabled and a second tap fires nothing — that is the toggle's loading state. */
@@ -277,6 +313,7 @@ export class ErpAppointmentsSeries extends LitElement {
   async refresh(): Promise<void> {
     this.loading = true;
     this.error = '';
+    this.bookingReport = null;
     try {
       this.series = rows<Series>(await erplora().query('appointments.recurring.list'));
     } catch (e) {
@@ -463,12 +500,15 @@ export class ErpAppointmentsSeries extends LitElement {
       // que no, pero no reserva los días nuevos: eso es `materialize`, que es quien tiene las
       // reads de catálogo y disponibilidad. Sin este paso la clienta se queda sin nada en el día
       // nuevo, que es la mitad del gesto que ella pidió.
+      let report: SeriesBookingReport | null = null;
       if (result?.pattern_changed === true) {
-        await this.bookWindow(String(result.recurring_id ?? this.editingId), tmpl);
+        report = await this.bookWindow(String(result.recurring_id ?? this.editingId), tmpl);
       }
       this.notifyOutcome(result);
       this.closePanel();
       await this.refresh();
+      // After refresh(), which clears it: the new days that could not be booked are said.
+      this.showSkipped(report);
     } catch (e) {
       this.editError = e instanceof Error && e.message ? e.message : erplora().t(CATALOG, 'ui.seriesSaveError');
     } finally {
@@ -488,15 +528,24 @@ export class ErpAppointmentsSeries extends LitElement {
     erplora().notify?.({ type: 'success', message });
   }
 
-  private async bookWindow(recurringId: string, tmpl: SeriesTemplate): Promise<void> {
+  private async bookWindow(recurringId: string, tmpl: SeriesTemplate): Promise<SeriesBookingReport | null> {
     // Los tres ids son SELECTOR, no fuente (appointments#54): el handler los contrasta con la
     // plantilla que carga el runtime y rechaza si no coinciden.
-    await erplora().command('appointments.recurring.materialize', {
-      recurring_id: recurringId,
-      customer_id: tmpl.customer_id ?? '',
-      service_id: tmpl.service_id ?? '',
-      staff_id: tmpl.staff_id ?? '',
-    });
+    return bookingReport(
+      await erplora().command('appointments.recurring.materialize', {
+        recurring_id: recurringId,
+        customer_id: tmpl.customer_id ?? '',
+        service_id: tmpl.service_id ?? '',
+        staff_id: tmpl.staff_id ?? '',
+      }),
+    );
+  }
+
+  /** appointments#238 — keeps the report on screen when some date was left out; returns whether
+   *  it did, so the caller only toasts «booked» when everything was. */
+  private showSkipped(report: SeriesBookingReport | null): boolean {
+    this.bookingReport = report && report.skipped.length > 0 ? report : null;
+    return this.bookingReport !== null;
   }
 
   /** Materializar la ventana desde la lista: la serie ya existe, lo que falta son sus citas. */
@@ -504,14 +553,16 @@ export class ErpAppointmentsSeries extends LitElement {
     const id = String(row.id ?? '');
     if (!id) return;
     this.error = '';
+    this.bookingReport = null;
     try {
       const tmpl = await this.loadTemplate(id);
       if (!tmpl) {
         this.error = erplora().t(CATALOG, 'ui.seriesNotFound');
         return;
       }
-      await this.bookWindow(id, tmpl);
-      erplora().notify?.({ type: 'success', message: erplora().t(CATALOG, 'ui.seriesMaterialized') });
+      if (!this.showSkipped(await this.bookWindow(id, tmpl))) {
+        erplora().notify?.({ type: 'success', message: erplora().t(CATALOG, 'ui.seriesMaterialized') });
+      }
     } catch (e) {
       this.error = e instanceof Error && e.message ? e.message : erplora().t(CATALOG, 'ui.seriesMaterializeError');
     }
@@ -667,6 +718,7 @@ export class ErpAppointmentsSeries extends LitElement {
       ${this.error
         ? html`<ok-inline-feedback data-testid="appointments-series-error" tone="danger" icon="alert-circle-outline">${this.error}</ok-inline-feedback>`
         : nothing}
+      ${this.bookingReport ? this.renderBookingReport(this.bookingReport, t) : nothing}
       <ok-data-table
         testid="appointments-series-table"
         .fill=${true}
@@ -685,6 +737,21 @@ export class ErpAppointmentsSeries extends LitElement {
         ${this.editingId ? this.renderEditForm(t) : this.renderCreateForm(t)}
       </ok-data-table>
     </div>`;
+  }
+
+  /** appointments#238 — «N booked · M could not be booked:» and one line per date with its reason,
+   *  as Fresha or Square say it when a repeating booking leaves dates out. */
+  private renderBookingReport(report: SeriesBookingReport, t: (k: string, p?: Record<string, unknown>) => string) {
+    return html`<ok-inline-feedback data-testid="appointments-series-skipped" tone="warning" icon="alert-circle-outline">
+      <strong>${t('ui.seriesBookedSkipped', { booked: report.booked, skipped: report.skipped.length })}</strong>
+      <ul class="skipped">
+        ${report.skipped.map(
+          (s) => html`<li data-testid=${`appointments-series-skipped-${s.occurrence_date}`}>
+            ${this.shownDate(s.occurrence_date)} — ${t(SKIP_REASON_KEYS[s.code] ?? 'ui.seriesSkipOther')}
+          </li>`,
+        )}
+      </ul>
+    </ok-inline-feedback>`;
   }
 
   private renderEditForm(t: (k: string, p?: Record<string, unknown>) => string) {
@@ -1168,13 +1235,16 @@ export class ErpAppointmentsSeries extends LitElement {
       // three ids travel as SELECTOR, not source (appointments#54) — the handler contrasts them
       // against the template it just wrote and refuses if they do not match.
       let notBooked = false;
+      let report: SeriesBookingReport | null = null;
       try {
-        await erplora().command('appointments.recurring.materialize', {
-          recurring_id: newId,
-          customer_id: customer.id,
-          service_id: service.id,
-          staff_id: staff.id,
-        });
+        report = bookingReport(
+          await erplora().command('appointments.recurring.materialize', {
+            recurring_id: newId,
+            customer_id: customer.id,
+            service_id: service.id,
+            staff_id: staff.id,
+          }),
+        );
       } catch {
         notBooked = true;
       }
@@ -1183,7 +1253,8 @@ export class ErpAppointmentsSeries extends LitElement {
         // Set AFTER refresh(): refresh() clears `error` at the start, and a booking failure that
         // does not survive it would leave the front desk believing the series booked fine.
         this.error = t('ui.seriesCreatedNotBooked');
-      } else {
+      } else if (!this.showSkipped(report)) {
+        // appointments#238: «created and booked» only when no date was left out.
         erplora().notify?.({ type: 'success', message: t('ui.seriesCreated') });
       }
     } catch (e) {
