@@ -6967,7 +6967,9 @@ var DATA_TABLE_LABELS_ES = {
   select: "Seleccionar",
   showing: "Mostrando {from}\u2013{to} de",
   recordSingular: "registro",
-  recordPlural: "registros"
+  recordPlural: "registros",
+  loadError: "No se han podido cargar los datos",
+  retry: "Reintentar"
 };
 var DATA_TABLE_LABELS_EN = {
   search: "Search\u2026",
@@ -7003,7 +7005,9 @@ var DATA_TABLE_LABELS_EN = {
   select: "Select",
   showing: "Showing {from}\u2013{to} of",
   recordSingular: "record",
-  recordPlural: "records"
+  recordPlural: "records",
+  loadError: "Couldn't load the data",
+  retry: "Retry"
 };
 function dataTableLabels(locale = "es") {
   return locale.toLowerCase().startsWith("en") ? DATA_TABLE_LABELS_EN : DATA_TABLE_LABELS_ES;

@@ -6618,6 +6618,92 @@ mod tests {
         }
     }
 
+    /// A series WITHOUT a professional (older than appointments#246, which now asks for one) has
+    /// nobody's working days to judge: her hours never turn a date away — not when the days read
+    /// answers nothing for that date, not when it did not arrive — while the salon's own hours
+    /// still do.
+    #[test]
+    fn series_edit_of_a_series_without_a_professional_judges_everything_but_her_hours() {
+        let edit = |time: &str, days: Option<Value>| {
+            let mut payload = edit_payload("2026-08-17", time);
+            payload["staff_id"] = json!("");
+            let mut inp = series_edit_input(
+                payload,
+                template(json!({ "staff_id": "", "staff_name": "", "max_occurrences": null })),
+                json!([
+                    occurrence("2026-08-17", "confirmed", json!({ "staff_id": "" })),
+                    occurrence("2026-08-24", "pending", json!({ "staff_id": null }))
+                ]),
+            );
+            if let Value::Object(hours) = sched_hours(json!([bh(0, "09:00", "18:00")])) {
+                for (k, v) in hours {
+                    inp["context"]["reads"][k] = v;
+                }
+            }
+            let reads = inp["context"]["reads"].as_object_mut().unwrap();
+            match days {
+                Some(rows) => {
+                    reads.insert(DAYS_READ.into(), rows);
+                }
+                None => {
+                    reads.remove(DAYS_READ);
+                }
+            }
+            update_recurring_series_pure(inp).unwrap()
+        };
+
+        for days in [Some(json!([])), None] {
+            let out = edit("12:00", days.clone());
+            assert!(out.error.is_none(), "days {days:?}: {:?}", out.error);
+            assert_eq!(
+                moved_ids(&out),
+                vec!["apt-2026-08-17", "apt-2026-08-24"],
+                "days {days:?}"
+            );
+            assert!(skipped_of(&out).is_empty(), "days {days:?}");
+        }
+
+        let out = edit("19:00", Some(json!([])));
+        assert!(moved_ids(&out).is_empty(), "moved after closing time");
+        assert_eq!(
+            skipped_of(&out),
+            vec![
+                ("2026-08-17".to_string(), "appointments.outside_schedule".to_string()),
+                ("2026-08-24".to_string(), "appointments.outside_schedule".to_string()),
+            ]
+        );
+    }
+
+    /// The per-invocation ceiling counts what is left behind too: an occurrence that does not
+    /// move still writes an operation of its own (it follows the new half), so sixty dates that
+    /// do not fit are not sixty writes in one command.
+    #[test]
+    fn series_edit_ceiling_counts_the_occurrences_it_leaves_behind() {
+        let first = days_from_civil(2026, 8, 17);
+        let occurrences: Vec<Value> = (0..60)
+            .map(|n| {
+                let (y, mo, d) = civil_from_days(first + n);
+                occurrence(&format!("{y:04}-{mo:02}-{d:02}"), "confirmed", json!({}))
+            })
+            .collect();
+        let mut inp = series_edit_input(
+            edit_payload("2026-08-17", "19:00"),
+            template(json!({ "max_occurrences": null })),
+            Value::Array(occurrences),
+        );
+        let every_day = Value::Array((0..7).map(|dow| bh(dow, "09:00", "18:00")).collect());
+        if let Value::Object(hours) = sched_hours(every_day) {
+            for (k, v) in hours {
+                inp["context"]["reads"][k] = v;
+            }
+        }
+        let out = update_recurring_series_pure(inp).unwrap();
+        assert!(out.error.is_none(), "{:?}", out.error);
+        assert!(moved_ids(&out).is_empty(), "moved after closing time");
+        assert_eq!(skipped_of(&out).len(), 50);
+        assert_eq!(ops_named(&out, "_recurring_keep_occurrence").len(), 50);
+    }
+
     /// The series edit declares every read its judges need, keyed on the professional selector.
     #[test]
     fn the_series_edit_declares_the_reads_of_its_judges() {
