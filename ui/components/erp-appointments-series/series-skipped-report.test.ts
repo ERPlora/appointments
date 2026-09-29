@@ -85,7 +85,11 @@ beforeEach(() => {
       commands.push({ name, payload });
       if (failing === name) throw new Error('boom');
       if (name === 'appointments.recurring.create') return { ok: true, new_ids: ['r1'] };
-      if (name === 'appointments.recurring.materialize') return materializeResult;
+      // What `erplora().command` really resolves to: the dispatcher's `data`, where a WASM
+      // handler's own answer travels in `result` (seen on the hub:stable bench, not assumed).
+      if (name === 'appointments.recurring.materialize') {
+        return { ok: true, new_ids: ['a4', 'a5'], operations: 6, ...(materializeResult === undefined ? {} : { result: materializeResult }) };
+      }
       if (name === 'appointments.recurring.update') {
         return { recurring_id: 'r2', split: true, pattern_changed: true, moved: 0, cancelled_pattern_change: 0, locked_invoiced: 0 };
       }
@@ -269,7 +273,7 @@ describe('«Book appointments» on a row reports the dates left out (appointment
   });
 
   it('an answer that carries no report is still a success, not a failure', async () => {
-    materializeResult = { ok: true };
+    materializeResult = undefined;
     const el = await mount();
     await tapBook(el);
     expect(toasts.map((n) => n.message)).toContain(ES.seriesMaterialized);

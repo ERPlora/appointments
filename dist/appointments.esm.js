@@ -7137,8 +7137,9 @@ var SKIP_REASON_KEYS = {
   "appointments.too_far": "ui.seriesSkipTooFar"
 };
 function bookingReport(answer) {
-  if (!answer || typeof answer !== "object") return null;
-  const a3 = answer;
+  const result = answer && typeof answer === "object" ? answer.result : null;
+  if (!result || typeof result !== "object") return null;
+  const a3 = result;
   if (!Array.isArray(a3.skipped)) return null;
   return {
     booked: Number(a3.booked ?? 0),

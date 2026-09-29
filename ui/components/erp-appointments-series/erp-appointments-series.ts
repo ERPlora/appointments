@@ -96,9 +96,12 @@ const SKIP_REASON_KEYS: Record<string, string> = {
   'appointments.too_far': 'ui.seriesSkipTooFar',
 };
 
+/** `erplora().command` resolves to the dispatcher's `data`; the handler's own answer (the report)
+ *  travels in its `result`. */
 function bookingReport(answer: unknown): SeriesBookingReport | null {
-  if (!answer || typeof answer !== 'object') return null;
-  const a = answer as Record<string, unknown>;
+  const result = answer && typeof answer === 'object' ? (answer as Record<string, unknown>).result : null;
+  if (!result || typeof result !== 'object') return null;
+  const a = result as Record<string, unknown>;
   if (!Array.isArray(a.skipped)) return null;
   return {
     booked: Number(a.booked ?? 0),
