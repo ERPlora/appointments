@@ -2062,6 +2062,15 @@ var es_default = {
     seriesMaterialized: "Citas reservadas para esta serie.",
     seriesCreated: "Cita peri\xF3dica creada y sus citas reservadas.",
     seriesCreatedNotBooked: "La cita peri\xF3dica se ha creado, pero no se han podido reservar sus citas. Usa \xABReservar citas\xBB en su fila para volver a intentarlo.",
+    seriesBookedSkipped: "{booked} citas reservadas \xB7 {skipped} no se han podido reservar:",
+    seriesSkipStaffHours: "el profesional no trabaja a esa hora",
+    seriesSkipClosed: "el negocio est\xE1 cerrado a esa hora",
+    seriesSkipBlocked: "esa franja est\xE1 bloqueada en la agenda",
+    seriesSkipTaken: "ya hay una cita a esa hora",
+    seriesSkipPast: "esa hora ya ha pasado",
+    seriesSkipTooSoon: "demasiado pronto para reservarla",
+    seriesSkipTooFar: "demasiado lejos para reservarla",
+    seriesSkipOther: "no se ha podido reservar",
     seriesSplitFrom: "Esta serie contin\xFAa a otra anterior ({id}): se parti\xF3 cuando alguien la edit\xF3 de una cita en adelante.",
     seriesBookedCount: "{booked} citas reservadas \xB7 el cambio se aplica desde el {from} ({upcoming} por delante)",
     seriesLockedInvoiced: "{invoiced} de las citas por delante ya est\xE1n cobradas y no se van a tocar.",
@@ -2308,6 +2317,15 @@ var en_default = {
     seriesMaterialized: "Appointments booked for this series.",
     seriesCreated: "Repeating appointment created and its appointments booked.",
     seriesCreatedNotBooked: "The repeating appointment was created, but its appointments could not be booked. Use \xABBook appointments\xBB on its row to try again.",
+    seriesBookedSkipped: "{booked} appointments booked \xB7 {skipped} could not be booked:",
+    seriesSkipStaffHours: "the professional does not work at that time",
+    seriesSkipClosed: "the business is closed at that time",
+    seriesSkipBlocked: "that time is blocked in the agenda",
+    seriesSkipTaken: "there is already an appointment at that time",
+    seriesSkipPast: "that time has already passed",
+    seriesSkipTooSoon: "too close to now to book",
+    seriesSkipTooFar: "too far ahead to book",
+    seriesSkipOther: "it could not be booked",
     seriesSplitFrom: "This series continues an earlier one ({id}): it was split when someone edited it from one occurrence onwards.",
     seriesBookedCount: "{booked} appointments booked \xB7 the change applies from {from} ({upcoming} upcoming)",
     seriesLockedInvoiced: "{invoiced} of the upcoming appointments are already charged and will not be touched.",
@@ -7109,6 +7127,28 @@ function rows3(r6) {
   }
   return [];
 }
+var SKIP_REASON_KEYS = {
+  "appointments.outside_staff_hours": "ui.seriesSkipStaffHours",
+  "appointments.outside_schedule": "ui.seriesSkipClosed",
+  "appointments.blocked": "ui.seriesSkipBlocked",
+  "appointments.overlapping_appointment": "ui.seriesSkipTaken",
+  "appointments.invalid_start": "ui.seriesSkipPast",
+  "appointments.too_soon": "ui.seriesSkipTooSoon",
+  "appointments.too_far": "ui.seriesSkipTooFar"
+};
+function bookingReport(answer) {
+  if (!answer || typeof answer !== "object") return null;
+  const a3 = answer;
+  if (!Array.isArray(a3.skipped)) return null;
+  return {
+    booked: Number(a3.booked ?? 0),
+    already_booked: Number(a3.already_booked ?? 0),
+    skipped: a3.skipped.map((s5) => ({
+      occurrence_date: String(s5?.occurrence_date ?? ""),
+      code: String(s5?.code ?? "")
+    }))
+  };
+}
 var FREQUENCIES = ["daily", "weekly", "biweekly", "monthly"];
 var FREQUENCY_KEYS = {
   daily: "ui.freqDaily",
@@ -7132,6 +7172,7 @@ var ErpAppointmentsSeries = class extends i3 {
     this.series = [];
     this.loading = true;
     this.error = "";
+    this.bookingReport = null;
     this.saving = false;
     this.busySeriesId = "";
     this.editingId = "";
@@ -7175,6 +7216,7 @@ var ErpAppointmentsSeries = class extends i3 {
        is ~360 px, so a viewport media query would cut every field in half. */
     .grid { display:grid; grid-template-columns:1fr; gap:.75rem; }
     @container (min-width: 540px) { .grid { grid-template-columns:1fr 1fr; } }
+    .skipped { margin:.25rem 0 0; padding-left:1.25rem; }
     .ctx { margin:0; font-size:.9rem; color: var(--ion-color-medium, #8b897f); }
     .ctx strong { color: var(--ion-text-color, #1c1b18); }
     .loading, .empty { color: var(--ion-color-medium, #8b897f); font-size:.9rem; margin:.25rem 0; }
@@ -7214,6 +7256,7 @@ var ErpAppointmentsSeries = class extends i3 {
   async refresh() {
     this.loading = true;
     this.error = "";
+    this.bookingReport = null;
     try {
       this.series = rows3(await erplora3().query("appointments.recurring.list"));
     } catch (e5) {
@@ -7359,12 +7402,14 @@ var ErpAppointmentsSeries = class extends i3 {
         from_occurrence_date: this.fromOccurrence,
         ...changed
       });
+      let report = null;
       if (result?.pattern_changed === true) {
-        await this.bookWindow(String(result.recurring_id ?? this.editingId), tmpl);
+        report = await this.bookWindow(String(result.recurring_id ?? this.editingId), tmpl);
       }
       this.notifyOutcome(result);
       this.closePanel();
       await this.refresh();
+      this.showSkipped(report);
     } catch (e5) {
       this.editError = e5 instanceof Error && e5.message ? e5.message : erplora3().t(CATALOG3, "ui.seriesSaveError");
     } finally {
@@ -7383,26 +7428,36 @@ var ErpAppointmentsSeries = class extends i3 {
     erplora3().notify?.({ type: "success", message });
   }
   async bookWindow(recurringId, tmpl) {
-    await erplora3().command("appointments.recurring.materialize", {
-      recurring_id: recurringId,
-      customer_id: tmpl.customer_id ?? "",
-      service_id: tmpl.service_id ?? "",
-      staff_id: tmpl.staff_id ?? ""
-    });
+    return bookingReport(
+      await erplora3().command("appointments.recurring.materialize", {
+        recurring_id: recurringId,
+        customer_id: tmpl.customer_id ?? "",
+        service_id: tmpl.service_id ?? "",
+        staff_id: tmpl.staff_id ?? ""
+      })
+    );
+  }
+  /** appointments#238 — keeps the report on screen when some date was left out; returns whether
+   *  it did, so the caller only toasts «booked» when everything was. */
+  showSkipped(report) {
+    this.bookingReport = report && report.skipped.length > 0 ? report : null;
+    return this.bookingReport !== null;
   }
   /** Materializar la ventana desde la lista: la serie ya existe, lo que falta son sus citas. */
   async materializeSeries(row) {
     const id = String(row.id ?? "");
     if (!id) return;
     this.error = "";
+    this.bookingReport = null;
     try {
       const tmpl = await this.loadTemplate(id);
       if (!tmpl) {
         this.error = erplora3().t(CATALOG3, "ui.seriesNotFound");
         return;
       }
-      await this.bookWindow(id, tmpl);
-      erplora3().notify?.({ type: "success", message: erplora3().t(CATALOG3, "ui.seriesMaterialized") });
+      if (!this.showSkipped(await this.bookWindow(id, tmpl))) {
+        erplora3().notify?.({ type: "success", message: erplora3().t(CATALOG3, "ui.seriesMaterialized") });
+      }
     } catch (e5) {
       this.error = e5 instanceof Error && e5.message ? e5.message : erplora3().t(CATALOG3, "ui.seriesMaterializeError");
     }
@@ -7533,6 +7588,7 @@ var ErpAppointmentsSeries = class extends i3 {
     const t5 = (k2, p4) => erplora3().t(CATALOG3, k2, p4);
     return b2`<div class="page">
       ${this.error ? b2`<ok-inline-feedback data-testid="appointments-series-error" tone="danger" icon="alert-circle-outline">${this.error}</ok-inline-feedback>` : A}
+      ${this.bookingReport ? this.renderBookingReport(this.bookingReport, t5) : A}
       <ok-data-table
         testid="appointments-series-table"
         .fill=${true}
@@ -7551,6 +7607,20 @@ var ErpAppointmentsSeries = class extends i3 {
         ${this.editingId ? this.renderEditForm(t5) : this.renderCreateForm(t5)}
       </ok-data-table>
     </div>`;
+  }
+  /** appointments#238 — «N booked · M could not be booked:» and one line per date with its reason,
+   *  as Fresha or Square say it when a repeating booking leaves dates out. */
+  renderBookingReport(report, t5) {
+    return b2`<ok-inline-feedback data-testid="appointments-series-skipped" tone="warning" icon="alert-circle-outline">
+      <strong>${t5("ui.seriesBookedSkipped", { booked: report.booked, skipped: report.skipped.length })}</strong>
+      <ul class="skipped">
+        ${report.skipped.map(
+      (s5) => b2`<li data-testid=${`appointments-series-skipped-${s5.occurrence_date}`}>
+            ${this.shownDate(s5.occurrence_date)} — ${t5(SKIP_REASON_KEYS[s5.code] ?? "ui.seriesSkipOther")}
+          </li>`
+    )}
+      </ul>
+    </ok-inline-feedback>`;
   }
   renderEditForm(t5) {
     const tmpl = this.template;
@@ -7971,20 +8041,23 @@ var ErpAppointmentsSeries = class extends i3 {
       this.resetCreateDraft();
       this.dataTable()?.close();
       let notBooked = false;
+      let report = null;
       try {
-        await erplora3().command("appointments.recurring.materialize", {
-          recurring_id: newId,
-          customer_id: customer.id,
-          service_id: service.id,
-          staff_id: staff.id
-        });
+        report = bookingReport(
+          await erplora3().command("appointments.recurring.materialize", {
+            recurring_id: newId,
+            customer_id: customer.id,
+            service_id: service.id,
+            staff_id: staff.id
+          })
+        );
       } catch {
         notBooked = true;
       }
       await this.refresh();
       if (notBooked) {
         this.error = t5("ui.seriesCreatedNotBooked");
-      } else {
+      } else if (!this.showSkipped(report)) {
         erplora3().notify?.({ type: "success", message: t5("ui.seriesCreated") });
       }
     } catch (e5) {
@@ -8003,6 +8076,9 @@ __decorateClass([
 __decorateClass([
   r5()
 ], ErpAppointmentsSeries.prototype, "error", 2);
+__decorateClass([
+  r5()
+], ErpAppointmentsSeries.prototype, "bookingReport", 2);
 __decorateClass([
   r5()
 ], ErpAppointmentsSeries.prototype, "saving", 2);
