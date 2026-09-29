@@ -447,6 +447,12 @@
         "commands/_history_reschedule.sql"
       ]
     },
+    "appointments._recurring_keep_occurrence": {
+      "permission": "appointments.change_appointment",
+      "sql": [
+        "commands/_recurring_keep_occurrence.sql"
+      ]
+    },
     "appointments._recurring_split": {
       "permission": "appointments.change_appointment",
       "sql": [
@@ -1181,7 +1187,7 @@
         "appointments.recurring.updated"
       ],
       "ai": {
-        "description": "Edits a recurring appointment from one of its occurrences onwards ('this and all following'), changing the time, the duration and/or the repetition pattern (how often it repeats and which weekday). The series is split in two: the original template stops the day before, a new one starts at that occurrence, and the appointments already booked from there on are moved to the new time. When the pattern changes, the bookings that no longer fall on a day of the new pattern are cancelled instead of moved, and the answer says how many. Appointments before today, cancelled ones, ones in progress and ones already turned into a sale are never touched. It does not book the appointments of the new pattern: that is 'materialize'."
+        "description": "Edits a recurring appointment from one of its occurrences onwards ('this and all following'), changing the time, the duration and/or the repetition pattern (how often it repeats and which weekday). The series is split in two: the original template stops the day before, a new one starts at that occurrence, and the appointments already booked from there on are moved to the new time. When the pattern changes, the bookings that no longer fall on a day of the new pattern are cancelled instead of moved, and the answer says how many. Every booking it moves is judged like a single move: the opening hours, the professional's working hours, blocked periods, the minimum notice and another appointment of the same professional in the new slot. A booking that does not fit is left on its own slot and listed in `skipped` (`occurrence_date`, `code`) so it can be told to the person; the rest still move. `staff_id` is the series' professional, sent as a selector (empty for an old series without one). Appointments before today, cancelled ones, ones in progress and ones already turned into a sale are never touched. It does not book the appointments of the new pattern: that is 'materialize'."
       },
       "reads": [
         {
@@ -1196,6 +1202,45 @@
           "params": {
             "recurring_id": "payload.recurring_id"
           },
+          "required": true
+        },
+        {
+          "query": "appointments.settings.get",
+          "required": true
+        },
+        {
+          "query": "appointments.blocked_times.upcoming",
+          "required": true
+        },
+        {
+          "query": "appointments.appointments.upcoming_for_staff",
+          "params": {
+            "staff_id": "payload.staff_id"
+          },
+          "required": true
+        },
+        {
+          "query": "staff.availability.days_ahead",
+          "params": {
+            "staff_id": "payload.staff_id",
+            "days": "400"
+          },
+          "required": true
+        },
+        {
+          "query": "schedules.business_hours.list",
+          "required": true
+        },
+        {
+          "query": "schedules.special_days.list",
+          "required": true
+        },
+        {
+          "query": "schedules.overrides.list",
+          "required": true
+        },
+        {
+          "query": "schedules.exception_intervals.list",
           "required": true
         }
       ]
