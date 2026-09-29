@@ -10,11 +10,11 @@
     },
     "staff_id": {
       "type": "string",
-      "description": "The professional who governs the series from the cut on: her agenda and her working days are read by it, so every moved occurrence is judged against them. Without `current_staff_id` it is a SELECTOR: it must be the one the series has (empty for an old series without one) and a different one is refused (appointments.recurring_mismatch). With `current_staff_id`, a different one hands the series to her (never empty)."
+      "description": "The professional who governs the series from the cut on: their agenda and working days are read by it, so every moved occurrence is judged against them. Without `current_staff_id` it is a SELECTOR: it must be the one the series has (empty for an old series without one) and a different one is refused (appointments.recurring_mismatch). With `current_staff_id`, a different one hands the series to her (never empty)."
     },
     "service_id": {
       "type": "string",
-      "description": "The series' service, as a SELECTOR: required when handing the series to another professional, because her competency is read for it; it must be the one the series has (appointments.recurring_mismatch otherwise)."
+      "description": "The series' service, as a SELECTOR: required when handing the series to another professional, because their competency is read for it; it must be the one the series has (appointments.recurring_mismatch otherwise)."
     },
     "scope": {
       "type": "string",

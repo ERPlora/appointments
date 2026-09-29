@@ -223,13 +223,13 @@ never touched.
 ### Handing a series to another professional (appointments#248)
 
 The edit panel also has a **Professional** field, with the series' current professional picked (and
-kept in the list even when she no longer takes appointments). Picking someone else hands the series
-to her from that occurrence **and all the following ones**, the same cut as a pattern change — the
+kept in the list even when they no longer take appointments). Picking someone else hands the series
+to them from that occurrence **and all the following ones**, the same cut as a pattern change — the
 earlier dates keep who did them. Only professionals who take appointments are offered, and the hub
 refuses one who does not perform the series' service.
 
-Before saving, the panel says how many booked appointments go to her. Each of them is judged on the
-**new professional's** agenda (her shift, her blocked time, her other appointments): the ones that
+Before saving, the panel says how many booked appointments go to them. Each of them is judged on the
+**new professional's** agenda (their shift, their blocked time, their other appointments): the ones that
 fit are handed over, the ones that do not **stay as they were, with the professional they had**,
 and after saving the screen lists them with the reason. The price already booked on each appointment
 is kept.
