@@ -170,11 +170,12 @@ const COVERED: Record<
       'appointments-series-locked',
       'appointments-series-scope-hint',
       'appointments-series-skipped',
+      'appointments-series-not-moved',
       'appointments-series-split-from',
       'appointments-series-submit',
       'appointments-series-time',
     ],
-    computed: ['appointments-series-active-', 'appointments-series-skipped-'],
+    computed: ['appointments-series-active-', 'appointments-series-skipped-', 'appointments-series-not-moved-'],
     tables: ['appointments-series-table'],
   },
 };

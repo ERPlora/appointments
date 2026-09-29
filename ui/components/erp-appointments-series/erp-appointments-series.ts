@@ -100,19 +100,19 @@ const SKIP_REASON_KEYS: Record<string, string> = {
  *  like a single reschedule, so the codes are the booking ones, plus the occurrence whose
  *  professional's hours were not read (handed by hand to another one); anything else still reads
  *  as «could not be moved», never as «could not be booked». */
-const NOT_MOVED_REASON_KEYS: Record<string, string> = {
+export const NOT_MOVED_REASON_KEYS: Record<string, string> = {
   ...SKIP_REASON_KEYS,
   'appointments.staff_hours_unavailable': 'ui.seriesSkipStaffUnknown',
 };
 
 /** `erplora().command` resolves to the dispatcher's `data`; the handler's own answer (the report)
  *  travels in its `result`. */
-function handlerAnswer(answer: unknown): Record<string, unknown> | null {
+export function handlerAnswer(answer: unknown): Record<string, unknown> | null {
   const result = answer && typeof answer === 'object' ? (answer as Record<string, unknown>).result : null;
   return result && typeof result === 'object' ? (result as Record<string, unknown>) : null;
 }
 
-function skippedDates(a: Record<string, unknown>): { occurrence_date: string; code: string }[] {
+export function skippedDates(a: Record<string, unknown>): { occurrence_date: string; code: string }[] {
   return (a.skipped as Record<string, unknown>[]).map((s) => ({
     occurrence_date: String(s?.occurrence_date ?? ''),
     code: String(s?.code ?? ''),
