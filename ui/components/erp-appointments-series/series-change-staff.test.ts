@@ -175,6 +175,25 @@ describe('changing the professional of a series (appointments#248)', () => {
     expect(byTestId(el, 'appointments-series-staff-hint'), 'no hint while nothing changes').toBeNull();
   });
 
+  it('keeps the current professional on the field when she no longer takes appointments', async () => {
+    // She left or stopped being bookable: the series still says who does it today, and the others
+    // are offered to hand it over.
+    template = { ...WITH_EVA, staff_id: 's3', staff_name: 'Back Office' };
+    const el = await mount();
+    await openEdit(el);
+    const select = byTestId(el, 'appointments-series-staff') as HTMLElement & { value?: unknown };
+    expect(select.value).toBe('s3');
+    const options = [...select.querySelectorAll('ion-select-option')].map((o) => [
+      (o as HTMLElement & { value?: unknown }).value,
+      text(o),
+    ]);
+    expect(options).toEqual([
+      ['s3', 'Back Office'],
+      ['s1', 'Eva Pro'],
+      ['s2', 'Carla Pro'],
+    ]);
+  });
+
   it('says before saving how many booked appointments go to the new professional', async () => {
     const el = await mount();
     await openEdit(el);

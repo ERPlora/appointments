@@ -7042,7 +7042,9 @@ mod tests {
     }
 
     /// An occurrence already handed by hand to the NEW professional is judged on her agenda and
-    /// follows the series; one handed to a THIRD one is not judged blind.
+    /// follows the series, and so does one still with the series' OLD professional (what the
+    /// occurrences read returns for a series never touched by hand); one handed to a THIRD one is
+    /// not judged blind.
     #[test]
     fn series_edit_to_another_professional_judges_occurrences_she_already_had() {
         let mut inp = series_edit_input(
@@ -7050,14 +7052,15 @@ mod tests {
             template(json!({ "max_occurrences": null })),
             json!([
                 occurrence("2026-08-17", "confirmed", json!({ "staff_id": "s2" })),
-                occurrence("2026-08-24", "pending", json!({ "staff_id": "s3" }))
+                occurrence("2026-08-24", "pending", json!({ "staff_id": "s3" })),
+                occurrence("2026-08-31", "pending", json!({ "staff_id": "s1" }))
             ]),
         );
         for (k, v) in carla_reads().as_object().unwrap() {
             inp["context"]["reads"][k] = v.clone();
         }
         let out = update_recurring_series_pure(inp).unwrap();
-        assert_eq!(moved_ids(&out), vec!["apt-2026-08-17"]);
+        assert_eq!(moved_ids(&out), vec!["apt-2026-08-17", "apt-2026-08-31"]);
         assert_eq!(skipped_of(&out), vec![("2026-08-24".to_string(), STAFF_HOURS_UNAVAILABLE.to_string())]);
     }
 
