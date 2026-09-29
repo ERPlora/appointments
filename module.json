@@ -1081,7 +1081,7 @@
         "function": "materialize_recurring"
       },
       "ai": {
-        "description": "Books the concrete appointments of a recurring template, named by its identifier. The repetition rule comes from the template row and the customer, service and professional are resolved against the hub's records; ids that do not match the template are refused."
+        "description": "Books the concrete appointments of a recurring template, named by its identifier. The repetition rule comes from the template row and the customer, service and professional are resolved against the hub's records; ids that do not match the template are refused. An occurrence that cannot be booked (outside the professional's hours or the opening hours, a blocked time, a time already taken, the past) is skipped and the rest still book; the answer says how many were booked (`booked`), how many were already on the agenda (`already_booked`) and lists every skipped date with its refusal code (`skipped`: `occurrence_date`, `code`), so they can be told to the person."
       },
       "reads": [
         {
