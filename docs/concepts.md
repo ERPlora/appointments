@@ -152,8 +152,11 @@ asking whether a slot is free for a given professional, or listing the free slot
 professional (appointments#230), also checks that person's shifts, breaks and approved leave in
 Staff — `outside_staff_hours` when they do not work then. A professional
 with no working schedule set up for that day is not refused (only an approved absence refuses
-there), for the same reason as above. The batch, the recurring series and moving an appointment
-do not check it yet (appointments#229).
+there), for the same reason as above. Booking a batch, booking a recurring series and moving an
+appointment check it too (appointments#229): a batch with one slot outside those hours is refused
+whole; a series skips that occurrence — like a blocked day — and books the rest; a move is refused.
+A series is checked against the professional's next 400 days: occurrences further out are booked
+by a later run, as the series' window advances.
 
 ## Blocked time with no professional blocks everybody
 

@@ -37,8 +37,8 @@ instead of refusing — a guard whose input can go missing is a guard that OPENS
 
 What is NOT here: the PROFESSIONAL's own working hours. The business being open says nothing about
 whether that particular person works that hour; that second rule is decided by the handler from
-`staff.availability.day_at` (appointments#98) and pinned by its Rust cases, not by this SQL. The
-doors that do not enforce it yet — batch, series and `reschedule` — are appointments#229.
+`staff.availability.day_at` (appointments#98) and pinned by its Rust cases, not by this SQL — the
+batch, the series and `reschedule` too, from their own reads (appointments#229).
 
 Usage: tests/availability_rules.contract.test.py   (exit 0 = green)
 """
