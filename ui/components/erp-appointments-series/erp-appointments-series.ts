@@ -193,6 +193,14 @@ interface StaffMember {
   is_bookable?: number;
 }
 
+/** appointments#246 — the links `materialize` books with, and what the screen says when one is
+ *  missing; the professional first, the one a series created by the assistant most often lacks. */
+const MISSING_LINK_KEYS: readonly (readonly ['staff_id' | 'customer_id' | 'service_id', string])[] = [
+  ['staff_id', 'ui.seriesNoStaff'],
+  ['customer_id', 'ui.seriesNoCustomer'],
+  ['service_id', 'ui.seriesNoService'],
+];
+
 const FREQUENCIES = ['daily', 'weekly', 'biweekly', 'monthly'] as const;
 const FREQUENCY_KEYS: Record<string, string> = {
   daily: 'ui.freqDaily',
@@ -567,14 +575,19 @@ export class ErpAppointmentsSeries extends LitElement {
   }
 
   private async bookWindow(recurringId: string, tmpl: SeriesTemplate): Promise<SeriesBookingReport | null> {
+    // appointments#246 — a series saved without one of its links (the assistant and the API could
+    // create it before `recurring.create` required them) can never be booked: `materialize`
+    // refuses an empty id. Say what is missing instead of sending a command bound to fail.
+    const missing = MISSING_LINK_KEYS.find(([field]) => !tmpl[field]);
+    if (missing) throw new Error(erplora().t(CATALOG, missing[1]));
     // Los tres ids son SELECTOR, no fuente (appointments#54): el handler los contrasta con la
     // plantilla que carga el runtime y rechaza si no coinciden.
     return bookingReport(
       await erplora().command('appointments.recurring.materialize', {
         recurring_id: recurringId,
-        customer_id: tmpl.customer_id ?? '',
-        service_id: tmpl.service_id ?? '',
-        staff_id: tmpl.staff_id ?? '',
+        customer_id: tmpl.customer_id,
+        service_id: tmpl.service_id,
+        staff_id: tmpl.staff_id,
       }),
     );
   }
