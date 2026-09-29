@@ -6995,20 +6995,19 @@ function toIsoDate(year, month, day) {
   if (day < 1 || day > daysInMonth(year, month)) return null;
   return `${String(year).padStart(4, "0")}-${pad2(month)}-${pad2(day)}`;
 }
+var TYPED_TIME = /^(?:(\d{1,2})(?:[:.](\d{2})(?::\d{2})?)?|(\d{1,2})(\d{2}))(?:\s*(a\.?m\.?|p\.?m\.?))?$/i;
 function parseTime(raw) {
-  const trimmed = raw.trim();
-  if (!trimmed) return null;
-  const match = trimmed.match(/^(\d{1,2}):(\d{2})(?::\d{2})?(?:\s*(a\.?m\.?|p\.?m\.?))?$/i);
+  const match = raw.trim().match(TYPED_TIME);
   if (!match) return null;
-  const [, hourText, minuteText, meridiem] = match;
-  const minute = Number(minuteText);
-  if (minute < 0 || minute > 59) return null;
-  let hour = Number(hourText);
+  const [, hourText, minuteText, packedHour, packedMinute, meridiem] = match;
+  const minute = Number(minuteText ?? packedMinute ?? 0);
+  if (minute > 59) return null;
+  let hour = Number(hourText ?? packedHour);
   if (meridiem) {
     if (hour < 1 || hour > 12) return null;
     const isPm = meridiem.toLowerCase().startsWith("p");
     hour = isPm ? hour === 12 ? 12 : hour + 12 : hour === 12 ? 0 : hour;
-  } else if (hour < 0 || hour > 23) {
+  } else if (hour > 23) {
     return null;
   }
   return `${pad2(hour)}:${pad2(minute)}`;
