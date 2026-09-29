@@ -14,8 +14,16 @@
 process.env.TZ = 'Europe/Madrid';
 
 import { beforeEach, afterAll, describe, expect, it } from 'vitest';
+import esLocale from '../../../locales/es.json';
 
+const ES = (esLocale as { ui: Record<string, string> }).ui;
 const commands: { name: string; payload: Record<string, unknown> }[] = [];
+const toasts: { type: string; message: string }[] = [];
+/** What `appointments.recurring.update`'s handler answers (it travels in the envelope's `result`). */
+let updateAnswer: Record<string, unknown> = { recurring_id: 'r2', split: true, moved: 1, skipped: [] };
+/** The SERIES' professional — not necessarily the one of the tapped appointment (appointments#236). */
+const SERIES_TEMPLATE = { id: 'r1', customer_id: 'c1', service_id: 'sv1', staff_id: 's9', frequency: 'weekly' };
+let templateFails = false;
 
 const SERIES_APPOINTMENT = {
   id: 'a1',
@@ -47,6 +55,9 @@ const LONE_APPOINTMENT = {
 
 beforeEach(() => {
   commands.length = 0;
+  toasts.length = 0;
+  updateAnswer = { recurring_id: 'r2', split: true, moved: 1, skipped: [] };
+  templateFails = false;
   (globalThis as Record<string, unknown>).erplora = {
     timezone: 'Europe/Madrid',
     query: async (name: string) => {
@@ -61,19 +72,24 @@ beforeEach(() => {
           return { rows: [{ id: 's1', full_name: 'Eva Pro', status: 'active', is_bookable: 1, color: '#7048e8' }], total: 1 };
         case 'appointments.settings.get':
           return [{ calendar_start_hour: 8, calendar_end_hour: 20, slot_interval: 15, default_duration: 30 }];
+        case 'appointments.recurring.get':
+          if (templateFails) throw Object.assign(new Error('boom'), { code: 'server_unavailable' });
+          return [SERIES_TEMPLATE];
         default:
           return [];
       }
     },
     command: async (name: string, payload: Record<string, unknown>) => {
       commands.push({ name, payload });
-      return { ok: true };
+      return name === 'appointments.recurring.update'
+        ? { ok: true, operations: 1, new_ids: [], result: updateAnswer }
+        : { ok: true };
     },
     on: () => () => {},
     t: (cat: Record<string, { ui?: Record<string, string> }>, key: string) =>
       cat.es?.ui?.[key.replace(/^ui\./, '')] ?? key,
     locale: 'es',
-    notify: () => {},
+    notify: (n: { type: string; message: string }) => toasts.push(n),
   };
 });
 
@@ -185,6 +201,10 @@ describe('answering the question', () => {
     expect(sent, 'the series command was not dispatched').toBeTruthy();
     expect(sent!.payload).toEqual({
       recurring_id: 'r1',
+      // appointments#236: the SERIES' professional as selector (read from its template, not the
+      // tapped appointment's, which may have been handed to someone else) — every occurrence
+      // the move drags is judged on her agenda and working days.
+      staff_id: 's9',
       scope: 'this_and_following',
       from_occurrence_date: '2026-08-17',
       // WALL time, not an instant: a template's hour is a clock reading, and it is never stored
@@ -218,5 +238,54 @@ describe('answering the question', () => {
     // appointments#156: inside the panel, where the person is looking.
     expect((el as unknown as { formError: string }).formError).toBeTruthy();
     expect(el.rescheduleId).toBe('a1');
+  });
+});
+
+// appointments#236 — «this and following» judges every occurrence it drags like a single move and
+// leaves on its own slot the ones that do not fit (closed, her day off, blocked, taken). The
+// receptionist is TOLD which dates stayed and why: Square moves them on top of other appointments
+// without a word, and that is the complaint in its forum.
+describe('«this and following» says which dates stayed where they were (appointments#236)', () => {
+  const confirmFollowing = async (el: Wc) => {
+    await moveTo(el, SERIES_APPOINTMENT, '2026-08-17T12:00');
+    el.seriesScope = 'this_and_following';
+    await el.confirmSeriesScope();
+    await el.updateComplete;
+  };
+
+  it('a warning names each date left behind with its reason', async () => {
+    updateAnswer = {
+      recurring_id: 'r2',
+      split: true,
+      moved: 2,
+      skipped: [
+        { occurrence_date: '2026-08-24', code: 'appointments.blocked' },
+        { occurrence_date: '2026-08-31', code: 'appointments.overlapping_appointment' },
+      ],
+    };
+    const el = await mount();
+    await confirmFollowing(el);
+    const warning = toasts.find((n) => n.type === 'warning');
+    expect(warning, 'the dates that stayed are said').toBeTruthy();
+    expect(warning!.message).toContain('24/08/2026');
+    expect(warning!.message).toContain(ES.seriesSkipBlocked);
+    expect(warning!.message).toContain('31/08/2026');
+    expect(warning!.message).toContain(ES.seriesSkipTaken);
+    expect(warning!.message).not.toContain('appointments.');
+  });
+
+  it('when everything moved there is no warning', async () => {
+    const el = await mount();
+    await confirmFollowing(el);
+    expect(toasts.filter((n) => n.type === 'warning')).toEqual([]);
+  });
+
+  it('when the series cannot be read nothing is moved and the panel says so', async () => {
+    templateFails = true;
+    const el = await mount();
+    await confirmFollowing(el);
+    expect(commands.find((c) => c.name === 'appointments.recurring.update')).toBeFalsy();
+    expect((el as unknown as { formError: string }).formError).toBeTruthy();
+    expect(el.rescheduleId, 'the panel stays open with what was typed').toBe('a1');
   });
 });

@@ -14,7 +14,11 @@ import '@erplora/outfitkit/ok-scheduler';
 // appointments#91 — la vista de SERIES vive aquí dentro, no en una entrada de navegación propia:
 // una página de series colgada del menú sería huérfana (ningún producto del sector la tiene), y
 // desde la agenda es donde la recepcionista ya está mirando cuando se acuerda de la serie.
-import '../erp-appointments-series/erp-appointments-series';
+import {
+  NOT_MOVED_REASON_KEYS,
+  handlerAnswer,
+  skippedDates,
+} from '../erp-appointments-series/erp-appointments-series';
 // appointments#194 — the sheet of an appointment carries its history.
 import '../erp-appointments-history/erp-appointments-history';
 import type { DataTableColumn } from '@erplora/outfitkit';
@@ -1359,6 +1363,22 @@ export class ErpAppointmentsList extends LitElement {
     this.askingSeriesScope = false;
   }
 
+  /** appointments#236 — the occurrences «this and following» could not move stay on their own slot;
+   *  the receptionist is told which dates and why, instead of finding out the day of each one. */
+  private notifyNotMoved(answer: Record<string, unknown> | null): void {
+    const skipped = answer && Array.isArray(answer.skipped) ? skippedDates(answer) : [];
+    if (skipped.length === 0) return;
+    const t = (k: string, p?: Record<string, unknown>): string => erplora().t(CATALOG, k, p);
+    const lines = skipped.map(
+      (s) =>
+        `${formatTypedDate(s.occurrence_date, erplora().locale) || s.occurrence_date} — ${t(
+          NOT_MOVED_REASON_KEYS[s.code] ?? 'ui.seriesMoveSkipOther',
+        )}`,
+    );
+    const head = t('ui.seriesMovedSkipped', { moved: Number(answer?.moved ?? 0), skipped: skipped.length });
+    erplora().notify?.({ type: 'warning', message: `${head} ${lines.join(' · ')}` });
+  }
+
   /** Escribe el movimiento con el alcance elegido.
    *
    *  `this_only` mueve UNA cita, que es lo que esta pantalla hacía siempre. `this_and_following`
@@ -1372,16 +1392,26 @@ export class ErpAppointmentsList extends LitElement {
     this.formError = '';
     try {
       if (scope === 'this_and_following') {
-        await erplora().command('appointments.recurring.update', {
-          recurring_id: this.rescheduleSeriesId,
-          scope,
-          from_occurrence_date: this.rescheduleOccurrence,
-          // HORA DE PARED, no un instante: la hora de una plantilla es una lectura de reloj y no
-          // se guarda convertida (appointments#12). El servidor la sitúa en la zona del negocio
-          // día a día, que es lo que conserva la hora al cruzar el cambio de hora.
-          time: this.rescheduleStart.slice(11, 16),
-          duration_minutes: minutes,
-        });
+        // appointments#236 — the SERIES' professional travels as selector: the handler judges every
+        // occurrence it drags on her agenda and working days. It is read from the template, not
+        // taken from the tapped appointment, which may have been handed to someone else.
+        const template = rows<{ staff_id?: string | null }>(
+          await erplora().query('appointments.recurring.get', { recurring_id: this.rescheduleSeriesId }),
+        )[0];
+        const answer = handlerAnswer(
+          await erplora().command('appointments.recurring.update', {
+            recurring_id: this.rescheduleSeriesId,
+            staff_id: template?.staff_id ?? '',
+            scope,
+            from_occurrence_date: this.rescheduleOccurrence,
+            // HORA DE PARED, no un instante: la hora de una plantilla es una lectura de reloj y no
+            // se guarda convertida (appointments#12). El servidor la sitúa en la zona del negocio
+            // día a día, que es lo que conserva la hora al cruzar el cambio de hora.
+            time: this.rescheduleStart.slice(11, 16),
+            duration_minutes: minutes,
+          }),
+        );
+        this.notifyNotMoved(answer);
       } else {
         // Pared del salón + su offset (appointments#76/#12): mismo instante, y el texto dice la
         // hora que el salón ve en la pared.

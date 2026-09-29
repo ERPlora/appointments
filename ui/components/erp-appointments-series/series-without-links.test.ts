@@ -69,7 +69,13 @@ beforeEach(() => {
         return { ok: true, result: { booked: 4, already_booked: 0, skipped: [] } };
       }
       if (name === 'appointments.recurring.update') {
-        return { recurring_id: 'r1', split: false, pattern_changed: true, moved: 0, cancelled_pattern_change: 0, locked_invoiced: 0 };
+        // The real envelope the sdk resolves (appointments#236): the handler answer lives in `result`.
+        return {
+          ok: true,
+          operations: [],
+          new_ids: [],
+          result: { recurring_id: 'r1', split: false, pattern_changed: true, moved: 0, cancelled_pattern_change: 0, locked_invoiced: 0, skipped: [] },
+        };
       }
       return { ok: true };
     },

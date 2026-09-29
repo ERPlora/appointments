@@ -490,6 +490,9 @@ fn host_ctx(input: &Value) -> Result<HostCtx, String> {
 
 /// Cita candidata a solape (lectura aportada por el caller en el payload).
 struct Candidate {
+    /// The row's id, so a series edit can tell an occurrence's old slot from somebody else's
+    /// (appointments#236). Empty for a booking this very command is about to write.
+    id: String,
     start: Dt,
     end: Dt,
     label: String,
@@ -539,6 +542,7 @@ fn candidates_from(input: &Value, staff_id: &str, exclude_id: &str) -> Option<Ve
                 let end = parse_dt(&as_str(row.get("end_datetime")?))?;
                 let number = str_or(row, "appointment_number", "(sin número)");
                 Some(Candidate {
+                    id: as_str(row.get("id").unwrap_or(&Value::Null)),
                     start,
                     end,
                     label: number,
@@ -2156,6 +2160,7 @@ fn prepare_appointment(
     }
 
     candidates.push(Candidate {
+        id: String::new(),
         start,
         end,
         label: format!("(nueva {})", start.iso()),
@@ -2905,6 +2910,34 @@ pub fn update_recurring_series_pure(input: Value) -> Result<Output, String> {
         ));
     };
 
+    // appointments#236: every occurrence that moves is judged like a single `reschedule`, on the
+    // series' professional's agenda and days. She travels as a SELECTOR (the only place
+    // `reads.params` can key those reads on), checked against the template the runtime loaded —
+    // judging the moves on somebody else's agenda would be judging nothing.
+    let staff_id = str_or(&tmpl, "staff_id", "");
+    if str_or(&payload, "staff_id", "") != staff_id {
+        return Ok(refuse(
+            "appointments.recurring_mismatch",
+            "The recurring appointment does not match the professional sent; nothing was changed.",
+        ));
+    }
+    // What the judges need, or nothing moves: a read that did not arrive is not «nothing says no».
+    let Some(settings) = settings_read(&input) else {
+        return Ok(refuse(
+            "appointments.settings_unavailable",
+            "The booking settings could not be read; nothing was changed.",
+        ));
+    };
+    let Some(candidates) = candidates_from(&input, &staff_id, "") else {
+        return Ok(Output::new().with_error(availability_unavailable()));
+    };
+    if read_rows(&input, "appointments.blocked_times.upcoming").is_none() {
+        return Ok(Output::new().with_error(availability_unavailable()));
+    }
+    if !staff_id.is_empty() && read_rows(&input, STAFF_DAYS_READ).is_none() {
+        return Ok(Output::new().with_error(staff_hours_unavailable()));
+    }
+
     // THE PAST IS FROZEN: the cut can never land before the business day that is running.
     let today = business_day_of(&ctx.now, ctx.tz);
     let cut_days = days_from_civil(from.y, from.mo, from.d).max(today);
@@ -3022,6 +3055,8 @@ pub fn update_recurring_series_pure(input: Value) -> Result<Output, String> {
     let mut locked_invoiced = 0i64;
     let mut kept_cancelled = 0i64;
     let mut cancelled_pattern_change = 0i64;
+    // appointments#236: what could not be moved, with its date and code — said, never moved anyway.
+    let mut skipped: Vec<Value> = Vec::new();
     for row in occurrences.iter() {
         let date = as_str(row.get("occurrence_date").unwrap_or(&Value::Null));
         let Some(d) = parse_dt(&date) else { continue };
@@ -3045,7 +3080,7 @@ pub fn update_recurring_series_pure(input: Value) -> Result<Output, String> {
         if appointment_id.is_empty() {
             continue;
         }
-        if moved + cancelled_pattern_change >= 50 {
+        if moved + cancelled_pattern_change + skipped.len() as i64 >= 50 {
             break; // same per-invocation ceiling as `materialize` and `bulk_create`
         }
         // appointments#90 — PATTERN CHANGE. If the date no longer falls on the new pattern there is
@@ -3088,6 +3123,45 @@ pub fn update_recurring_series_pure(input: Value) -> Result<Output, String> {
         let Some(end_iso) = business_iso_plus_minutes(&start_iso, duration, ctx.tz) else {
             continue;
         };
+        let (Some(start), Some(end)) = (parse_dt(&start_iso), parse_dt(&end_iso)) else {
+            continue;
+        };
+        let occurrence_staff = str_or(row, "staff_id", "");
+        let refusal = if !occurrence_staff.is_empty() && occurrence_staff != staff_id {
+            // Handed by hand to another professional: her agenda and her days are not the ones
+            // read, so there is nothing to judge the move on.
+            Some(staff_hours_unavailable())
+        } else {
+            series_move_refusal(
+                &input,
+                &settings,
+                &candidates,
+                &ctx,
+                &staff_id,
+                &appointment_id,
+                &start,
+                &end,
+            )
+        };
+        if let Some(refusal) = refusal {
+            // A schedules read that did not arrive is not a verdict about this date: nothing moves.
+            if refusal.code == "appointments.availability_unavailable" {
+                return Ok(Output::new().with_error(refusal));
+            }
+            skipped.push(json!({ "occurrence_date": date, "code": refusal.code }));
+            // It stays on its slot, but as an exception of the half that now governs its date —
+            // left on the closed half, `materialize` of the new one would book that day twice.
+            if target_series != recurring_id {
+                let mut keep = Map::new();
+                keep.insert("appointment_id".into(), json!(appointment_id));
+                keep.insert("recurring_id".into(), json!(target_series));
+                ops.push(Operation::sql(
+                    "appointments._recurring_keep_occurrence",
+                    keep,
+                ));
+            }
+            continue;
+        }
         let mut mv = Map::new();
         mv.insert("appointment_id".into(), json!(appointment_id));
         mv.insert("recurring_id".into(), json!(target_series));
@@ -3118,8 +3192,60 @@ pub fn update_recurring_series_pure(input: Value) -> Result<Output, String> {
         "moved": moved,
         "cancelled_pattern_change": cancelled_pattern_change,
         "locked_invoiced": locked_invoiced,
-        "kept_cancelled": kept_cancelled
+        "kept_cancelled": kept_cancelled,
+        "skipped": skipped
     })))
+}
+
+/// Why one occurrence of a series edit cannot move to `[start, end)` — the judges of
+/// `reschedule`, in its order (appointments#236): the past, the lead time, the opening hours, her
+/// working hours, blocked periods and another appointment of hers in the slot. The occurrence's
+/// own old slot is not a conflict with itself.
+///
+/// The minimum notice is NOT waived: a series is the salon's standing booking, like the ones
+/// `materialize` writes, and nobody at the counter declared the short notice of every date.
+#[allow(clippy::too_many_arguments)]
+fn series_move_refusal(
+    input: &Value,
+    settings: &Value,
+    candidates: &[Candidate],
+    ctx: &HostCtx,
+    staff_id: &str,
+    appointment_id: &str,
+    start: &Dt,
+    end: &Dt,
+) -> Option<DomainError> {
+    if cmp_secs(start, &ctx.now) < 0 {
+        return Some(DomainError::new(
+            "appointments.invalid_start",
+            "An appointment cannot start in the past.",
+        ));
+    }
+    if let Some(refusal) = lead_time_refusal(settings, start, &ctx.now, false) {
+        return Some(refusal);
+    }
+    if let Some(refusal) = schedule_refusal(input, ctx.tz, start, end) {
+        return Some(refusal);
+    }
+    // A series without a professional (older than appointments#246) has nobody's day to judge.
+    if !staff_id.is_empty() {
+        if let Some(refusal) =
+            staff_hours_refusal(input, StaffHoursGate::DaysAhead, ctx.tz, start, end)
+        {
+            return Some(refusal);
+        }
+    }
+    if let Some(refusal) = blocked_refusal(input, staff_id, start, end) {
+        return Some(refusal);
+    }
+    if !allow_overlapping_of(settings) {
+        if let Some(c) = candidates.iter().find(|c| {
+            c.id != appointment_id && cmp_secs(&c.start, end) < 0 && cmp_secs(&c.end, start) > 0
+        }) {
+            return Some(overlap_refusal(c));
+        }
+    }
+    None
 }
 
 /// ¿La fecha `day` (días desde epoch) sigue cayendo en la pauta `frequency`/`day_of_week` anclada
@@ -5381,7 +5507,10 @@ mod tests {
             "recurring_id": "r1",
             "scope": "this_and_following",
             "from_occurrence_date": from,
-            "time": time
+            "time": time,
+            // appointments#236: the series' professional, a SELECTOR like `materialize`'s — the only
+            // place `reads.params` can key her agenda and her days on.
+            "staff_id": "s1"
         })
     }
 
@@ -5643,6 +5772,7 @@ mod tests {
             json!({
                 "recurring_id": "r1",
                 "scope": "this_and_following",
+                "staff_id": "s1",
                 "from_occurrence_date": "2026-08-17",
                 "duration_minutes": 45
             }),
@@ -5706,6 +5836,7 @@ mod tests {
             json!({
                 "recurring_id": "r1",
                 "scope": "this_and_following",
+                "staff_id": "s1",
                 "from_occurrence_date": "2026-08-17",
                 "time": "11:30",
                 "duration_minutes": 45
@@ -5736,6 +5867,7 @@ mod tests {
             json!({
                 "recurring_id": "r1",
                 "scope": "this_and_following",
+                "staff_id": "s1",
                 "from_occurrence_date": "2026-08-17",
                 "time": "23:30",
                 "duration_minutes": 60
@@ -5851,7 +5983,8 @@ mod tests {
         let mut p = json!({
             "recurring_id": "r1",
             "scope": "this_and_following",
-            "from_occurrence_date": from
+            "from_occurrence_date": from,
+            "staff_id": "s1"
         });
         if let Value::Object(fields) = extra {
             for (k, v) in fields {
@@ -6178,6 +6311,432 @@ mod tests {
             Some(false)
         );
         assert_eq!(result.get("moved").and_then(|v| v.as_i64()), Some(2));
+    }
+
+    // ── appointments#236 · «this and following» judges every occurrence it moves ─────────────
+    //
+    // Moving ONE appointment was refused outside the hours, on a block, on top of another
+    // appointment of the same professional or outside her shift (#89, #98, #229); moving the
+    // SERIES wrote the new slot of every occurrence without looking at any of it. Each occurrence
+    // now goes through the same judges as `reschedule`, and the one that does not fit is SKIPPED
+    // and REPORTED (`skipped`: date + code) instead of being moved anyway — the answer the module
+    // already gives when it books a series (appointments#238), and the one the market gives
+    // (decision in the PR). The skipped one stays on its old slot: a year-long series is not
+    // refused because one Monday is a holiday.
+
+    /// Two Mondays of the series still ahead (08-17 and 08-24), with `reads` planted over the
+    /// fixture's defaults.
+    fn judged_edit(payload: Value, reads: Value) -> Output {
+        let mut inp = series_edit_input(
+            payload,
+            template(json!({ "max_occurrences": null })),
+            json!([
+                occurrence("2026-08-17", "confirmed", json!({})),
+                occurrence("2026-08-24", "pending", json!({}))
+            ]),
+        );
+        if let Value::Object(extra) = reads {
+            for (k, v) in extra {
+                inp["context"]["reads"][k] = v;
+            }
+        }
+        update_recurring_series_pure(inp).unwrap()
+    }
+
+    fn moved_ids(out: &Output) -> Vec<String> {
+        ops_named(out, "_recurring_move_occurrence")
+            .iter()
+            .filter_map(|op| op.params.get("appointment_id").and_then(|v| v.as_str()))
+            .map(str::to_string)
+            .collect()
+    }
+
+    fn skipped_of(out: &Output) -> Vec<(String, String)> {
+        out.result
+            .as_ref()
+            .and_then(|r| r.get("skipped"))
+            .and_then(|s| s.as_array())
+            .expect("the answer lists what was not moved")
+            .iter()
+            .map(|s| (as_str(&s["occurrence_date"]), as_str(&s["code"])))
+            .collect()
+    }
+
+    /// 🔴 THE SYMPTOM. The salon opens Mondays 09:00–18:00; moving the series to 19:00 used to
+    /// move both Mondays after closing time.
+    #[test]
+    fn series_edit_does_not_move_an_occurrence_outside_the_business_hours() {
+        let hours = sched_hours(json!([bh(0, "09:00", "18:00")]));
+        let out = judged_edit(edit_payload("2026-08-17", "19:00"), hours.clone());
+        assert!(out.error.is_none(), "one date that does not fit does not refuse the series");
+        assert!(moved_ids(&out).is_empty(), "moved after closing time: {:?}", moved_ids(&out));
+        assert_eq!(
+            skipped_of(&out),
+            vec![
+                ("2026-08-17".to_string(), "appointments.outside_schedule".to_string()),
+                ("2026-08-24".to_string(), "appointments.outside_schedule".to_string()),
+            ]
+        );
+        assert_eq!(out.result.as_ref().unwrap()["moved"], json!(0));
+
+        // The control: inside the hours both move — «0 moved» is not the answer to everything.
+        let out = judged_edit(edit_payload("2026-08-17", "12:00"), hours);
+        assert_eq!(moved_ids(&out), vec!["apt-2026-08-17", "apt-2026-08-24"]);
+        assert!(skipped_of(&out).is_empty());
+    }
+
+    /// A block on one of the dates skips that date only; the rest of the series moves.
+    #[test]
+    fn series_edit_skips_the_occurrence_that_lands_on_a_blocked_period() {
+        let out = judged_edit(
+            edit_payload("2026-08-17", "12:00"),
+            json!({ "appointments.blocked_times.upcoming": [
+                { "id": "b1", "title": "Training", "staff_id": "s1", "is_deleted": 0,
+                  "start_datetime": "2026-08-24T10:00:00+02:00",
+                  "end_datetime": "2026-08-24T14:00:00+02:00" }
+            ] }),
+        );
+        assert!(out.error.is_none(), "{:?}", out.error);
+        assert_eq!(moved_ids(&out), vec!["apt-2026-08-17"]);
+        assert_eq!(
+            skipped_of(&out),
+            vec![("2026-08-24".to_string(), "appointments.blocked".to_string())]
+        );
+    }
+
+    /// Another appointment of the same professional in the new slot: that date stays where it
+    /// was. The series' OWN occurrence in its old slot is not a conflict with itself.
+    #[test]
+    fn series_edit_skips_the_occurrence_that_would_overlap_another_appointment() {
+        let agenda = json!([
+            { "id": "apt-2026-08-17", "appointment_number": "A-17", "staff_id": "s1",
+              "status": "confirmed",
+              "start_datetime": "2026-08-17T11:00:00+02:00", "end_datetime": "2026-08-17T11:30:00+02:00" },
+            { "id": "other", "appointment_number": "A-99", "staff_id": "s1", "status": "confirmed",
+              "start_datetime": "2026-08-24T11:30:00+02:00", "end_datetime": "2026-08-24T12:00:00+02:00" }
+        ]);
+        let out = judged_edit(
+            edit_payload("2026-08-17", "11:15"),
+            json!({ "appointments.appointments.upcoming_for_staff": agenda.clone() }),
+        );
+        assert!(out.error.is_none(), "{:?}", out.error);
+        assert_eq!(moved_ids(&out), vec!["apt-2026-08-17"], "it collided with its own old slot");
+        assert_eq!(
+            skipped_of(&out),
+            vec![("2026-08-24".to_string(), "appointments.overlapping_appointment".to_string())]
+        );
+
+        // A hub that allows two appointments at once moves it anyway, like `reschedule` does.
+        let mut reads = json!({ "appointments.appointments.upcoming_for_staff": agenda });
+        reads["appointments.settings.get"] = json!([{ "allow_overlapping": 1, "default_duration": 60,
+            "min_booking_notice": 0, "max_advance_booking": 0 }]);
+        let out = judged_edit(edit_payload("2026-08-17", "11:15"), reads);
+        assert_eq!(moved_ids(&out), vec!["apt-2026-08-17", "apt-2026-08-24"]);
+    }
+
+    /// Her day off on one of the dates, and a new time after her shift on the other.
+    #[test]
+    fn series_edit_skips_the_occurrence_outside_the_professionals_hours() {
+        let days = staff_days(&[
+            staff_day("2026-08-17", &[("09:00:00", "18:00:00")], json!([])),
+            staff_day("2026-08-24", &[("09:00:00", "18:00:00")], full_day_off("2026-08-24")),
+        ]);
+        let out = judged_edit(edit_payload("2026-08-17", "12:00"), json!({ DAYS_READ: days.clone() }));
+        assert!(out.error.is_none(), "{:?}", out.error);
+        assert_eq!(moved_ids(&out), vec!["apt-2026-08-17"]);
+        assert_eq!(
+            skipped_of(&out),
+            vec![("2026-08-24".to_string(), OUTSIDE_STAFF_HOURS.to_string())]
+        );
+
+        let out = judged_edit(edit_payload("2026-08-17", "17:45"), json!({ DAYS_READ: days }));
+        assert!(moved_ids(&out).is_empty(), "17:45 + 30' ends after her shift");
+    }
+
+    /// A date the professional's days do not answer (beyond the read's horizon) is not a date she
+    /// is free: skipped with its code, never moved blind.
+    #[test]
+    fn series_edit_does_not_move_a_date_her_days_do_not_answer() {
+        let days = staff_days(&[staff_day("2026-08-17", &[("09:00:00", "18:00:00")], json!([]))]);
+        let out = judged_edit(edit_payload("2026-08-17", "12:00"), json!({ DAYS_READ: days }));
+        assert_eq!(moved_ids(&out), vec!["apt-2026-08-17"]);
+        assert_eq!(
+            skipped_of(&out),
+            vec![("2026-08-24".to_string(), STAFF_HOURS_UNAVAILABLE.to_string())]
+        );
+    }
+
+    /// The past and the minimum notice judge the move too: today (Friday 31/07, 12:00 in Madrid)
+    /// the series cannot be moved to 11:00, nor to 12:30 with a two-hour notice.
+    #[test]
+    fn series_edit_does_not_move_todays_occurrence_into_the_past_or_inside_the_notice() {
+        let edit = |time: &str, notice: i64| {
+            let mut inp = series_edit_input(
+                edit_payload("2026-07-31", time),
+                template(json!({ "start_date": "2026-07-24", "max_occurrences": null })),
+                json!([occurrence("2026-07-31", "confirmed", json!({}))]),
+            );
+            inp["context"]["reads"]["appointments.settings.get"] = json!([{ "allow_overlapping": 0,
+                "default_duration": 60, "min_booking_notice": notice, "max_advance_booking": 0 }]);
+            update_recurring_series_pure(inp).unwrap()
+        };
+        let out = edit("11:00", 0);
+        assert_eq!(skipped_of(&out), vec![("2026-07-31".to_string(), "appointments.invalid_start".to_string())]);
+        let out = edit("12:30", 120);
+        assert_eq!(skipped_of(&out), vec![("2026-07-31".to_string(), "appointments.too_soon".to_string())]);
+        let out = edit("15:00", 120);
+        assert_eq!(moved_ids(&out), vec!["apt-2026-07-31"]);
+    }
+
+    /// An occurrence reassigned by hand to ANOTHER professional cannot be judged on the series'
+    /// professional's agenda: it is reported, never moved blind.
+    #[test]
+    fn series_edit_does_not_move_blind_an_occurrence_of_another_professional() {
+        let mut inp = series_edit_input(
+            edit_payload("2026-08-17", "12:00"),
+            template(json!({ "max_occurrences": null })),
+            json!([
+                occurrence("2026-08-17", "confirmed", json!({ "staff_id": "s1" })),
+                occurrence("2026-08-24", "pending", json!({ "staff_id": "s2" }))
+            ]),
+        );
+        inp["context"]["reads"]["appointments.settings.get"] = json!([{ "allow_overlapping": 0,
+            "default_duration": 60, "min_booking_notice": 0, "max_advance_booking": 0 }]);
+        let out = update_recurring_series_pure(inp).unwrap();
+        assert_eq!(moved_ids(&out), vec!["apt-2026-08-17"]);
+        assert_eq!(
+            skipped_of(&out),
+            vec![("2026-08-24".to_string(), STAFF_HOURS_UNAVAILABLE.to_string())]
+        );
+    }
+
+    /// What is not moved still belongs to the series that now governs its date: it goes to the
+    /// NEW half (as an exception on its old slot), or `materialize` of the new half would book the
+    /// same customer a second time that day. And it leaves no «rescheduled» line: it did not move.
+    #[test]
+    fn a_skipped_occurrence_follows_the_new_half_without_a_reschedule() {
+        let hours = sched_hours(json!([bh(0, "09:00", "18:00")]));
+        let out = judged_edit(edit_payload("2026-08-17", "19:00"), hours.clone());
+        let new_series = as_str(&out.result.as_ref().unwrap()["recurring_id"]);
+        assert_ne!(new_series, "r1", "cutting at 08-17 splits the series");
+        let kept = ops_named(&out, "_recurring_keep_occurrence");
+        let ids: Vec<_> = kept
+            .iter()
+            .map(|op| (as_str(&op.params["appointment_id"]), as_str(&op.params["recurring_id"])))
+            .collect();
+        assert_eq!(
+            ids,
+            vec![
+                ("apt-2026-08-17".to_string(), new_series.clone()),
+                ("apt-2026-08-24".to_string(), new_series.clone()),
+            ]
+        );
+        assert!(ops_named(&out, "_recurring_move_occurrence").is_empty());
+
+        // Edited in place (cut at its first occurrence): nothing to reassign, it is the same series.
+        let mut inp = series_edit_input(
+            edit_payload("2026-08-03", "19:00"),
+            template(json!({ "max_occurrences": null })),
+            json!([occurrence("2026-08-03", "confirmed", json!({}))]),
+        );
+        for (k, v) in hours.as_object().unwrap() {
+            inp["context"]["reads"][k] = v.clone();
+        }
+        let out = update_recurring_series_pure(inp).unwrap();
+        assert_eq!(skipped_of(&out).len(), 1);
+        assert!(ops_named(&out, "_recurring_keep_occurrence").is_empty());
+    }
+
+    /// A read the judges need that did not arrive refuses the WHOLE edit, nothing written — never
+    /// «moved because nothing said no».
+    #[test]
+    fn series_edit_refuses_whole_when_a_read_the_judges_need_is_missing() {
+        for (read, code) in [
+            (DAYS_READ, STAFF_HOURS_UNAVAILABLE),
+            ("appointments.blocked_times.upcoming", "appointments.availability_unavailable"),
+            ("appointments.appointments.upcoming_for_staff", "appointments.availability_unavailable"),
+            ("appointments.settings.get", "appointments.settings_unavailable"),
+            ("schedules.business_hours.list", "appointments.availability_unavailable"),
+        ] {
+            let mut inp = series_edit_input(
+                edit_payload("2026-08-17", "12:00"),
+                template(json!({ "max_occurrences": null })),
+                json!([occurrence("2026-08-17", "confirmed", json!({}))]),
+            );
+            inp["context"]["reads"].as_object_mut().unwrap().remove(read);
+            let out = update_recurring_series_pure(inp).unwrap();
+            assert_eq!(domain_code(&out).as_deref(), Some(code), "{read}");
+            assert!(out.operations.is_empty(), "{read}: something was written");
+        }
+    }
+
+    /// A missing read refuses the edit UP FRONT, not when some occurrence happens to reach the
+    /// judge that needs it: with every date turned away earlier (after closing time), a lost
+    /// blocked-times read would otherwise go unnoticed and the answer would read as a verdict.
+    #[test]
+    fn series_edit_refuses_a_missing_read_even_when_no_date_reaches_its_judge() {
+        let mut inp = series_edit_input(
+            edit_payload("2026-08-17", "19:00"),
+            template(json!({ "max_occurrences": null })),
+            json!([occurrence("2026-08-17", "confirmed", json!({}))]),
+        );
+        if let Value::Object(hours) = sched_hours(json!([bh(0, "09:00", "18:00")])) {
+            for (k, v) in hours {
+                inp["context"]["reads"][k] = v;
+            }
+        }
+        inp["context"]["reads"]
+            .as_object_mut()
+            .unwrap()
+            .remove("appointments.blocked_times.upcoming");
+        let out = update_recurring_series_pure(inp).unwrap();
+        assert_eq!(
+            domain_code(&out).as_deref(),
+            Some("appointments.availability_unavailable")
+        );
+        assert!(out.operations.is_empty(), "something was written");
+    }
+
+    /// The professional is a selector, checked against the template the runtime loaded: pointing
+    /// at somebody else's agenda would judge the moves on the wrong person.
+    #[test]
+    fn series_edit_refuses_a_professional_that_is_not_the_series_one() {
+        for staff in [json!("s2"), Value::Null] {
+            let mut payload = edit_payload("2026-08-17", "12:00");
+            if staff.is_null() {
+                payload.as_object_mut().unwrap().remove("staff_id");
+            } else {
+                payload["staff_id"] = staff.clone();
+            }
+            let out = judged_edit(payload, json!({}));
+            assert_eq!(
+                domain_code(&out).as_deref(),
+                Some("appointments.recurring_mismatch"),
+                "staff {staff}"
+            );
+            assert!(out.operations.is_empty());
+        }
+    }
+
+    /// A series WITHOUT a professional (older than appointments#246, which now asks for one) has
+    /// nobody's working days to judge: her hours never turn a date away — not when the days read
+    /// answers nothing for that date, not when it did not arrive — while the salon's own hours
+    /// still do.
+    #[test]
+    fn series_edit_of_a_series_without_a_professional_judges_everything_but_her_hours() {
+        let edit = |time: &str, days: Option<Value>| {
+            let mut payload = edit_payload("2026-08-17", time);
+            payload["staff_id"] = json!("");
+            let mut inp = series_edit_input(
+                payload,
+                template(json!({ "staff_id": "", "staff_name": "", "max_occurrences": null })),
+                json!([
+                    occurrence("2026-08-17", "confirmed", json!({ "staff_id": "" })),
+                    occurrence("2026-08-24", "pending", json!({ "staff_id": null }))
+                ]),
+            );
+            if let Value::Object(hours) = sched_hours(json!([bh(0, "09:00", "18:00")])) {
+                for (k, v) in hours {
+                    inp["context"]["reads"][k] = v;
+                }
+            }
+            let reads = inp["context"]["reads"].as_object_mut().unwrap();
+            match days {
+                Some(rows) => {
+                    reads.insert(DAYS_READ.into(), rows);
+                }
+                None => {
+                    reads.remove(DAYS_READ);
+                }
+            }
+            update_recurring_series_pure(inp).unwrap()
+        };
+
+        for days in [Some(json!([])), None] {
+            let out = edit("12:00", days.clone());
+            assert!(out.error.is_none(), "days {days:?}: {:?}", out.error);
+            assert_eq!(
+                moved_ids(&out),
+                vec!["apt-2026-08-17", "apt-2026-08-24"],
+                "days {days:?}"
+            );
+            assert!(skipped_of(&out).is_empty(), "days {days:?}");
+        }
+
+        let out = edit("19:00", Some(json!([])));
+        assert!(moved_ids(&out).is_empty(), "moved after closing time");
+        assert_eq!(
+            skipped_of(&out),
+            vec![
+                ("2026-08-17".to_string(), "appointments.outside_schedule".to_string()),
+                ("2026-08-24".to_string(), "appointments.outside_schedule".to_string()),
+            ]
+        );
+    }
+
+    /// The per-invocation ceiling counts what is left behind too: an occurrence that does not
+    /// move still writes an operation of its own (it follows the new half), so sixty dates that
+    /// do not fit are not sixty writes in one command.
+    #[test]
+    fn series_edit_ceiling_counts_the_occurrences_it_leaves_behind() {
+        let first = days_from_civil(2026, 8, 17);
+        let occurrences: Vec<Value> = (0..60)
+            .map(|n| {
+                let (y, mo, d) = civil_from_days(first + n);
+                occurrence(&format!("{y:04}-{mo:02}-{d:02}"), "confirmed", json!({}))
+            })
+            .collect();
+        let mut inp = series_edit_input(
+            edit_payload("2026-08-17", "19:00"),
+            template(json!({ "max_occurrences": null })),
+            Value::Array(occurrences),
+        );
+        let every_day = Value::Array((0..7).map(|dow| bh(dow, "09:00", "18:00")).collect());
+        if let Value::Object(hours) = sched_hours(every_day) {
+            for (k, v) in hours {
+                inp["context"]["reads"][k] = v;
+            }
+        }
+        let out = update_recurring_series_pure(inp).unwrap();
+        assert!(out.error.is_none(), "{:?}", out.error);
+        assert!(moved_ids(&out).is_empty(), "moved after closing time");
+        assert_eq!(skipped_of(&out).len(), 50);
+        assert_eq!(ops_named(&out, "_recurring_keep_occurrence").len(), 50);
+    }
+
+    /// The series edit declares every read its judges need, keyed on the professional selector.
+    #[test]
+    fn the_series_edit_declares_the_reads_of_its_judges() {
+        let manifest: Value = serde_json::from_str(MANIFEST).expect("module.json parses");
+        let reads = manifest["commands"]["appointments.recurring.update"]["reads"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default();
+        for (query, params) in [
+            ("appointments.settings.get", Value::Null),
+            ("appointments.blocked_times.upcoming", Value::Null),
+            ("appointments.appointments.upcoming_for_staff", json!({ "staff_id": "payload.staff_id" })),
+            (DAYS_READ, json!({ "staff_id": "payload.staff_id", "days": "400" })),
+            ("schedules.business_hours.list", Value::Null),
+            ("schedules.special_days.list", Value::Null),
+            ("schedules.overrides.list", Value::Null),
+            ("schedules.exception_intervals.list", Value::Null),
+        ] {
+            let read = reads.iter().find(|r| r["query"] == query);
+            assert!(read.is_some(), "recurring.update does not declare {query}");
+            assert_eq!(read.unwrap()["required"], json!(true), "{query}");
+            assert_eq!(read.unwrap().get("params").cloned().unwrap_or(Value::Null), params, "{query}");
+        }
+        let schema: Value = serde_json::from_str(
+            &std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../schemas/recurring_update.json"))
+                .expect("schema"),
+        )
+        .expect("schema parses");
+        assert!(schema["properties"]["staff_id"].is_object(), "staff_id is not accepted");
+        assert!(
+            schema["required"].as_array().unwrap().contains(&json!("staff_id")),
+            "staff_id must be required: without it the reads key nobody's agenda"
+        );
     }
 
     #[test]

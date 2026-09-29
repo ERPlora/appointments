@@ -26,7 +26,11 @@ it in-store only and Vagaro behind an explicit *Double Book* action.
 One place deliberately does **not** ask:
 
 - **Moving a whole series** (`appointments.recurring.update`, scope *this and following*). That is
-  N occurrences the server relocates, not one slot.
+  N occurrences the server relocates, not one slot. Since appointments#236 each of them is judged
+  like a single move (opening hours, her shift, blocked time, the past, the minimum notice and —
+  with the toggle off — another appointment): the ones that do not fit stay on their own slot and
+  the screen lists them with the reason, instead of the whole series being refused or moved on top
+  of somebody.
 
 With the toggle **off** nothing changed: no prompt, and the server refuses the booking
 (`_appointment_overlap_assert.sql`). Offering a "book anyway" that always fails would be worse than

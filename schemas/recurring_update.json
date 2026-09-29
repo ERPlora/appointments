@@ -4,6 +4,10 @@
   "type": "object",
   "properties": {
     "recurring_id": { "type": "string", "minLength": 1 },
+    "staff_id": {
+      "type": "string",
+      "description": "The series' professional, as a SELECTOR: it must be the one the series has (empty for an old series without one). Her agenda and her working days are read by it, so every moved occurrence is judged against them; a different one is refused (appointments.recurring_mismatch)."
+    },
     "scope": {
       "type": "string",
       "enum": ["this_and_following"],
@@ -28,6 +32,6 @@
       "description": "New weekday the series aligns to (0 = Monday … 6 = Sunday), for weekly/biweekly. An explicit null CLEARS it and the series realigns with its own start date; the key absent leaves it as it is."
     }
   },
-  "required": ["recurring_id", "scope", "from_occurrence_date"],
+  "required": ["recurring_id", "scope", "from_occurrence_date", "staff_id"],
   "additionalProperties": false
 }

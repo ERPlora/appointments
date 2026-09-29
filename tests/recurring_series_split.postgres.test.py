@@ -90,12 +90,18 @@ def check_manifest() -> None:
             )
         if schema.get("additionalProperties") is not False:
             fail(f"{schema_rel}: additionalProperties must be false")
+        # appointments#236: and the series' professional, the selector her agenda and her days
+        # are read by — without it the moves would be judged on nobody's agenda.
         if set(schema.get("required") or []) != {
             "recurring_id",
             "scope",
             "from_occurrence_date",
+            "staff_id",
         }:
-            fail(f"{schema_rel}: required must name the series, the scope and the cut")
+            fail(
+                f"{schema_rel}: required must name the series, the scope, the cut and the "
+                "professional"
+            )
 
     reads = {r.get("query"): r for r in cmd.get("reads") or [] if isinstance(r, dict)}
     for needed in ("appointments.recurring.get", "appointments.recurring.occurrences"):
@@ -114,7 +120,9 @@ def check_manifest() -> None:
     occ_sql = (
         MODULE_DIR / MANIFEST["queries"]["appointments.recurring.occurrences"]["sql"]
     ).read_text()
-    for column in ("id", "converted_sale_id", "start_datetime"):
+    # appointments#236: `staff_id` too — an occurrence handed to another professional cannot be
+    # judged on the series' professional's agenda.
+    for column in ("id", "converted_sale_id", "start_datetime", "staff_id"):
         if not re.search(rf"\b{column}\b", occ_sql.split("FROM")[0]):
             fail(
                 f"recurring_occurrences.sql: does not select {column} — the split cannot use it"
@@ -451,6 +459,68 @@ def check_cancel_door() -> None:
         fail("_recurring_cancel_occurrence.sql: it reached another hub's appointment")
 
 
+def keep(appointment_id: str, series: str, hub: str = HUB) -> None:
+    run_command(
+        "commands/_recurring_keep_occurrence.sql",
+        {
+            "hub_id": hub,
+            "appointment_id": appointment_id,
+            "recurring_id": series,
+            "current_user_id": "u1",
+            "now": NOW,
+        },
+    )
+
+
+def series_of(appointment_id: str) -> str:
+    return scalar(
+        "SELECT recurring_id || ' ' || start_datetime FROM appointments_appointment "
+        f"WHERE id = {literal(appointment_id)}"
+    )
+
+
+def check_keep_door() -> None:
+    """appointments#236 — the occurrence a series edit could NOT move (closed, blocked, taken,
+    outside her hours) stays on its slot but follows the NEW half of the series, so `materialize`
+    of the new half does not book the same customer twice that day. Same door as the move: only
+    a plan (`pending|confirmed`), never an invoiced one, never another hub's — and the slot is not
+    touched, nor does it leave a «rescheduled» line (it did not move).
+    """
+    for day, status in (("2026-11-02", "pending"), ("2026-11-03", "confirmed")):
+        oid = f"o-keep-{status}"
+        seed_occurrence(oid, HUB, "r1", day, status=status)
+        keep(oid, "r1-new")
+        if series_of(oid) != f"r1-new {day}T11:00:00+02:00":
+            fail(
+                f"_recurring_keep_occurrence.sql: a {status} occurrence did not follow the new "
+                f"half on its own slot (got {series_of(oid)!r})"
+            )
+        if rescheduled_lines(oid) != "0":
+            fail("_recurring_keep_occurrence.sql: it left a «rescheduled» line for a stay")
+
+    blocked = [
+        ("completed", dict(status="completed")),
+        ("cancelled", dict(status="cancelled")),
+        ("in_progress", dict(status="in_progress")),
+        ("already a sale", dict(sale="sale-1")),
+        ("soft-deleted", dict(deleted=1)),
+    ]
+    for index, (label, kwargs) in enumerate(blocked):
+        oid = f"o-nokeep-{label.replace(' ', '-')}"
+        seed_occurrence(oid, HUB, "r1", f"2026-11-{10 + index:02d}", **kwargs)
+        keep(oid, "r1-new")
+        if series_of(oid).split(" ")[0] != "r1":
+            fail(
+                f"_recurring_keep_occurrence.sql: it reassigned an occurrence that is {label} — "
+                "the door is wider than the one the move goes through"
+            )
+
+    seed_occurrence("o-keep-neighbour", OTHER_HUB, "r1", "2026-11-20")
+    keep("o-keep-neighbour", "r1-new")
+    if series_of("o-keep-neighbour").split(" ")[0] != "r1":
+        fail("_recurring_keep_occurrence.sql: it reached another hub's appointment")
+
+
 def check_against_postgres() -> None:
     if failures:
         return
@@ -596,6 +666,7 @@ def check_against_postgres() -> None:
             fail("_recurring_move_occurrence.sql: it reached another hub's appointment")
 
         check_cancel_door()
+        check_keep_door()
     finally:
         psql(["-c", f'DROP DATABASE IF EXISTS "{DB}"'])
 

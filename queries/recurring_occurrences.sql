@@ -14,8 +14,10 @@
 -- es lo que el handler de `recurring.update` necesita para MOVER la fila en sitio en vez de
 -- borrarla y volver a materializar (la cita conserva su número y su historial), y
 -- `converted_sale_id` para no tocar la que ya arrastra registro fiscal (ADR-0331).
+-- appointments#236: `staff_id` because an occurrence handed by hand to another professional cannot
+-- be judged on the series' professional's agenda and days — it is reported, never moved blind.
 SELECT id, occurrence_date, status, start_datetime, end_datetime, duration_minutes,
-       converted_sale_id
+       converted_sale_id, staff_id
 FROM appointments_appointment
 WHERE hub_id = :hub_id
   AND is_deleted = 0
