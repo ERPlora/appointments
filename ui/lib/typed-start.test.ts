@@ -57,6 +57,26 @@ describe('parseTypedStart (appointments#204)', () => {
     expect(parseTypedStart('1300 pm', 'en-US')).toBeNull();
   });
 
+  // appointments#240 — the date fields open the same numeric keypad, with no «/» either. A date
+  // typed as eight digits is read in the hub's day/month order, the way schedules#54 reads a day.
+  it('reads a date typed on a keypad without a slash, in the hub order', () => {
+    expect(parseTypedStart('03042026', 'es')).toEqual({ date: '2026-04-03', time: '' });
+    expect(parseTypedStart('03042026', 'en-US')).toEqual({ date: '2026-03-04', time: '' });
+    expect(parseTypedStart('18082026 1430', 'es')).toEqual({ date: '2026-08-18', time: '14:30' });
+    expect(parseTypedStart('08182026 2:30 pm', 'en-US')).toEqual({ date: '2026-08-18', time: '14:30' });
+  });
+
+  it('a keypad date that is half-typed or not a real day is not a date', () => {
+    expect(parseTypedStart('0304202', 'es')).toBeNull();
+    // Seven digits are always half-typed, even when they could spell a real day (2/11/2202).
+    expect(parseTypedStart('2112202', 'es')).toBeNull();
+    expect(parseTypedStart('31022026', 'es')).toBeNull();
+    expect(parseTypedStart('18132026', 'es')).toBeNull();
+    expect(parseTypedStart('18082026', 'en-US')).toBeNull();
+    expect(parseTypedStart('180820261', 'es')).toBeNull();
+    expect(parseTypedStart('18082026 2500', 'es')).toBeNull();
+  });
+
   it('refuses what is not a real date or time', () => {
     expect(parseTypedStart('31/02/2026 10:00', 'es')).toBeNull();
     expect(parseTypedStart('26/13/2026', 'es')).toBeNull();

@@ -75,7 +75,10 @@ function isDayFirstLocale(locale: string): boolean {
 }
 
 const ISO_DATE = /^(\d{4})-(\d{2})-(\d{2})(?:[T\s]+(.+))?$/;
-const NUMERIC_DATE = /^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})(?:[\s,T]+(.+))?$/;
+// D/M/YYYY with `/`, `.` or `-` — or digits only (DDMMYYYY / MMDDYYYY, appointments#240), because the
+// phone's numeric keypad the date fields open has no slash on an iPhone. The same reading
+// schedules#54 gives a day; modules share no JS, so this is the appointments copy.
+const NUMERIC_DATE = /^(?:(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})|(\d{2})(\d{2})(\d{4}))(?:[\s,T]+(.+))?$/;
 
 /** Reads a start typed or pasted as free text — ISO, a numeric date in the active language's
  *  day/month order, or a bare time — and splits it into the `date`/`time` halves a native
@@ -96,7 +99,10 @@ export function parseTypedStart(text: string, locale: string): TypedStart | null
 
   const numeric = trimmed.match(NUMERIC_DATE);
   if (numeric) {
-    const [, first, second, yearText, rest] = numeric;
+    const [, sepFirst, sepSecond, sepYear, packedFirst, packedSecond, packedYear, rest] = numeric;
+    const first = sepFirst ?? packedFirst;
+    const second = sepSecond ?? packedSecond;
+    const yearText = sepYear ?? packedYear;
     const dayFirst = isDayFirstLocale(locale);
     const day = Number(dayFirst ? first : second);
     const month = Number(dayFirst ? second : first);
