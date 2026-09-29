@@ -330,3 +330,54 @@ for (const locale of ['es', 'en'] as const) {
     });
   });
 }
+
+// appointments#240 — on an iPhone the date fields open the numeric keypad, which has no «/». A day
+// typed as eight digits is read in the hub's day/month order: «18082026» in Spanish, «08182026» in
+// English, and «03042026» is the 3rd of April in Spanish but the 4th of March in English.
+const KEYPAD = {
+  es: { typed: '18082026', aprilThird: '03042026' },
+  en: { typed: '08182026', aprilThird: '04032026' },
+} as const;
+
+for (const locale of ['es', 'en'] as const) {
+  const want = EXPECTED[locale];
+  const keypad = KEYPAD[locale];
+
+  describe(`appointments#240 — a date typed on a keypad without a slash (${locale})`, () => {
+    beforeEach(() => install(locale));
+
+    it('the agenda day moves to the eight digits read in the hub order, and leaving repaints it', async () => {
+      const el = await mount();
+      expect(byTestId(el, 'appointments-list-day')?.getAttribute('inputmode'), 'the phone opens its numeric keypad').toBe('numeric');
+      await type(el, 'appointments-list-day', keypad.typed);
+      expect(el.day).toBe('2026-08-18');
+      await leave(el, 'appointments-list-day');
+      expect(byTestId(el, 'appointments-list-day')?.value).toBe(want.typed);
+    });
+
+    it('a new appointment books the day typed as digits, in the hub order', async () => {
+      const el = await mount();
+      await type(el, 'appointments-list-start', keypad.aprilThird);
+      await type(el, 'appointments-list-start-time', '1000');
+      expect(el.newStart).toBe('2026-04-03T10:00');
+      await leave(el, 'appointments-list-start');
+      expect(byTestId(el, 'appointments-list-start')?.value).toBe(locale === 'es' ? '03/04/2026' : '04/03/2026');
+    });
+
+    it('half-typed digits are not a day yet', async () => {
+      const el = await mount();
+      await type(el, 'appointments-list-start', keypad.typed.slice(0, 7));
+      await type(el, 'appointments-list-start-time', '1000');
+      expect(el.newStart).toBe('');
+    });
+
+    it('moving an appointment reads the day typed as digits', async () => {
+      const el = await mount();
+      await el.onRowAction(new CustomEvent('rowAction', { detail: { actionId: 'reschedule', row: APPOINTMENT } }));
+      await el.updateComplete;
+      expect(byTestId(el, 'appointments-list-reschedule-start')?.getAttribute('inputmode')).toBe('numeric');
+      await type(el, 'appointments-list-reschedule-start', keypad.typed);
+      expect(el.rescheduleStart).toBe('2026-08-18T10:00');
+    });
+  });
+}

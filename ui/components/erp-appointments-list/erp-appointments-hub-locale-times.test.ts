@@ -196,9 +196,11 @@ for (const locale of ['es', 'en'] as const) {
       const el = await mount();
       await el.onRowAction(new CustomEvent('rowAction', { detail: { actionId: 'reschedule', row: APPOINTMENT } }));
       await el.updateComplete;
-      await type(el, 'appointments-list-reschedule-start-time', '1');
+      // appointments#239: a lone «1» is a whole hour now (01:00, typed on a keypad without «:»);
+      // «14:» is what is still half-typed.
+      await type(el, 'appointments-list-reschedule-start-time', '14:');
       expect(el.rescheduleStart).toBe('');
-      expect(byTestId(el, 'appointments-list-reschedule-start-time')?.value).toBe('1');
+      expect(byTestId(el, 'appointments-list-reschedule-start-time')?.value).toBe('14:');
     });
 
     it('moving another appointment shows ITS time, not what was half-typed for the previous one', async () => {
@@ -225,6 +227,54 @@ for (const locale of ['es', 'en'] as const) {
       await el.updateComplete;
       expect(el.rescheduleStart).toBe('2026-08-07T14:30');
       expect(shown(el, 'appointments-list-reschedule-start-time')).toBe(want.afternoon);
+    });
+  });
+}
+
+// appointments#239 — on an iPhone the time fields open the numeric keypad, which has no «:». What
+// that keypad can type («1430», «930», «9», or «14.30» where a dot exists) must book that hour.
+for (const locale of ['es', 'en'] as const) {
+  const want = EXPECTED[locale];
+
+  describe(`appointments#239 — the Time of an appointment typed on a keypad without a colon (${locale})`, () => {
+    beforeEach(() => install(locale));
+
+    it('a new appointment: «1430» books 14:30 and leaving repaints it in the hub clock', async () => {
+      const el = await mount();
+      const time = byTestId(el, 'appointments-list-start-time');
+      expect(time?.getAttribute('inputmode'), 'the phone opens its numeric keypad').toBe('numeric');
+      await type(el, 'appointments-list-start', locale === 'es' ? '18/08/2026' : '08/18/2026');
+      await type(el, 'appointments-list-start-time', '1430');
+      expect(el.newStart).toBe('2026-08-18T14:30');
+      await leave(el, 'appointments-list-start-time');
+      expect(shown(el, 'appointments-list-start-time')).toBe(want.afternoon);
+    });
+
+    it('a new appointment: «9» books 09:00 and «14.30» books 14:30', async () => {
+      const el = await mount();
+      await type(el, 'appointments-list-start', locale === 'es' ? '18/08/2026' : '08/18/2026');
+      await type(el, 'appointments-list-start-time', '9');
+      expect(el.newStart).toBe('2026-08-18T09:00');
+      await type(el, 'appointments-list-start-time', '14.30');
+      expect(el.newStart).toBe('2026-08-18T14:30');
+    });
+
+    it('moving an appointment: «930» moves it to 09:30', async () => {
+      const el = await mount();
+      await el.onRowAction(new CustomEvent('rowAction', { detail: { actionId: 'reschedule', row: APPOINTMENT } }));
+      await el.updateComplete;
+      expect(byTestId(el, 'appointments-list-reschedule-start-time')?.getAttribute('inputmode')).toBe('numeric');
+      await type(el, 'appointments-list-reschedule-start-time', '930');
+      expect(el.rescheduleStart).toBe('2026-08-07T09:30');
+      await leave(el, 'appointments-list-reschedule-start-time');
+      expect(shown(el, 'appointments-list-reschedule-start-time')).toBe(locale === 'es' ? '09:30' : '09:30 AM');
+    });
+
+    it('a keypad time that is not a real time is not a start', async () => {
+      const el = await mount();
+      await type(el, 'appointments-list-start', locale === 'es' ? '18/08/2026' : '08/18/2026');
+      await type(el, 'appointments-list-start-time', '2460');
+      expect(el.newStart).toBe('');
     });
   });
 }

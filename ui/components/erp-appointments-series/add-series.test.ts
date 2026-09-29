@@ -323,6 +323,18 @@ describe('the «Repeating» view can create a series (appointments#209)', () => 
     expect(table(el).panel, 'the panel closes once created').toBe('none');
   });
 
+  it('appointments#239 — the time typed on a keypad without «:» («1730») creates the series at 17:30', async () => {
+    const el = await mount();
+    await tapAdd(el);
+    await fillBea(el);
+    expect(field(el, 'appointments-series-create-start-time')?.getAttribute('inputmode')).toBe('numeric');
+    await type(el, 'appointments-series-create-start-time', '1730');
+    expect(submitButton(el).hasAttribute('disabled'), '«1730» is a whole time').toBe(false);
+    await submit(el);
+    const create = commands.find((c) => c.name === 'appointments.recurring.create');
+    expect((create?.payload as { time?: string } | undefined)?.time).toBe('17:30');
+  });
+
   it('after creating, the next «Add» starts from a clean form', async () => {
     const el = await mount();
     await tapAdd(el);
@@ -371,6 +383,19 @@ describe('the «Repeating» view can create a series (appointments#209)', () => 
     const create = commands.find((c) => c.name === 'appointments.recurring.create');
     expect(create?.payload.end_date).toBe('2100-03-31');
     expect(create?.payload.max_occurrences).toBeNull();
+  });
+
+  it('appointments#240 — Day and Until typed as digits on a keypad without «/» create the series on those days', async () => {
+    const el = await mount();
+    await tapAdd(el);
+    await fillBea(el);
+    await type(el, 'appointments-series-create-start', '01102099');
+    await type(el, 'appointments-series-create-occurrences', '');
+    await type(el, 'appointments-series-create-end', '31032100');
+    await submit(el);
+    const create = commands.find((c) => c.name === 'appointments.recurring.create');
+    expect(create?.payload.start_date).toBe('2099-10-01');
+    expect(create?.payload.end_date).toBe('2100-03-31');
   });
 
   it('if creating fails it SAYS so next to the button and keeps what was typed', async () => {
