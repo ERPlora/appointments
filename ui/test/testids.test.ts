@@ -169,11 +169,12 @@ const COVERED: Record<
       'appointments-series-frequency',
       'appointments-series-locked',
       'appointments-series-scope-hint',
+      'appointments-series-skipped',
       'appointments-series-split-from',
       'appointments-series-submit',
       'appointments-series-time',
     ],
-    computed: ['appointments-series-active-'],
+    computed: ['appointments-series-active-', 'appointments-series-skipped-'],
     tables: ['appointments-series-table'],
   },
 };

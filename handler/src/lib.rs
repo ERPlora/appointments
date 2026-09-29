@@ -3462,6 +3462,10 @@ pub fn materialize_recurring_pure(input: Value) -> Result<Output, String> {
     };
 
     let mut skipped_as_booked = 0usize;
+    // appointments#238: every occurrence refused is REPORTED with its date and code — skipping it
+    // stays right (a year-long series does not fall because of one holiday), keeping quiet about
+    // it is what left the customer off the agenda with the screen saying «series created».
+    let mut skipped: Vec<Value> = Vec::new();
     for days in occurrence_days {
         if created >= 50 {
             break; // tope por invocación (mismo límite que bulk_create)
@@ -3484,7 +3488,9 @@ pub fn materialize_recurring_pure(input: Value) -> Result<Output, String> {
         // Until hub#1022 this line wrote a NAIVE text with no offset at all: a time nobody could
         // place on a clock, and one the database cannot order against the rows that do carry one.
         let Some(start_iso) = business_wall_iso(y, mo, d, th, tm, 0, ctx.tz) else {
-            continue; // a date the calendar does not have; the rest of the series still books
+            // A date the calendar does not have; the rest of the series still books.
+            skipped.push(json!({ "occurrence_date": occurrence_date, "code": "appointments.invalid_start" }));
+            continue;
         };
         let item = json!({
             "start_datetime": start_iso,
@@ -3497,7 +3503,7 @@ pub fn materialize_recurring_pure(input: Value) -> Result<Output, String> {
         let desc = format!("Cita materializada de la plantilla recurrente {recurring_id}");
         let stamp = SeriesStamp {
             recurring_id: recurring_id.clone(),
-            occurrence_date,
+            occurrence_date: occurrence_date.clone(),
         };
         match prepare_appointment(
             &input,
@@ -3528,14 +3534,21 @@ pub fn materialize_recurring_pure(input: Value) -> Result<Output, String> {
             }
             // Past occurrences (already begun today), overlapping ones, or ones on a blocked day
             // or outside her hours: skipped, never aborting — a year-long series does not fall
-            // because one of its dates is a holiday or her day off.
-            Err(_) => continue,
+            // because one of its dates is a holiday or her day off. Reported with the code.
+            Err(PrepareError::Domain(refusal)) => {
+                skipped.push(json!({ "occurrence_date": occurrence_date, "code": refusal.code }));
+            }
+            Err(PrepareError::Invalid(_)) => {
+                skipped.push(json!({ "occurrence_date": occurrence_date, "code": "invalid_payload" }));
+            }
         }
     }
 
     // Nada que hacer NO es un error cuando todo lo de la ventana ya está reservado: una operación
-    // idempotente que grita en el segundo intento es una que nadie se atreve a reintentar.
-    if created == 0 && skipped_as_booked == 0 {
+    // idempotente que grita en el segundo intento es una que nadie se atreve a reintentar. Ni
+    // cuando todo se rechazó con motivo (appointments#238): la serie existe y la respuesta dice
+    // qué fechas no entraron y por qué, en vez de un fallo crudo del handler.
+    if created == 0 && skipped_as_booked == 0 && skipped.is_empty() {
         return Err(
             "no_occurrences: todas las ocurrencias de la ventana están en el pasado o solapadas"
                 .to_string(),
@@ -3545,7 +3558,12 @@ pub fn materialize_recurring_pure(input: Value) -> Result<Output, String> {
         operations: ops,
         events,
         ..Default::default()
-    })
+    }
+    .with_result(json!({
+        "booked": created,
+        "already_booked": skipped_as_booked,
+        "skipped": skipped,
+    })))
 }
 
 /// Parsea `HH:MM` (o `HH:MM:SS`) → (hora, minuto).
@@ -10605,5 +10623,160 @@ mod tests {
             .filter_map(|n| n.parse().ok())
             .collect();
         assert!(floor >= vec![2, 3, 3], "staff min_version is {:?}", staff["min_version"]);
+    }
+
+    // ── appointments#238 · the series SAYS what it booked and what it could not ─────────────
+    //
+    // `materialize` skips an occurrence it cannot book (her day off, a blocked day, a time
+    // already taken, the past) and carries on — right for a year-long series, but it answered
+    // with no `result` at all, so the screen could only say «series created» and the front desk
+    // found out on the day the customer came and was not on the agenda. Fresha, Square and
+    // Booksy all tell the person, when a repeating booking is made, how many were booked and
+    // which dates were not, with the reason. The answer now carries exactly that.
+
+    fn series_result(out: &Output) -> Value {
+        out.result.clone().unwrap_or(Value::Null)
+    }
+
+    fn two_weeks_blocked_on(day: &str) -> Value {
+        upcoming_blocks(json!([
+            { "id": "b1", "title": "Festivo", "staff_id": null, "all_day": 1,
+              "start_datetime": format!("{day}T00:00:00Z"),
+              "end_datetime": format!("{day}T23:59:00Z") }
+        ]))
+    }
+
+    /// 🔴 THE SYMPTOM: her day off on 03/08 was skipped in silence. The answer names it.
+    #[test]
+    fn materialize_reports_the_occurrence_skipped_for_her_day_off() {
+        let week = [("09:00:00", "18:00:00")];
+        let out = series_with_days(staff_days(&[
+            staff_day("2026-08-03", &week, full_day_off("2026-08-03")),
+            staff_day("2026-08-10", &week, json!([])),
+        ]));
+        assert!(out.error.is_none(), "{:?}", out.error);
+        assert_eq!(
+            series_result(&out),
+            json!({
+                "booked": 1,
+                "already_booked": 0,
+                "skipped": [
+                    { "occurrence_date": "2026-08-03", "code": OUTSIDE_STAFF_HOURS }
+                ]
+            })
+        );
+    }
+
+    /// A blocked day is reported with its own code — the screen tells «blocked» from «her day off».
+    #[test]
+    fn materialize_reports_the_occurrence_skipped_for_a_blocked_day() {
+        let out = materialize_recurring_pure(series_input(
+            series_payload(),
+            json!([template(json!({}))]),
+            Some(two_weeks_blocked_on("2026-08-03")),
+        ))
+        .unwrap();
+        assert!(out.error.is_none(), "{:?}", out.error);
+        assert_eq!(
+            series_result(&out)["skipped"],
+            json!([{ "occurrence_date": "2026-08-03", "code": "appointments.blocked" }])
+        );
+        assert_eq!(series_result(&out)["booked"], json!(1));
+    }
+
+    /// A time already taken by another appointment of hers is reported as the overlap it is.
+    #[test]
+    fn materialize_reports_the_occurrence_skipped_for_a_time_already_taken() {
+        // 2026-08-10 11:00 in Madrid is 09:00Z.
+        let reads = json!({ "appointments.appointments.upcoming_for_staff": [
+            { "id": "a9", "appointment_number": "APT-1", "staff_id": "s1", "status": "confirmed",
+              "start_datetime": "2026-08-10T09:00:00Z", "end_datetime": "2026-08-10T09:30:00Z" }
+        ]});
+        let out = materialize_recurring_pure(series_input(
+            series_payload(),
+            json!([template(json!({}))]),
+            Some(reads),
+        ))
+        .unwrap();
+        assert!(out.error.is_none(), "{:?}", out.error);
+        assert_eq!(
+            series_result(&out),
+            json!({
+                "booked": 1,
+                "already_booked": 0,
+                "skipped": [
+                    { "occurrence_date": "2026-08-10", "code": "appointments.overlapping_appointment" }
+                ]
+            })
+        );
+    }
+
+    /// Everything booked: the answer says so, with nothing skipped — the control that keeps the
+    /// counts above from being constants.
+    #[test]
+    fn materialize_reports_every_occurrence_booked_and_none_skipped() {
+        let out = materialize_recurring_pure(series_input(
+            series_payload(),
+            json!([template(json!({}))]),
+            None,
+        ))
+        .unwrap();
+        assert!(out.error.is_none(), "{:?}", out.error);
+        assert_eq!(
+            series_result(&out),
+            json!({ "booked": 2, "already_booked": 0, "skipped": [] })
+        );
+    }
+
+    /// What a previous run already booked is not a failure: it is counted apart, never listed as
+    /// skipped (a retry must not frighten the front desk with dates that ARE on the agenda).
+    #[test]
+    fn materialize_counts_what_was_already_on_the_books_apart_from_the_skipped() {
+        let out = materialize_recurring_pure(series_input(
+            series_payload(),
+            json!([template(json!({}))]),
+            Some(already_booked(json!(["2026-08-03"]))),
+        ))
+        .unwrap();
+        assert_eq!(
+            series_result(&out),
+            json!({ "booked": 1, "already_booked": 1, "skipped": [] })
+        );
+
+        let out = materialize_recurring_pure(series_input(
+            series_payload(),
+            json!([template(json!({}))]),
+            Some(already_booked(json!(["2026-08-03", "2026-08-10"]))),
+        ))
+        .unwrap();
+        assert!(out.operations.is_empty());
+        assert_eq!(
+            series_result(&out),
+            json!({ "booked": 0, "already_booked": 2, "skipped": [] })
+        );
+    }
+
+    /// When EVERY occurrence is refused the answer is still the list of dates and reasons, not a
+    /// raw handler fault: the series exists, and the front desk needs to know why none booked.
+    #[test]
+    fn materialize_with_every_occurrence_refused_reports_them_instead_of_failing() {
+        let week = [("09:00:00", "18:00:00")];
+        let out = series_with_days(staff_days(&[
+            staff_day("2026-08-03", &week, full_day_off("2026-08-03")),
+            staff_day("2026-08-10", &[("14:00:00", "18:00:00")], json!([])),
+        ]));
+        assert!(out.error.is_none(), "{:?}", out.error);
+        assert!(out.operations.is_empty() && out.events.is_empty());
+        assert_eq!(
+            series_result(&out),
+            json!({
+                "booked": 0,
+                "already_booked": 0,
+                "skipped": [
+                    { "occurrence_date": "2026-08-03", "code": OUTSIDE_STAFF_HOURS },
+                    { "occurrence_date": "2026-08-10", "code": OUTSIDE_STAFF_HOURS }
+                ]
+            })
+        );
     }
 }
