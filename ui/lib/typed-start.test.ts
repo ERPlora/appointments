@@ -31,6 +31,32 @@ describe('parseTypedStart (appointments#204)', () => {
     expect(parseTypedStart('7:05 pm', 'en-US')).toEqual({ date: '', time: '19:05' });
   });
 
+  // appointments#239 — the time fields open the phone's numeric keypad (`inputmode="numeric"`),
+  // and on an iPhone that keypad has no «:». A time must be typeable with digits alone, or with the
+  // dot some people write («14.30»), the way schedules#50 reads an opening time.
+  it('reads a time typed on a keypad without a colon', () => {
+    expect(parseTypedStart('1430', 'es')).toEqual({ date: '', time: '14:30' });
+    expect(parseTypedStart('930', 'es')).toEqual({ date: '', time: '09:30' });
+    expect(parseTypedStart('0930', 'es')).toEqual({ date: '', time: '09:30' });
+    expect(parseTypedStart('9', 'es')).toEqual({ date: '', time: '09:00' });
+    expect(parseTypedStart('14', 'es')).toEqual({ date: '', time: '14:00' });
+    expect(parseTypedStart('14.30', 'es')).toEqual({ date: '', time: '14:30' });
+    expect(parseTypedStart('9.05', 'es')).toEqual({ date: '', time: '09:05' });
+    expect(parseTypedStart('230 pm', 'en-US')).toEqual({ date: '', time: '14:30' });
+    expect(parseTypedStart('26/09/2026 1430', 'es')).toEqual({ date: '2026-09-26', time: '14:30' });
+  });
+
+  it('a keypad time that is not a real time, or is still half-typed, is not a time', () => {
+    expect(parseTypedStart('2400', 'es')).toBeNull();
+    expect(parseTypedStart('1460', 'es')).toBeNull();
+    expect(parseTypedStart('24', 'es')).toBeNull();
+    expect(parseTypedStart('12345', 'es')).toBeNull();
+    expect(parseTypedStart('14.', 'es')).toBeNull();
+    expect(parseTypedStart('14:', 'es')).toBeNull();
+    expect(parseTypedStart('14.3', 'es')).toBeNull();
+    expect(parseTypedStart('1300 pm', 'en-US')).toBeNull();
+  });
+
   it('refuses what is not a real date or time', () => {
     expect(parseTypedStart('31/02/2026 10:00', 'es')).toBeNull();
     expect(parseTypedStart('26/13/2026', 'es')).toBeNull();
