@@ -2928,7 +2928,7 @@ pub fn update_recurring_series_pure(input: Value) -> Result<Output, String> {
             "The booking settings could not be read; nothing was changed.",
         ));
     };
-    let Some(mut candidates) = candidates_from(&input, &staff_id, "") else {
+    let Some(candidates) = candidates_from(&input, &staff_id, "") else {
         return Ok(Output::new().with_error(availability_unavailable()));
     };
     if read_rows(&input, "appointments.blocked_times.upcoming").is_none() {
@@ -3162,14 +3162,6 @@ pub fn update_recurring_series_pure(input: Value) -> Result<Output, String> {
             }
             continue;
         }
-        // Its old slot is free from here on and its new one is taken, for the occurrences after it.
-        candidates.retain(|c| c.id != appointment_id);
-        candidates.push(Candidate {
-            id: appointment_id.clone(),
-            start,
-            end,
-            label: as_str(row.get("appointment_number").unwrap_or(&Value::Null)),
-        });
         let mut mv = Map::new();
         mv.insert("appointment_id".into(), json!(appointment_id));
         mv.insert("recurring_id".into(), json!(target_series));
@@ -6576,6 +6568,33 @@ mod tests {
             assert_eq!(domain_code(&out).as_deref(), Some(code), "{read}");
             assert!(out.operations.is_empty(), "{read}: something was written");
         }
+    }
+
+    /// A missing read refuses the edit UP FRONT, not when some occurrence happens to reach the
+    /// judge that needs it: with every date turned away earlier (after closing time), a lost
+    /// blocked-times read would otherwise go unnoticed and the answer would read as a verdict.
+    #[test]
+    fn series_edit_refuses_a_missing_read_even_when_no_date_reaches_its_judge() {
+        let mut inp = series_edit_input(
+            edit_payload("2026-08-17", "19:00"),
+            template(json!({ "max_occurrences": null })),
+            json!([occurrence("2026-08-17", "confirmed", json!({}))]),
+        );
+        if let Value::Object(hours) = sched_hours(json!([bh(0, "09:00", "18:00")])) {
+            for (k, v) in hours {
+                inp["context"]["reads"][k] = v;
+            }
+        }
+        inp["context"]["reads"]
+            .as_object_mut()
+            .unwrap()
+            .remove("appointments.blocked_times.upcoming");
+        let out = update_recurring_series_pure(inp).unwrap();
+        assert_eq!(
+            domain_code(&out).as_deref(),
+            Some("appointments.availability_unavailable")
+        );
+        assert!(out.operations.is_empty(), "something was written");
     }
 
     /// The professional is a selector, checked against the template the runtime loaded: pointing
