@@ -30,22 +30,26 @@ function toIsoDate(year: number, month: number, day: number): string | null {
   return `${String(year).padStart(4, '0')}-${pad2(month)}-${pad2(day)}`;
 }
 
-/** Parses a `H:MM`/`HH:MM` time, optional `:SS` ignored, optional `am`/`pm` (with or without
- *  dots, case-insensitive). Returns the zero-padded `HH:MM`, or `null` if it is not a valid time. */
+// appointments#239 — H, HH, H:MM, HH:MM, H.MM (optional :SS ignored) — or digits only (HMM, HHMM),
+// because the phone's numeric keypad the time fields open has no colon on an iPhone — with an
+// optional `am`/`pm` (with or without dots, case-insensitive). The same reading schedules#50 gives
+// an opening time; modules share no JS, so this is the appointments copy.
+const TYPED_TIME = /^(?:(\d{1,2})(?:[:.](\d{2})(?::\d{2})?)?|(\d{1,2})(\d{2}))(?:\s*(a\.?m\.?|p\.?m\.?))?$/i;
+
+/** Parses a time typed or pasted as text (see `TYPED_TIME`). Returns the zero-padded `HH:MM`, or
+ *  `null` if it is not (yet) a valid time — a half-typed «14:» or «14.» is not one. */
 function parseTime(raw: string): string | null {
-  const trimmed = raw.trim();
-  if (!trimmed) return null;
-  const match = trimmed.match(/^(\d{1,2}):(\d{2})(?::\d{2})?(?:\s*(a\.?m\.?|p\.?m\.?))?$/i);
+  const match = raw.trim().match(TYPED_TIME);
   if (!match) return null;
-  const [, hourText, minuteText, meridiem] = match;
-  const minute = Number(minuteText);
-  if (minute < 0 || minute > 59) return null;
-  let hour = Number(hourText);
+  const [, hourText, minuteText, packedHour, packedMinute, meridiem] = match;
+  const minute = Number(minuteText ?? packedMinute ?? 0);
+  if (minute > 59) return null;
+  let hour = Number(hourText ?? packedHour);
   if (meridiem) {
     if (hour < 1 || hour > 12) return null;
     const isPm = meridiem.toLowerCase().startsWith('p');
     hour = isPm ? (hour === 12 ? 12 : hour + 12) : hour === 12 ? 0 : hour;
-  } else if (hour < 0 || hour > 23) {
+  } else if (hour > 23) {
     return null;
   }
   return `${pad2(hour)}:${pad2(minute)}`;
@@ -71,7 +75,10 @@ function isDayFirstLocale(locale: string): boolean {
 }
 
 const ISO_DATE = /^(\d{4})-(\d{2})-(\d{2})(?:[T\s]+(.+))?$/;
-const NUMERIC_DATE = /^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})(?:[\s,T]+(.+))?$/;
+// D/M/YYYY with `/`, `.` or `-` — or digits only (DDMMYYYY / MMDDYYYY, appointments#240), because the
+// phone's numeric keypad the date fields open has no slash on an iPhone. The same reading
+// schedules#54 gives a day; modules share no JS, so this is the appointments copy.
+const NUMERIC_DATE = /^(?:(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})|(\d{2})(\d{2})(\d{4}))(?:[\s,T]+(.+))?$/;
 
 /** Reads a start typed or pasted as free text — ISO, a numeric date in the active language's
  *  day/month order, or a bare time — and splits it into the `date`/`time` halves a native
@@ -92,7 +99,10 @@ export function parseTypedStart(text: string, locale: string): TypedStart | null
 
   const numeric = trimmed.match(NUMERIC_DATE);
   if (numeric) {
-    const [, first, second, yearText, rest] = numeric;
+    const [, sepFirst, sepSecond, sepYear, packedFirst, packedSecond, packedYear, rest] = numeric;
+    const first = sepFirst ?? packedFirst;
+    const second = sepSecond ?? packedSecond;
+    const yearText = sepYear ?? packedYear;
     const dayFirst = isDayFirstLocale(locale);
     const day = Number(dayFirst ? first : second);
     const month = Number(dayFirst ? second : first);
