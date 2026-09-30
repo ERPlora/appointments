@@ -245,6 +245,37 @@ describe('the appointment sheet edits the professional and the service (appointm
     expect(asked.at(-1)!.params!.staff_id, 'asking about the old column would warn about the wrong day').toBe('s2');
   });
 
+  it('a block dropped on another column asks the overlap question on HER agenda', async () => {
+    allowOverlapping = true;
+    const el = await mount();
+    el.view = 'staff';
+    el.day = '2026-08-07';
+    await el.updateComplete;
+    const scheduler = el.shadowRoot.querySelector('ok-scheduler')!;
+    scheduler.dispatchEvent(
+      new CustomEvent('ok-event-move', {
+        detail: {
+          id: 'a1',
+          resourceId: 's2',
+          start: '12:00',
+          end: '12:30',
+          from: { resourceId: 's1', start: '10:00', end: '10:30' },
+          event: {},
+          revert: () => {},
+        },
+        bubbles: true,
+        composed: true,
+      }),
+    );
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+
+    const asked = queries.filter((q) => q.name === 'appointments.appointments.conflicting');
+    expect(asked.length, 'with overlapping allowed the drop asks before writing').toBeGreaterThan(0);
+    expect(asked.at(-1)!.params!.staff_id, 'the column it was dropped on is the agenda that counts').toBe('s2');
+    expect(sentReschedule()?.payload.staff_id).toBe('s2');
+  });
+
   it('«this and following» hands the series over through recurring.update', async () => {
     const el = await mount();
     await openPanel(el, SERIES_OCCURRENCE);
