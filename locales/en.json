@@ -193,6 +193,7 @@
     "seriesMovedSkipped": "{moved} appointments moved · {skipped} could not be moved and keep their time:",
     "seriesReassignedSkipped": "{moved} appointments handed to {staff} · {skipped} did not fit and stay as they were:",
     "seriesStaffChangeHint": "From {from}, {staff} does this series: its {upcoming} booked appointments move over if they fit that agenda; the ones that do not stay as they are and are listed after saving.",
+    "seriesServiceChangeHint": "From {from}, this series is {service}: its {upcoming} booked appointments take that service, its price and its length if they fit the agenda; the ones that do not stay as they are and are listed after saving.",
     "seriesSkipStaffUnknown": "the professional's hours could not be checked for it",
     "seriesMoveSkipOther": "it could not be moved",
     "seriesSplitFrom": "This series continues an earlier one ({id}): it was split when someone edited it from one occurrence onwards.",

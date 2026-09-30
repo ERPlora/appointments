@@ -170,6 +170,8 @@ const COVERED: Record<
       'appointments-series-locked',
       'appointments-series-no-staff',
       'appointments-series-scope-hint',
+      'appointments-series-service',
+      'appointments-series-service-hint',
       'appointments-series-skipped',
       'appointments-series-not-moved',
       'appointments-series-split-from',

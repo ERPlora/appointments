@@ -2900,15 +2900,23 @@ pub fn update_recurring_series_pure(input: Value) -> Result<Output, String> {
     let current_staff = payload.get("current_staff_id").map(as_str);
     let staff_id = str_or(&payload, "staff_id", "");
     let staff_requested = current_staff.as_ref().is_some_and(|c| *c != staff_id);
+    // appointments#252: the service follows the same pattern — the CURRENT one travels as the
+    // selector (`current_service_id`) and `service_id` is the one that governs from the cut on; the
+    // catalogue read and the competency read key on it. Without `current_service_id`, `service_id`
+    // is the selector alone (only checked when the professional changes, appointments#248).
+    let current_service = payload.get("current_service_id").map(as_str);
+    let service_id = str_or(&payload, "service_id", "");
+    let service_requested = current_service.as_ref().is_some_and(|c| *c != service_id);
 
     if new_time.is_none()
         && new_duration.is_none()
         && new_frequency.is_none()
         && new_day_of_week.is_none()
         && !staff_requested
+        && !service_requested
     {
         return Err(
-            "invalid_payload: nothing to change (expected `time`, `duration_minutes`, `frequency`, `day_of_week` or a new `staff_id`)"
+            "invalid_payload: nothing to change (expected `time`, `duration_minutes`, `frequency`, `day_of_week`, a new `staff_id` or a new `service_id`)"
                 .to_string(),
         );
     }
@@ -2947,21 +2955,58 @@ pub fn update_recurring_series_pure(input: Value) -> Result<Output, String> {
             "The recurring appointment does not match the professional sent; nothing was changed.",
         ));
     }
-    // appointments#248: a NEW professional must be able to take the series, like a single booking
-    // would require of her — and her competency is read for the series' service, which is why the
-    // service travels as a selector too.
-    let new_staff_name = if staff_id != tmpl_staff {
-        if staff_id.trim().is_empty() {
-            return Err(
-                "invalid_payload: staff_id (the new professional) cannot be empty".to_string(),
-            );
+    // The service selector: the current one when the edit changes it (appointments#252), else
+    // `service_id` itself — which only has to match when the professional changes, because her
+    // competency is read for it (appointments#248).
+    let tmpl_service = str_or(&tmpl, "service_id", "");
+    let staff_changes = staff_id != tmpl_staff;
+    if (current_service.is_some() || staff_changes)
+        && current_service.as_deref().unwrap_or(service_id.as_str()) != tmpl_service
+    {
+        return Ok(refuse(
+            "appointments.recurring_mismatch",
+            "The recurring appointment does not match the service sent; nothing was changed.",
+        ));
+    }
+    if staff_changes && staff_id.trim().is_empty() {
+        return Err("invalid_payload: staff_id (the new professional) cannot be empty".to_string());
+    }
+    // appointments#252: a NEW service must be bookable in this hub, exactly as when the series is
+    // created — its name, price and length come from the catalogue, never from the payload.
+    let new_service = if service_requested {
+        if service_id.trim().is_empty() {
+            return Err("invalid_payload: service_id (the new service) cannot be empty".to_string());
         }
-        if str_or(&payload, "service_id", "") != str_or(&tmpl, "service_id", "") {
+        let Some(services) = read_rows(&input, "services.services.get") else {
             return Ok(refuse(
-                "appointments.recurring_mismatch",
-                "The recurring appointment does not match the service sent; nothing was changed.",
+                "appointments.catalog_unavailable",
+                "The service catalogue could not be read; nothing was changed.",
+            ));
+        };
+        let Some(service) = services.iter().find(|r| str_or(r, "id", "") == service_id) else {
+            return Ok(refuse(
+                "appointments.service_not_found",
+                "That service does not exist in this business.",
+            ));
+        };
+        if !service.get("is_active").map(as_bool).unwrap_or(true)
+            || !service.get("is_bookable").map(as_bool).unwrap_or(true)
+        {
+            return Ok(refuse(
+                "appointments.service_not_bookable",
+                "That service cannot be booked: it is inactive or not bookable.",
             ));
         }
+        Some(service.clone())
+    } else {
+        None
+    };
+    // appointments#248: a NEW professional must be able to take the series, like a single booking
+    // would require of her. appointments#252: so must the one who keeps it when the SERVICE
+    // changes — the competency read is keyed on the governing service, and her own price and
+    // length for it win over the catalogue, as when the series is booked.
+    let mut competency: Option<Value> = None;
+    let new_staff_name = if staff_changes || (new_service.is_some() && !staff_id.is_empty()) {
         let (Some(members), Some(eligible)) = (
             read_rows(&input, "staff.members.get"),
             read_rows(&input, "staff.services.eligible_for_service"),
@@ -2972,13 +3017,47 @@ pub fn update_recurring_series_pure(input: Value) -> Result<Output, String> {
             ));
         };
         match resolve_professional(members, eligible, &staff_id) {
-            Ok((name, _)) => Some(name),
+            Ok((name, found)) => {
+                competency = found.cloned();
+                staff_changes.then_some(name)
+            }
             Err(refusal) => return Ok(Output::new().with_error(refusal)),
         }
     } else {
         None
     };
     let staff_changed = new_staff_name.is_some();
+    let service_changed = new_service.is_some();
+    let (governing_service_name, new_service_price, service_duration) = match &new_service {
+        Some(service) => {
+            let custom = |key: &str| {
+                competency
+                    .as_ref()
+                    .and_then(|c| c.get(key))
+                    .filter(|v| !v.is_null())
+            };
+            let price = custom("custom_price")
+                .map(|v| money::from_json(v, 0))
+                .unwrap_or_else(|| money::from_json(service.get("price").unwrap_or(&Value::Null), 0));
+            let minutes = custom("custom_duration")
+                .map(|v| as_i64(v, 0))
+                .filter(|d| *d >= 1)
+                .or_else(|| {
+                    service
+                        .get("duration_minutes")
+                        .filter(|v| !v.is_null())
+                        .map(|v| as_i64(v, 0))
+                        .filter(|d| *d >= 1)
+                });
+            (str_or(service, "name", ""), Some(price), minutes)
+        }
+        None => (str_or(&tmpl, "service_name", ""), None, None),
+    };
+    let governing_service_id = if service_changed {
+        service_id.clone()
+    } else {
+        tmpl_service.clone()
+    };
     let governing_staff_name = new_staff_name
         .clone()
         .unwrap_or_else(|| str_or(&tmpl, "staff_name", ""));
@@ -3008,7 +3087,10 @@ pub fn update_recurring_series_pure(input: Value) -> Result<Output, String> {
     let time = new_time.unwrap_or_else(|| str_or(&tmpl, "time", ""));
     let (th, tm) = parse_hhmm(&time)
         .ok_or_else(|| format!("invalid_payload: la plantilla tiene un time inválido `{time}`"))?;
+    // Minutes typed at the counter win; then the new service's length (appointments#252); then
+    // the series' own.
     let duration = new_duration
+        .or(service_duration)
         .unwrap_or_else(|| as_i64(tmpl.get("duration_minutes").unwrap_or(&Value::Null), 30));
 
     let start_days = parse_dt(&str_or(&tmpl, "start_date", ""))
@@ -3053,6 +3135,9 @@ pub fn update_recurring_series_pure(input: Value) -> Result<Output, String> {
         // appointments#248: the professional who governs — the template's own when unchanged.
         p.insert("staff_id".into(), json!(staff_id));
         p.insert("staff_name".into(), json!(governing_staff_name));
+        // appointments#252: and the service — the template's own when unchanged.
+        p.insert("service_id".into(), json!(governing_service_id));
+        p.insert("service_name".into(), json!(governing_service_name));
         ops.push(Operation::sql("appointments._recurring_edit", p));
         recurring_id.clone()
     } else {
@@ -3071,9 +3156,13 @@ pub fn update_recurring_series_pure(input: Value) -> Result<Output, String> {
         let mut split = Map::new();
         split.insert("new_id".into(), json!(new_series_id));
         split.insert("split_from_id".into(), json!(recurring_id));
-        for key in ["customer_id", "customer_name", "service_id", "service_name"] {
+        for key in ["customer_id", "customer_name"] {
             split.insert(key.into(), json!(str_or(&tmpl, key, "")));
         }
+        // appointments#252: the new half is the governing service's (the same one when unchanged),
+        // its name from the catalogue read, never from the payload.
+        split.insert("service_id".into(), json!(governing_service_id));
+        split.insert("service_name".into(), json!(governing_service_name));
         // appointments#248: the new half is the governing professional's (the same one when
         // unchanged), her name from the staff read, never from the payload.
         split.insert("staff_id".into(), json!(staff_id));
@@ -3241,6 +3330,16 @@ pub fn update_recurring_series_pure(input: Value) -> Result<Output, String> {
         };
         mv.insert("staff_id".into(), json!(to_staff));
         mv.insert("staff_name".into(), json!(to_staff_name));
+        // appointments#252: it takes the new service, its name and its price; empty = keeps the
+        // one it has, so an edit that changes no service never rewrites what the booking costs.
+        let (to_service, to_service_name) = if service_changed {
+            (governing_service_id.clone(), governing_service_name.clone())
+        } else {
+            (String::new(), String::new())
+        };
+        mv.insert("service_id".into(), json!(to_service));
+        mv.insert("service_name".into(), json!(to_service_name));
+        mv.insert("service_price".into(), json!(new_service_price.unwrap_or(0)));
         mv.insert("channel".into(), json!("staff"));
         // Every move leaves an audit row, like every other transition of this module: the audit
         // row now rides `_recurring_move_occurrence`'s own `sql[]` as a later statement of this
@@ -3263,6 +3362,7 @@ pub fn update_recurring_series_pure(input: Value) -> Result<Output, String> {
         "from_occurrence_date": cut,
         "pattern_changed": pattern_changed,
         "staff_changed": staff_changed,
+        "service_changed": service_changed,
         "moved": moved,
         "cancelled_pattern_change": cancelled_pattern_change,
         "locked_invoiced": locked_invoiced,
@@ -7124,6 +7224,322 @@ mod tests {
             schema["required"].as_array().unwrap().contains(&json!("staff_id")),
             "staff_id must be required: without it the reads key nobody's agenda"
         );
+    }
+
+    // ── appointments#252 · changing the SERVICE of «this and following» ─────────────────────
+    //
+    // The service could not be changed: `service_id` only travelled as a selector, so a customer
+    // who went from «Corte» to «Corte y color» meant deleting the series and creating it again.
+    // Now it follows the professional's pattern: the series' CURRENT service travels as the
+    // selector (`current_service_id`) and `service_id` is the one that governs from the cut on —
+    // the catalogue read and the competency read key on it.
+
+    /// «Corte y color»: an hour, 45 €, bookable.
+    fn colour_reads() -> Value {
+        json!({
+            "services.services.get": [
+                { "id": "s-color", "name": "Corte y color", "price": 4500, "duration_minutes": 60,
+                  "is_bookable": 1, "is_active": 1 }
+            ],
+            "staff.services.eligible_for_service": []
+        })
+    }
+
+    fn change_service_payload(from: &str) -> Value {
+        json!({
+            "recurring_id": "r1",
+            "scope": "this_and_following",
+            "from_occurrence_date": from,
+            "staff_id": "s1",
+            "current_service_id": "s-corte",
+            "service_id": "s-color"
+        })
+    }
+
+    /// 🔴 THE SYMPTOM. From 08-17 the series is «Corte y color»: the new half carries the service
+    /// (name from the catalogue, never from the payload) and its hour, and the two booked
+    /// appointments take the new service, its price and its length on the same time — the
+    /// professional does not change.
+    #[test]
+    fn series_edit_changes_the_service_of_the_following_occurrences() {
+        let out = judged_edit(change_service_payload("2026-08-17"), colour_reads());
+        assert!(out.error.is_none(), "{:?}", out.error);
+
+        let split = ops_named(&out, "_recurring_split");
+        assert_eq!(split.len(), 1, "cutting at 08-17 splits the series");
+        assert_eq!(param(split[0], "service_id"), "s-color");
+        assert_eq!(param(split[0], "service_name"), "Corte y color");
+        assert_eq!(split[0].params.get("duration_minutes"), Some(&json!(60)));
+        assert_eq!(param(split[0], "staff_id"), "s1", "the professional stays");
+
+        let moved = ops_named(&out, "_recurring_move_occurrence");
+        assert_eq!(moved.len(), 2);
+        for op in &moved {
+            assert_eq!(param(op, "service_id"), "s-color");
+            assert_eq!(param(op, "service_name"), "Corte y color");
+            assert_eq!(op.params.get("service_price"), Some(&json!(4500)));
+            assert_eq!(op.params.get("duration_minutes"), Some(&json!(60)));
+            assert_eq!(param(op, "staff_id"), "", "a change of service reassigned the professional");
+        }
+        assert_eq!(param(moved[0], "start_datetime"), "2026-08-17T11:00:00+02:00");
+        assert_eq!(param(moved[0], "end_datetime"), "2026-08-17T12:00:00+02:00");
+        let result = out.result.clone().unwrap();
+        assert_eq!(result["service_changed"], json!(true));
+        assert_eq!(result["staff_changed"], json!(false));
+        assert_eq!(result["moved"], json!(2));
+    }
+
+    /// The professional's own price and length for the new service win over the catalogue, as
+    /// when the series is booked; minutes typed at the counter win over both.
+    #[test]
+    fn series_edit_of_the_service_takes_her_price_and_length_unless_minutes_are_typed() {
+        let mut reads = colour_reads();
+        reads["staff.services.eligible_for_service"] = json!([
+            { "staff_id": "s1", "full_name": "Bea Pro", "custom_duration": 45,
+              "custom_price": 4000, "is_primary": 1 }
+        ]);
+        let out = judged_edit(change_service_payload("2026-08-17"), reads.clone());
+        assert!(out.error.is_none(), "{:?}", out.error);
+        for op in ops_named(&out, "_recurring_move_occurrence") {
+            assert_eq!(op.params.get("service_price"), Some(&json!(4000)));
+            assert_eq!(op.params.get("duration_minutes"), Some(&json!(45)));
+        }
+
+        let mut payload = change_service_payload("2026-08-17");
+        payload["duration_minutes"] = json!(50);
+        let out = judged_edit(payload, reads);
+        assert_eq!(
+            ops_named(&out, "_recurring_split")[0].params.get("duration_minutes"),
+            Some(&json!(50))
+        );
+        for op in ops_named(&out, "_recurring_move_occurrence") {
+            assert_eq!(op.params.get("duration_minutes"), Some(&json!(50)));
+            assert_eq!(op.params.get("service_price"), Some(&json!(4000)));
+        }
+    }
+
+    /// Cut at the first occurrence: the series itself becomes «Corte y color».
+    #[test]
+    fn series_edit_in_place_changes_the_service_of_the_whole_series() {
+        let mut inp = series_edit_input(
+            change_service_payload("2026-08-03"),
+            template(json!({ "max_occurrences": null })),
+            json!([occurrence("2026-08-03", "confirmed", json!({}))]),
+        );
+        for (k, v) in colour_reads().as_object().unwrap() {
+            inp["context"]["reads"][k] = v.clone();
+        }
+        let out = update_recurring_series_pure(inp).unwrap();
+        assert!(out.error.is_none(), "{:?}", out.error);
+        let edit = ops_named(&out, "_recurring_edit");
+        assert_eq!(edit.len(), 1);
+        assert_eq!(param(edit[0], "service_id"), "s-color");
+        assert_eq!(param(edit[0], "service_name"), "Corte y color");
+        assert_eq!(edit[0].params.get("duration_minutes"), Some(&json!(60)));
+        assert_eq!(moved_ids(&out), vec!["apt-2026-08-03"]);
+    }
+
+    /// Without a change of service nothing about it is rewritten: a move keeps the service it has
+    /// (an empty value leaves the three columns alone) and the template keeps its own.
+    #[test]
+    fn series_edit_without_a_new_service_does_not_touch_the_service() {
+        let out = judged_edit(edit_payload("2026-08-17", "12:00"), json!({}));
+        assert_eq!(out.result.clone().unwrap()["service_changed"], json!(false));
+        let split = ops_named(&out, "_recurring_split");
+        assert_eq!(param(split[0], "service_id"), "s-corte");
+        assert_eq!(param(split[0], "service_name"), "Corte");
+        for op in ops_named(&out, "_recurring_move_occurrence") {
+            assert_eq!(param(op, "service_id"), "", "a move without a change rewrote the service");
+        }
+        let out = update_recurring_series_pure(series_edit_input(
+            edit_payload("2026-08-03", "12:00"),
+            template(json!({ "max_occurrences": null })),
+            json!([occurrence("2026-08-03", "confirmed", json!({}))]),
+        ))
+        .unwrap();
+        let edit = ops_named(&out, "_recurring_edit");
+        assert_eq!(param(edit[0], "service_id"), "s-corte");
+        assert_eq!(param(edit[0], "service_name"), "Corte");
+
+        // Sending the current service as the new one is not a change: nothing to do.
+        let mut payload = change_service_payload("2026-08-17");
+        payload["service_id"] = json!("s-corte");
+        let mut inp = series_edit_input(
+            payload,
+            template(json!({ "max_occurrences": null })),
+            json!([occurrence("2026-08-17", "confirmed", json!({}))]),
+        );
+        inp["context"]["reads"]["services.services.get"] = colour_reads()["services.services.get"].clone();
+        let err = update_recurring_series_pure(inp).unwrap_err();
+        assert!(err.starts_with("invalid_payload: nothing to change"), "{err}");
+    }
+
+    /// The longer service is judged on her agenda like any move: the date where the hour no
+    /// longer fits stays as it was — old service, old length — and it is said.
+    #[test]
+    fn series_edit_of_the_service_leaves_as_it_was_what_the_new_length_does_not_fit() {
+        let mut reads = colour_reads();
+        reads["appointments.appointments.upcoming_for_staff"] = json!([
+            { "id": "bea-busy", "appointment_number": "A-51", "staff_id": "s1", "status": "confirmed",
+              "start_datetime": "2026-08-24T11:30:00+02:00", "end_datetime": "2026-08-24T12:00:00+02:00" }
+        ]);
+        let out = judged_edit(change_service_payload("2026-08-17"), reads);
+        assert!(out.error.is_none(), "{:?}", out.error);
+        assert_eq!(moved_ids(&out), vec!["apt-2026-08-17"]);
+        assert_eq!(
+            skipped_of(&out),
+            vec![("2026-08-24".to_string(), "appointments.overlapping_appointment".to_string())]
+        );
+        let kept = ops_named(&out, "_recurring_keep_occurrence");
+        assert_eq!(kept.len(), 1);
+        assert!(kept[0].params.get("service_id").is_none(), "what did not fit changed service anyway");
+    }
+
+    /// The new service must be bookable and performed by whoever does the series, like when the
+    /// series is created — and a read that did not arrive is not «nothing says no».
+    #[test]
+    fn series_edit_refuses_a_new_service_the_series_cannot_take() {
+        let cases = [
+            (json!({ "services.services.get": [] }), "appointments.service_not_found"),
+            (
+                json!({ "services.services.get": [
+                    { "id": "s-color", "name": "Corte y color", "price": 4500, "duration_minutes": 60,
+                      "is_bookable": 0, "is_active": 1 } ] }),
+                "appointments.service_not_bookable",
+            ),
+            (
+                json!({ "services.services.get": [
+                    { "id": "s-color", "name": "Corte y color", "price": 4500, "duration_minutes": 60,
+                      "is_bookable": 1, "is_active": 0 } ] }),
+                "appointments.service_not_bookable",
+            ),
+            (
+                json!({ "staff.services.eligible_for_service": [
+                    { "staff_id": "s2", "full_name": "Carla Pro", "custom_duration": null,
+                      "custom_price": null, "is_primary": 1 } ] }),
+                "appointments.staff_not_eligible",
+            ),
+        ];
+        for (extra, code) in cases {
+            let mut reads = colour_reads();
+            for (k, v) in extra.as_object().unwrap() {
+                reads[k] = v.clone();
+            }
+            let out = judged_edit(change_service_payload("2026-08-17"), reads);
+            assert_eq!(domain_code(&out).as_deref(), Some(code), "{extra}");
+            assert!(out.operations.is_empty(), "{code}: something was written");
+        }
+
+        for read in ["services.services.get", "staff.services.eligible_for_service", "staff.members.get"] {
+            let mut inp = series_edit_input(
+                change_service_payload("2026-08-17"),
+                template(json!({ "max_occurrences": null })),
+                json!([occurrence("2026-08-17", "confirmed", json!({}))]),
+            );
+            for (k, v) in colour_reads().as_object().unwrap() {
+                inp["context"]["reads"][k] = v.clone();
+            }
+            inp["context"]["reads"].as_object_mut().unwrap().remove(read);
+            let out = update_recurring_series_pure(inp).unwrap();
+            assert_eq!(domain_code(&out).as_deref(), Some("appointments.catalog_unavailable"), "{read}");
+            assert!(out.operations.is_empty(), "{read}: something was written");
+        }
+    }
+
+    /// The current service is a selector like the current professional: another one means the
+    /// reads were keyed for another series. An empty new service is a caller bug.
+    #[test]
+    fn series_edit_refuses_a_change_of_service_with_the_wrong_selectors() {
+        let mut payload = change_service_payload("2026-08-17");
+        payload["current_service_id"] = json!("s-tinte");
+        let out = judged_edit(payload, colour_reads());
+        assert_eq!(domain_code(&out).as_deref(), Some("appointments.recurring_mismatch"));
+        assert!(out.operations.is_empty());
+
+        let mut payload = change_service_payload("2026-08-17");
+        payload["service_id"] = json!("");
+        let mut inp = series_edit_input(
+            payload,
+            template(json!({ "max_occurrences": null })),
+            json!([occurrence("2026-08-17", "confirmed", json!({}))]),
+        );
+        for (k, v) in colour_reads().as_object().unwrap() {
+            inp["context"]["reads"][k] = v.clone();
+        }
+        let err = update_recurring_series_pure(inp).unwrap_err();
+        assert!(err.starts_with("invalid_payload"), "{err}");
+    }
+
+    /// Both at once: the series goes to Carla AND to «Corte y color», and she has to perform the
+    /// NEW service — the competency read is keyed on it.
+    #[test]
+    fn series_edit_hands_the_series_to_another_professional_with_another_service() {
+        let both = || {
+            let mut payload = change_staff_payload("2026-08-17");
+            payload["current_service_id"] = json!("s-corte");
+            payload["service_id"] = json!("s-color");
+            payload
+        };
+        let mut reads = carla_reads();
+        reads["services.services.get"] = colour_reads()["services.services.get"].clone();
+        let out = judged_edit(both(), reads.clone());
+        assert!(out.error.is_none(), "{:?}", out.error);
+        for op in ops_named(&out, "_recurring_move_occurrence") {
+            assert_eq!(param(op, "staff_id"), "s2");
+            assert_eq!(param(op, "service_id"), "s-color");
+        }
+        let result = out.result.clone().unwrap();
+        assert_eq!((result["staff_changed"].clone(), result["service_changed"].clone()), (json!(true), json!(true)));
+
+        reads["staff.services.eligible_for_service"] = json!([
+            { "staff_id": "s1", "full_name": "Bea Pro", "custom_duration": null,
+              "custom_price": null, "is_primary": 1 }
+        ]);
+        let out = judged_edit(both(), reads);
+        assert_eq!(domain_code(&out).as_deref(), Some("appointments.staff_not_eligible"));
+        assert!(out.operations.is_empty());
+    }
+
+    /// A series still without a professional can change its service too: there is nobody whose
+    /// competency to check, and the moves are judged like any other of that series.
+    #[test]
+    fn a_series_without_a_professional_changes_its_service() {
+        let mut payload = change_service_payload("2026-08-17");
+        payload["staff_id"] = json!("");
+        let mut inp = series_edit_input(
+            payload,
+            template(json!({ "staff_id": "", "staff_name": "", "max_occurrences": null })),
+            json!([occurrence("2026-08-17", "confirmed", json!({ "staff_id": "" }))]),
+        );
+        for (k, v) in colour_reads().as_object().unwrap() {
+            inp["context"]["reads"][k] = v.clone();
+        }
+        inp["context"]["reads"]["staff.members.get"] = json!([]);
+        let out = update_recurring_series_pure(inp).unwrap();
+        assert!(out.error.is_none(), "{:?}", out.error);
+        assert_eq!(moved_ids(&out), vec!["apt-2026-08-17"]);
+        assert_eq!(param(ops_named(&out, "_recurring_split")[0], "service_id"), "s-color");
+    }
+
+    /// The catalogue read of the new service, keyed on the payload, and the schema accepts the
+    /// current service as the selector.
+    #[test]
+    fn the_series_edit_declares_the_read_of_the_new_service() {
+        let manifest: Value = serde_json::from_str(MANIFEST).expect("module.json parses");
+        let reads = manifest["commands"]["appointments.recurring.update"]["reads"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default();
+        let read = reads.iter().find(|r| r["query"] == "services.services.get");
+        assert!(read.is_some(), "recurring.update does not declare services.services.get");
+        assert_eq!(read.unwrap()["required"], json!(true));
+        assert_eq!(read.unwrap()["params"], json!({ "service_id": "payload.service_id" }));
+        let schema: Value = serde_json::from_str(
+            &std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../schemas/recurring_update.json"))
+                .expect("schema"),
+        )
+        .expect("schema parses");
+        assert!(schema["properties"]["current_service_id"].is_object(), "current_service_id is not accepted");
     }
 
     #[test]

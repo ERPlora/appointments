@@ -194,6 +194,7 @@
     "seriesMovedSkipped": "{moved} citas movidas · {skipped} no se han podido mover y se quedan a su hora:",
     "seriesReassignedSkipped": "{moved} citas pasan a {staff} · {skipped} no le caben y se quedan como estaban:",
     "seriesStaffChangeHint": "Desde el {from} atiende esta serie {staff}: sus {upcoming} citas reservadas pasan a su agenda si le caben; las que no, se quedan como están y se listan al guardar.",
+    "seriesServiceChangeHint": "Desde el {from} esta serie es {service}: sus {upcoming} citas reservadas pasan a ese servicio, con su precio y su duración, si caben en la agenda; las que no, se quedan como están y se listan al guardar.",
     "seriesSkipStaffUnknown": "no se ha podido comprobar el horario del profesional para esa cita",
     "seriesMoveSkipOther": "no se ha podido mover",
     "seriesSplitFrom": "Esta serie continúa a otra anterior ({id}): se partió cuando alguien la editó de una cita en adelante.",

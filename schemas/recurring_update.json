@@ -12,9 +12,13 @@
       "type": "string",
       "description": "The professional who governs the series from the cut on: their agenda and working days are read by it, so every moved occurrence is judged against them. Without `current_staff_id` it is a SELECTOR: it must be the one the series has (empty for an old series without one) and a different one is refused (appointments.recurring_mismatch). With `current_staff_id`, a different one hands the series to her (never empty)."
     },
+    "current_service_id": {
+      "type": "string",
+      "description": "The series' CURRENT service, as a SELECTOR: sent only to change the service, and it must be the one the series has (appointments.recurring_mismatch otherwise)."
+    },
     "service_id": {
       "type": "string",
-      "description": "The series' service, as a SELECTOR: required when handing the series to another professional, because their competency is read for it; it must be the one the series has (appointments.recurring_mismatch otherwise)."
+      "description": "The service that governs the series from the cut on: its catalogue row and the professional's competency for it are read by it. Without `current_service_id` it is a SELECTOR: required when handing the series to another professional, and it must be the one the series has (appointments.recurring_mismatch otherwise). With `current_service_id`, a different one changes the service of the moved bookings (never empty)."
     },
     "scope": {
       "type": "string",

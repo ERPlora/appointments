@@ -18,6 +18,11 @@
 -- appointments#248: when the edit hands the series to another professional the occurrence follows
 -- her (id and name); an EMPTY `:staff_id` keeps whoever it has, so an edit that changes no
 -- professional never reassigns an occurrence.
+--
+-- appointments#252: the same for the SERVICE — when the edit changes it the occurrence takes the
+-- new one: id, name and price (the price follows the service, as `materialize` prices every
+-- occurrence of the series). An EMPTY `:service_id` keeps all three, so an edit that changes no
+-- service never rewrites what the booking costs.
 UPDATE appointments_appointment
    SET recurring_id   = :recurring_id,
        start_datetime = :start_datetime,
@@ -25,6 +30,9 @@ UPDATE appointments_appointment
        duration_minutes = :duration_minutes,
        staff_id       = COALESCE(NULLIF(:staff_id, ''), staff_id),
        staff_name     = CASE WHEN COALESCE(:staff_id, '') = '' THEN staff_name ELSE :staff_name END,
+       service_id     = COALESCE(NULLIF(:service_id, ''), service_id),
+       service_name   = CASE WHEN COALESCE(:service_id, '') = '' THEN service_name ELSE :service_name END,
+       service_price  = CASE WHEN COALESCE(:service_id, '') = '' THEN service_price ELSE :service_price END,
        updated_by     = :current_user_id,
        updated_at     = :now
  WHERE hub_id = :hub_id
