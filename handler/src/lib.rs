@@ -275,13 +275,39 @@ impl Dt {
     }
 }
 
-/// Compara dos instantes: si ambos llevan offset compara en UTC; si alguno es
-/// "naive" compara hora de pared (mejor esfuerzo, coherente con cómo guarda la UI).
+/// Compares two instants: in UTC when both carry an offset; on the wall clock when either is
+/// "naive" (best effort, consistent with how the UI stores them).
 fn cmp_secs(a: &Dt, b: &Dt) -> i64 {
-    if a.has_offset && b.has_offset {
-        a.epoch_secs() - b.epoch_secs()
-    } else {
-        a.wall_secs() - b.wall_secs()
+    Secs::of(a).cmp(Secs::of(b))
+}
+
+/// An instant measured ONCE, both ways [`cmp_secs`] may need it (appointments#251). Walking the
+/// same rows for every occurrence of a series edit re-derived the civil date of each one for every
+/// comparison; measured, that alone was a third of the WASM instruction budget.
+#[derive(Clone, Copy)]
+struct Secs {
+    wall: i64,
+    epoch: i64,
+    has_offset: bool,
+}
+
+impl Secs {
+    fn of(dt: &Dt) -> Secs {
+        let wall = dt.wall_secs();
+        Secs {
+            wall,
+            epoch: wall - dt.offset_min * 60,
+            has_offset: dt.has_offset,
+        }
+    }
+
+    /// `self - other`, with [`cmp_secs`]'s rule.
+    fn cmp(self, other: Secs) -> i64 {
+        if self.has_offset && other.has_offset {
+            self.epoch - other.epoch
+        } else {
+            self.wall - other.wall
+        }
     }
 }
 
@@ -777,7 +803,9 @@ fn business_wall_stamp(instant: &Dt, tz: chrono_tz::Tz) -> Option<WallStamp> {
     use chrono::{Datelike, Timelike};
     let local = chrono::DateTime::from_timestamp(instant.epoch_secs(), 0)?.with_timezone(&tz);
     Some(WallStamp {
-        date: local.format("%Y-%m-%d").to_string(),
+        // Not `format("%Y-%m-%d")`: chrono parses the pattern on every call, and this runs several
+        // times per occurrence of a series edit (appointments#251).
+        date: format!("{:04}-{:02}-{:02}", local.year(), local.month(), local.day()),
         dow: local.weekday().num_days_from_monday() as i64,
         minute: local.hour() as i64 * 60 + local.minute() as i64,
     })
