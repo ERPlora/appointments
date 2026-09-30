@@ -116,6 +116,41 @@ def check_manifest() -> None:
                 "without knowing what is on the books is moving an unknown set"
             )
 
+    # A `required` read keyed by a payload field the schema does NOT require is fed a null key on
+    # every edit that leaves it out — and a query whose params demand a string refuses it, which
+    # aborts the WHOLE command with `read_unavailable`. Seen on the real hub: after
+    # appointments#252 keyed `services.services.get` by `payload.service_id`, an edit that only
+    # changes the TIME (the screen sends no service then) was refused. The handler already refuses
+    # a service change whose catalogue read is missing (`catalog_unavailable`), so that read does
+    # not need to abort anything. Only a query proven to answer a null key may stay required.
+    null_key_tolerant = {
+        # appointments#248: no params schema, and its SQL compares `:service_id`, so a null key
+        # answers no rows instead of failing — `services.services.get` declares a schema that
+        # demands a string.
+        "staff.services.eligible_for_service",
+    }
+    schema_required = set()
+    if schema_rel and (MODULE_DIR / schema_rel).exists():
+        schema_required = set(
+            json.loads((MODULE_DIR / schema_rel).read_text()).get("required") or []
+        )
+    for read in cmd.get("reads") or []:
+        if not isinstance(read, dict) or read.get("required") is not True:
+            continue
+        optional_keys = [
+            src
+            for src in (read.get("params") or {}).values()
+            if isinstance(src, str)
+            and src.startswith("payload.")
+            and src.split(".", 1)[1] not in schema_required
+        ]
+        if optional_keys and read.get("query") not in null_key_tolerant:
+            fail(
+                f"{COMMAND}.reads[{read.get('query')}]: `required` but keyed by {optional_keys} "
+                "that the payload may leave out — every edit without it would be aborted "
+                "(read_unavailable)"
+            )
+
     # The read has to hand back what the move needs, or the handler cannot address a row.
     occ_sql = (
         MODULE_DIR / MANIFEST["queries"]["appointments.recurring.occurrences"]["sql"]

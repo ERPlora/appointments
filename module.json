@@ -1224,7 +1224,7 @@
           "params": {
             "service_id": "payload.service_id"
           },
-          "required": true
+          "required": false
         },
         {
           "query": "staff.members.get",
