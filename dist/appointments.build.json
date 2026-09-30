@@ -1,7 +1,7 @@
 {
   "file": "dist/appointments.esm.js",
-  "sources_sha256": "a0ca03f8615c79fc7956a94f4c14794d5a0ef5e56dce26f144d87498206f26c4",
-  "locales_sha256": "6a0b3bfc57257b5988bf61a67c57b28bfa90532a646119a65955bc7a3b53f9b0",
-  "bundle_sha256": "235b84a80de328a8c1fa9f06de015f0b98983fa9d9762158bb8e41985ea619a1",
-  "built_at": "2026-09-29T23:36:09.454Z"
+  "sources_sha256": "8289e1a85ec65d312b1747af2f876d1b75b1fddc5984393dc26ecf54f98ec3e7",
+  "locales_sha256": "edf8f8213457f5488429238331cf229acb0fa4010feb505f0cf85d070da116c7",
+  "bundle_sha256": "b25d9a2bb7ffbb313f2ffff3a4eb91121e14deb26f5b8f4810dc37077f35e62f",
+  "built_at": "2026-09-30T00:49:14.435Z"
 }

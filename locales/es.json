@@ -164,6 +164,8 @@
     "seriesCreate": "Crear cita periódica",
     "seriesSave": "Guardar de esta cita en adelante",
     "seriesNoEnd": "Sin fin",
+    "seriesEndsAfterOne": "Tras {n} cita",
+    "seriesEndsAfter": "Tras {n} citas",
     "seriesNotFound": "Esa cita periódica ya no está en este negocio.",
     "seriesLoadError": "No se han podido cargar las citas periódicas.",
     "seriesSaveError": "No se ha podido guardar la cita periódica.",
