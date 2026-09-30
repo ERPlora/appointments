@@ -205,6 +205,77 @@ describe('each line says what happened, by key', () => {
   });
 });
 
+// appointments#253 — a series handed to another professional left, on each appointment,
+// «Time changed» with the time it already had: nobody could tell who does it now nor who did it
+// before. The series move now writes what it HAD (old_value) and what it has (new_value).
+const SERIES_MOVES = [
+  {
+    id: 'h9', appointment_id: 'ap-1', action: 'staff_changed', description: 'Appointment handed to another professional',
+    performed_by: USER_ANA,
+    old_value: '{"staff_id":"s1","staff_name":"Bea","service_id":"s-corte","service_name":"Corte","start_datetime":"2026-09-24T14:00:00Z"}',
+    new_value: '{"start_datetime":"2026-09-24T14:00:00Z","end_datetime":"2026-09-24T14:30:00Z","duration_minutes":30,"channel":"staff","staff_id":"s2","staff_name":"Carla","service_id":"s-corte","service_name":"Corte"}',
+    created_at: '2026-09-22T08:30:00Z',
+  },
+  {
+    id: 'h8', appointment_id: 'ap-1', action: 'service_changed', description: 'Appointment service changed',
+    performed_by: USER_ANA,
+    old_value: '{"staff_id":"s1","staff_name":"Bea","service_id":"s-corte","service_name":"Corte","start_datetime":"2026-09-24T14:00:00Z"}',
+    new_value: '{"start_datetime":"2026-09-24T15:00:00Z","end_datetime":"2026-09-24T16:00:00Z","duration_minutes":60,"channel":"staff","staff_id":"s1","staff_name":"Bea","service_id":"s-color","service_name":"Corte y color"}',
+    created_at: '2026-09-21T08:30:00Z',
+  },
+  {
+    id: 'h7', appointment_id: 'ap-1', action: 'staff_changed', description: 'Appointment handed to another professional',
+    performed_by: USER_ANA,
+    old_value: '{"staff_id":"","staff_name":"","service_id":"s-corte","service_name":"Corte","start_datetime":"2026-09-24T14:00:00Z"}',
+    new_value: '{"start_datetime":"2026-09-24T14:00:00Z","end_datetime":"2026-09-24T14:30:00Z","duration_minutes":30,"channel":"staff","staff_id":"s2","staff_name":"Carla","service_id":"s-color","service_name":"Corte y color"}',
+    created_at: '2026-09-20T08:30:00Z',
+  },
+];
+
+describe('a series move says what changed, from what to what (appointments#253)', () => {
+  beforeEach(() => {
+    historyAnswer = async () => SERIES_MOVES;
+  });
+
+  it('a hand-over is a professional change, not a time change', async () => {
+    const el = await mount();
+    expect(byId(el, 'h9').title).toBe('ui.historyActionStaffChanged');
+    expect(byId(el, 'h8').title).toBe('ui.historyActionServiceChanged');
+  });
+
+  it('names who did it before and who does it now', async () => {
+    const el = await mount();
+    const d = byId(el, 'h9').description ?? '';
+    expect(d).toContain('ui.historyProfessional: Bea → Carla');
+    expect(d).toContain('ui.historyByFrontDesk');
+    // Same slot as before: no «new time» that is not new.
+    expect(d).not.toContain('ui.historyNewTime');
+    expect(d).not.toContain('ui.historyService');
+  });
+
+  it('names the service it had and the one it has, and the new time when it moved', async () => {
+    const el = await mount();
+    const d = byId(el, 'h8').description ?? '';
+    expect(d).toContain('ui.historyService: Corte → Corte y color');
+    expect(d).toContain('ui.historyNewTime');
+    expect(d, '15:00Z is 17:00 in Madrid').toMatch(/17:00/);
+    expect(d).not.toContain('ui.historyProfessional');
+  });
+
+  it('an appointment nobody did says so, and the service change rides the same line', async () => {
+    const el = await mount();
+    const d = byId(el, 'h7').description ?? '';
+    expect(d).toContain('ui.historyProfessional: ui.historyNobody → Carla');
+    expect(d).toContain('ui.historyService: Corte → Corte y color');
+  });
+
+  it('each change has its own dot', async () => {
+    const el = await mount();
+    expect(byId(el, 'h9').icon).toBe('people-outline');
+    expect(byId(el, 'h8').icon).toBe('swap-horizontal-outline');
+  });
+});
+
 describe('who and when', () => {
   it('names the hub user who did it', async () => {
     const el = await mount();
@@ -298,6 +369,8 @@ describe('every string the history paints exists in English and Spanish', () => 
     'historyActionCreated', 'historyActionConfirmed', 'historyActionStarted', 'historyActionCompleted',
     'historyActionCancelled', 'historyActionNoShow', 'historyActionRescheduled', 'historyActionOther',
     'historyByCustomer', 'historyByFrontDesk', 'historyNewTime', 'historyReason', 'actionHistory',
+    'historyActionStaffChanged', 'historyActionServiceChanged', 'historyProfessional', 'historyService',
+    'historyNobody',
   ];
   for (const k of KEYS) {
     it(`ui.${k}`, () => {
@@ -316,6 +389,11 @@ describe('every string the history paints exists in English and Spanish', () => 
       expect(m, `action literal in _history_${f}.sql`).not.toBeNull();
       written.add(m![1]);
     }
+    // appointments#253: the series move writes one of several, chosen by a CASE.
+    const seriesMove = readFileSync(join(ROOT, 'commands', '_history_series_move.sql'), 'utf8');
+    const cases = [...seriesMove.matchAll(/(?:THEN|ELSE)\s+'([a-z_]+)'/g)].map((c) => c[1]);
+    expect(cases, 'action literals in _history_series_move.sql').toEqual(['staff_changed', 'service_changed', 'rescheduled']);
+    for (const c of cases) written.add(c);
     const src = readFileSync(join(__dirname, 'erp-appointments-history.ts'), 'utf8');
     for (const action of written) {
       expect(src, `the screen must translate «${action}»`).toMatch(new RegExp(`\\b${action}\\s*:`));
