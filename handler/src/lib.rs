@@ -8281,6 +8281,43 @@ mod tests {
         );
     }
 
+    /// appointments#265: a slot that clashes both with a booking of hers and with an earlier slot
+    /// of the same batch names HER booking — the read comes first, as when every row was walked.
+    #[test]
+    fn a_batch_slot_clashing_with_her_booking_and_its_own_names_her_booking() {
+        let reads = json!({ "appointments.appointments.upcoming_for_staff": [
+            { "id": "a-read", "appointment_number": "APT-READ", "staff_id": "s1", "status": "confirmed",
+              "start_datetime": "2026-08-03T11:40:00Z", "end_datetime": "2026-08-03T12:10:00Z" }
+        ]});
+        let out = bulk_create_pure(batch_input(
+            batch(json!([slot("2026-08-03T11:00:00Z"), slot("2026-08-03T11:20:00Z")])),
+            Some(reads),
+        ))
+        .unwrap();
+        let refusal = out.error.expect("a domain refusal");
+        assert_eq!(refusal.code, "appointments.overlapping_appointment");
+        assert!(refusal.message.contains("APT-READ"), "{}", refusal.message);
+    }
+
+    /// appointments#265: a slot being booked has no id of its own to exclude, so a booking of hers
+    /// the read hands over without one is still a clash, never taken for the slot itself.
+    #[test]
+    fn a_batch_clashes_with_a_booking_of_hers_the_read_gives_no_id() {
+        let reads = json!({ "appointments.appointments.upcoming_for_staff": [
+            { "appointment_number": "APT-NOID", "staff_id": "s1", "status": "confirmed",
+              "start_datetime": "2026-08-03T11:15:00Z", "end_datetime": "2026-08-03T11:45:00Z" }
+        ]});
+        let out = bulk_create_pure(batch_input(
+            batch(json!([slot("2026-08-03T11:00:00Z")])),
+            Some(reads),
+        ))
+        .unwrap();
+        assert_eq!(
+            domain_code(&out).as_deref(),
+            Some("appointments.overlapping_appointment")
+        );
+    }
+
     /// A series skips the occurrences it cannot book and materializes the rest — the behaviour it
     /// already had for overlaps, now also for a blocked day.
     #[test]
