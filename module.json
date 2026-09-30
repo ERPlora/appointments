@@ -846,6 +846,7 @@
       "permission": "appointments.change_appointment",
       "transaction": true,
       "sql": [
+        "commands/_history_appointment_edit.sql",
         "commands/appointment_update.sql",
         "commands/_appointment_overlap_assert.sql",
         "commands/_gate_clear.sql"
