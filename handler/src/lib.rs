@@ -7522,7 +7522,10 @@ mod tests {
     }
 
     /// The catalogue read of the new service, keyed on the payload, and the schema accepts the
-    /// current service as the selector.
+    /// current service as the selector. NOT `required`: an edit that changes only the time sends no
+    /// `service_id`, the services query refuses a null key, and a required read would abort that
+    /// edit with `read_unavailable` (seen on the real hub). A service change without the read is
+    /// refused by the handler itself (`catalog_unavailable`, test above).
     #[test]
     fn the_series_edit_declares_the_read_of_the_new_service() {
         let manifest: Value = serde_json::from_str(MANIFEST).expect("module.json parses");
@@ -7532,7 +7535,7 @@ mod tests {
             .unwrap_or_default();
         let read = reads.iter().find(|r| r["query"] == "services.services.get");
         assert!(read.is_some(), "recurring.update does not declare services.services.get");
-        assert_eq!(read.unwrap()["required"], json!(true));
+        assert_eq!(read.unwrap()["required"], json!(false));
         assert_eq!(read.unwrap()["params"], json!({ "service_id": "payload.service_id" }));
         let schema: Value = serde_json::from_str(
             &std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../schemas/recurring_update.json"))
