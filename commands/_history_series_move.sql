@@ -1,14 +1,16 @@
--- Audit trail of an occurrence moved by a series edit (appointments#253). Runs as the LATER
--- statement of `_recurring_move_occurrence`, the SAME command as the UPDATE it audits, because the
+-- Audit trail of an appointment moved by a series edit (appointments#253) or by `reschedule`
+-- (appointments#263). Runs as the LATER statement of `_recurring_move_occurrence` / `_reschedule_row`,
+-- the SAME command as the UPDATE it audits, because the
 -- runtime binds `:now` once per command (and once per WASM operation), so a separate operation
 -- would never match the pin below (appointments#196). See _history_confirm.sql for the
 -- `a.updated_at = :now` run-pinning rationale: a move the UPDATE refused leaves NO line.
 --
--- A single reschedule keeps `_history_reschedule.sql`; a series move needs its own line because it
--- can also hand the appointment to another professional or change its service, and «rescheduled»
--- with the time it already had said neither. By the time this runs the row is already rewritten,
--- so what it HAD arrives as `:from_*` — copied by the handler from the occurrences read, never
--- from the payload — and the action says what changed: the professional first (what the customer
+-- A series move needs this line because it can also hand the appointment to another professional
+-- or change its service, and «rescheduled» with the time it already had said neither. Since
+-- appointments#263 a SINGLE move can too, so `_reschedule_row` chains this same statement (it
+-- replaced `_history_reschedule.sql`) and both moves read alike in the history. By the time this
+-- runs the row is already rewritten, so what it HAD arrives as `:from_*` — copied by the handler
+-- from the row it read, never from the payload — and the action says what changed: the professional first (what the customer
 -- asks about), then the service, else the time.
 --
 -- old_value = what it had, new_value = what the row has now (plus the channel, like every move

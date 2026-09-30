@@ -320,7 +320,6 @@ export class ErpAppointmentsList extends LitElement {
     .form { display:flex; flex-direction:column; gap:.7rem; }
     .form ion-button { align-self:flex-end; }
     /* Reprogramar: el profesional es contexto (no se edita aquí) y las dos salidas van juntas. */
-    .form .ctx { margin:0; font-size:.9rem; color: var(--ion-color-medium, #92949c); }
     .form .actions { display:flex; gap:.5rem; justify-content:flex-end; align-items:center; }
     .form .actions ion-button { align-self:auto; }
     /* appointments#232 — the free times of the day, as buttons under the time field. */
@@ -459,11 +458,23 @@ export class ErpAppointmentsList extends LitElement {
 
   @state() rescheduleDuration = '';
 
-  /** Solo para enseñarlo: `reschedule` mueve la hora, no cambia de profesional (ver render). */
+  /** appointments#263 — the professional the appointment has NOW, by name: the picker still shows
+   *  her when she is no longer bookable (the option list only offers bookable professionals). */
   @state() rescheduleStaffName = '';
 
-  /** Su profesional, para preguntar el solape contra la agenda correcta (appointments#86). */
+  /** The professional picked in the panel (pre-filled from the row). The overlap warning is asked
+   *  on HER agenda (appointments#86), and a different one is a handover (appointments#263). */
   @state() rescheduleStaffId = '';
+
+  /** appointments#263 — the service picked in the panel (pre-filled from the row). */
+  @state() rescheduleServiceId = '';
+
+  @state() rescheduleServiceName = '';
+
+  /** What the row had when the panel opened: an untouched picker is not a handover. */
+  private rescheduleRowStaffId = '';
+
+  private rescheduleRowServiceId = '';
   /** appointments#15 — la serie de la cita que se está moviendo (`''` = ninguna) y su ocurrencia.
    *  Se copian de la fila al abrir el panel: la agenda ya las tiene, y volver a preguntárselas al
    *  servidor sería una segunda verdad. */
@@ -497,6 +508,34 @@ export class ErpAppointmentsList extends LitElement {
   private statusLabel(status: string): string {
     const key = STATUS_KEYS[status];
     return key ? erplora().t(CATALOG, key) : status;
+  }
+
+  /** appointments#263 — the professional + service the panel hands the appointment to, or `null`
+   *  when both pickers still hold what the row had (a plain move keeps its old payload). They
+   *  always travel together: the command judges the professional FOR a service. */
+  private get rescheduleHandover(): { staff_id: string; service_id: string } | null {
+    if (
+      this.rescheduleStaffId === this.rescheduleRowStaffId &&
+      this.rescheduleServiceId === this.rescheduleRowServiceId
+    ) {
+      return null;
+    }
+    return { staff_id: this.rescheduleStaffId, service_id: this.rescheduleServiceId };
+  }
+
+  /** A handover the command would refuse: a new service on an appointment without a professional
+   *  (or a legacy row without a service). The button says so before the server does. */
+  private get rescheduleHandoverIncomplete(): boolean {
+    const handover = this.rescheduleHandover;
+    return !!handover && (!handover.staff_id || !handover.service_id);
+  }
+
+  /** appointments#263 — same rule as the create form (appointments#75): the service IS the
+   *  length, so picking another one re-fills the minutes from the catalogue. */
+  private onRescheduleServiceChange(serviceId: string): void {
+    this.rescheduleServiceId = serviceId;
+    const fromCatalogue = Number(this.services.find((s) => s.id === serviceId)?.duration_minutes);
+    if (Number.isFinite(fromCatalogue) && fromCatalogue >= 1) this.rescheduleDuration = String(fromCatalogue);
   }
 
   /** Profesionales que pueden recibir citas: los que el módulo `staff` marca reservables. */
@@ -1187,6 +1226,10 @@ export class ErpAppointmentsList extends LitElement {
     this.rescheduleDuration = '';
     this.rescheduleStaffName = '';
     this.rescheduleStaffId = '';
+    this.rescheduleServiceId = '';
+    this.rescheduleServiceName = '';
+    this.rescheduleRowStaffId = '';
+    this.rescheduleRowServiceId = '';
     this.rescheduleSeriesId = '';
     this.rescheduleOccurrence = '';
     this.askingSeriesScope = false;
@@ -1204,6 +1247,10 @@ export class ErpAppointmentsList extends LitElement {
     this.rescheduleDuration = String(row.duration_minutes ?? '');
     this.rescheduleStaffName = String(row.staff_name ?? '');
     this.rescheduleStaffId = String(row.staff_id ?? '');
+    this.rescheduleServiceId = String(row.service_id ?? '');
+    this.rescheduleServiceName = String(row.service_name ?? '');
+    this.rescheduleRowStaffId = this.rescheduleStaffId;
+    this.rescheduleRowServiceId = this.rescheduleServiceId;
     this.rescheduleSeriesId = String(row.recurring_id ?? '');
     this.rescheduleOccurrence = String(row.occurrence_date ?? '');
     this.error = '';
@@ -1250,11 +1297,13 @@ export class ErpAppointmentsList extends LitElement {
    *  una pulsación mantenida —el estándar del sector contra el arrastre accidental en tablet—,
    *  más las flechas de teclado), pero sin un host que escuche y persista, mover sería mentir.
    *
+   *  Dropping the block on another professional's lane HANDS it to her (appointments#263):
+   *  `reschedule` receives `staff_id` + the appointment's own `service_id` and judges the slot on
+   *  her hours, blocked time and appointments. The «unassigned» lane is still refused — taking
+   *  the professional away is not a move — and so is a legacy row without a service, which has
+   *  nothing to judge the new professional for.
+   *
    *  Lo que NO hace este cableado, a propósito:
-   *  · CAMBIAR DE PROFESIONAL. Soltar el bloque en otro carril ES un cambio de profesional, y
-   *    `reschedule` mueve la hora nada más (appointments#11 sacó la identidad del profesional
-   *    de las manos del llamante). Dejarlo «medio funcionar» guardaría la hora y enseñaría el
-   *    carril: una mentira en la agenda. Se rechaza con un aviso claro y `revert()`.
    *  · CONFIRMAR LIGERO al soltar (el diálogo con «avisar a la clienta» de Vagaro/Fresha).
    *    Necesita un canal de notificación que este módulo no tiene; la reprogramación queda
    *    visible en la agenda refrescada y con su historial (`_history_reschedule`).
@@ -1276,9 +1325,15 @@ export class ErpAppointmentsList extends LitElement {
       this.refuseDrag('ui.errDragNotMovable');
       return;
     }
-    if (resourceId !== lane) {
+    const handover = resourceId !== lane;
+    if (handover && resourceId === UNASSIGNED) {
       revert();
       this.refuseDrag('ui.errDragStaffChange');
+      return;
+    }
+    if (handover && !appointment.service_id) {
+      revert();
+      this.refuseDrag('ui.errDragNoService');
       return;
     }
     try {
@@ -1294,7 +1349,7 @@ export class ErpAppointmentsList extends LitElement {
         !(await this.overlapAccepted(
           startIso,
           appointment.duration_minutes,
-          appointment.staff_id || '',
+          handover ? resourceId : appointment.staff_id || '',
           id,
         ))
       ) {
@@ -1310,6 +1365,7 @@ export class ErpAppointmentsList extends LitElement {
         // `allow_past` is NOT declared: a block dropped into the past by mistake carries no prior
         // warning, so a past start keeps being refused on this path.
         allow_short_notice: true,
+        ...(handover ? { staff_id: resourceId, service_id: appointment.service_id } : {}),
       });
       await this.refresh(); // la posición optimista se descarta: manda la fila del servidor
     } catch (e) {
@@ -1333,14 +1389,15 @@ export class ErpAppointmentsList extends LitElement {
    *  la hace el handler. Mandarlo desde aquí era una segunda opinión que podía no cuadrar con la
    *  duración, y nadie podía explicar la fila resultante.
    *
-   *  El profesional NO se cambia aquí: mandarle un `staff_id` desde el navegador devolvería la
-   *  identidad del profesional al llamante, que es justo lo que appointments#11 le quitó al alta.
-   *  El handler lo lee de la fila de la cita. Cambiar de profesional es trabajo aparte. */
+   *  appointments#263 — a new professional and/or service travel as ids only (`staff_id` +
+   *  `service_id`, together): names, price and eligibility are resolved by the handler from the
+   *  staff and services records, never taken from the browser (the rule appointments#11 set). */
   private async submitReschedule(ev: Event) {
     ev.preventDefault();
     if (!this.rescheduleId || !this.rescheduleStart) return;
     const minutes = Math.trunc(Number(this.rescheduleDuration));
     if (!Number.isFinite(minutes) || minutes < 1) return;
+    if (this.rescheduleHandoverIncomplete) return;
     // appointments#15 — una cita de una SERIE no se mueve sin decir a qué alcanza el cambio.
     // Se pregunta aquí, al guardar, y no se escribe NADA hasta que hay respuesta.
     if (this.rescheduleSeriesId && this.rescheduleOccurrence) {
@@ -1379,6 +1436,19 @@ export class ErpAppointmentsList extends LitElement {
     erplora().notify?.({ type: 'warning', message: `${head} ${lines.join(' · ')}` });
   }
 
+  /** appointments#263 — the professional/service keys of `recurring.update` for «this and
+   *  following». Without a handover the series' professional is only the SELECTOR (as before).
+   *  With one, `current_*` carry the series' own values as selectors and the plain keys the new
+   *  ones (#255/#259); the service always rides along when the professional changes, because the
+   *  new professional is judged for it. */
+  private seriesHandover(seriesStaffId: string, seriesServiceId: string): Record<string, string> {
+    if (!this.rescheduleHandover) return { staff_id: seriesStaffId };
+    const keys: Record<string, string> = { staff_id: this.rescheduleStaffId, service_id: this.rescheduleServiceId };
+    if (this.rescheduleStaffId !== seriesStaffId) keys.current_staff_id = seriesStaffId;
+    if (this.rescheduleServiceId !== seriesServiceId) keys.current_service_id = seriesServiceId;
+    return keys;
+  }
+
   /** Escribe el movimiento con el alcance elegido.
    *
    *  `this_only` mueve UNA cita, que es lo que esta pantalla hacía siempre. `this_and_following`
@@ -1395,13 +1465,13 @@ export class ErpAppointmentsList extends LitElement {
         // appointments#236 — the SERIES' professional travels as selector: the handler judges every
         // occurrence it drags on her agenda and working days. It is read from the template, not
         // taken from the tapped appointment, which may have been handed to someone else.
-        const template = rows<{ staff_id?: string | null }>(
+        const template = rows<{ staff_id?: string | null; service_id?: string | null }>(
           await erplora().query('appointments.recurring.get', { recurring_id: this.rescheduleSeriesId }),
         )[0];
         const answer = handlerAnswer(
           await erplora().command('appointments.recurring.update', {
             recurring_id: this.rescheduleSeriesId,
-            staff_id: template?.staff_id ?? '',
+            ...this.seriesHandover(template?.staff_id ?? '', template?.service_id ?? ''),
             scope,
             from_occurrence_date: this.rescheduleOccurrence,
             // HORA DE PARED, no un instante: la hora de una plantilla es una lectura de reloj y no
@@ -1418,6 +1488,7 @@ export class ErpAppointmentsList extends LitElement {
         const startIso = wallToBusinessIso(this.rescheduleStart);
         // appointments#86 — mover una cita ENCIMA de otra avisa igual que crearla ahí. La propia
         // cita se excluye: si no, moverla dentro de su hueco preguntaría por sí misma.
+        // appointments#263 — with a new professional, it is HER agenda that is asked.
         if (
           !(await this.overlapAccepted(startIso, minutes, this.rescheduleStaffId, this.rescheduleId))
         ) {
@@ -1427,6 +1498,7 @@ export class ErpAppointmentsList extends LitElement {
           appointment_id: this.rescheduleId,
           start_datetime: startIso,
           duration_minutes: minutes,
+          ...(this.rescheduleHandover ?? {}),
           // appointments#165 / #156 — this panel IS the counter, so it declares what the create
           // form declares (#155, #157): the client seen at 11:30 instead of 11:00, and the one who
           // arrived early and fits in half an hour. Sent ALWAYS, without consulting the browser
@@ -1642,12 +1714,28 @@ export class ErpAppointmentsList extends LitElement {
       </div>`;
   }
 
-  /** Mover la cita: solo el hueco. Cliente y servicio no se pintan porque `reschedule` no los
-   *  toca — enseñarlos editables prometería un cambio que el command descarta. */
+  /** The appointment sheet: the slot, the service and the professional (appointments#263). The
+   *  customer is not painted: another customer is another appointment, and `reschedule` keeps it.
+   *  A professional or service the pickers no longer offer (not bookable any more, removed from
+   *  the catalogue) is still shown as the current value, so the sheet never looks empty. */
   private renderRescheduleForm(t: (k: string) => string) {
     return html`<form slot="create" data-testid="appointments-list-reschedule-form" data-mode="reschedule" class="form" @submit=${(e: Event) => this.submitReschedule(e)}>
       <ok-inline-feedback data-testid="appointments-list-reschedule-hint" tone="info" icon="information-circle-outline">${t('ui.rescheduleHint')}</ok-inline-feedback>
-      <p class="ctx">${t('ui.fieldStaff')}: <strong>${this.rescheduleStaffName || '—'}</strong></p>
+      <ion-select data-testid="appointments-list-reschedule-service" data-role="reschedule-service" fill="outline" mode="md" label-placement="floating" label=${t('ui.fieldService')} placeholder=${t('ui.pickService')} .value=${this.rescheduleServiceId} @ionChange=${(e: any) => this.onRescheduleServiceChange(e.target.value ?? '')}>
+        ${this.rescheduleServiceId && !this.services.some((s) => s.id === this.rescheduleServiceId)
+          ? html`<ion-select-option .value=${this.rescheduleServiceId}>${this.rescheduleServiceName || this.rescheduleServiceId}</ion-select-option>`
+          : nothing}
+        ${this.services.map((s) => html`<ion-select-option .value=${s.id}>${s.name}</ion-select-option>`)}
+      </ion-select>
+      <ion-select data-testid="appointments-list-reschedule-staff" data-role="reschedule-staff" fill="outline" mode="md" label-placement="floating" label=${t('ui.fieldStaff')} placeholder=${t('ui.pickStaff')} .value=${this.rescheduleStaffId} @ionChange=${(e: any) => (this.rescheduleStaffId = e.target.value ?? '')}>
+        ${this.rescheduleStaffId && !this.bookableStaff.some((m) => m.id === this.rescheduleStaffId)
+          ? html`<ion-select-option .value=${this.rescheduleStaffId}>${this.rescheduleStaffName || this.rescheduleStaffId}</ion-select-option>`
+          : nothing}
+        ${this.bookableStaff.map((m) => html`<ion-select-option .value=${m.id}>${m.full_name}</ion-select-option>`)}
+      </ion-select>
+      ${this.rescheduleHandoverIncomplete
+        ? html`<ok-inline-feedback data-testid="appointments-list-reschedule-needs-staff" tone="warning" icon="person-outline">${t(this.rescheduleServiceId ? 'ui.rescheduleNeedsStaff' : 'ui.rescheduleNeedsService')}</ok-inline-feedback>`
+        : nothing}
       <!-- appointments#204: date + time, not datetime-local — its year segment takes 6 digits and never hands the caret to the hour, so a typed start never landed. -->
       <!-- appointments#205: text, painted in the hub's language, with an inline calendar. -->
       <ion-input data-testid="appointments-list-reschedule-start" data-role="reschedule-start" fill="outline" mode="md" label-placement="floating" label=${t('ui.fieldDate')} type="text" inputmode="numeric" autocomplete="off" placeholder=${t('ui.datePlaceholder')} .value=${this.dateFieldValue('reschedule')} @ionInput=${(e: any) => this.onDateFieldInput('reschedule', e.target.value ?? '')} @ionChange=${() => this.commitDateDraft('reschedule')} @keydown=${(e: KeyboardEvent) => this.onStartDateKeydown('reschedule', e)} @paste=${(e: Event) => this.onStartPaste('reschedule', e)}>
@@ -1677,7 +1765,7 @@ export class ErpAppointmentsList extends LitElement {
         : nothing}
       <div class="actions">
         <ion-button data-testid="appointments-list-reschedule-cancel" type="button" size="small" fill="clear" @click=${() => { this.clearReschedule(); this.dataTable()?.close(); }}>${t('ui.cancelReschedule')}</ion-button>
-        <ion-button data-testid="appointments-list-reschedule-submit" type="submit" size="small" ?disabled=${this.saving || !this.rescheduleStart || !this.rescheduleDuration}>${this.saving ? t('ui.saving') : t('ui.confirmReschedule')}</ion-button>
+        <ion-button data-testid="appointments-list-reschedule-submit" type="submit" size="small" ?disabled=${this.saving || !this.rescheduleStart || !this.rescheduleDuration || this.rescheduleHandoverIncomplete}>${this.saving ? t('ui.saving') : t('ui.confirmReschedule')}</ion-button>
       </div>
       <!-- appointments#194 — the sheet of an appointment carries its history: the reschedule
            panel does not hide it, it shows it right under the form. -->

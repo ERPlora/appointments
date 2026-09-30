@@ -2024,14 +2024,17 @@ var es_default = {
     historyProfessional: "Profesional",
     historyService: "Servicio",
     historyNobody: "Sin asignar",
-    actionReschedule: "Reprogramar",
-    rescheduleTitle: "Mover la cita",
+    actionReschedule: "Editar",
+    rescheduleTitle: "Editar la cita",
     reschedulePastNotice: "Esta hora ya ha pasado. La cita quedar\xE1 en la hora en que de verdad se atendi\xF3.",
-    rescheduleHint: "Elige el nuevo hueco. La clienta, el servicio y el profesional se quedan como est\xE1n.",
-    confirmReschedule: "Mover la cita",
+    rescheduleHint: "Cambia el hueco, el servicio o el profesional. La clienta se queda como est\xE1.",
+    confirmReschedule: "Guardar cambios",
     cancelReschedule: "Cancelar",
     errReschedule: "No se ha podido mover la cita.",
-    errDragStaffChange: "Cambiar de profesional arrastrando a\xFAn no se puede: la cita se queda con su profesional. Mueve la hora o usa el panel.",
+    errDragStaffChange: "Una cita no se puede dejar sin profesional: su\xE9ltala en la columna de un profesional.",
+    rescheduleNeedsService: "Elige un servicio para el nuevo profesional.",
+    rescheduleNeedsStaff: "Elige un profesional para el nuevo servicio.",
+    errDragNoService: "Esta cita no tiene servicio: \xE1brela y elige uno antes de pas\xE1rsela a otro profesional.",
     errDragNotMovable: "Esta cita ya no se puede mover (su estado es final).",
     deviceZoneNotice: "Este dispositivo est\xE1 en otra zona horaria. La agenda siempre muestra el reloj del negocio:",
     seriesScopeTitle: "Editar cita peri\xF3dica",
@@ -2296,14 +2299,17 @@ var en_default = {
     historyProfessional: "Professional",
     historyService: "Service",
     historyNobody: "Unassigned",
-    actionReschedule: "Reschedule",
-    rescheduleTitle: "Move appointment",
+    actionReschedule: "Edit",
+    rescheduleTitle: "Edit appointment",
     reschedulePastNotice: "This time has already passed. The appointment will be moved to when it really took place.",
-    rescheduleHint: "Pick the new slot. The customer, the service and the professional stay as they are.",
-    confirmReschedule: "Move appointment",
+    rescheduleHint: "Change the slot, the service or the professional. The customer stays as it is.",
+    confirmReschedule: "Save changes",
     cancelReschedule: "Cancel",
     errReschedule: "The appointment could not be moved.",
-    errDragStaffChange: "Changing professional by dragging is not available yet - the appointment stays with its professional. Use the time change or the panel.",
+    errDragStaffChange: "An appointment cannot be left without a professional: drop it on a professional's column.",
+    rescheduleNeedsService: "Pick a service for the new professional.",
+    rescheduleNeedsStaff: "Pick a professional for the new service.",
+    errDragNoService: "This appointment has no service: open it and pick one before handing it to another professional.",
     errDragNotMovable: "This appointment can no longer be moved (its state is final).",
     deviceZoneNotice: "This device is on a different time zone. The agenda always shows the business clock:",
     seriesScopeTitle: "Edit repeating appointment",
@@ -8739,6 +8745,11 @@ var ErpAppointmentsList = class extends i3 {
     this.rescheduleDuration = "";
     this.rescheduleStaffName = "";
     this.rescheduleStaffId = "";
+    this.rescheduleServiceId = "";
+    this.rescheduleServiceName = "";
+    /** What the row had when the panel opened: an untouched picker is not a handover. */
+    this.rescheduleRowStaffId = "";
+    this.rescheduleRowServiceId = "";
     this.rescheduleSeriesId = "";
     this.rescheduleOccurrence = "";
     this.askingSeriesScope = false;
@@ -8803,7 +8814,6 @@ var ErpAppointmentsList = class extends i3 {
     .form { display:flex; flex-direction:column; gap:.7rem; }
     .form ion-button { align-self:flex-end; }
     /* Reprogramar: el profesional es contexto (no se edita aquí) y las dos salidas van juntas. */
-    .form .ctx { margin:0; font-size:.9rem; color: var(--ion-color-medium, #92949c); }
     .form .actions { display:flex; gap:.5rem; justify-content:flex-end; align-items:center; }
     .form .actions ion-button { align-self:auto; }
     /* appointments#232 — the free times of the day, as buttons under the time field. */
@@ -8841,6 +8851,28 @@ var ErpAppointmentsList = class extends i3 {
   statusLabel(status) {
     const key = STATUS_KEYS2[status];
     return key ? erplora4().t(CATALOG4, key) : status;
+  }
+  /** appointments#263 — the professional + service the panel hands the appointment to, or `null`
+   *  when both pickers still hold what the row had (a plain move keeps its old payload). They
+   *  always travel together: the command judges the professional FOR a service. */
+  get rescheduleHandover() {
+    if (this.rescheduleStaffId === this.rescheduleRowStaffId && this.rescheduleServiceId === this.rescheduleRowServiceId) {
+      return null;
+    }
+    return { staff_id: this.rescheduleStaffId, service_id: this.rescheduleServiceId };
+  }
+  /** A handover the command would refuse: a new service on an appointment without a professional
+   *  (or a legacy row without a service). The button says so before the server does. */
+  get rescheduleHandoverIncomplete() {
+    const handover = this.rescheduleHandover;
+    return !!handover && (!handover.staff_id || !handover.service_id);
+  }
+  /** appointments#263 — same rule as the create form (appointments#75): the service IS the
+   *  length, so picking another one re-fills the minutes from the catalogue. */
+  onRescheduleServiceChange(serviceId) {
+    this.rescheduleServiceId = serviceId;
+    const fromCatalogue = Number(this.services.find((s5) => s5.id === serviceId)?.duration_minutes);
+    if (Number.isFinite(fromCatalogue) && fromCatalogue >= 1) this.rescheduleDuration = String(fromCatalogue);
   }
   /** Profesionales que pueden recibir citas: los que el módulo `staff` marca reservables. */
   get bookableStaff() {
@@ -9463,6 +9495,10 @@ var ErpAppointmentsList = class extends i3 {
     this.rescheduleDuration = "";
     this.rescheduleStaffName = "";
     this.rescheduleStaffId = "";
+    this.rescheduleServiceId = "";
+    this.rescheduleServiceName = "";
+    this.rescheduleRowStaffId = "";
+    this.rescheduleRowServiceId = "";
     this.rescheduleSeriesId = "";
     this.rescheduleOccurrence = "";
     this.askingSeriesScope = false;
@@ -9479,6 +9515,10 @@ var ErpAppointmentsList = class extends i3 {
     this.rescheduleDuration = String(row.duration_minutes ?? "");
     this.rescheduleStaffName = String(row.staff_name ?? "");
     this.rescheduleStaffId = String(row.staff_id ?? "");
+    this.rescheduleServiceId = String(row.service_id ?? "");
+    this.rescheduleServiceName = String(row.service_name ?? "");
+    this.rescheduleRowStaffId = this.rescheduleStaffId;
+    this.rescheduleRowServiceId = this.rescheduleServiceId;
     this.rescheduleSeriesId = String(row.recurring_id ?? "");
     this.rescheduleOccurrence = String(row.occurrence_date ?? "");
     this.error = "";
@@ -9517,11 +9557,13 @@ var ErpAppointmentsList = class extends i3 {
    *  una pulsación mantenida —el estándar del sector contra el arrastre accidental en tablet—,
    *  más las flechas de teclado), pero sin un host que escuche y persista, mover sería mentir.
    *
+   *  Dropping the block on another professional's lane HANDS it to her (appointments#263):
+   *  `reschedule` receives `staff_id` + the appointment's own `service_id` and judges the slot on
+   *  her hours, blocked time and appointments. The «unassigned» lane is still refused — taking
+   *  the professional away is not a move — and so is a legacy row without a service, which has
+   *  nothing to judge the new professional for.
+   *
    *  Lo que NO hace este cableado, a propósito:
-   *  · CAMBIAR DE PROFESIONAL. Soltar el bloque en otro carril ES un cambio de profesional, y
-   *    `reschedule` mueve la hora nada más (appointments#11 sacó la identidad del profesional
-   *    de las manos del llamante). Dejarlo «medio funcionar» guardaría la hora y enseñaría el
-   *    carril: una mentira en la agenda. Se rechaza con un aviso claro y `revert()`.
    *  · CONFIRMAR LIGERO al soltar (el diálogo con «avisar a la clienta» de Vagaro/Fresha).
    *    Necesita un canal de notificación que este módulo no tiene; la reprogramación queda
    *    visible en la agenda refrescada y con su historial (`_history_reschedule`).
@@ -9543,9 +9585,15 @@ var ErpAppointmentsList = class extends i3 {
       this.refuseDrag("ui.errDragNotMovable");
       return;
     }
-    if (resourceId !== lane) {
+    const handover = resourceId !== lane;
+    if (handover && resourceId === UNASSIGNED) {
       revert();
       this.refuseDrag("ui.errDragStaffChange");
+      return;
+    }
+    if (handover && !appointment.service_id) {
+      revert();
+      this.refuseDrag("ui.errDragNoService");
       return;
     }
     try {
@@ -9553,7 +9601,7 @@ var ErpAppointmentsList = class extends i3 {
       if (!await this.overlapAccepted(
         startIso,
         appointment.duration_minutes,
-        appointment.staff_id || "",
+        handover ? resourceId : appointment.staff_id || "",
         id
       )) {
         revert();
@@ -9567,7 +9615,8 @@ var ErpAppointmentsList = class extends i3 {
         // window, so dropping the early client into half an hour must behave like the panel.
         // `allow_past` is NOT declared: a block dropped into the past by mistake carries no prior
         // warning, so a past start keeps being refused on this path.
-        allow_short_notice: true
+        allow_short_notice: true,
+        ...handover ? { staff_id: resourceId, service_id: appointment.service_id } : {}
       });
       await this.refresh();
     } catch (e5) {
@@ -9589,14 +9638,15 @@ var ErpAppointmentsList = class extends i3 {
    *  la hace el handler. Mandarlo desde aquí era una segunda opinión que podía no cuadrar con la
    *  duración, y nadie podía explicar la fila resultante.
    *
-   *  El profesional NO se cambia aquí: mandarle un `staff_id` desde el navegador devolvería la
-   *  identidad del profesional al llamante, que es justo lo que appointments#11 le quitó al alta.
-   *  El handler lo lee de la fila de la cita. Cambiar de profesional es trabajo aparte. */
+   *  appointments#263 — a new professional and/or service travel as ids only (`staff_id` +
+   *  `service_id`, together): names, price and eligibility are resolved by the handler from the
+   *  staff and services records, never taken from the browser (the rule appointments#11 set). */
   async submitReschedule(ev) {
     ev.preventDefault();
     if (!this.rescheduleId || !this.rescheduleStart) return;
     const minutes = Math.trunc(Number(this.rescheduleDuration));
     if (!Number.isFinite(minutes) || minutes < 1) return;
+    if (this.rescheduleHandoverIncomplete) return;
     if (this.rescheduleSeriesId && this.rescheduleOccurrence) {
       this.seriesScope = "this_only";
       this.askingSeriesScope = true;
@@ -9628,6 +9678,18 @@ var ErpAppointmentsList = class extends i3 {
     const head = t5("ui.seriesMovedSkipped", { moved: Number(answer?.moved ?? 0), skipped: skipped.length });
     erplora4().notify?.({ type: "warning", message: `${head} ${lines.join(" \xB7 ")}` });
   }
+  /** appointments#263 — the professional/service keys of `recurring.update` for «this and
+   *  following». Without a handover the series' professional is only the SELECTOR (as before).
+   *  With one, `current_*` carry the series' own values as selectors and the plain keys the new
+   *  ones (#255/#259); the service always rides along when the professional changes, because the
+   *  new professional is judged for it. */
+  seriesHandover(seriesStaffId, seriesServiceId) {
+    if (!this.rescheduleHandover) return { staff_id: seriesStaffId };
+    const keys = { staff_id: this.rescheduleStaffId, service_id: this.rescheduleServiceId };
+    if (this.rescheduleStaffId !== seriesStaffId) keys.current_staff_id = seriesStaffId;
+    if (this.rescheduleServiceId !== seriesServiceId) keys.current_service_id = seriesServiceId;
+    return keys;
+  }
   /** Escribe el movimiento con el alcance elegido.
    *
    *  `this_only` mueve UNA cita, que es lo que esta pantalla hacía siempre. `this_and_following`
@@ -9647,7 +9709,7 @@ var ErpAppointmentsList = class extends i3 {
         const answer = handlerAnswer(
           await erplora4().command("appointments.recurring.update", {
             recurring_id: this.rescheduleSeriesId,
-            staff_id: template?.staff_id ?? "",
+            ...this.seriesHandover(template?.staff_id ?? "", template?.service_id ?? ""),
             scope,
             from_occurrence_date: this.rescheduleOccurrence,
             // HORA DE PARED, no un instante: la hora de una plantilla es una lectura de reloj y no
@@ -9667,6 +9729,7 @@ var ErpAppointmentsList = class extends i3 {
           appointment_id: this.rescheduleId,
           start_datetime: startIso,
           duration_minutes: minutes,
+          ...this.rescheduleHandover ?? {},
           // appointments#165 / #156 — this panel IS the counter, so it declares what the create
           // form declares (#155, #157): the client seen at 11:30 instead of 11:00, and the one who
           // arrived early and fits in half an hour. Sent ALWAYS, without consulting the browser
@@ -9855,12 +9918,22 @@ var ErpAppointmentsList = class extends i3 {
         </ok-data-table>`}
       </div>`;
   }
-  /** Mover la cita: solo el hueco. Cliente y servicio no se pintan porque `reschedule` no los
-   *  toca — enseñarlos editables prometería un cambio que el command descarta. */
+  /** The appointment sheet: the slot, the service and the professional (appointments#263). The
+   *  customer is not painted: another customer is another appointment, and `reschedule` keeps it.
+   *  A professional or service the pickers no longer offer (not bookable any more, removed from
+   *  the catalogue) is still shown as the current value, so the sheet never looks empty. */
   renderRescheduleForm(t5) {
     return b2`<form slot="create" data-testid="appointments-list-reschedule-form" data-mode="reschedule" class="form" @submit=${(e5) => this.submitReschedule(e5)}>
       <ok-inline-feedback data-testid="appointments-list-reschedule-hint" tone="info" icon="information-circle-outline">${t5("ui.rescheduleHint")}</ok-inline-feedback>
-      <p class="ctx">${t5("ui.fieldStaff")}: <strong>${this.rescheduleStaffName || "\u2014"}</strong></p>
+      <ion-select data-testid="appointments-list-reschedule-service" data-role="reschedule-service" fill="outline" mode="md" label-placement="floating" label=${t5("ui.fieldService")} placeholder=${t5("ui.pickService")} .value=${this.rescheduleServiceId} @ionChange=${(e5) => this.onRescheduleServiceChange(e5.target.value ?? "")}>
+        ${this.rescheduleServiceId && !this.services.some((s5) => s5.id === this.rescheduleServiceId) ? b2`<ion-select-option .value=${this.rescheduleServiceId}>${this.rescheduleServiceName || this.rescheduleServiceId}</ion-select-option>` : A}
+        ${this.services.map((s5) => b2`<ion-select-option .value=${s5.id}>${s5.name}</ion-select-option>`)}
+      </ion-select>
+      <ion-select data-testid="appointments-list-reschedule-staff" data-role="reschedule-staff" fill="outline" mode="md" label-placement="floating" label=${t5("ui.fieldStaff")} placeholder=${t5("ui.pickStaff")} .value=${this.rescheduleStaffId} @ionChange=${(e5) => this.rescheduleStaffId = e5.target.value ?? ""}>
+        ${this.rescheduleStaffId && !this.bookableStaff.some((m4) => m4.id === this.rescheduleStaffId) ? b2`<ion-select-option .value=${this.rescheduleStaffId}>${this.rescheduleStaffName || this.rescheduleStaffId}</ion-select-option>` : A}
+        ${this.bookableStaff.map((m4) => b2`<ion-select-option .value=${m4.id}>${m4.full_name}</ion-select-option>`)}
+      </ion-select>
+      ${this.rescheduleHandoverIncomplete ? b2`<ok-inline-feedback data-testid="appointments-list-reschedule-needs-staff" tone="warning" icon="person-outline">${t5(this.rescheduleServiceId ? "ui.rescheduleNeedsStaff" : "ui.rescheduleNeedsService")}</ok-inline-feedback>` : A}
       <!-- appointments#204: date + time, not datetime-local — its year segment takes 6 digits and never hands the caret to the hour, so a typed start never landed. -->
       <!-- appointments#205: text, painted in the hub's language, with an inline calendar. -->
       <ion-input data-testid="appointments-list-reschedule-start" data-role="reschedule-start" fill="outline" mode="md" label-placement="floating" label=${t5("ui.fieldDate")} type="text" inputmode="numeric" autocomplete="off" placeholder=${t5("ui.datePlaceholder")} .value=${this.dateFieldValue("reschedule")} @ionInput=${(e5) => this.onDateFieldInput("reschedule", e5.target.value ?? "")} @ionChange=${() => this.commitDateDraft("reschedule")} @keydown=${(e5) => this.onStartDateKeydown("reschedule", e5)} @paste=${(e5) => this.onStartPaste("reschedule", e5)}>
@@ -9887,7 +9960,7 @@ var ErpAppointmentsList = class extends i3 {
       this.clearReschedule();
       this.dataTable()?.close();
     }}>${t5("ui.cancelReschedule")}</ion-button>
-        <ion-button data-testid="appointments-list-reschedule-submit" type="submit" size="small" ?disabled=${this.saving || !this.rescheduleStart || !this.rescheduleDuration}>${this.saving ? t5("ui.saving") : t5("ui.confirmReschedule")}</ion-button>
+        <ion-button data-testid="appointments-list-reschedule-submit" type="submit" size="small" ?disabled=${this.saving || !this.rescheduleStart || !this.rescheduleDuration || this.rescheduleHandoverIncomplete}>${this.saving ? t5("ui.saving") : t5("ui.confirmReschedule")}</ion-button>
       </div>
       <!-- appointments#194 — the sheet of an appointment carries its history: the reschedule
            panel does not hide it, it shows it right under the form. -->
@@ -10082,6 +10155,12 @@ __decorateClass([
 __decorateClass([
   r5()
 ], ErpAppointmentsList.prototype, "rescheduleStaffId", 2);
+__decorateClass([
+  r5()
+], ErpAppointmentsList.prototype, "rescheduleServiceId", 2);
+__decorateClass([
+  r5()
+], ErpAppointmentsList.prototype, "rescheduleServiceName", 2);
 __decorateClass([
   r5()
 ], ErpAppointmentsList.prototype, "rescheduleSeriesId", 2);

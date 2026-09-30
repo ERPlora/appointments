@@ -89,7 +89,18 @@ Requires `appointments.add_appointment` — an employee has this.
 Each writes its own history entry and emits its own event. An action that does not apply is
 **refused with a clear code** — see [limits.md](limits.md).
 
-### Reschedule
+### Edit an appointment (reschedule, change professional or service)
+
+The **Edit** action on a row — or a tap on its block in the per-professional view — opens the
+appointment sheet: date, time, minutes, **service** and **professional** (appointments#263). Change
+any of them and save; the appointment keeps its number and its history, which records the change
+from who to who. The customer is not editable: another customer is another appointment.
+
+- A new **service** fills the minutes with its catalogue length (type other minutes if needed) and
+  brings its name and price; the professional's own price for that service wins, as when booking.
+- A new **professional** keeps the price. She must be bookable and perform the service, and the
+  slot is checked against **her** working hours, her blocked time and her appointments.
+- An old appointment without a professional needs one picked before its service can change.
 
 Pick the new date and time. The check that the slot is free **excludes the appointment itself**, so
 moving it by ten minutes does not report a clash with its own old slot.
@@ -107,6 +118,9 @@ move is refused, the reason shows inside the panel and in a notification.
 Dragging the block on the staff agenda is the front desk too: it can drop an appointment into the
 next half hour (appointments#167). It **cannot** drop it into a time that has already passed — a
 block dropped there by mistake gets no warning first — so moving to the past stays in the panel.
+Dropping the block on **another professional's column** hands the appointment to her, with the same
+service and the same checks as the panel (appointments#263). It cannot be dropped on the
+**unassigned** column: an appointment is not left without a professional.
 
 Requires `appointments.change_appointment`.
 

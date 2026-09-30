@@ -3,7 +3,7 @@
   "title": "appointments.appointments.reschedule",
   "type": "object",
   "additionalProperties": false,
-  "description": "Moves an appointment to another slot. Since appointments#10 the caller says WHEN and, if it wants, for how long — nothing else: the end of the slot is computed by the handler (start + duration), the current duration and the professional come from the appointment's own row, and the move is refused when it lands on a blocked period or breaks the hub's minimum notice / maximum advance. `end_datetime` is gone: an end that did not match its own duration was a row nobody could explain. Since appointments#142 it also carries WHO is asking (`channel`, and `customer_id` on the customer channel): moving an appointment on behalf of a client is refused when that appointment belongs to somebody else.",
+  "description": "Moves an appointment to another slot. Since appointments#10 the caller says WHEN and, if it wants, for how long — nothing else: the end of the slot is computed by the handler (start + duration), the current duration and the professional come from the appointment's own row, and the move is refused when it lands on a blocked period or breaks the hub's minimum notice / maximum advance. `end_datetime` is gone: an end that did not match its own duration was a row nobody could explain. Since appointments#142 it also carries WHO is asking (`channel`, and `customer_id` on the customer channel): moving an appointment on behalf of a client is refused when that appointment belongs to somebody else. Since appointments#263 the agenda can also hand the appointment to another professional and/or service (`staff_id` + `service_id`, together); when they are omitted, both come from the row as before.",
   "required": ["appointment_id", "start_datetime"],
   "properties": {
     "appointment_id": { "type": "string", "minLength": 1 },
@@ -12,6 +12,16 @@
       "type": "integer",
       "minimum": 1,
       "description": "Optional. When omitted the appointment keeps the length it already had."
+    },
+    "staff_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "appointments#263 \u2014 optional. The professional the appointment is handed to (it may be the one it already has). Travels WITH `service_id`: the professional is judged for that service. Resolved against the hub's staff records (bookable, performs the service); the slot is then judged on her hours, her blocked time and her other appointments."
+    },
+    "service_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "appointments#263 \u2014 optional. The service of the appointment (it may be the one it already has). Travels WITH `staff_id`. A new service is resolved against the hub's catalogue and brings its name, its price and \u2014 unless `duration_minutes` is sent \u2014 its length (the professional's own price and length for it win, as when booking)."
     },
     "channel": {
       "type": "string",

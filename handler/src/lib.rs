@@ -2414,6 +2414,104 @@ fn refuse(code: &str, message: &str) -> Output {
     Output::new().with_error(DomainError::new(code, message))
 }
 
+/// What a `reschedule` hands over (appointments#263): the new professional (id, name) and the new
+/// service (id, name, price), each `None` when it does not change, plus the length the new service
+/// takes — her own for it, else the catalogue's.
+struct Handover {
+    staff: Option<(String, String)>,
+    service: Option<(String, String, i64)>,
+    service_duration: Option<i64>,
+}
+
+/// Resolves the `staff_id` / `service_id` of a `reschedule` against the reads the manifest loads
+/// for them, with the rules of [`resolve_booking`]. `Ok(Ok(None))` = a plain move (neither sent,
+/// or both the ones the appointment already has); `Ok(Err(_))` = a domain refusal; `Err(_)` = the
+/// caller sent one without the other — the competency read is keyed on the service, so a new
+/// professional without it would be judged against nothing.
+fn resolve_handover(
+    input: &Value,
+    payload: &Value,
+    row: &Value,
+) -> Result<Result<Option<Handover>, DomainError>, String> {
+    let staff_id = str_or(payload, "staff_id", "");
+    let service_id = str_or(payload, "service_id", "");
+    if staff_id.is_empty() && service_id.is_empty() {
+        return Ok(Ok(None));
+    }
+    if staff_id.is_empty() || service_id.is_empty() {
+        return Err(
+            "invalid_payload: staff_id and service_id travel together (the professional is judged for the service)"
+                .to_string(),
+        );
+    }
+    let staff_changes = staff_id != str_or(row, "staff_id", "");
+    let service_changes = service_id != str_or(row, "service_id", "");
+    if !staff_changes && !service_changes {
+        return Ok(Ok(None));
+    }
+    let (Some(services), Some(members), Some(eligible)) = (
+        read_rows(input, "services.services.get"),
+        read_rows(input, "staff.members.get"),
+        read_rows(input, "staff.services.eligible_for_service"),
+    ) else {
+        return Ok(Err(DomainError::new(
+            "appointments.catalog_unavailable",
+            "The service or staff catalogue could not be read; the appointment was not changed.",
+        )));
+    };
+    let service = if service_changes {
+        let Some(service) = services.iter().find(|r| str_or(r, "id", "") == service_id) else {
+            return Ok(Err(DomainError::new(
+                "appointments.service_not_found",
+                "That service does not exist in this business.",
+            )));
+        };
+        if !service.get("is_active").map(as_bool).unwrap_or(true)
+            || !service.get("is_bookable").map(as_bool).unwrap_or(true)
+        {
+            return Ok(Err(DomainError::new(
+                "appointments.service_not_bookable",
+                "That service cannot be booked: it is inactive or not bookable.",
+            )));
+        }
+        Some(service)
+    } else {
+        None
+    };
+    let (staff_name, competency) = match resolve_professional(members, eligible, &staff_id) {
+        Ok(found) => found,
+        Err(refusal) => return Ok(Err(refusal)),
+    };
+    let custom = |key: &str| competency.and_then(|c| c.get(key)).filter(|v| !v.is_null());
+    let (new_service, service_duration) = match service {
+        Some(service) => {
+            let price = custom("custom_price")
+                .map(|v| money::from_json(v, 0))
+                .unwrap_or_else(|| money::from_json(service.get("price").unwrap_or(&Value::Null), 0));
+            let minutes = custom("custom_duration")
+                .map(|v| as_i64(v, 0))
+                .filter(|d| *d >= 1)
+                .or_else(|| {
+                    service
+                        .get("duration_minutes")
+                        .filter(|v| !v.is_null())
+                        .map(|v| as_i64(v, 0))
+                        .filter(|d| *d >= 1)
+                });
+            (
+                Some((service_id, str_or(service, "name", ""), price)),
+                minutes,
+            )
+        }
+        None => (None, None),
+    };
+    Ok(Ok(Some(Handover {
+        staff: staff_changes.then_some((staff_id, staff_name)),
+        service: new_service,
+        service_duration,
+    })))
+}
+
 /// `appointments.appointments.cancel` (appointments#6) — the cancellation policy, decided by
 /// the market (Fresha / Vagaro / Square Appointments): **staff can always cancel**, whatever the
 /// notice; the **customer channel** is bound by `allow_customer_cancellation` and
@@ -2588,11 +2686,24 @@ pub fn reschedule_appointment_pure(input: Value) -> Result<Output, String> {
         ));
     }
 
-    // The length of the appointment is its own unless the caller deliberately changes it.
-    let current = row
-        .get("duration_minutes")
-        .map(|v| as_i64(v, 0))
-        .filter(|d| *d >= 1)
+    // appointments#263: the professional and the service, when the caller hands the appointment
+    // over. Resolved against the hub's records like `create` does, BEFORE the slot is judged: the
+    // slot is judged on whoever will do it.
+    let handover = match resolve_handover(&input, &payload, &row)? {
+        Ok(h) => h,
+        Err(refusal) => return Ok(Output::new().with_error(refusal)),
+    };
+
+    // The length of the appointment is its own unless the caller deliberately changes it — or the
+    // service changes, and then it is the new service's (appointments#263).
+    let current = handover
+        .as_ref()
+        .and_then(|h| h.service_duration)
+        .or_else(|| {
+            row.get("duration_minutes")
+                .map(|v| as_i64(v, 0))
+                .filter(|d| *d >= 1)
+        })
         .unwrap_or_else(|| default_duration_of(&settings));
     let duration = payload
         .get("duration_minutes")
@@ -2610,9 +2721,13 @@ pub fn reschedule_appointment_pure(input: Value) -> Result<Output, String> {
             return Ok(Output::new().with_error(refusal));
         }
     }
-    // The professional is the appointment's own, read from the row: this command moves the hour,
-    // it does not hand the caller back the identity appointments#11 took away from `create`.
-    let staff_id = str_or(&row, "staff_id", "");
+    // The professional is the appointment's own, read from the row — or the one it is handed to,
+    // resolved against the staff records above (appointments#263), never taken on the caller's word.
+    let staff_id = handover
+        .as_ref()
+        .and_then(|h| h.staff.as_ref())
+        .map(|(id, _)| id.clone())
+        .unwrap_or_else(|| str_or(&row, "staff_id", ""));
     if let Some(refusal) = schedule_refusal(&input, ctx.tz, &start, &end) {
         return Ok(Output::new().with_error(refusal));
     }
@@ -2644,6 +2759,32 @@ pub fn reschedule_appointment_pure(input: Value) -> Result<Output, String> {
     p.insert("end_datetime".into(), json!(end.iso()));
     p.insert("duration_minutes".into(), json!(duration));
     p.insert("channel".into(), json!(channel.label()));
+    // appointments#263: empty = keeps what it has (`appointment_reschedule.sql`), so a plain move
+    // never rewrites who does it or what it costs.
+    let (to_staff, to_staff_name) = handover
+        .as_ref()
+        .and_then(|h| h.staff.clone())
+        .unwrap_or_default();
+    p.insert("staff_id".into(), json!(to_staff));
+    p.insert("staff_name".into(), json!(to_staff_name));
+    let (to_service, to_service_name, to_price) = handover
+        .as_ref()
+        .and_then(|h| h.service.clone())
+        .unwrap_or_default();
+    p.insert("service_id".into(), json!(to_service));
+    p.insert("service_name".into(), json!(to_service_name));
+    p.insert("service_price".into(), json!(to_price));
+    // What the appointment HAD, from its row: the history line is written after the UPDATE and
+    // says who did it before and what changed (same line as a series move, appointments#253).
+    for (to, from) in [
+        ("from_staff_id", "staff_id"),
+        ("from_staff_name", "staff_name"),
+        ("from_service_id", "service_id"),
+        ("from_service_name", "service_name"),
+        ("from_start_datetime", "start_datetime"),
+    ] {
+        p.insert(to.into(), json!(str_or(&row, from, "")));
+    }
 
     let only_id = |_: ()| {
         let mut m = Map::new();
@@ -12740,5 +12881,277 @@ mod tests {
                 ]
             })
         );
+    }
+
+    // ── appointments#263: ONE appointment handed to another professional or service ──────────
+    //
+    // The agenda could only move the hour: a client who asked for Carla instead of Bea, or for a
+    // colour on top of the cut, had to be cancelled and booked again — losing her number and her
+    // history. `reschedule` now takes the professional and the service too (they travel TOGETHER:
+    // the competency read is keyed on the service, so a new professional is judged for it), with
+    // the judges `create` applies, and the slot is judged on the professional who will do it.
+
+    /// The appointment of the fixtures (Bea, cut, 11:00-12:00) with the names its row stores.
+    fn beas_cut() -> Value {
+        let mut row = booked_row("2026-07-31T11:00:00Z", 60, "confirmed");
+        row["staff_name"] = json!("Bea Pro");
+        row["service_name"] = json!("Corte");
+        row
+    }
+
+    /// What the runtime loads for a handover: the rows keyed on the payload's ids (the professional
+    /// and the service asked for — each case asks for one of these two members), and the whole
+    /// team at the new hour, both working it.
+    fn handover_reads(service: Value, eligible: Value) -> Value {
+        json!({
+            "services.services.get": [service],
+            "staff.members.get": [
+                { "id": "s2", "full_name": "Carla Pro", "status": "active", "is_bookable": 1 },
+                { "id": "s1", "full_name": "Bea Pro", "status": "active", "is_bookable": 1 }
+            ],
+            "staff.services.eligible_for_service": eligible,
+            "staff.availability.team_day_at": [
+                { "kind": "day", "staff_id": "s1", "day": "2026-07-31", "schedule_id": null,
+                  "start_time": null, "end_time": null, "is_full_day": 0 },
+                { "kind": "day", "staff_id": "s2", "day": "2026-07-31", "schedule_id": null,
+                  "start_time": null, "end_time": null, "is_full_day": 0 }
+            ]
+        })
+    }
+
+    fn cut() -> Value {
+        json!({ "id": "s-corte", "name": "Corte", "price": 2000, "duration_minutes": 30,
+                "is_bookable": 1, "is_active": 1 })
+    }
+
+    fn colour() -> Value {
+        json!({ "id": "s-tinte", "name": "Tinte", "price": 4500, "duration_minutes": 90,
+                "is_bookable": 1, "is_active": 1 })
+    }
+
+    fn both_do_it() -> Value {
+        json!([
+            { "staff_id": "s1", "full_name": "Bea Pro", "custom_duration": null, "custom_price": null },
+            { "staff_id": "s2", "full_name": "Carla Pro", "custom_duration": null, "custom_price": null }
+        ])
+    }
+
+    fn handover(staff: &str, service: &str, minutes: Option<i64>) -> Value {
+        let mut p = move_to("2026-07-31T15:00:00Z", minutes);
+        p["staff_id"] = json!(staff);
+        p["service_id"] = json!(service);
+        p
+    }
+
+    fn hand_over(payload: Value, reads: Value) -> Output {
+        reschedule_appointment_pure(reschedule_input(payload, beas_cut(), Some(reads)))
+            .expect("a handover answers with an Output")
+    }
+
+    /// 🔴 THE SYMPTOM. «Better with Carla»: the appointment keeps its id and its slot length and
+    /// is written with HER, and the history line gets what it had.
+    #[test]
+    fn reschedule_hands_the_appointment_to_another_professional() {
+        let out = hand_over(handover("s2", "s-corte", None), handover_reads(cut(), both_do_it()));
+        assert!(out.error.is_none(), "{:?}", out.error);
+        let p = op_params(&out, "_reschedule_row");
+        assert_eq!(p.get("staff_id"), Some(&json!("s2")));
+        assert_eq!(p.get("staff_name"), Some(&json!("Carla Pro")));
+        assert_eq!(p.get("service_id"), Some(&json!("")), "the service did not change");
+        assert_eq!(p.get("duration_minutes"), Some(&json!(60)), "her slot keeps its length");
+        assert_eq!(p.get("from_staff_id"), Some(&json!("s1")));
+        assert_eq!(p.get("from_staff_name"), Some(&json!("Bea Pro")));
+        assert_eq!(p.get("from_service_id"), Some(&json!("s-corte")));
+        assert_eq!(p.get("from_start_datetime"), Some(&json!("2026-07-31T11:00:00Z")));
+    }
+
+    /// A plain move writes no professional and no service: empty = keeps what it has.
+    #[test]
+    fn reschedule_without_a_handover_keeps_the_professional_and_the_service() {
+        let out = reschedule_appointment_pure(reschedule_input(
+            move_to("2026-07-31T15:00:00Z", None),
+            beas_cut(),
+            None,
+        ))
+        .unwrap();
+        assert!(out.error.is_none(), "{:?}", out.error);
+        let p = op_params(&out, "_reschedule_row");
+        assert_eq!(p.get("staff_id"), Some(&json!("")));
+        assert_eq!(p.get("service_id"), Some(&json!("")));
+        assert_eq!(p.get("from_staff_id"), Some(&json!("s1")));
+    }
+
+    /// The panel always sends both fields; sending the ones the appointment already has is a
+    /// plain move — no catalogue judges it, so a professional who stopped taking new bookings can
+    /// still have her own appointment moved an hour, as before.
+    #[test]
+    fn reschedule_with_the_same_professional_and_service_is_a_plain_move() {
+        let reads = json!({ "staff.members.get": [], "staff.services.eligible_for_service": [],
+                            "services.services.get": [] });
+        let out = hand_over(handover("s1", "s-corte", None), reads);
+        assert!(out.error.is_none(), "{:?}", out.error);
+        let p = op_params(&out, "_reschedule_row");
+        assert_eq!(p.get("staff_id"), Some(&json!("")));
+        assert_eq!(p.get("service_id"), Some(&json!("")));
+    }
+
+    #[test]
+    fn reschedule_refuses_a_professional_who_does_not_perform_the_service() {
+        let only_bea = json!([{ "staff_id": "s1", "full_name": "Bea Pro" }]);
+        let out = hand_over(handover("s2", "s-corte", None), handover_reads(cut(), only_bea));
+        assert_eq!(domain_code(&out).as_deref(), Some("appointments.staff_not_eligible"));
+        assert!(out.operations.is_empty(), "a refusal moves nothing");
+    }
+
+    #[test]
+    fn reschedule_refuses_a_professional_the_hub_does_not_have_or_who_is_not_bookable() {
+        let mut reads = handover_reads(cut(), both_do_it());
+        reads["staff.members.get"] = json!([]);
+        let out = hand_over(handover("s2", "s-corte", None), reads);
+        assert_eq!(domain_code(&out).as_deref(), Some("appointments.staff_not_found"));
+        assert!(out.operations.is_empty());
+
+        let mut reads = handover_reads(cut(), both_do_it());
+        reads["staff.members.get"][0]["is_bookable"] = json!(0);
+        let out = hand_over(handover("s2", "s-corte", None), reads);
+        assert_eq!(domain_code(&out).as_deref(), Some("appointments.staff_not_bookable"));
+        assert!(out.operations.is_empty());
+    }
+
+    /// The overlap is judged on the professional who will DO it: Carla's 15:15 blocks the move,
+    /// Bea's own 15:15 no longer does.
+    #[test]
+    fn reschedule_judges_the_overlap_on_the_new_professional() {
+        let taken = |staff: &str| {
+            let mut reads = handover_reads(cut(), both_do_it());
+            reads["appointments.appointments.conflicting"] = json!([
+                { "id": "a9", "appointment_number": "APT-9", "staff_id": staff, "status": "confirmed",
+                  "start_datetime": "2026-07-31T15:15:00Z", "end_datetime": "2026-07-31T16:00:00Z" }
+            ]);
+            reads
+        };
+        let out = hand_over(handover("s2", "s-corte", None), taken("s2"));
+        assert_eq!(domain_code(&out).as_deref(), Some("appointments.overlapping_appointment"));
+        assert!(out.operations.is_empty());
+        let out = hand_over(handover("s2", "s-corte", None), taken("s1"));
+        assert!(out.error.is_none(), "Bea's agenda is not Carla's: {:?}", out.error);
+    }
+
+    /// Her hours and her blocked time, not Bea's.
+    #[test]
+    fn reschedule_judges_the_hours_and_the_blocks_of_the_new_professional() {
+        let mut reads = handover_reads(cut(), both_do_it());
+        reads[TEAM_READ] = json!([
+            { "kind": "day", "staff_id": "s1", "day": "2026-07-31", "schedule_id": null,
+              "start_time": null, "end_time": null, "is_full_day": 0 }
+        ]);
+        let out = hand_over(handover("s2", "s-corte", None), reads);
+        assert_eq!(
+            domain_code(&out).as_deref(),
+            Some(STAFF_HOURS_UNAVAILABLE),
+            "Carla's day is not in the read: never moved as if she were in"
+        );
+
+        let mut reads = handover_reads(cut(), both_do_it());
+        reads["appointments.blocked_times.upcoming"] = json!([
+            { "id": "b1", "title": "Formación", "staff_id": "s2", "all_day": 0,
+              "start_datetime": "2026-07-31T14:00:00Z", "end_datetime": "2026-07-31T18:00:00Z" }
+        ]);
+        let out = hand_over(handover("s2", "s-corte", None), reads);
+        assert!(domain_code(&out).is_some(), "Carla's training blocks the slot");
+        assert!(out.operations.is_empty());
+    }
+
+    /// «Cut and colour»: the appointment takes the new service's name, price and length from the
+    /// catalogue — never from the payload — and Bea keeps it.
+    #[test]
+    fn reschedule_changes_the_service_and_takes_its_price_and_length() {
+        let bea = json!([{ "staff_id": "s1", "full_name": "Bea Pro" }]);
+        let out = hand_over(handover("s1", "s-tinte", None), handover_reads(colour(), bea.clone()));
+        assert!(out.error.is_none(), "{:?}", out.error);
+        let p = op_params(&out, "_reschedule_row");
+        assert_eq!(p.get("service_id"), Some(&json!("s-tinte")));
+        assert_eq!(p.get("service_name"), Some(&json!("Tinte")));
+        assert_eq!(p.get("service_price"), Some(&json!(4500)));
+        assert_eq!(p.get("duration_minutes"), Some(&json!(90)));
+        assert_eq!(p.get("end_datetime"), Some(&json!("2026-07-31T16:30:00+00:00")));
+        assert_eq!(p.get("staff_id"), Some(&json!("")), "Bea keeps it");
+
+        // A length the counter typed wins over the catalogue's.
+        let out = hand_over(handover("s1", "s-tinte", Some(75)), handover_reads(colour(), bea));
+        assert_eq!(op_params(&out, "_reschedule_row").get("duration_minutes"), Some(&json!(75)));
+    }
+
+    /// Her own price and length for the new service win over the catalogue, as when booking.
+    #[test]
+    fn reschedule_to_a_new_service_uses_the_professionals_own_price_and_length() {
+        let bea = json!([{ "staff_id": "s1", "full_name": "Bea Pro",
+                           "custom_duration": 120, "custom_price": 5000 }]);
+        let out = hand_over(handover("s1", "s-tinte", None), handover_reads(colour(), bea));
+        assert!(out.error.is_none(), "{:?}", out.error);
+        let p = op_params(&out, "_reschedule_row");
+        assert_eq!(p.get("service_price"), Some(&json!(5000)));
+        assert_eq!(p.get("duration_minutes"), Some(&json!(120)));
+    }
+
+    /// The new service must exist and be bookable, and Bea must perform it.
+    #[test]
+    fn reschedule_refuses_a_service_that_cannot_be_booked_or_that_she_does_not_perform() {
+        let bea = json!([{ "staff_id": "s1", "full_name": "Bea Pro" }]);
+        let mut reads = handover_reads(colour(), bea.clone());
+        reads["services.services.get"] = json!([]);
+        let out = hand_over(handover("s1", "s-tinte", None), reads);
+        assert_eq!(domain_code(&out).as_deref(), Some("appointments.service_not_found"));
+
+        let mut off = colour();
+        off["is_bookable"] = json!(0);
+        let out = hand_over(handover("s1", "s-tinte", None), handover_reads(off, bea));
+        assert_eq!(domain_code(&out).as_deref(), Some("appointments.service_not_bookable"));
+
+        let only_carla = json!([{ "staff_id": "s2", "full_name": "Carla Pro" }]);
+        let out = hand_over(handover("s1", "s-tinte", None), handover_reads(colour(), only_carla));
+        assert_eq!(domain_code(&out).as_deref(), Some("appointments.staff_not_eligible"));
+        assert!(out.operations.is_empty());
+    }
+
+    /// The competency read is keyed on the service: a professional without a service (or the
+    /// other way round) could be judged against nothing, so it is a payload error.
+    #[test]
+    fn reschedule_needs_the_professional_and_the_service_together() {
+        let mut p = move_to("2026-07-31T15:00:00Z", None);
+        p["staff_id"] = json!("s2");
+        let err = reschedule_appointment_pure(reschedule_input(p, beas_cut(), None)).unwrap_err();
+        assert!(err.starts_with("invalid_payload"), "{err}");
+
+        let mut p = move_to("2026-07-31T15:00:00Z", None);
+        p["service_id"] = json!("s-tinte");
+        let err = reschedule_appointment_pure(reschedule_input(p, beas_cut(), None)).unwrap_err();
+        assert!(err.starts_with("invalid_payload"), "{err}");
+    }
+
+    /// The manifest loads what the handler judges with, keyed on the payload, and not `required`:
+    /// a plain move sends neither id.
+    #[test]
+    fn reschedule_manifest_loads_the_professional_and_the_service_it_hands_over_to() {
+        let manifest: Value =
+            serde_json::from_str(include_str!("../../module.json")).expect("module.json");
+        let cmd = &manifest["commands"]["appointments.appointments.reschedule"];
+        let reads = cmd["reads"].as_array().expect("reads");
+        for (query, param, source) in [
+            ("staff.members.get", "staff_id", "payload.staff_id"),
+            ("staff.services.eligible_for_service", "service_id", "payload.service_id"),
+            ("services.services.get", "service_id", "payload.service_id"),
+        ] {
+            let read = reads.iter().find(|r| r["query"] == query);
+            let read = read.unwrap_or_else(|| panic!("reschedule does not declare {query}"));
+            assert_eq!(read["params"][param], json!(source), "{query}");
+            assert_eq!(read["required"], json!(false), "{query}: a plain move sends no id");
+        }
+        let schema: Value =
+            serde_json::from_str(include_str!("../../schemas/appointment_reschedule.json"))
+                .expect("schema");
+        for key in ["staff_id", "service_id"] {
+            assert!(schema["properties"][key].is_object(), "{key} is not accepted");
+        }
     }
 }

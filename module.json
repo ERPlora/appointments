@@ -464,7 +464,7 @@
       "sql": [
         "commands/appointment_reschedule.sql",
         "commands/_appointment_overlap_assert.sql",
-        "commands/_history_reschedule.sql"
+        "commands/_history_series_move.sql"
       ]
     },
     "appointments._reschedule_state_assert": {
@@ -771,7 +771,7 @@
         "appointments.appointment.rescheduled"
       ],
       "ai": {
-        "description": "Moves an appointment to another date and time. Staff can move any appointment; a move on behalf of the customer (channel=customer) must carry that customer's `customer_id` and is refused when the appointment belongs to somebody else. The end of the slot is computed from the start and the duration, and the move is refused when it lands on a blocked period or breaks the hub's minimum notice or maximum advance. The professional is the appointment's own; this command does not change it."
+        "description": "Moves an appointment to another date and time and, optionally, hands it to another professional or changes its service. Staff can move any appointment; a move on behalf of the customer (channel=customer) must carry that customer's `customer_id` and is refused when the appointment belongs to somebody else. To change the professional or the service send `staff_id` and `service_id` TOGETHER (the ones the appointment keeps included): both are resolved against the hub's records with the rules of a new booking (the professional must be bookable and perform the service; a new service takes its catalogue name, price and length), and the slot is judged on the professional who will do it. The end of the slot is computed from the start and the duration, and the move is refused when it lands on a blocked period, outside the professional's hours, on another of her appointments, or breaks the hub's minimum notice or maximum advance."
       },
       "reads": [
         {
@@ -780,6 +780,27 @@
             "appointment_id": "payload.appointment_id"
           },
           "required": true
+        },
+        {
+          "query": "staff.members.get",
+          "params": {
+            "staff_id": "payload.staff_id"
+          },
+          "required": false
+        },
+        {
+          "query": "staff.services.eligible_for_service",
+          "params": {
+            "service_id": "payload.service_id"
+          },
+          "required": false
+        },
+        {
+          "query": "services.services.get",
+          "params": {
+            "service_id": "payload.service_id"
+          },
+          "required": false
         },
         {
           "query": "appointments.settings.get",
