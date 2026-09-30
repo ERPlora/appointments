@@ -107,9 +107,53 @@ def main() -> int:
         [],
     )
 
+    print(
+        "§4 editing ONE appointment to another professional leaves «staff_changed» (#260)"
+    )
+    edited = book(hub, links, links.staff_id, instant(day, "11:00"), DURATION)
+    edit = {
+        "appointment_id": edited,
+        "customer_name": "Cliente",
+        "service_id": links.service_id,
+        "service_name": links.service_name,
+        "staff_id": links.other_staff_id,
+        "staff_name": links.other_staff_name,
+        "start_datetime": instant(day, "11:00"),
+        "end_datetime": instant(day, "11:30"),
+        "duration_minutes": DURATION,
+    }
+    hub.run("appointments.appointments.update", edit)
+    rows = trail(hub, edited)
+    handed = line(rows, "staff_changed")
+    hub.check_true(
+        "§4 the history holds a «staff_changed» line",
+        handed is not None,
+        f"actions: {[r.get('action') for r in rows]}",
+    )
+    had = new_value({"new_value": (handed or {}).get("old_value")})
+    has = new_value(handed)
+    hub.check("§4 …that says who had it", had.get("staff_name"), links.staff_name)
+    hub.check("§4 …and who has it now", has.get("staff_name"), links.other_staff_name)
+    hub.check("§4 …stamped from the counter", has.get("channel"), "staff")
+
+    print(
+        "§5 editing only the notes, the slot re-sent in another offset, leaves NO line"
+    )
+    before = len(trail(hub, edited))
+    hub.run(
+        "appointments.appointments.update",
+        {
+            **edit,
+            "start_datetime": f"{day}T12:00:00+01:00",
+            "end_datetime": f"{day}T12:30:00+01:00",
+            "notes": "prefers the window seat",
+        },
+    )
+    hub.check("§5 the trail did not grow", len(trail(hub, edited)), before)
+
     return hub.finish(
-        "a move and a cancellation each leave exactly the history line that says what happened "
-        "and who asked, and a refused move leaves none"
+        "a move, a cancellation and an edit each leave exactly the history line that says what "
+        "happened and who asked, and a refused move or a notes-only edit leaves none"
     )
 
 

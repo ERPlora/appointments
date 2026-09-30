@@ -1,7 +1,7 @@
 {
   "id": "appointments",
   "name": "Appointments",
-  "version": "1.1.126",
+  "version": "1.1.127",
   "errors": {
     "appointments.availability_unavailable": {},
     "appointments.blocked": {},
@@ -846,6 +846,7 @@
       "permission": "appointments.change_appointment",
       "transaction": true,
       "sql": [
+        "commands/_history_appointment_edit.sql",
         "commands/appointment_update.sql",
         "commands/_appointment_overlap_assert.sql",
         "commands/_gate_clear.sql"
