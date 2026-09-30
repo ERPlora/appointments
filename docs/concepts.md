@@ -32,6 +32,8 @@ One place deliberately does **not** ask:
   the screen lists them with the reason, instead of the whole series being refused or moved on top
   of somebody. Handing the series to another professional (appointments#248) follows the same rule
   on the **new** professional's agenda: what does not fit keeps its slot and its professional.
+  Changing the series' service (appointments#252) too: an appointment that does not fit the new
+  service's length keeps its service and its price.
 
 With the toggle **off** nothing changed: no prompt, and the server refuses the booking
 (`_appointment_overlap_assert.sql`). Offering a "book anyway" that always fails would be worse than
