@@ -168,6 +168,7 @@ def seed(
     staff: tuple[str, str] = ("s1", "Bea"),
     start: str = "2026-09-10T11:00:00+02:00",
     end: str = "2026-09-10T11:30:00+02:00",
+    updated_at: str = "2026-09-01T00:00:00+02:00",
 ) -> None:
     psql(
         [
@@ -180,7 +181,7 @@ def seed(
             f"({literal(id_)}, {literal(hub)}, {literal(id_)}, 'c1', 'Ada', '', '', "
             f"{literal(staff[0])}, {literal(staff[1])}, 's-corte', 'Corte', 2000, "
             f"{literal(start)}, {literal(end)}, 30, 'confirmed', '', '', 0, 0, '', 0, "
-            "'2026-09-01T00:00:00+02:00', '2026-09-01T00:00:00+02:00')",
+            f"'2026-09-01T00:00:00+02:00', {literal(updated_at)})",
         ],
         db=DB,
     )
@@ -271,6 +272,20 @@ def check_handover_to_another_professional() -> None:
     before, after = parsed(line["old_value"]), parsed(line["new_value"])
     if before.get("staff_name") != "Bea" or after.get("staff_name") != "Carla":
         fail(f"the line does not say from Bea to Carla: {before!r} -> {after!r}")
+    # Every field of new_value is what the row HAS now, not what it had (appointments#264 lesson).
+    expected_after = {
+        "staff_id": "s2",
+        "staff_name": "Carla",
+        "service_id": "s-corte",
+        "service_name": "Corte",
+        "duration_minutes": 30,
+        "channel": "staff",
+    }
+    wrong = {k: after.get(k) for k, v in expected_after.items() if after.get(k) != v}
+    if wrong or not str(after.get("start_datetime", "")).startswith("2026-09-10T16:00"):
+        fail(f"the hand-over line's new_value is not the row as it is now: {after!r}")
+    if (before.get("staff_id"), before.get("start_datetime")) != ("s1", "2026-09-10T11:00:00+02:00"):
+        fail(f"the hand-over line's old_value is not what it had: {before!r}")
 
 
 def check_service_change() -> None:
@@ -298,6 +313,14 @@ def check_service_change() -> None:
     line = only_line("a-service", "a service change")
     if line and line["action"] != "service_changed":
         fail(f"a service change wrote {line['action']!r}, expected 'service_changed'")
+    if line:
+        before, after = parsed(line["old_value"]), parsed(line["new_value"])
+        if (before.get("service_name"), after.get("service_name")) != ("Corte", "Tinte"):
+            fail(f"the line does not say from Corte to Tinte: {before!r} -> {after!r}")
+        if (after.get("service_id"), after.get("staff_id"), after.get("duration_minutes")) != (
+            "s-tinte", "s1", 90
+        ):
+            fail(f"the service-change line's new_value is not the row as it is now: {after!r}")
 
 
 def check_plain_move_keeps_both() -> None:
@@ -357,6 +380,20 @@ def check_another_hubs_row_is_never_touched() -> None:
         fail("a hand-over wrote a history line on another hub's appointment")
 
 
+def check_history_never_reads_another_hubs_row() -> None:
+    """The history line is pinned to the row the UPDATE just wrote (`updated_at = :now`), but that
+    pin alone would let a neighbour's appointment with the same id, written at the same instant,
+    be copied into this hub's history. The `hub_id` guard is what keeps it out."""
+    instant = "2026-09-20T10:00:00.000000+02:00"
+    seed("a-twin", hub=OTHER_HUB, start="2026-09-15T11:00:00+02:00",
+         end="2026-09-15T11:30:00+02:00", updated_at=instant)
+    err = move("a-twin", now=instant, staff_id="s2", staff_name="Carla")
+    if err:
+        fail(f"the command bound with another hub aborted instead of touching nothing: {err}")
+    if history_of("a-twin"):
+        fail(f"the history line read another hub's appointment: {history_of('a-twin')!r}")
+
+
 def check_against_postgres() -> None:
     if failures:
         return
@@ -374,6 +411,7 @@ def check_against_postgres() -> None:
         check_plain_move_keeps_both()
         check_overlap_on_the_new_professional()
         check_another_hubs_row_is_never_touched()
+        check_history_never_reads_another_hubs_row()
     finally:
         psql(["-c", f'DROP DATABASE IF EXISTS "{DB}"'])
 
