@@ -87,9 +87,10 @@ beforeEach(() => {
             rows: [
               { id: 'sv1', name: 'Corte', price: 2000, duration_minutes: 30, is_bookable: 1 },
               { id: 'sv2', name: 'Corte y color', price: 4500, duration_minutes: 60, is_bookable: 1 },
+              { id: 'sv4', name: 'Corte premium', price: 3000, duration_minutes: 30, is_bookable: 1 },
               { id: 'sv3', name: 'Uso interno', price: 0, duration_minutes: 15, is_bookable: 0 },
             ],
-            total: 3,
+            total: 4,
           };
         case 'staff.members.list':
           return {
@@ -186,7 +187,7 @@ describe('changing the service of a series (appointments#252)', () => {
     expect(select).toBeTruthy();
     expect(select.value).toBe('sv1');
     const options = [...select.querySelectorAll('ion-select-option')].map((o) => (o as HTMLElement & { value?: unknown }).value);
-    expect(options).toEqual(['sv1', 'sv2']);
+    expect(options).toEqual(['sv1', 'sv2', 'sv4']);
     expect(byTestId(el, 'appointments-series-service-hint'), 'no hint while nothing changes').toBeNull();
   });
 
@@ -204,6 +205,7 @@ describe('changing the service of a series (appointments#252)', () => {
       ['sv3', 'Uso interno'],
       ['sv1', 'Corte'],
       ['sv2', 'Corte y color'],
+      ['sv4', 'Corte premium'],
     ]);
   });
 
@@ -239,6 +241,22 @@ describe('changing the service of a series (appointments#252)', () => {
     });
     expect(commands.some((c) => c.name === 'appointments.recurring.materialize')).toBe(false);
     expect(toasts.map((n) => n.type)).toEqual(['success']);
+  });
+
+  it('a service of the same length is a change too: it is sent, not dropped as «nothing changed»', async () => {
+    const el = await mount();
+    await openEdit(el);
+    await pickService(el, 'sv4');
+    await save(el);
+    expect(updates()).toHaveLength(1);
+    expect(updates()[0].payload).toEqual({
+      recurring_id: 'r1',
+      staff_id: 's1',
+      current_service_id: 'sv1',
+      service_id: 'sv4',
+      scope: 'this_and_following',
+      from_occurrence_date: '2099-10-06',
+    });
   });
 
   it('changes the professional and the service in one save', async () => {
