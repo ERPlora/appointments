@@ -156,8 +156,17 @@ def check_manifest() -> None:
         MODULE_DIR / MANIFEST["queries"]["appointments.recurring.occurrences"]["sql"]
     ).read_text()
     # appointments#236: `staff_id` too — an occurrence handed to another professional cannot be
-    # judged on the series' professional's agenda.
-    for column in ("id", "converted_sale_id", "start_datetime", "staff_id"):
+    # judged on the series' professional's agenda. appointments#253: and who does it and what
+    # service it is, by name — the history line of a move says what the occurrence HAD.
+    for column in (
+        "id",
+        "converted_sale_id",
+        "start_datetime",
+        "staff_id",
+        "staff_name",
+        "service_id",
+        "service_name",
+    ):
         if not re.search(rf"\b{column}\b", occ_sql.split("FROM")[0]):
             fail(
                 f"recurring_occurrences.sql: does not select {column} — the split cannot use it"
@@ -176,13 +185,16 @@ def check_manifest() -> None:
     move_sql = (
         MANIFEST.get("commands", {}).get("appointments._recurring_move_occurrence") or {}
     ).get("sql")
+    # appointments#253: its OWN history statement, not the one of a single reschedule — a series
+    # move can hand the appointment to another professional or change its service, and the line
+    # has to say so instead of «rescheduled».
     if move_sql != [
         "commands/_recurring_move_occurrence.sql",
-        "commands/_history_reschedule.sql",
+        "commands/_history_series_move.sql",
     ]:
         fail(
             "appointments._recurring_move_occurrence: must run the move then its history line "
-            f"(commands/_history_reschedule.sql) in the same command, got {move_sql!r}"
+            f"(commands/_history_series_move.sql) in the same command, got {move_sql!r}"
         )
 
     check_pattern_manifest(move)
@@ -386,18 +398,51 @@ def seed_occurrence(
     )
 
 
+OCCURRENCE_COLUMNS = (
+    "id",
+    "staff_id",
+    "staff_name",
+    "service_id",
+    "service_name",
+    "start_datetime",
+)
+
+
+def occurrence_had(appointment_id: str, hub: str, series: str) -> dict:
+    """What the handler learns about an occurrence: the row the REAL occurrences read hands back
+    for it (appointments#253), or nothing when that hub's read does not see it."""
+    sql = bind(
+        (MODULE_DIR / MANIFEST["queries"]["appointments.recurring.occurrences"]["sql"]).read_text(),
+        {"hub_id": hub, "recurring_id": series},
+    )
+    columns = ", ".join(f"COALESCE(CAST(q.{c} AS TEXT), '')" for c in OCCURRENCE_COLUMNS)
+    out = psql(
+        ["-t", "-A", "-F", "\t", "-c", f"SELECT {columns} FROM ({sql.rstrip().rstrip(';')}) q"],
+        db=DB,
+    )
+    for line in out.splitlines():
+        row = dict(zip(OCCURRENCE_COLUMNS, line.split("\t")))
+        if row.get("id") == appointment_id:
+            return row
+    return {}
+
+
 def move(
     appointment_id: str,
     hub: str = HUB,
     staff_id: str = "",
     staff_name: str = "",
     service: tuple[str, str, int] = ("", "", 0),
+    series: str = "r1",
 ) -> None:
     """The WHOLE `sql[]` of `_recurring_move_occurrence`, bound ONCE — the way the runtime runs
     one operation: the move and then its history line, sharing `:now` (appointments#196). An
     empty `staff_id` is what the handler sends when the edit changes no professional, and an
-    empty service (id, name, price) when it changes no service (appointments#252)."""
+    empty service (id, name, price) when it changes no service (appointments#252). The `from_*`
+    are what the handler copies from the occurrences read (appointments#253)."""
+    had = occurrence_had(appointment_id, hub, series)
     params = {
+        **{f"from_{c}": had.get(c, "") for c in OCCURRENCE_COLUMNS if c != "id"},
         "staff_id": staff_id,
         "staff_name": staff_name,
         "service_id": service[0],
@@ -711,6 +756,126 @@ def check_service_change() -> None:
         )
 
 
+def history_of(appointment_id: str) -> list[dict]:
+    """Every history line of an appointment, with its JSON parsed — by Postgres first, so a line
+    whose value is not valid JSON fails here and not in the screen."""
+    out = scalar(
+        "SELECT COALESCE(json_agg(json_build_object('hub_id', hub_id, 'action', action, "
+        "'old', old_value::json, 'new', new_value::json) ORDER BY created_at, id), '[]') "
+        f"FROM appointments_history WHERE appointment_id = {literal(appointment_id)}"
+    )
+    return json.loads(out)
+
+
+def check_series_move_history() -> None:
+    """appointments#253 — the line a series move leaves says WHAT changed and from what.
+
+    Handing the series to Carla left, on each appointment, «rescheduled» with the time it already
+    had: nobody could tell from the history that another professional does it now, nor who did it
+    before. The line compares what the occurrence HAD (the `from_*` the handler copies from the
+    occurrences read) with what the row has after the move.
+    """
+    seed_occurrence("o-hist-staff", HUB, "r1", "2026-12-21")
+    had = occurrence_had("o-hist-staff", HUB, "r1")
+    if (had.get("staff_name"), had.get("service_id"), had.get("service_name")) != (
+        "Bea",
+        "s-corte",
+        "Corte",
+    ):
+        fail(
+            "recurring_occurrences.sql: the read does not hand back who does the occurrence and "
+            f"its service by name (got {had!r}) — the history would say it had nobody"
+        )
+    move("o-hist-staff", staff_id="s2", staff_name="Carla")
+    lines = history_of("o-hist-staff")
+    if [line["action"] for line in lines] != ["staff_changed"]:
+        fail(
+            "_history_series_move.sql: handing the occurrence to Carla must leave ONE "
+            f"«staff_changed» line (got {[line['action'] for line in lines]!r})"
+        )
+    else:
+        line = lines[0]
+        before = (line["old"] or {})
+        after = (line["new"] or {})
+        if (before.get("staff_id"), before.get("staff_name")) != ("s1", "Bea"):
+            fail(f"_history_series_move.sql: the line does not say who did it before (old={before!r})")
+        if (after.get("staff_id"), after.get("staff_name")) != ("s2", "Carla"):
+            fail(f"_history_series_move.sql: the line does not say who does it now (new={after!r})")
+        if before.get("start_datetime") != "2026-12-21T11:00:00+02:00" or after.get(
+            "start_datetime"
+        ) != "2026-08-24T12:00:00+02:00":
+            fail(
+                "_history_series_move.sql: the line lost the slot it had or the one it landed on "
+                f"(old={before!r}, new={after!r})"
+            )
+        if line["hub_id"] != HUB:
+            fail(f"_history_series_move.sql: the line was written for hub {line['hub_id']!r}")
+
+    colour = ("s-color", "Corte y color", 4500)
+    seed_occurrence("o-hist-service", HUB, "r1", "2026-12-22")
+    move("o-hist-service", service=colour)
+    lines = history_of("o-hist-service")
+    if [line["action"] for line in lines] != ["service_changed"]:
+        fail(
+            "_history_series_move.sql: changing the service must leave ONE «service_changed» "
+            f"line (got {[line['action'] for line in lines]!r})"
+        )
+    elif ((lines[0]["old"] or {}).get("service_name"), (lines[0]["new"] or {}).get("service_name")) != (
+        "Corte",
+        "Corte y color",
+    ):
+        fail(f"_history_series_move.sql: the line does not say which service it was and is ({lines[0]!r})")
+
+    # Both at once: the professional is what the receptionist is asked about, so it wins the
+    # action — and the service still travels in the values.
+    seed_occurrence("o-hist-both", HUB, "r1", "2026-12-23")
+    move("o-hist-both", staff_id="s2", staff_name="Carla", service=colour)
+    lines = history_of("o-hist-both")
+    if [line["action"] for line in lines] != ["staff_changed"]:
+        fail(
+            "_history_series_move.sql: a move that changes professional AND service must leave "
+            f"ONE «staff_changed» line (got {[line['action'] for line in lines]!r})"
+        )
+    elif ((lines[0]["old"] or {}).get("service_name"), (lines[0]["new"] or {}).get("service_name")) != (
+        "Corte",
+        "Corte y color",
+    ):
+        fail(f"_history_series_move.sql: the service change was lost from the line ({lines[0]!r})")
+
+    seed_occurrence("o-hist-time", HUB, "r1", "2026-12-24")
+    move("o-hist-time")
+    if [line["action"] for line in history_of("o-hist-time")] != ["rescheduled"]:
+        fail(
+            "_history_series_move.sql: a move that changes only the time must stay «rescheduled» "
+            f"(got {[line['action'] for line in history_of('o-hist-time')]!r})"
+        )
+
+    # A name is free text: a double quote or a backslash in it must not break the line's JSON.
+    seed_occurrence("o-hist-quote", HUB, "r1", "2026-12-25")
+    try:
+        move("o-hist-quote", staff_id="s3", staff_name='Carla "la rubia" \\ B')
+        history_of("o-hist-quote")
+    except (RuntimeError, ValueError) as exc:
+        fail(f"_history_series_move.sql: a name with a double quote broke the line's JSON ({exc})")
+
+    # A move that does not happen leaves no line of any kind.
+    seed_occurrence("o-hist-sold", HUB, "r1", "2026-12-28", sale="sale-11")
+    move("o-hist-sold", staff_id="s2", staff_name="Carla")
+    if history_of("o-hist-sold"):
+        fail("_history_series_move.sql: it recorded a hand-over of an occurrence that did not move")
+
+    # The neighbour's appointment this hub names, stamped by its own hub on the same `:now`: the
+    # UPDATE does not reach it, and only the line's `hub_id` keeps it from getting OUR history.
+    seed_occurrence("o-hist-neighbour", OTHER_HUB, "r1", "2026-12-21")
+    psql(
+        ["-c", f"UPDATE appointments_appointment SET updated_at = {literal(NOW)} WHERE id = 'o-hist-neighbour'"],
+        db=DB,
+    )
+    move("o-hist-neighbour", hub=HUB, staff_id="s2", staff_name="Carla")
+    if history_of("o-hist-neighbour"):
+        fail("_history_series_move.sql: it wrote a history line on another hub's appointment")
+
+
 def check_against_postgres() -> None:
     if failures:
         return
@@ -859,6 +1024,7 @@ def check_against_postgres() -> None:
         check_keep_door()
         check_staff_handover()
         check_service_change()
+        check_series_move_history()
     finally:
         psql(["-c", f'DROP DATABASE IF EXISTS "{DB}"'])
 

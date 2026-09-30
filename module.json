@@ -444,7 +444,7 @@
       "permission": "appointments.change_appointment",
       "sql": [
         "commands/_recurring_move_occurrence.sql",
-        "commands/_history_reschedule.sql"
+        "commands/_history_series_move.sql"
       ]
     },
     "appointments._recurring_keep_occurrence": {

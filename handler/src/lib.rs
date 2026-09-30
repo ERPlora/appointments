@@ -3356,7 +3356,7 @@ pub fn update_recurring_series_pure(input: Value) -> Result<Output, String> {
         // Every move leaves an audit row, like every other transition of this module: the audit
         // row now rides `_recurring_move_occurrence`'s own `sql[]` as a later statement of this
         // SAME command (appointments#196), because the runtime binds `:now` once per command and
-        // `_history_reschedule.sql` finds the row this run just wrote by `a.updated_at = :now`.
+        // `_history_series_move.sql` finds the row this run just wrote by `a.updated_at = :now`.
         ops.push(Operation::sql(
             "appointments._recurring_move_occurrence",
             mv,
