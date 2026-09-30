@@ -370,6 +370,18 @@ def reschedule_params(
         "start_datetime": start,
         "end_datetime": end,
         "duration_minutes": minutes,
+        # appointments#263: a plain move hands nothing over (empty = keeps it) and says what the
+        # appointment HAD, from the row the handler read — the binds `_reschedule_row` gets.
+        "staff_id": "",
+        "staff_name": "",
+        "service_id": "",
+        "service_name": "",
+        "service_price": 0,
+        "from_staff_id": "s1",
+        "from_staff_name": "Bea Pro",
+        "from_service_id": "s-corte",
+        "from_service_name": "Corte",
+        "from_start_datetime": "",
     }
 
 

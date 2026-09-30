@@ -222,7 +222,9 @@ def check_reschedule() -> None:
         "commands/_reschedule_state_assert.sql",
         "commands/appointment_reschedule.sql",
         "commands/_appointment_overlap_assert.sql",
-        "commands/_history_reschedule.sql",
+        # appointments#263: the move line a series edit writes, which says whether the
+        # professional, the service or only the time changed.
+        "commands/_history_series_move.sql",
     ]:
         fail(
             f"{RESCHEDULE}: the intention chain runs {files!r}, not the state gate → UPDATE → "
