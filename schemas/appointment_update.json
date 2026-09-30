@@ -1,21 +1,48 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "appointments.appointments.update",
+  "description": "Edits ONE appointment. The customer's contact and the notes are written as sent. Since appointments#271 the professional, the service and the slot are not: when any of them changes, the edit is judged exactly like a move from the agenda (`appointments.appointments.reschedule`) — the professional and the service resolved against the hub's records, the catalogue's name and price, the professional's hours, blocked time, overlap, notice — and a `null` professional or service keeps the one the appointment has.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["appointment_id", "customer_name", "start_datetime", "end_datetime", "duration_minutes"],
+  "required": ["appointment_id", "customer_name", "start_datetime"],
   "properties": {
     "appointment_id": { "type": "string", "minLength": 1 },
     "customer_name": { "type": "string", "minLength": 1, "maxLength": 200 },
     "customer_phone": { "type": "string", "default": "", "maxLength": 50 },
     "customer_email": { "type": "string", "default": "", "maxLength": 254 },
-    "service_id": { "type": ["string", "null"], "default": null },
-    "service_name": { "type": "string", "default": "", "maxLength": 200 },
-    "staff_id": { "type": ["string", "null"], "default": null },
-    "staff_name": { "type": "string", "default": "", "maxLength": 200 },
+    "service_id": {
+      "type": ["string", "null"],
+      "default": null,
+      "description": "The service of the appointment; `null` keeps the one it has. A new one travels WITH `staff_id` and brings its catalogue name and price."
+    },
+    "service_name": {
+      "type": "string",
+      "default": "",
+      "maxLength": 200,
+      "description": "Ignored since appointments#271: the name comes from the catalogue. Still accepted so older callers are not refused."
+    },
+    "staff_id": {
+      "type": ["string", "null"],
+      "default": null,
+      "description": "The professional of the appointment; `null` keeps the one she has. A new one travels WITH `service_id` and is judged for it."
+    },
+    "staff_name": {
+      "type": "string",
+      "default": "",
+      "maxLength": 200,
+      "description": "Ignored since appointments#271: the name comes from the staff records. Still accepted so older callers are not refused."
+    },
     "start_datetime": { "type": "string", "format": "date-time" },
-    "end_datetime": { "type": "string", "format": "date-time" },
-    "duration_minutes": { "type": "integer", "minimum": 1 },
+    "end_datetime": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Optional. The end is the start plus the duration; one that says otherwise is refused (`appointments.invalid_end`)."
+    },
+    "duration_minutes": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Optional. When omitted the appointment keeps its length, or takes the new service's."
+    },
     "notes": { "type": "string", "default": "" },
     "internal_notes": { "type": "string", "default": "" }
   }

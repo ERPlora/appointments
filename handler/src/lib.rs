@@ -121,6 +121,12 @@ pub fn reschedule_appointment(input: Json<erplora_guest_sdk::Input>) -> FnResult
     guest_result(reschedule_appointment_pure(input.into_inner().into_value()))
 }
 
+#[cfg(feature = "guest")]
+#[plugin_fn]
+pub fn update_appointment(input: Json<erplora_guest_sdk::Input>) -> FnResult<Json<Output>> {
+    guest_result(update_appointment_pure(input.into_inner().into_value()))
+}
+
 // ───────────────────────────── helpers JSON ─────────────────────────────
 
 fn as_str(v: &Value) -> String {
@@ -2814,6 +2820,134 @@ pub fn reschedule_appointment_pure(input: Value) -> Result<Output, String> {
         events: vec![],
         ..Default::default()
     })
+}
+
+/// `appointments.appointments.update` — the general edit of ONE appointment (the one the assistant,
+/// flows and API keys call; the agenda screen uses `reschedule`).
+///
+/// appointments#271: it was a declarative UPDATE that wrote the professional, the service, their
+/// names and the slot exactly as the caller sent them — a professional the hub does not have, one
+/// on holiday, a service she does not perform, the old service's price. Now the edit is split:
+/// - the customer's details and the notes are written as sent (`_update_details`), whatever the
+///   state of the appointment, so a finished appointment can still get its notes;
+/// - the professional, the service and the slot take the agenda's own road: when any of them
+///   changes, [`reschedule_appointment_pure`] judges it (appointments#263 — records, competency,
+///   catalogue name and price, hours, blocked time, overlap, notice) and its operations are the
+///   ones that move the row and write the history line. A `null` professional or service keeps the
+///   one the appointment has; the names sent are ignored.
+///
+/// The end is `start + duration`, as everywhere else since appointments#10: an `end_datetime` that
+/// says something else is refused rather than silently dropped.
+pub fn update_appointment_pure(input: Value) -> Result<Output, String> {
+    let payload = payload_of(&input);
+    let appointment_id = str_or(&payload, "appointment_id", "");
+    if appointment_id.is_empty() {
+        return Err("invalid_payload: appointment_id is required".to_string());
+    }
+    let Some(row) = appointment_row(&input) else {
+        return Ok(refuse(
+            "appointments.appointment_not_found",
+            "That appointment does not exist in this business.",
+        ));
+    };
+
+    let staff_id = str_or(&payload, "staff_id", "");
+    let service_id = str_or(&payload, "service_id", "");
+    let hands_over = (!staff_id.is_empty() && staff_id != str_or(&row, "staff_id", ""))
+        || (!service_id.is_empty() && service_id != str_or(&row, "service_id", ""));
+    let same_instant = |key: &str| {
+        let sent = as_str(payload.get(key).unwrap_or(&Value::Null));
+        let had = as_str(row.get(key).unwrap_or(&Value::Null));
+        match (parse_dt(&sent), parse_dt(&had)) {
+            (Some(a), Some(b)) => cmp_secs(&a, &b) == 0,
+            _ => sent.is_empty(),
+        }
+    };
+    let length_changes = payload
+        .get("duration_minutes")
+        .filter(|v| !v.is_null())
+        .is_some_and(|v| {
+            as_i64(v, 0) != as_i64(row.get("duration_minutes").unwrap_or(&Value::Null), 0)
+        });
+    let moves = hands_over
+        || length_changes
+        || !same_instant("start_datetime")
+        || !same_instant("end_datetime");
+
+    let mut details = Map::new();
+    details.insert("appointment_id".into(), json!(appointment_id));
+    for key in [
+        "customer_name",
+        "customer_phone",
+        "customer_email",
+        "notes",
+        "internal_notes",
+    ] {
+        details.insert(key.into(), json!(str_or(&payload, key, "")));
+    }
+    let details = Operation::sql("appointments._update_details", details);
+    if !moves {
+        return Ok(Output {
+            operations: vec![details],
+            events: vec![],
+            ..Default::default()
+        });
+    }
+
+    // The agenda's move, on the staff channel. The professional and the service go only when one of
+    // them changes, and then together (the one that stays included), as `reschedule` asks.
+    let mut to = Map::new();
+    to.insert("appointment_id".into(), json!(appointment_id));
+    to.insert(
+        "start_datetime".into(),
+        payload
+            .get("start_datetime")
+            .cloned()
+            .unwrap_or(Value::Null),
+    );
+    if let Some(minutes) = payload.get("duration_minutes").filter(|v| !v.is_null()) {
+        to.insert("duration_minutes".into(), minutes.clone());
+    }
+    if hands_over {
+        // Both as SENT, never completed from the row: the reads that judge them are keyed on the
+        // payload, so a service filled in here would be judged against a competency read of
+        // nothing — which reads as «everyone performs it». One without the other is refused by
+        // `reschedule` as a payload error.
+        to.insert("staff_id".into(), json!(staff_id));
+        to.insert("service_id".into(), json!(service_id));
+    }
+    let mut judged = input.clone();
+    judged["payload"] = Value::Object(to);
+    let mut out = reschedule_appointment_pure(judged)?;
+    if out.error.is_some() {
+        return Ok(out);
+    }
+
+    let sent_end = as_str(payload.get("end_datetime").unwrap_or(&Value::Null));
+    if !sent_end.is_empty() {
+        let computed = out
+            .operations
+            .iter()
+            .find(|op| op.command == "appointments._reschedule_row")
+            .and_then(|op| op.params.get("end_datetime"))
+            .map(as_str)
+            .and_then(|end| parse_dt(&end));
+        let matches = match (parse_dt(&sent_end), computed) {
+            (Some(sent), Some(end)) => cmp_secs(&sent, &end) == 0,
+            _ => false,
+        };
+        if !matches {
+            return Ok(refuse(
+                "appointments.invalid_end",
+                "The end does not match the start plus the duration.",
+            ));
+        }
+    }
+
+    // The details go in before the last link, which drains the gate once every assert is through.
+    let last = out.operations.len().saturating_sub(1);
+    out.operations.insert(last, details);
+    Ok(out)
 }
 
 /// `appointments.appointments.create` — WASM-TODO pieza 1.
@@ -13152,6 +13286,332 @@ mod tests {
                 .expect("schema");
         for key in ["staff_id", "service_id"] {
             assert!(schema["properties"][key].is_object(), "{key} is not accepted");
+        }
+    }
+
+    // ── appointments#271: the general EDIT takes the agenda's road ─────────────────────────────
+    //
+    // `appointments.appointments.update` (the edit the assistant, flows and API keys call) was a
+    // declarative UPDATE that wrote the professional, the service, their names and the slot exactly
+    // as the caller sent them: a professional who does not exist, one on holiday, a service she does
+    // not do, the old price. It now hands the professional, the service and the slot to the judges
+    // of `reschedule` (appointments#263) and writes the customer's details and the notes itself.
+
+    /// What the assistant sends for Bea's cut (11:00-12:00) when it changes nothing but the notes:
+    /// the whole set of fields, as the edit's contract asks.
+    fn edit_of_beas_cut() -> Value {
+        json!({
+            "appointment_id": "apt-old",
+            "customer_name": "Ada Lovelace",
+            "customer_phone": "+34600000001",
+            "customer_email": "ada@example.com",
+            "service_id": "s-corte",
+            "service_name": "Corte",
+            "staff_id": "s1",
+            "staff_name": "Bea Pro",
+            "start_datetime": "2026-07-31T11:00:00Z",
+            "end_datetime": "2026-07-31T12:00:00Z",
+            "duration_minutes": 60,
+            "notes": "prefers the window seat",
+            "internal_notes": ""
+        })
+    }
+
+    fn edit(payload: Value, reads: Value) -> Output {
+        update_appointment_pure(reschedule_input(payload, beas_cut(), Some(reads)))
+            .expect("an edit answers with an Output")
+    }
+
+    /// Notes and contact only: ONE write, no judge — so the notes of an appointment that already
+    /// happened, or whose professional stopped taking bookings, can still be written.
+    #[test]
+    fn update_of_the_details_alone_writes_them_and_judges_nothing() {
+        let mut row = beas_cut();
+        row["status"] = json!("completed");
+        let mut p = edit_of_beas_cut();
+        // The same instant in another offset is not a move.
+        p["start_datetime"] = json!("2026-07-31T13:00:00+02:00");
+        p["end_datetime"] = json!("2026-07-31T14:00:00+02:00");
+        let reads = json!({ "staff.members.get": [], "services.services.get": [],
+                            "staff.services.eligible_for_service": [] });
+        let out = update_appointment_pure(reschedule_input(p, row, Some(reads))).unwrap();
+        assert!(out.error.is_none(), "{:?}", out.error);
+        assert_eq!(op_commands(&out), vec!["appointments._update_details"]);
+        let d = op_params(&out, "_update_details");
+        assert_eq!(d.get("appointment_id"), Some(&json!("apt-old")));
+        assert_eq!(d.get("customer_name"), Some(&json!("Ada Lovelace")));
+        assert_eq!(d.get("customer_phone"), Some(&json!("+34600000001")));
+        assert_eq!(d.get("customer_email"), Some(&json!("ada@example.com")));
+        assert_eq!(d.get("notes"), Some(&json!("prefers the window seat")));
+        assert_eq!(d.get("internal_notes"), Some(&json!("")));
+    }
+
+    /// The caller may leave the professional and the service out (null): they are kept, as the
+    /// agenda's move keeps them.
+    #[test]
+    fn update_without_a_professional_or_a_service_keeps_the_ones_it_has() {
+        let mut p = edit_of_beas_cut();
+        p["staff_id"] = Value::Null;
+        p["service_id"] = Value::Null;
+        let out = edit(p, json!({}));
+        assert!(out.error.is_none(), "{:?}", out.error);
+        assert_eq!(op_commands(&out), vec!["appointments._update_details"]);
+    }
+
+    /// 🔴 THE SYMPTOM. An edit to a professional the hub does not have is refused, and nothing is
+    /// written — not even the notes that travelled with it.
+    #[test]
+    fn update_refuses_a_professional_the_hub_does_not_have() {
+        let mut p = edit_of_beas_cut();
+        p["staff_id"] = json!("s-ghost");
+        p["staff_name"] = json!("Nadie");
+        let mut reads = handover_reads(cut(), both_do_it());
+        reads["staff.members.get"] = json!([]);
+        let out = edit(p, reads);
+        assert_eq!(
+            domain_code(&out).as_deref(),
+            Some("appointments.staff_not_found")
+        );
+        assert!(out.operations.is_empty(), "a refusal writes nothing");
+    }
+
+    #[test]
+    fn update_refuses_a_professional_who_does_not_perform_the_service() {
+        let mut p = edit_of_beas_cut();
+        p["staff_id"] = json!("s2");
+        let only_bea = json!([{ "staff_id": "s1", "full_name": "Bea Pro" }]);
+        let out = edit(p, handover_reads(cut(), only_bea));
+        assert_eq!(
+            domain_code(&out).as_deref(),
+            Some("appointments.staff_not_eligible")
+        );
+        assert!(out.operations.is_empty());
+    }
+
+    #[test]
+    fn update_refuses_a_service_the_hub_does_not_have() {
+        let mut p = edit_of_beas_cut();
+        p["service_id"] = json!("s-ghost");
+        let mut reads = handover_reads(cut(), both_do_it());
+        reads["services.services.get"] = json!([]);
+        let out = edit(p, reads);
+        assert_eq!(
+            domain_code(&out).as_deref(),
+            Some("appointments.service_not_found")
+        );
+        assert!(out.operations.is_empty());
+    }
+
+    /// The hand-over is written by the agenda's own row write: HER name from the staff records,
+    /// never the caller's; the notes are written next, and the gate is drained last.
+    #[test]
+    fn update_hands_the_appointment_over_through_the_agendas_write() {
+        let mut p = edit_of_beas_cut();
+        p["staff_id"] = json!("s2");
+        p["staff_name"] = json!("lo-decide-el-payload");
+        let out = edit(p, handover_reads(cut(), both_do_it()));
+        assert!(out.error.is_none(), "{:?}", out.error);
+        assert_eq!(
+            op_commands(&out),
+            vec![
+                "appointments._reschedule_state_assert",
+                "appointments._reschedule_row",
+                "appointments._update_details",
+                "appointments._gate_clear",
+            ]
+        );
+        let r = op_params(&out, "_reschedule_row");
+        assert_eq!(r.get("staff_id"), Some(&json!("s2")));
+        assert_eq!(r.get("staff_name"), Some(&json!("Carla Pro")));
+        assert_eq!(
+            r.get("start_datetime"),
+            Some(&json!("2026-07-31T11:00:00+00:00"))
+        );
+        assert_eq!(
+            r.get("end_datetime"),
+            Some(&json!("2026-07-31T12:00:00+00:00"))
+        );
+        assert_eq!(r.get("channel"), Some(&json!("staff")));
+        assert_eq!(r.get("from_staff_id"), Some(&json!("s1")));
+        assert_eq!(
+            op_params(&out, "_update_details").get("notes"),
+            Some(&json!("prefers the window seat"))
+        );
+    }
+
+    /// A new service brings the catalogue's name and price, not the payload's nor the old one.
+    #[test]
+    fn update_to_a_new_service_takes_its_catalogue_name_and_price() {
+        let mut p = edit_of_beas_cut();
+        p["service_id"] = json!("s-tinte");
+        p["service_name"] = json!("lo-decide-el-payload");
+        let bea = json!([{ "staff_id": "s1", "full_name": "Bea Pro" }]);
+        let out = edit(p, handover_reads(colour(), bea));
+        assert!(out.error.is_none(), "{:?}", out.error);
+        let r = op_params(&out, "_reschedule_row");
+        assert_eq!(r.get("service_id"), Some(&json!("s-tinte")));
+        assert_eq!(r.get("service_name"), Some(&json!("Tinte")));
+        assert_eq!(r.get("service_price"), Some(&json!(4500)));
+        assert_eq!(
+            r.get("duration_minutes"),
+            Some(&json!(60)),
+            "the length the caller sent"
+        );
+    }
+
+    /// Her blocked time, her hours and her other appointments judge the slot.
+    #[test]
+    fn update_judges_the_slot_on_the_new_professional() {
+        let mut p = edit_of_beas_cut();
+        p["staff_id"] = json!("s2");
+        let mut reads = handover_reads(cut(), both_do_it());
+        reads["appointments.blocked_times.upcoming"] = json!([
+            { "id": "b1", "title": "Formación", "staff_id": "s2", "all_day": 0,
+              "start_datetime": "2026-07-31T10:30:00Z", "end_datetime": "2026-07-31T12:30:00Z" }
+        ]);
+        let out = edit(p.clone(), reads);
+        assert_eq!(domain_code(&out).as_deref(), Some("appointments.blocked"));
+        assert!(out.operations.is_empty());
+
+        let mut reads = handover_reads(cut(), both_do_it());
+        reads[TEAM_READ] = json!([
+            { "kind": "day", "staff_id": "s1", "day": "2026-07-31", "schedule_id": null,
+              "start_time": null, "end_time": null, "is_full_day": 0 }
+        ]);
+        let out = edit(p.clone(), reads);
+        assert_eq!(domain_code(&out).as_deref(), Some(STAFF_HOURS_UNAVAILABLE));
+
+        let mut reads = handover_reads(cut(), both_do_it());
+        reads["appointments.appointments.conflicting"] = json!([
+            { "id": "a9", "appointment_number": "APT-9", "staff_id": "s2", "status": "confirmed",
+              "start_datetime": "2026-07-31T11:15:00Z", "end_datetime": "2026-07-31T11:45:00Z" }
+        ]);
+        let out = edit(p, reads);
+        assert_eq!(
+            domain_code(&out).as_deref(),
+            Some("appointments.overlapping_appointment")
+        );
+    }
+
+    /// A new time is judged too — the edit is no back door around the agenda's rules.
+    #[test]
+    fn update_judges_a_new_time_like_the_agenda() {
+        let mut p = edit_of_beas_cut();
+        p["start_datetime"] = json!("2026-07-31T15:00:00Z");
+        p["end_datetime"] = json!("2026-07-31T16:00:00Z");
+        let reads = blocks(json!([
+            { "id": "b1", "title": "Formación", "staff_id": "s1", "all_day": 0,
+              "start_datetime": "2026-07-31T14:00:00Z", "end_datetime": "2026-07-31T18:00:00Z" }
+        ]));
+        let out = edit(p.clone(), reads);
+        assert_eq!(domain_code(&out).as_deref(), Some("appointments.blocked"));
+
+        let out = edit(p, json!({}));
+        assert!(out.error.is_none(), "{:?}", out.error);
+        let r = op_params(&out, "_reschedule_row");
+        assert_eq!(
+            r.get("start_datetime"),
+            Some(&json!("2026-07-31T15:00:00+00:00"))
+        );
+        assert_eq!(r.get("staff_id"), Some(&json!("")), "Bea keeps it");
+    }
+
+    /// A new length alone is a change of the slot, judged the same way.
+    #[test]
+    fn update_of_the_length_alone_is_judged() {
+        let mut p = edit_of_beas_cut();
+        p["duration_minutes"] = json!(90);
+        p["end_datetime"] = json!("2026-07-31T12:30:00Z");
+        let out = edit(p, json!({}));
+        assert!(out.error.is_none(), "{:?}", out.error);
+        let r = op_params(&out, "_reschedule_row");
+        assert_eq!(r.get("duration_minutes"), Some(&json!(90)));
+        assert_eq!(
+            r.get("end_datetime"),
+            Some(&json!("2026-07-31T12:30:00+00:00"))
+        );
+    }
+
+    /// The end is arithmetic (start + length): an end that says something else is refused rather
+    /// than silently dropped — «until 13:00» with the old 60 minutes is a request nobody can read.
+    #[test]
+    fn update_refuses_an_end_that_does_not_match_the_start_and_the_length() {
+        let mut p = edit_of_beas_cut();
+        p["end_datetime"] = json!("2026-07-31T13:00:00Z");
+        let out = edit(p, json!({}));
+        assert_eq!(
+            domain_code(&out).as_deref(),
+            Some("appointments.invalid_end")
+        );
+        assert!(out.operations.is_empty());
+    }
+
+    /// The professional and the service travel together (the competency read is keyed on the
+    /// service), as they do for `reschedule`.
+    #[test]
+    fn update_needs_the_professional_and_the_service_together_to_hand_over() {
+        let mut p = edit_of_beas_cut();
+        p["staff_id"] = json!("s2");
+        p["service_id"] = Value::Null;
+        let err = update_appointment_pure(reschedule_input(p, beas_cut(), None)).unwrap_err();
+        assert!(err.starts_with("invalid_payload"), "{err}");
+    }
+
+    /// A finished appointment keeps who did it and when: only its notes can still be edited.
+    #[test]
+    fn update_refuses_to_hand_over_an_appointment_that_can_no_longer_move() {
+        let mut row = beas_cut();
+        row["status"] = json!("completed");
+        let mut p = edit_of_beas_cut();
+        p["staff_id"] = json!("s2");
+        let out = update_appointment_pure(reschedule_input(
+            p,
+            row,
+            Some(handover_reads(cut(), both_do_it())),
+        ))
+        .unwrap();
+        assert_eq!(
+            domain_code(&out).as_deref(),
+            Some("appointments.cannot_reschedule")
+        );
+        assert!(out.operations.is_empty());
+    }
+
+    /// An appointment that does not exist (or was deleted) is said so — the edit used to answer
+    /// OK having written nothing.
+    #[test]
+    fn update_of_an_appointment_that_does_not_exist_is_refused() {
+        let mut inp = input(edit_of_beas_cut(), None);
+        inp["context"]["reads"]["appointments.appointments.get"] = json!([]);
+        let out = update_appointment_pure(inp).unwrap();
+        assert_eq!(
+            domain_code(&out).as_deref(),
+            Some("appointments.appointment_not_found")
+        );
+        assert!(out.operations.is_empty());
+    }
+
+    /// The manifest wires the edit to this handler with the reads `reschedule` judges with.
+    #[test]
+    fn update_manifest_runs_the_handler_with_the_reads_of_reschedule() {
+        let manifest: Value =
+            serde_json::from_str(include_str!("../../module.json")).expect("module.json");
+        let cmd = &manifest["commands"]["appointments.appointments.update"];
+        assert_eq!(cmd["handler"]["function"], json!("update_appointment"));
+        assert!(
+            cmd.get("sql").is_none(),
+            "the declarative UPDATE is gone: {cmd}"
+        );
+        let reschedule = &manifest["commands"]["appointments.appointments.reschedule"];
+        assert_eq!(cmd["reads"], reschedule["reads"]);
+        for code in [
+            "appointments.invalid_end",
+            "appointments.appointment_not_found",
+        ] {
+            assert!(
+                manifest["errors"].get(code).is_some(),
+                "{code} is not declared"
+            );
         }
     }
 }

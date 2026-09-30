@@ -3,6 +3,7 @@
   "name": "Appointments",
   "version": "1.1.130",
   "errors": {
+    "appointments.appointment_not_found": {},
     "appointments.availability_unavailable": {},
     "appointments.blocked": {},
     "appointments.cancellation_notice_required": {},
@@ -17,10 +18,10 @@
     "appointments.customer_cancellation_disabled": {},
     "appointments.customer_mismatch": {},
     "appointments.customer_not_found": {},
+    "appointments.invalid_end": {},
     "appointments.invalid_start": {},
     "appointments.outside_schedule": {},
     "appointments.outside_staff_hours": {},
-    "appointments.staff_hours_unavailable": {},
     "appointments.overlapping_appointment": {},
     "appointments.recurring_inactive": {},
     "appointments.recurring_mismatch": {},
@@ -29,6 +30,7 @@
     "appointments.service_not_bookable": {},
     "appointments.service_not_found": {},
     "appointments.settings_unavailable": {},
+    "appointments.staff_hours_unavailable": {},
     "appointments.staff_not_bookable": {},
     "appointments.staff_not_eligible": {},
     "appointments.staff_not_found": {},
@@ -37,7 +39,7 @@
   },
   "description": "Book client appointments against services and staff, and track them from booked to completed.",
   "agent": {
-    "description": "Schedules and manages client appointments: books slots against services and staff, tracks status lifecycle (pending → confirmed → in_progress → completed / cancelled / no_show), manages staff availability and blocked time, and handles recurring appointment templates.",
+    "description": "Schedules and manages client appointments: books slots against services and staff, tracks status lifecycle (pending \u2192 confirmed \u2192 in_progress \u2192 completed / cancelled / no_show), manages staff availability and blocked time, and handles recurring appointment templates.",
     "keywords": [
       "appointment",
       "booking",
@@ -178,7 +180,7 @@
       "sql": "queries/appointments_list_for_customer.sql",
       "schema": "schemas/list_for_customer.json",
       "ai": {
-        "description": "Lists the most recent appointments of one customer (newest first) with service, professional, status and times — what is needed to find a visit and act on it. Does NOT include the salon's private appointment notes: those stay on the counter's own read."
+        "description": "Lists the most recent appointments of one customer (newest first) with service, professional, status and times \u2014 what is needed to find a visit and act on it. Does NOT include the salon's private appointment notes: those stay on the counter's own read."
       },
       "expose_api": true
     },
@@ -370,7 +372,7 @@
       "sql": "queries/appointments_count_to_confirm.sql",
       "schema": "schemas/count_to_confirm.json",
       "ai": {
-        "description": "Counts the upcoming appointments the customer booked (online or WhatsApp) that are still pending, waiting for the business to confirm them. Feeds the «Appointments to confirm» bell counter."
+        "description": "Counts the upcoming appointments the customer booked (online or WhatsApp) that are still pending, waiting for the business to confirm them. Feeds the \u00abAppointments to confirm\u00bb bell counter."
       }
     }
   },
@@ -465,6 +467,12 @@
         "commands/appointment_reschedule.sql",
         "commands/_appointment_overlap_assert.sql",
         "commands/_history_series_move.sql"
+      ]
+    },
+    "appointments._update_details": {
+      "permission": "appointments.change_appointment",
+      "sql": [
+        "commands/appointment_update.sql"
       ]
     },
     "appointments._reschedule_state_assert": {
@@ -865,20 +873,86 @@
     },
     "appointments.appointments.update": {
       "permission": "appointments.change_appointment",
-      "transaction": true,
-      "sql": [
-        "commands/_history_appointment_edit.sql",
-        "commands/appointment_update.sql",
-        "commands/_appointment_overlap_assert.sql",
-        "commands/_gate_clear.sql"
-      ],
       "schema": "schemas/appointment_update.json",
+      "handler": {
+        "type": "wasm",
+        "file": "dist/handler.wasm",
+        "function": "update_appointment"
+      },
       "emit": [
         "appointments.appointment.updated"
       ],
       "ai": {
-        "description": "Updates an existing appointment's details such as notes, duration, or assigned employee."
-      }
+        "description": "Edits one appointment: the customer's name, phone and email, the notes, and \u2014 judged exactly like a move from the agenda \u2014 its time, length, professional or service. The professional and the service are resolved against the hub's records (never the names sent): to change either, send `staff_id` and `service_id` TOGETHER (the one that stays included); `null` keeps what the appointment has. A new service brings its catalogue name and price. `end_datetime` must equal the start plus `duration_minutes`. A change of time, length, professional or service is refused when the appointment is no longer pending or confirmed, or when it lands on a blocked period, outside opening hours or the professional's hours, on another of her appointments, or breaks the minimum notice or maximum advance; editing only the details and notes works in any state."
+      },
+      "reads": [
+        {
+          "query": "appointments.appointments.get",
+          "params": {
+            "appointment_id": "payload.appointment_id"
+          },
+          "required": true
+        },
+        {
+          "query": "staff.members.get",
+          "params": {
+            "staff_id": "payload.staff_id"
+          },
+          "required": false
+        },
+        {
+          "query": "staff.services.eligible_for_service",
+          "params": {
+            "service_id": "payload.service_id"
+          },
+          "required": false
+        },
+        {
+          "query": "services.services.get",
+          "params": {
+            "service_id": "payload.service_id"
+          },
+          "required": false
+        },
+        {
+          "query": "appointments.settings.get",
+          "required": true
+        },
+        {
+          "query": "appointments.appointments.conflicting",
+          "params": {
+            "start_datetime": "payload.start_datetime"
+          },
+          "required": true
+        },
+        {
+          "query": "appointments.blocked_times.upcoming",
+          "required": true
+        },
+        {
+          "query": "staff.availability.team_day_at",
+          "params": {
+            "at": "payload.start_datetime"
+          },
+          "required": true
+        },
+        {
+          "query": "schedules.business_hours.list",
+          "required": true
+        },
+        {
+          "query": "schedules.special_days.list",
+          "required": true
+        },
+        {
+          "query": "schedules.overrides.list",
+          "required": true
+        },
+        {
+          "query": "schedules.exception_intervals.list",
+          "required": true
+        }
+      ]
     },
     "appointments.availability.check": {
       "permission": "appointments.view_schedule",
@@ -889,7 +963,7 @@
         "function": "check_availability"
       },
       "ai": {
-        "description": "Checks whether a specific date/time slot is available for booking and returns the reason when it is not (outside_schedule, outside_staff_hours, invalid_start, too_soon, too_far, blocked or overlap — `outside_schedule` means the business is shut at that hour, `outside_staff_hours` that the asked professional does not work then: off-shift, on their break or on approved leave). It answers the SAME opening hours the booking door enforces, read from the `schedules` module, so an hour this says is free is an hour a booking will be accepted at. With `staff_id` it also answers that professional's working hours, read from the `staff` module."
+        "description": "Checks whether a specific date/time slot is available for booking and returns the reason when it is not (outside_schedule, outside_staff_hours, invalid_start, too_soon, too_far, blocked or overlap \u2014 `outside_schedule` means the business is shut at that hour, `outside_staff_hours` that the asked professional does not work then: off-shift, on their break or on approved leave). It answers the SAME opening hours the booking door enforces, read from the `schedules` module, so an hour this says is free is an hour a booking will be accepted at. With `staff_id` it also answers that professional's working hours, read from the `staff` module."
       },
       "reads": [
         {
@@ -940,7 +1014,7 @@
         "function": "available_slots"
       },
       "ai": {
-        "description": "Lists the free booking slots of a given date (optionally for one staff member and a duration), crossing the calendar window and booking-notice settings, blocked time and existing appointments. It answers the SAME opening hours the booking door enforces, read from the `schedules` module, so an hour this offers is an hour a booking will be accepted at — the business being shut that date comes back as an empty list. With `staff_id` it also keeps only the hours that professional works (their shift, outside their break and any approved leave), read from the `staff` module."
+        "description": "Lists the free booking slots of a given date (optionally for one staff member and a duration), crossing the calendar window and booking-notice settings, blocked time and existing appointments. It answers the SAME opening hours the booking door enforces, read from the `schedules` module, so an hour this offers is an hour a booking will be accepted at \u2014 the business being shut that date comes back as an empty list. With `staff_id` it also keeps only the hours that professional works (their shift, outside their break and any approved leave), read from the `staff` module."
       },
       "reads": [
         {
@@ -1006,7 +1080,7 @@
         }
       ],
       "ai": {
-        "description": "Returns the stretches the business is open on a given date, exactly as the booking gate resolves them: the rules of the Schedules module with their precedence applied (exact special day, yearly special day, override range, weekly hours) and breaks carved out. `spans` are minutes from that date's own midnight and `source` says who answered — `schedules` when the authority resolved the date (an empty `spans` then means the business is shut that day), `unset` when it carries no rule reaching the date, and then nothing is refused and the caller must not filter at all. Read-only: it writes nothing."
+        "description": "Returns the stretches the business is open on a given date, exactly as the booking gate resolves them: the rules of the Schedules module with their precedence applied (exact special day, yearly special day, override range, weekly hours) and breaks carved out. `spans` are minutes from that date's own midnight and `source` says who answered \u2014 `schedules` when the authority resolved the date (an empty `spans` then means the business is shut that day), `unset` when it carries no rule reaching the date, and then nothing is refused and the caller must not filter at all. Read-only: it writes nothing."
       }
     },
     "appointments.blocked_times.create": {
@@ -1046,7 +1120,7 @@
         "appointments.recurring.created"
       ],
       "ai": {
-        "description": "Creates a recurring appointment template with its repetition pattern. The customer, the service and the professional are required by id, from the hub's records: a series without any of them could never have its appointments booked, so ask for the professional before calling. It does not book any occurrence by itself — that is `materialize`."
+        "description": "Creates a recurring appointment template with its repetition pattern. The customer, the service and the professional are required by id, from the hub's records: a series without any of them could never have its appointments booked, so ask for the professional before calling. It does not book any occurrence by itself \u2014 that is `materialize`."
       }
     },
     "appointments.recurring.delete": {
@@ -1078,7 +1152,7 @@
         "appointments.recurring.updated"
       ],
       "ai": {
-        "description": "Deactivates a recurring appointment template without deleting it. Its already booked occurrences are kept; it just stops being offered for new bookings — `materialize` refuses an inactive template — until it is reactivated."
+        "description": "Deactivates a recurring appointment template without deleting it. Its already booked occurrences are kept; it just stops being offered for new bookings \u2014 `materialize` refuses an inactive template \u2014 until it is reactivated."
       }
     },
     "appointments.recurring.activate": {
@@ -1098,7 +1172,7 @@
         "appointments.recurring.updated"
       ],
       "ai": {
-        "description": "Reactivates a previously deactivated recurring appointment template. It does not book any occurrence by itself — that is `materialize`."
+        "description": "Reactivates a previously deactivated recurring appointment template. It does not book any occurrence by itself \u2014 that is `materialize`."
       }
     },
     "appointments.recurring.materialize": {
@@ -1305,7 +1379,7 @@
         "appointments.settings.updated"
       ],
       "ai": {
-        "description": "Turns on or off whether an appointment the customer booked herself — online or through an automation such as WhatsApp — is created already confirmed. It changes that single setting and leaves every other appointments setting exactly as the business left it."
+        "description": "Turns on or off whether an appointment the customer booked herself \u2014 online or through an automation such as WhatsApp \u2014 is created already confirmed. It changes that single setting and leaves every other appointments setting exactly as the business left it."
       }
     },
     "appointments.settings.upsert": {
