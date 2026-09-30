@@ -3308,6 +3308,8 @@ var ES_LABELS = {
   loadError: "No se han podido cargar los datos",
   retry: "Reintentar"
 };
+var NUMERIC_TEXT = /^-?\d+(\.\d+)?$/;
+var ISO_DATE_OR_TIME = /^(\d{4}-\d{2}-\d{2}|\d{2}:\d{2})/;
 var _OkDataTable = class _OkDataTable2 extends i3 {
   constructor() {
     super(...arguments);
@@ -4276,16 +4278,33 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
     const alive = (v3) => v3 !== void 0 && v3 !== null && v3 !== "";
     this.setServerFilter(key, alive(base.from) || alive(base.to) ? base : void 0);
   }
-  /** Valor crudo de una columna para ordenar/filtrar (usa format si lo hay, si no row[key]). */
-  rawValue(col, row) {
+  /** What a column shows, as the multi-select filter offers and matches it (`format` text if any). */
+  shownValue(col, row) {
     if (col.format) return col.format(row);
     return row[col.key];
+  }
+  /** #256 - What a client-side sort and a date range filter compare: `sortValue`, else the field
+   *  itself when it is DATA — a number, boolean, `Date`, ISO date/time or NUMERIC string («100.00»,
+   *  how the hub hands over money) — so «15/01/2027» sorts after «31/12/2026» and «9,50 €» before
+   *  «100,00 €» (AG Grid, MUI DataGrid, TanStack Table). Any other field (words, a status code, a
+   *  stored «Sale <uuid>» the cell prints as a document number), a missing field or an object keeps
+   *  sorting by the `format` text the person reads, as before #256. A null field sorts last. */
+  sortKey(col, row) {
+    if (col.sortValue) return col.sortValue(row);
+    const value = row[col.key];
+    if (!col.format || value === null) return value;
+    if (typeof value === "number" || typeof value === "boolean" || value instanceof Date) return value;
+    if (typeof value === "string") {
+      if (NUMERIC_TEXT.test(value)) return Number(value);
+      if (ISO_DATE_OR_TIME.test(value)) return value;
+    }
+    return col.format(row);
   }
   /** Valores distintos de una columna (para los chips del filtro multi-select). */
   distinctValues(col) {
     const set = /* @__PURE__ */ new Set();
     for (const row of this.rows) {
-      const v3 = this.rawValue(col, row);
+      const v3 = this.shownValue(col, row);
       if (v3 != null && v3 !== "") set.add(String(v3));
     }
     return [...set].sort((a3, b3) => a3.localeCompare(b3));
@@ -4307,10 +4326,10 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
           const col = this.columns.find((c5) => c5.key === key);
           if (!col) return true;
           if (f3.values && f3.values.size > 0) {
-            return f3.values.has(String(this.rawValue(col, row) ?? ""));
+            return f3.values.has(String(this.shownValue(col, row) ?? ""));
           }
           if (f3.from || f3.to) {
-            const raw = this.rawValue(col, row);
+            const raw = this.sortKey(col, row);
             const t5 = raw == null ? NaN : new Date(raw).getTime();
             const from = f3.from ? new Date(f3.from).getTime() : -Infinity;
             const to = f3.to ? new Date(f3.to).getTime() + 864e5 - 1 : Infinity;
@@ -4325,8 +4344,8 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
       if (col) {
         const dir = this.clientSortDir === "asc" ? 1 : -1;
         result = [...result].sort((a3, b3) => {
-          const va = this.rawValue(col, a3);
-          const vb = this.rawValue(col, b3);
+          const va = this.sortKey(col, a3);
+          const vb = this.sortKey(col, b3);
           if (va == null) return 1;
           if (vb == null) return -1;
           if (va < vb) return -1 * dir;

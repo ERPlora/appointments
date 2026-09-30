@@ -40,6 +40,7 @@
 use erplora_guest_sdk::money;
 use erplora_guest_sdk::{DomainError, Operation, Output};
 use serde_json::{json, Map, Value};
+use std::collections::BTreeMap;
 
 #[cfg(feature = "guest")]
 use extism_pdk::*;
@@ -105,9 +106,13 @@ pub fn materialize_recurring(input: Json<erplora_guest_sdk::Input>) -> FnResult<
 #[cfg(feature = "guest")]
 #[plugin_fn]
 pub fn update_recurring_series(input: Json<erplora_guest_sdk::Input>) -> FnResult<Json<Output>> {
-    guest_result(update_recurring_series_pure(
-        input.into_inner().into_value(),
-    ))
+    let input = input.into_inner().into_value();
+    let out = update_recurring_series_of(&input);
+    // Not freed: the hub runs every call in a fresh instance whose memory is thrown away whole
+    // (`wasm-host`, `each_instance_gets_fresh_linear_memory`), and freeing a read of a series at
+    // the horizon node by node was 8 % of the instruction budget (appointments#251).
+    std::mem::forget(input);
+    guest_result(out)
 }
 
 #[cfg(feature = "guest")]
@@ -145,6 +150,21 @@ fn as_bool(v: &Value) -> bool {
         Value::String(s) => matches!(s.as_str(), "1" | "true" | "True" | "yes"),
         _ => false,
     }
+}
+
+/// [`as_str`] without the copy: borrowed when the value already is text. The judges of a series
+/// edit read thousands of fields; copying each one to compare it was most of what they cost
+/// (appointments#251).
+fn text(v: &Value) -> std::borrow::Cow<'_, str> {
+    match v {
+        Value::String(s) => std::borrow::Cow::Borrowed(s.as_str()),
+        other => std::borrow::Cow::Owned(as_str(other)),
+    }
+}
+
+/// `row[key]` read by [`text`]; a missing key is the empty text.
+fn text_at<'a>(row: &'a Value, key: &str) -> std::borrow::Cow<'a, str> {
+    text(row.get(key).unwrap_or(&Value::Null))
 }
 
 fn str_or(p: &Value, k: &str, d: &str) -> String {
@@ -275,13 +295,39 @@ impl Dt {
     }
 }
 
-/// Compara dos instantes: si ambos llevan offset compara en UTC; si alguno es
-/// "naive" compara hora de pared (mejor esfuerzo, coherente con cómo guarda la UI).
+/// Compares two instants: in UTC when both carry an offset; on the wall clock when either is
+/// "naive" (best effort, consistent with how the UI stores them).
 fn cmp_secs(a: &Dt, b: &Dt) -> i64 {
-    if a.has_offset && b.has_offset {
-        a.epoch_secs() - b.epoch_secs()
-    } else {
-        a.wall_secs() - b.wall_secs()
+    Secs::of(a).cmp(Secs::of(b))
+}
+
+/// An instant measured ONCE, both ways [`cmp_secs`] may need it (appointments#251). Walking the
+/// same rows for every occurrence of a series edit re-derived the civil date of each one for every
+/// comparison; measured, that alone was a third of the WASM instruction budget.
+#[derive(Clone, Copy)]
+struct Secs {
+    wall: i64,
+    epoch: i64,
+    has_offset: bool,
+}
+
+impl Secs {
+    fn of(dt: &Dt) -> Secs {
+        let wall = dt.wall_secs();
+        Secs {
+            wall,
+            epoch: wall - dt.offset_min * 60,
+            has_offset: dt.has_offset,
+        }
+    }
+
+    /// `self - other`, with [`cmp_secs`]'s rule.
+    fn cmp(self, other: Secs) -> i64 {
+        if self.has_offset && other.has_offset {
+            self.epoch - other.epoch
+        } else {
+            self.wall - other.wall
+        }
     }
 }
 
@@ -355,11 +401,26 @@ fn business_wall_iso(
         chrono::LocalResult::Ambiguous(earliest, _) => earliest.with_timezone(&chrono::Utc),
         chrono::LocalResult::None => gap_end(&naive, tz),
     };
-    Some(
-        instant
-            .with_timezone(&tz)
-            .format("%Y-%m-%dT%H:%M:%S%:z")
-            .to_string(),
+    Some(business_iso_text(&instant.with_timezone(&tz)))
+}
+
+/// `YYYY-MM-DDTHH:MM:SS±HH:MM` — byte for byte chrono's `%Y-%m-%dT%H:%M:%S%:z`, written by hand:
+/// `format` parses its pattern on every call, and a series edit writes two of these for each of up
+/// to 400 occurrences inside the WASM instruction budget (appointments#251).
+fn business_iso_text(at: &chrono::DateTime<chrono_tz::Tz>) -> String {
+    use chrono::{Datelike, Offset, Timelike};
+    let offset = at.offset().fix().local_minus_utc() / 60;
+    let sign = if offset < 0 { '-' } else { '+' };
+    format!(
+        "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}{sign}{:02}:{:02}",
+        at.year(),
+        at.month(),
+        at.day(),
+        at.hour(),
+        at.minute(),
+        at.second(),
+        offset.abs() / 60,
+        offset.abs() % 60
     )
 }
 
@@ -371,7 +432,7 @@ fn business_wall_iso(
 fn business_iso_plus_minutes(iso: &str, minutes: i64, tz: chrono_tz::Tz) -> Option<String> {
     let parsed = chrono::DateTime::parse_from_rfc3339(iso).ok()?;
     let end = parsed.with_timezone(&tz) + chrono::Duration::minutes(minutes);
-    Some(end.format("%Y-%m-%dT%H:%M:%S%:z").to_string())
+    Some(business_iso_text(&end))
 }
 
 /// `YYYYMMDD` of the BUSINESS day an instant falls on — the key the appointment counter runs on.
@@ -445,16 +506,17 @@ pub fn parse_dt(input: &str) -> Option<Dt> {
             dt.offset_min = 0;
         } else {
             let sign: i64 = if off_part.starts_with('-') { -1 } else { 1 };
-            let digits: String = off_part[1..]
-                .chars()
-                .filter(|c| c.is_ascii_digit())
-                .collect();
-            let (oh, om) = match digits.len() {
-                2 => (digits.parse::<i64>().ok()?, 0),
-                4 => (
-                    digits[..2].parse::<i64>().ok()?,
-                    digits[2..].parse::<i64>().ok()?,
-                ),
+            // Its digits, whatever separates them — counted without collecting them into a
+            // string: every date of every read passes through here (appointments#251).
+            let mut digits = [0i64; 4];
+            let mut count = 0;
+            for byte in off_part[1..].bytes().filter(u8::is_ascii_digit) {
+                *digits.get_mut(count)? = i64::from(byte - b'0');
+                count += 1;
+            }
+            let (oh, om) = match count {
+                2 => (digits[0] * 10 + digits[1], 0),
+                4 => (digits[0] * 10 + digits[1], digits[2] * 10 + digits[3]),
                 _ => return None,
             };
             dt.offset_min = sign * (oh * 60 + om);
@@ -473,7 +535,9 @@ struct HostCtx {
 }
 
 fn host_ctx(input: &Value) -> Result<HostCtx, String> {
-    let context = input.get("context").cloned().unwrap_or(Value::Null);
+    // Borrowed, never cloned: the context carries every read, and copying it whole to look at
+    // two fields was a quarter of a series edit's WASM instruction budget (appointments#251).
+    let context = input.get("context").unwrap_or(&Value::Null);
     let now = parse_dt(&as_str(context.get("now").unwrap_or(&Value::Null)))
         .ok_or_else(|| "context.now inválido (lo inyecta el host)".to_string())?;
     let new_ids = context
@@ -522,24 +586,22 @@ fn candidates_from(input: &Value, staff_id: &str, exclude_id: &str) -> Option<Ve
     Some(
         rows.iter()
             .filter_map(|row| {
-                let status = as_str(row.get("status").unwrap_or(&Value::Null));
+                let status = text_at(row, "status");
                 if status == "cancelled" || status == "no_show" {
                     return None;
                 }
                 if row.get("is_deleted").map(as_bool).unwrap_or(false) {
                     return None;
                 }
-                if !exclude_id.is_empty()
-                    && as_str(row.get("id").unwrap_or(&Value::Null)) == exclude_id
-                {
+                if !exclude_id.is_empty() && text_at(row, "id") == exclude_id {
                     return None;
                 }
-                let owner = as_str(row.get("staff_id").unwrap_or(&Value::Null));
+                let owner = text_at(row, "staff_id");
                 if !owner.is_empty() && !staff_id.is_empty() && owner != staff_id {
                     return None;
                 }
-                let start = parse_dt(&as_str(row.get("start_datetime")?))?;
-                let end = parse_dt(&as_str(row.get("end_datetime")?))?;
+                let start = parse_dt(&text(row.get("start_datetime")?))?;
+                let end = parse_dt(&text(row.get("end_datetime")?))?;
                 let number = str_or(row, "appointment_number", "(sin número)");
                 Some(Candidate {
                     id: as_str(row.get("id").unwrap_or(&Value::Null)),
@@ -723,36 +785,62 @@ fn lead_time_refusal(
 /// this booking's business. Touching edges do not overlap: a block ending at 11:00 leaves 11:00
 /// free — the same `[start, end)` convention as the overlap gate.
 fn blocked_refusal(input: &Value, staff_id: &str, start: &Dt, end: &Dt) -> Option<DomainError> {
-    let Some(rows) = read_rows(input, "appointments.blocked_times.overlapping")
-        .or_else(|| read_rows(input, "appointments.blocked_times.upcoming"))
-    else {
-        return Some(DomainError::new(
+    match blocks_of(input) {
+        Some(blocks) => block_refusal_in(&blocks, staff_id, start, end),
+        None => Some(DomainError::new(
             "appointments.availability_unavailable",
             "The agenda's blocked periods could not be read; the appointment was not booked.",
-        ));
-    };
+        )),
+    }
+}
 
-    let hit = rows.iter().find(|row| {
-        if row.get("is_deleted").map(as_bool).unwrap_or(false) {
-            return false;
-        }
-        let owner = as_str(row.get("staff_id").unwrap_or(&Value::Null));
-        if !owner.is_empty() && owner != staff_id {
-            return false;
-        }
-        let (Some(b_start), Some(b_end)) = (
-            parse_dt(&as_str(row.get("start_datetime").unwrap_or(&Value::Null))),
-            parse_dt(&as_str(row.get("end_datetime").unwrap_or(&Value::Null))),
-        ) else {
-            return false;
-        };
-        cmp_secs(&b_start, end) < 0 && cmp_secs(&b_end, start) > 0
+/// A blocked period, read and measured ONCE. A series edit asks about every occurrence against
+/// the same rows; parsing each row's two dates for each occurrence was a quarter of the WASM
+/// instruction budget at the horizon (appointments#251).
+struct Block {
+    /// Empty = the whole agenda is closed.
+    owner: String,
+    start: Secs,
+    end: Secs,
+    title: String,
+}
+
+/// The live blocks of the read, in its order. A deleted row or one whose dates cannot be read
+/// closes nothing. `None` = the read did not arrive.
+fn blocks_of(input: &Value) -> Option<Vec<Block>> {
+    let rows = read_rows(input, "appointments.blocked_times.overlapping")
+        .or_else(|| read_rows(input, "appointments.blocked_times.upcoming"))?;
+    Some(
+        rows.iter()
+            .filter(|row| !row.get("is_deleted").map(as_bool).unwrap_or(false))
+            .filter_map(|row| {
+                let start = parse_dt(&text_at(row, "start_datetime"))?;
+                let end = parse_dt(&text_at(row, "end_datetime"))?;
+                Some(Block {
+                    owner: as_str(row.get("staff_id").unwrap_or(&Value::Null)),
+                    start: Secs::of(&start),
+                    end: Secs::of(&end),
+                    title: str_or(row, "title", "blocked"),
+                })
+            })
+            .collect(),
+    )
+}
+
+/// The first block of `blocks` that closes `[start, end)` for `staff_id`.
+fn block_refusal_in(
+    blocks: &[Block],
+    staff_id: &str,
+    start: &Dt,
+    end: &Dt,
+) -> Option<DomainError> {
+    let (start, end) = (Secs::of(start), Secs::of(end));
+    let hit = blocks.iter().find(|b| {
+        (b.owner.is_empty() || b.owner == staff_id) && b.start.cmp(end) < 0 && b.end.cmp(start) > 0
     })?;
-
-    let title = str_or(hit, "title", "blocked");
     Some(DomainError::new(
         "appointments.blocked",
-        &format!("That slot is blocked in the agenda ({title})."),
+        &format!("That slot is blocked in the agenda ({}).", hit.title),
     ))
 }
 
@@ -777,7 +865,9 @@ fn business_wall_stamp(instant: &Dt, tz: chrono_tz::Tz) -> Option<WallStamp> {
     use chrono::{Datelike, Timelike};
     let local = chrono::DateTime::from_timestamp(instant.epoch_secs(), 0)?.with_timezone(&tz);
     Some(WallStamp {
-        date: local.format("%Y-%m-%d").to_string(),
+        // Not `format("%Y-%m-%d")`: chrono parses the pattern on every call, and this runs several
+        // times per occurrence of a series edit (appointments#251).
+        date: format!("{:04}-{:02}-{:02}", local.year(), local.month(), local.day()),
         dow: local.weekday().num_days_from_monday() as i64,
         minute: local.hour() as i64 * 60 + local.minute() as i64,
     })
@@ -812,6 +902,7 @@ struct Span {
 }
 
 /// What `schedules` says about ONE date.
+#[derive(Clone)]
 enum DayOpening {
     /// The authority shuts the date: a closed special day, a closed override, a weekday marked
     /// closed, or a weekday it simply does not open.
@@ -933,6 +1024,17 @@ fn exception_opening(
 /// range > weekly hours. `schedules.is_open` resolves the same chain for an INSTANT; a booking
 /// needs the stretches themselves, because it has to fit whole inside one of them.
 fn schedules_opening(input: &Value, at: &WallStamp) -> Result<Option<DayOpening>, DomainError> {
+    schedules_opening_by(input, at, None)
+}
+
+/// [`schedules_opening`], with the weekly hours of every weekday already resolved when the caller
+/// asks about many dates (appointments#251): what each weekday opens does not change from one
+/// date to the next, only which exception covers it.
+fn schedules_opening_by(
+    input: &Value,
+    at: &WallStamp,
+    weekly: Option<&[DayOpening; 7]>,
+) -> Result<Option<DayOpening>, DomainError> {
     let (Some(hours), Some(special_days), Some(overrides), Some(intervals)) = (
         read_rows(input, SCHEDULES_HOURS_READ),
         read_rows(input, SCHEDULES_SPECIAL_DAYS_READ),
@@ -979,7 +1081,14 @@ fn schedules_opening(input: &Value, at: &WallStamp) -> Result<Option<DayOpening>
     if hours.is_empty() {
         return Ok(None);
     }
+    Ok(Some(match weekly {
+        Some(week) => week[at.dow.rem_euclid(7) as usize].clone(),
+        None => weekly_opening(hours, at.dow),
+    }))
+}
 
+/// What the weekly hours open on weekday `dow` (0 = Monday), last night's overnight tail included.
+fn weekly_opening(hours: &[Value], dow: i64) -> DayOpening {
     let of_day = |day: i64| -> Vec<&Value> {
         hours
             .iter()
@@ -988,7 +1097,7 @@ fn schedules_opening(input: &Value, at: &WallStamp) -> Result<Option<DayOpening>
     };
     // Last night's overnight shift (a bar open 20:00–02:00) reaches into this morning, so it is a
     // stretch of TODAY measured from today's midnight — hence the negative start.
-    let mut spans: Vec<Span> = of_day((at.dow + 6) % 7)
+    let mut spans: Vec<Span> = of_day((dow + 6) % 7)
         .into_iter()
         .filter(|r| !bool_or(r, "is_closed", false))
         .filter_map(|r| {
@@ -1004,7 +1113,7 @@ fn schedules_opening(input: &Value, at: &WallStamp) -> Result<Option<DayOpening>
         })
         .collect();
 
-    let today = of_day(at.dow);
+    let today = of_day(dow);
     // A row marked closed shuts the day — but last night's tail, if any, still holds.
     if !today.iter().any(|r| bool_or(r, "is_closed", false)) {
         for row in &today {
@@ -1020,11 +1129,11 @@ fn schedules_opening(input: &Value, at: &WallStamp) -> Result<Option<DayOpening>
         }
     }
 
-    Ok(Some(if spans.is_empty() {
+    if spans.is_empty() {
         DayOpening::Closed
     } else {
         DayOpening::Open(spans)
-    }))
+    }
 }
 
 /// The business's opening hours, enforced (appointments#89) and read from their OWNER
@@ -1070,13 +1179,27 @@ fn schedules_opening(input: &Value, at: &WallStamp) -> Result<Option<DayOpening>
 fn schedule_refusal(input: &Value, tz: chrono_tz::Tz, start: &Dt, end: &Dt) -> Option<DomainError> {
     let (Some(from), Some(to)) = (business_wall_stamp(start, tz), business_wall_stamp(end, tz))
     else {
-        return Some(DomainError::new(
-            "appointments.availability_unavailable",
-            "The appointment's time could not be read on the business clock.",
-        ));
+        return Some(unreadable_on_the_business_clock());
     };
+    schedule_refusal_at(input, &from, &to, None)
+}
 
-    let opening = match schedules_opening(input, &from) {
+fn unreadable_on_the_business_clock() -> DomainError {
+    DomainError::new(
+        "appointments.availability_unavailable",
+        "The appointment's time could not be read on the business clock.",
+    )
+}
+
+/// [`schedule_refusal`] for a booking already read on the business clock, with the weekly hours
+/// resolved beforehand when there are many dates to judge ([`schedules_opening_by`]).
+fn schedule_refusal_at(
+    input: &Value,
+    from: &WallStamp,
+    to: &WallStamp,
+    weekly: Option<&[DayOpening; 7]>,
+) -> Option<DomainError> {
+    let opening = match schedules_opening_by(input, from, weekly) {
         Ok(opening) => opening,
         Err(refusal) => return Some(refusal),
     };
@@ -1168,13 +1291,9 @@ fn staff_hours_refusal(
             read_rows(input, STAFF_DAYS_READ),
             business_wall_stamp(start, tz),
         ) {
-            (Some(rows), Some(from)) => staff_day_in(
-                &rows
-                    .into_iter()
-                    .filter(|row| row.get("day").map(as_str).unwrap_or_default() == from.date)
-                    .cloned()
-                    .collect::<Vec<_>>(),
-            ),
+            (Some(rows), Some(from)) => {
+                staff_day_in(rows.iter().filter(|row| text_at(row, "day") == from.date))
+            }
             _ => Err(staff_hours_unavailable()),
         },
     };
@@ -1196,31 +1315,34 @@ fn team_member_hours_refusal(
     }
     let day = match read_rows(input, STAFF_TEAM_READ) {
         None => Err(staff_hours_unavailable()),
-        Some(rows) => staff_day_in(
-            &rows
-                .into_iter()
-                .filter(|row| row.get("staff_id").map(as_str).unwrap_or_default() == staff_id)
-                .cloned()
-                .collect::<Vec<_>>(),
-        ),
+        Some(rows) => staff_day_in(rows.iter().filter(|row| text_at(row, "staff_id") == staff_id)),
     };
     staff_day_verdict(day, tz, start, end)
 }
 
 /// The fit of `[start, end]` in the professional's day, whichever read it came from.
 fn staff_day_verdict(
-    day: Result<Option<StaffDay>, DomainError>,
+    day: Result<Option<StaffDay<'_>>, DomainError>,
     tz: chrono_tz::Tz,
     start: &Dt,
     end: &Dt,
+) -> Option<DomainError> {
+    let stamps = business_wall_stamp(start, tz).zip(business_wall_stamp(end, tz));
+    staff_day_verdict_at(day, stamps.as_ref().map(|(from, to)| (from, to)))
+}
+
+/// [`staff_day_verdict`] for a booking already read on the business clock (`None` = it could not
+/// be, which only matters when the day restricts something).
+fn staff_day_verdict_at(
+    day: Result<Option<StaffDay<'_>>, DomainError>,
+    stamps: Option<(&WallStamp, &WallStamp)>,
 ) -> Option<DomainError> {
     let day = match day {
         Err(refusal) => return Some(refusal),
         Ok(None) => return None,
         Ok(Some(day)) => day,
     };
-    let (Some(from), Some(to)) = (business_wall_stamp(start, tz), business_wall_stamp(end, tz))
-    else {
+    let Some((from, to)) = stamps else {
         return Some(staff_hours_unavailable());
     };
     if day.date != from.date {
@@ -1238,58 +1360,56 @@ fn staff_day_verdict(
 /// The professional's business day as `staff.availability.day_at` answers it, read ONCE for the
 /// door ([`staff_hours_refusal`]) and the list ([`available_slots_pure`], appointments#230): the
 /// two can only agree if they judge with the same piece.
-struct StaffDay {
+struct StaffDay<'v> {
     /// The business day the read answered, `YYYY-MM-DD`.
     date: String,
     /// A template governs the day: only its working pieces can take a booking.
     governed: bool,
     /// Rows of kind `shift`, in the read's order.
-    shifts: Vec<Value>,
+    shifts: Vec<&'v Value>,
     /// Rows of kind `off` — the approved absences — in the read's order.
-    absences: Vec<Value>,
+    absences: Vec<&'v Value>,
 }
 
 /// `Ok(None)` when the day restricts nothing (no template governs it and no absence covers it: a
 /// professional who has not configured her hours). A missing read or one without its `day` row is
 /// a refusal, never an open door.
-fn staff_day_of(input: &Value) -> Result<Option<StaffDay>, DomainError> {
+fn staff_day_of(input: &Value) -> Result<Option<StaffDay<'_>>, DomainError> {
     match read_rows(input, STAFF_DAY_READ) {
-        Some(rows) => staff_day_in(&rows),
+        Some(rows) => staff_day_in(rows.iter()),
         None => Err(staff_hours_unavailable()),
     }
 }
 
 /// ONE professional's ONE day out of any of the three reads — they all answer with `day_at`'s rows.
-fn staff_day_in(rows: &[Value]) -> Result<Option<StaffDay>, DomainError> {
-    let kind = |row: &Value| row.get("kind").map(as_str).unwrap_or_default();
-    let Some(day) = rows.iter().find(|r| kind(r) == "day") else {
+fn staff_day_in<'v>(
+    rows: impl Iterator<Item = &'v Value> + Clone,
+) -> Result<Option<StaffDay<'v>>, DomainError> {
+    let of_kind = |wanted: &'static str| rows.clone().filter(move |r| text_at(r, "kind") == wanted);
+    let Some(day) = of_kind("day").next() else {
         return Err(staff_hours_unavailable());
     };
-    let governed = !day.get("schedule_id").map(as_str).unwrap_or_default().is_empty();
-    let absences: Vec<Value> = rows.iter().filter(|r| kind(r) == "off").cloned().collect();
+    let governed = !text_at(day, "schedule_id").is_empty();
+    let absences: Vec<&Value> = of_kind("off").collect();
     if !governed && absences.is_empty() {
         return Ok(None);
     }
     Ok(Some(StaffDay {
         date: day.get("day").map(as_str).unwrap_or_default(),
         governed,
-        shifts: rows.iter().filter(|r| kind(r) == "shift").cloned().collect(),
+        shifts: of_kind("shift").collect(),
         absences,
     }))
 }
 
-impl StaffDay {
+impl StaffDay<'_> {
     /// Does she work `[from, window_end]`, in minutes from midnight of the day's own date (past
     /// 1440 when it runs into the next day)?
     ///
     ///   * an approved absence overlapping it refuses — full day, or `[s, e)` crossing it;
     ///   * on a day a template governs, it must fit WHOLE inside one piece, both ends included.
     fn refusal(&self, from: i64, window_end: i64) -> Option<DomainError> {
-        let minutes = |row: &Value, col: &str| {
-            row.get(col)
-                .map(as_str)
-                .and_then(|text| wall_minutes(&text))
-        };
+        let minutes = |row: &Value, col: &str| row.get(col).and_then(|v| wall_minutes(&text(v)));
         for absence in &self.absences {
             if as_bool(absence.get("is_full_day").unwrap_or(&Value::Null)) {
                 return Some(outside_staff_hours());
@@ -2835,7 +2955,11 @@ pub fn bulk_delete_pure(input: Value) -> Result<Output, String> {
 /// audit trail, new slot on the business clock. That is better than deleting and re-materializing,
 /// which is what loses the history the salon needs at the chair.
 pub fn update_recurring_series_pure(input: Value) -> Result<Output, String> {
-    let payload = payload_of(&input);
+    update_recurring_series_of(&input)
+}
+
+fn update_recurring_series_of(input: &Value) -> Result<Output, String> {
+    let payload = payload_of(input);
     let ctx = host_ctx(&input)?;
 
     let recurring_id = str_or(&payload, "recurring_id", "");
@@ -3077,6 +3201,7 @@ pub fn update_recurring_series_pure(input: Value) -> Result<Output, String> {
     if !staff_id.is_empty() && read_rows(&input, STAFF_DAYS_READ).is_none() {
         return Ok(Output::new().with_error(staff_hours_unavailable()));
     }
+    let agenda = SeriesAgenda::of(&input, &candidates);
 
     // THE PAST IS FROZEN: the cut can never land before the business day that is running.
     let today = business_day_of(&ctx.now, ctx.tz);
@@ -3207,6 +3332,11 @@ pub fn update_recurring_series_pure(input: Value) -> Result<Output, String> {
     let mut cancelled_pattern_change = 0i64;
     // appointments#236: what could not be moved, with its date and code — said, never moved anyway.
     let mut skipped: Vec<Value> = Vec::new();
+    // appointments#251: NO per-call ceiling. A cap here moved the first fifty and left the rest
+    // at the old time on the closed half, unsaid. The edit is applied to the whole series in
+    // this one transaction, as Google Calendar and Outlook do; the occurrence read is already
+    // the whole series and `materialize`'s 400-day horizon bounds it. What keeps that inside the
+    // WASM instruction budget is `agenda`: every occurrence is judged against rows read ONCE.
     for row in occurrences.iter() {
         let date = as_str(row.get("occurrence_date").unwrap_or(&Value::Null));
         let Some(d) = parse_dt(&date) else { continue };
@@ -3229,9 +3359,6 @@ pub fn update_recurring_series_pure(input: Value) -> Result<Output, String> {
         let appointment_id = as_str(row.get("id").unwrap_or(&Value::Null));
         if appointment_id.is_empty() {
             continue;
-        }
-        if moved + cancelled_pattern_change + skipped.len() as i64 >= 50 {
-            break; // same per-invocation ceiling as `materialize` and `bulk_create`
         }
         // appointments#90 — PATTERN CHANGE. If the date no longer falls on the new pattern there is
         // no slot to move it to: it gets CANCELLED, which is what the receptionist would do by hand
@@ -3289,7 +3416,7 @@ pub fn update_recurring_series_pure(input: Value) -> Result<Output, String> {
             series_move_refusal(
                 &input,
                 &settings,
-                &candidates,
+                &agenda,
                 &ctx,
                 &staff_id,
                 &appointment_id,
@@ -3383,6 +3510,116 @@ pub fn update_recurring_series_pure(input: Value) -> Result<Output, String> {
     })))
 }
 
+/// What every occurrence of a series edit is judged against, read and measured ONCE before the
+/// loop (appointments#251). Judging each occurrence by walking the whole reads again — her 400
+/// days, every block, every live appointment of hers, parsing their dates each time — ran a daily
+/// series at the horizon five times over the WASM instruction budget; indexed, the edit is linear.
+struct SeriesAgenda<'a> {
+    /// Her live appointments, each with its slot already measured, in the read's order.
+    candidates: Vec<(Secs, Secs, &'a Candidate)>,
+    /// When every one of them carries an offset (what the runtime hands over): `(start in UTC,
+    /// position in `candidates`)` sorted by start, and the latest end among the first `k` of that
+    /// order. A clash is then found by bisection instead of by walking the whole agenda for every
+    /// occurrence — which, with 2 000 appointments, was still 150 M instructions of the budget.
+    by_start: Option<(Vec<(i64, usize)>, Vec<i64>)>,
+    /// `None` = the read did not arrive.
+    blocks: Option<Vec<Block>>,
+    /// What the weekly hours open on each weekday; `None` when the read did not arrive or holds
+    /// no row, and [`schedules_opening`] answers that itself.
+    weekly: Option<[DayOpening; 7]>,
+    /// Her `days_ahead` rows by business date. `None` = the read did not arrive.
+    staff_days: Option<BTreeMap<&'a str, Vec<&'a Value>>>,
+}
+
+impl<'a> SeriesAgenda<'a> {
+    fn of(input: &'a Value, candidates: &'a [Candidate]) -> SeriesAgenda<'a> {
+        let staff_days = read_rows(input, STAFF_DAYS_READ).map(|rows| {
+            let mut days: BTreeMap<&str, Vec<&Value>> = BTreeMap::new();
+            for row in rows {
+                // A `day` that is not text keys no date, like `as_str` reading it as empty.
+                let day = row.get("day").and_then(Value::as_str).unwrap_or_default();
+                days.entry(day).or_default().push(row);
+            }
+            days
+        });
+        let candidates: Vec<(Secs, Secs, &Candidate)> = candidates
+            .iter()
+            .map(|c| (Secs::of(&c.start), Secs::of(&c.end), c))
+            .collect();
+        // A row with no offset is compared on the wall clock (`cmp_secs`): no single order holds
+        // for it, so such an agenda is walked whole, as before.
+        let by_start = candidates
+            .iter()
+            .all(|(start, end, _)| start.has_offset && end.has_offset)
+            .then(|| {
+                let mut order: Vec<(i64, usize)> = candidates
+                    .iter()
+                    .enumerate()
+                    .map(|(i, (start, _, _))| (start.epoch, i))
+                    .collect();
+                order.sort_unstable();
+                let mut latest = i64::MIN;
+                let max_end = order
+                    .iter()
+                    .map(|&(_, i)| {
+                        latest = latest.max(candidates[i].1.epoch);
+                        latest
+                    })
+                    .collect();
+                (order, max_end)
+            });
+        let weekly = read_rows(input, SCHEDULES_HOURS_READ)
+            .filter(|hours| !hours.is_empty())
+            .map(|hours| std::array::from_fn(|dow| weekly_opening(hours, dow as i64)));
+        SeriesAgenda {
+            candidates,
+            by_start,
+            blocks: blocks_of(input),
+            weekly,
+            staff_days,
+        }
+    }
+
+    /// [`staff_hours_refusal`]'s `DaysAhead` verdict, on the indexed days: a date the read does
+    /// not answer has no `day` row, and that is a refusal, never «she is free».
+    fn staff_hours_refusal(&self, from: &WallStamp, to: &WallStamp) -> Option<DomainError> {
+        let day = match &self.staff_days {
+            Some(days) => staff_day_in(days.get(from.date.as_str()).into_iter().flatten().copied()),
+            None => Err(staff_hours_unavailable()),
+        };
+        staff_day_verdict_at(day, Some((from, to)))
+    }
+
+    /// Another live appointment of hers in `[start, end)`; `appointment_id`'s own old slot is not
+    /// a conflict with itself.
+    fn overlap(&self, appointment_id: &str, start: &Dt, end: &Dt) -> Option<&'a Candidate> {
+        let (start, end) = (Secs::of(start), Secs::of(end));
+        let clashes = |i: usize| {
+            let (c_start, c_end, c) = &self.candidates[i];
+            c.id != appointment_id && c_start.cmp(end) < 0 && c_end.cmp(start) > 0
+        };
+        let Some((order, max_end)) = self
+            .by_start
+            .as_ref()
+            .filter(|_| start.has_offset && end.has_offset)
+        else {
+            return (0..self.candidates.len())
+                .find(|&i| clashes(i))
+                .map(|i| self.candidates[i].2);
+        };
+        // Those starting before `end`, walked back while one of them can still end after `start`;
+        // of the clashes, the first in the read's order — the one walking every row would name.
+        let before_end = order.partition_point(|&(s, _)| s < end.epoch);
+        (0..before_end)
+            .rev()
+            .take_while(|&k| max_end[k] > start.epoch)
+            .map(|k| order[k].1)
+            .filter(|&i| clashes(i))
+            .min()
+            .map(|i| self.candidates[i].2)
+    }
+}
+
 /// Why one occurrence of a series edit cannot move to `[start, end)` — the judges of
 /// `reschedule`, in its order (appointments#236): the past, the lead time, the opening hours, her
 /// working hours, blocked periods and another appointment of hers in the slot. The occurrence's
@@ -3394,7 +3631,7 @@ pub fn update_recurring_series_pure(input: Value) -> Result<Output, String> {
 fn series_move_refusal(
     input: &Value,
     settings: &Value,
-    candidates: &[Candidate],
+    agenda: &SeriesAgenda,
     ctx: &HostCtx,
     staff_id: &str,
     appointment_id: &str,
@@ -3410,24 +3647,30 @@ fn series_move_refusal(
     if let Some(refusal) = lead_time_refusal(settings, start, &ctx.now, false) {
         return Some(refusal);
     }
-    if let Some(refusal) = schedule_refusal(input, ctx.tz, start, end) {
+    // Read on the business clock ONCE for the opening hours and her day alike.
+    let (Some(from), Some(to)) = (
+        business_wall_stamp(start, ctx.tz),
+        business_wall_stamp(end, ctx.tz),
+    ) else {
+        return Some(unreadable_on_the_business_clock());
+    };
+    if let Some(refusal) = schedule_refusal_at(input, &from, &to, agenda.weekly.as_ref()) {
         return Some(refusal);
     }
     // A series without a professional (older than appointments#246) has nobody's day to judge.
     if !staff_id.is_empty() {
-        if let Some(refusal) =
-            staff_hours_refusal(input, StaffHoursGate::DaysAhead, ctx.tz, start, end)
-        {
+        if let Some(refusal) = agenda.staff_hours_refusal(&from, &to) {
             return Some(refusal);
         }
     }
-    if let Some(refusal) = blocked_refusal(input, staff_id, start, end) {
+    let Some(blocks) = &agenda.blocks else {
+        return Some(availability_unavailable());
+    };
+    if let Some(refusal) = block_refusal_in(blocks, staff_id, start, end) {
         return Some(refusal);
     }
     if !allow_overlapping_of(settings) {
-        if let Some(c) = candidates.iter().find(|c| {
-            c.id != appointment_id && cmp_secs(&c.start, end) < 0 && cmp_secs(&c.end, start) > 0
-        }) {
+        if let Some(c) = agenda.overlap(appointment_id, start, end) {
             return Some(overlap_refusal(c));
         }
     }
@@ -6571,6 +6814,34 @@ mod tests {
         assert!(skipped_of(&out).is_empty());
     }
 
+    /// appointments#251: the series judge reads the weekly hours once, one opening per weekday.
+    /// Each occurrence has to be judged against ITS weekday: the salon opens Mondays until 18:00
+    /// but Tuesdays only until 13:00, so moving the series to 15:00 moves Monday and skips Tuesday.
+    #[test]
+    fn series_edit_judges_each_occurrence_against_the_hours_of_its_own_weekday() {
+        let mut inp = series_edit_input(
+            edit_payload("2026-08-17", "15:00"),
+            template(json!({ "max_occurrences": null })),
+            json!([
+                occurrence("2026-08-17", "confirmed", json!({})),
+                occurrence("2026-08-18", "pending", json!({}))
+            ]),
+        );
+        let reads = sched_hours(json!([bh(0, "09:00", "18:00"), bh(1, "09:00", "13:00")]));
+        if let Value::Object(extra) = reads {
+            for (k, v) in extra {
+                inp["context"]["reads"][k] = v;
+            }
+        }
+        let out = update_recurring_series_pure(inp).unwrap();
+        assert!(out.error.is_none(), "{:?}", out.error);
+        assert_eq!(moved_ids(&out), vec!["apt-2026-08-17"]);
+        assert_eq!(
+            skipped_of(&out),
+            vec![("2026-08-18".to_string(), "appointments.outside_schedule".to_string())]
+        );
+    }
+
     /// A block on one of the dates skips that date only; the rest of the series moves.
     #[test]
     fn series_edit_skips_the_occurrence_that_lands_on_a_blocked_period() {
@@ -6618,6 +6889,101 @@ mod tests {
             "min_booking_notice": 0, "max_advance_booking": 0 }]);
         let out = judged_edit(edit_payload("2026-08-17", "11:15"), reads);
         assert_eq!(moved_ids(&out), vec!["apt-2026-08-17", "apt-2026-08-24"]);
+    }
+
+    /// Every way an offset can be written reads the same, and the ones that are not an offset do
+    /// not read at all (appointments#251 rewrote how its digits are counted).
+    #[test]
+    fn an_offset_reads_the_same_however_it_is_written() {
+        let offset = |text: &str| parse_dt(text).map(|dt| (dt.has_offset, dt.offset_min));
+        assert_eq!(offset("2026-08-17T11:00:00+02:00"), Some((true, 120)));
+        assert_eq!(offset("2026-08-17T11:00:00+0200"), Some((true, 120)));
+        assert_eq!(offset("2026-08-17T11:00:00+02"), Some((true, 120)));
+        assert_eq!(offset("2026-08-17T11:00:00-02:30"), Some((true, -150)));
+        assert_eq!(offset("2026-08-17T11:00:00+05:45"), Some((true, 345)));
+        assert_eq!(offset("2026-08-17T11:00:00Z"), Some((true, 0)));
+        assert_eq!(offset("2026-08-17T11:00:00"), Some((false, 0)));
+        assert_eq!(offset("2026-08-17T11:00:00+2"), None);
+        assert_eq!(offset("2026-08-17T11:00:00+020"), None);
+        assert_eq!(offset("2026-08-17T11:00:00+02:00:00"), None);
+    }
+
+    /// appointments#251: the business-clock ISO text is written by hand, not by chrono's
+    /// `format`, which parses its pattern on every call — and it must be the very same text, down
+    /// to the offset of a zone half an hour off or behind UTC.
+    #[test]
+    fn the_business_iso_text_is_chronos_to_the_byte() {
+        use chrono::TimeZone;
+        for zone in ["UTC", "Europe/Madrid", "America/St_Johns", "Asia/Kolkata", "Pacific/Chatham", "America/Los_Angeles"] {
+            let tz: chrono_tz::Tz = zone.parse().unwrap();
+            for epoch in [0i64, 1_774_746_000, 1_792_890_000, 1_800_000_000, -86_400 * 400] {
+                let at = tz.timestamp_opt(epoch, 0).unwrap();
+                assert_eq!(
+                    business_iso_text(&at),
+                    at.format("%Y-%m-%dT%H:%M:%S%:z").to_string(),
+                    "{zone} @ {epoch}"
+                );
+            }
+        }
+    }
+
+    fn agenda_candidate(id: &str, start: &str, end: &str) -> Candidate {
+        Candidate {
+            id: id.into(),
+            start: parse_dt(start).expect("start"),
+            end: parse_dt(end).expect("end"),
+            label: id.into(),
+        }
+    }
+
+    fn agenda_overlap(candidates: &[Candidate], appointment_id: &str, start: &str, end: &str) -> Option<String> {
+        SeriesAgenda::of(&json!({}), candidates)
+            .overlap(appointment_id, &parse_dt(start).unwrap(), &parse_dt(end).unwrap())
+            .map(|c| c.id.clone())
+    }
+
+    /// appointments#251: the agenda a series edit judges against is indexed once, and the index
+    /// answers exactly what walking every row would: a long appointment that began hours before,
+    /// the first clash in the read's order, touching edges free, its own old slot no clash.
+    #[test]
+    fn the_series_agenda_finds_the_same_clash_as_walking_every_appointment() {
+        let rows = vec![
+            agenda_candidate("late", "2026-08-17T16:00:00+02:00", "2026-08-17T17:00:00+02:00"),
+            agenda_candidate("all-day", "2026-08-17T08:00:00+02:00", "2026-08-17T20:00:00+02:00"),
+            agenda_candidate("short", "2026-08-17T11:00:00+02:00", "2026-08-17T11:30:00+02:00"),
+            agenda_candidate("next-day", "2026-08-18T11:00:00+02:00", "2026-08-18T11:30:00+02:00"),
+            agenda_candidate("mine", "2026-08-19T11:00:00+02:00", "2026-08-19T11:30:00+02:00"),
+        ];
+        let at = |id: &str, s: &str, e: &str| agenda_overlap(&rows, id, s, e);
+        // The long one began three hours earlier and is still the first in the read's order.
+        assert_eq!(at("x", "2026-08-17T11:00:00+02:00", "2026-08-17T11:30:00+02:00").as_deref(), Some("all-day"));
+        assert_eq!(at("all-day", "2026-08-17T11:00:00+02:00", "2026-08-17T11:30:00+02:00").as_deref(), Some("short"));
+        // Touching edges do not clash: `[start, end)`.
+        assert_eq!(at("x", "2026-08-18T10:30:00+02:00", "2026-08-18T11:00:00+02:00"), None);
+        assert_eq!(at("x", "2026-08-18T11:30:00+02:00", "2026-08-18T12:00:00+02:00"), None);
+        assert_eq!(at("x", "2026-08-18T11:29:00+02:00", "2026-08-18T12:00:00+02:00").as_deref(), Some("next-day"));
+        // Its own old slot is not a clash with itself.
+        assert_eq!(at("mine", "2026-08-19T11:15:00+02:00", "2026-08-19T11:45:00+02:00"), None);
+        assert_eq!(at("x", "2026-08-19T11:15:00+02:00", "2026-08-19T11:45:00+02:00").as_deref(), Some("mine"));
+        // Same instant written in another offset: compared in UTC.
+        assert_eq!(at("x", "2026-08-18T09:15:00+00:00", "2026-08-18T09:45:00+00:00").as_deref(), Some("next-day"));
+        // Before and after everything.
+        assert_eq!(at("x", "2026-08-16T11:00:00+02:00", "2026-08-16T12:00:00+02:00"), None);
+        assert_eq!(at("x", "2026-08-20T11:00:00+02:00", "2026-08-20T12:00:00+02:00"), None);
+    }
+
+    /// A row with no offset is compared on the wall clock, like `cmp_secs` does — the index must
+    /// not quietly compare it in UTC.
+    #[test]
+    fn the_series_agenda_compares_a_naive_row_on_the_wall_clock() {
+        let rows = vec![
+            agenda_candidate("naive", "2026-08-17T11:00:00", "2026-08-17T11:30:00"),
+            agenda_candidate("aware", "2026-08-17T15:00:00+02:00", "2026-08-17T15:30:00+02:00"),
+        ];
+        // 11:10+02:00 is 09:10 UTC; on the wall clock it is 11:10, inside the naive row.
+        assert_eq!(agenda_overlap(&rows, "x", "2026-08-17T11:10:00+02:00", "2026-08-17T11:20:00+02:00").as_deref(), Some("naive"));
+        assert_eq!(agenda_overlap(&rows, "x", "2026-08-17T15:10:00+02:00", "2026-08-17T15:20:00+02:00").as_deref(), Some("aware"));
+        assert_eq!(agenda_overlap(&rows, "x", "2026-08-17T13:00:00+02:00", "2026-08-17T14:00:00+02:00"), None);
     }
 
     /// Her day off on one of the dates, and a new time after her shift on the other.
@@ -6860,21 +7226,34 @@ mod tests {
         );
     }
 
-    /// The per-invocation ceiling counts what is left behind too: an occurrence that does not
-    /// move still writes an operation of its own (it follows the new half), so sixty dates that
-    /// do not fit are not sixty writes in one command.
-    #[test]
-    fn series_edit_ceiling_counts_the_occurrences_it_leaves_behind() {
+    // ── appointments#251 · a long series is edited WHOLE ────────────────────────────────────
+    //
+    // A 50-per-call ceiling moved the first fifty occurrences and left the rest at the old time,
+    // hanging off the closed half (so `materialize` of the new one booked those days twice), with
+    // nothing in the answer saying so. Google Calendar and Outlook apply the edit to the whole
+    // series, and so does this command now: every occurrence from the cut is treated in the same
+    // transaction — the occurrence read is already the whole series, and the 400-day horizon of
+    // `materialize` bounds how many there can be.
+
+    /// A daily series with `n` confirmed occurrences from 2026-08-17, the salon open every day
+    /// 09:00–18:00, edited from its first future date to `time`.
+    fn long_series_edit(n: i64, time: &str, extra_payload: Value) -> Output {
         let first = days_from_civil(2026, 8, 17);
-        let occurrences: Vec<Value> = (0..60)
-            .map(|n| {
-                let (y, mo, d) = civil_from_days(first + n);
+        let occurrences: Vec<Value> = (0..n)
+            .map(|k| {
+                let (y, mo, d) = civil_from_days(first + k);
                 occurrence(&format!("{y:04}-{mo:02}-{d:02}"), "confirmed", json!({}))
             })
             .collect();
+        let mut payload = edit_payload("2026-08-17", time);
+        if let Value::Object(fields) = extra_payload {
+            for (k, v) in fields {
+                payload[k] = v;
+            }
+        }
         let mut inp = series_edit_input(
-            edit_payload("2026-08-17", "19:00"),
-            template(json!({ "max_occurrences": null })),
+            payload,
+            template(json!({ "max_occurrences": null, "frequency": "daily", "day_of_week": null })),
             Value::Array(occurrences),
         );
         let every_day = Value::Array((0..7).map(|dow| bh(dow, "09:00", "18:00")).collect());
@@ -6885,9 +7264,52 @@ mod tests {
         }
         let out = update_recurring_series_pure(inp).unwrap();
         assert!(out.error.is_none(), "{:?}", out.error);
+        out
+    }
+
+    /// 🔴 THE SYMPTOM. Sixty future appointments, the time changed: all sixty move, onto the new
+    /// half, and the answer counts sixty — not the first fifty with ten left behind unsaid.
+    #[test]
+    fn series_edit_moves_every_occurrence_of_a_long_series() {
+        let out = long_series_edit(60, "12:00", json!({}));
+        let moves = ops_named(&out, "_recurring_move_occurrence");
+        assert_eq!(moves.len(), 60, "occurrences left at the old time");
+        let target = out.result.as_ref().unwrap()["recurring_id"].clone();
+        assert!(
+            moves
+                .iter()
+                .all(|op| op.params.get("recurring_id") == Some(&target)),
+            "an occurrence stayed on the closed half"
+        );
+        assert_eq!(out.result.as_ref().unwrap()["moved"], json!(60));
+        assert!(skipped_of(&out).is_empty());
+    }
+
+    /// The dates that do not fit are all reported, and all follow the new half: sixty after
+    /// closing time are sixty in `skipped`, sixty `_recurring_keep_occurrence` — none left
+    /// behind on the closed half for `materialize` to book twice.
+    #[test]
+    fn series_edit_reports_every_occurrence_it_leaves_behind() {
+        let out = long_series_edit(60, "19:00", json!({}));
         assert!(moved_ids(&out).is_empty(), "moved after closing time");
-        assert_eq!(skipped_of(&out).len(), 50);
-        assert_eq!(ops_named(&out, "_recurring_keep_occurrence").len(), 50);
+        assert_eq!(skipped_of(&out).len(), 60);
+        assert_eq!(ops_named(&out, "_recurring_keep_occurrence").len(), 60);
+    }
+
+    /// A pattern change on a long series treats every date too: daily → weekly on Mondays keeps
+    /// the Mondays (moved) and cancels the rest, across all sixty.
+    #[test]
+    fn series_edit_pattern_change_treats_every_occurrence_of_a_long_series() {
+        let out = long_series_edit(
+            60,
+            "12:00",
+            json!({ "frequency": "weekly", "day_of_week": 0 }),
+        );
+        let r = out.result.as_ref().unwrap();
+        // 2026-08-17 is a Monday: nine Mondays in sixty days (17/08 … 12/10).
+        assert_eq!(r["moved"], json!(9));
+        assert_eq!(r["cancelled_pattern_change"], json!(51));
+        assert_eq!(ops_named(&out, "_recurring_cancel_occurrence").len(), 51);
     }
 
     // ── appointments#248 · handing «this and following» to another professional ─────────────
