@@ -115,6 +115,11 @@ Requires `appointments.change_appointment`.
 Opening an appointment shows everything about it plus its **audit trail**: one entry per transition,
 with what changed. Cancelling stores the reason in that entry.
 
+When a change to a **repeating series** moves the appointment, its entry says what changed and from
+what (appointments#253): *Professional changed — Bea → Carla* when the series is handed to another
+professional, *Service changed — Cut → Cut and colour* when its service changes, and the new time
+only when the time really moved. A move that changes neither stays *Time changed*.
+
 ### Delete
 
 Destructive, with confirmation, and **admin only** (`appointments.delete_appointment`). Prefer

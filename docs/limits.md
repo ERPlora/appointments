@@ -35,7 +35,7 @@ A refused transition rolls back **everything**: no row change, no history entry 
 | Field | Values |
 |---|---|
 | Status | `pending`, `confirmed`, `in_progress`, `completed`, `cancelled`, `no_show` |
-| History action | `created`, `confirmed`, `started`, `rescheduled`, `cancelled`, `completed`, `no_show`, `note_added` |
+| History action | `created`, `confirmed`, `started`, `rescheduled`, `staff_changed`, `service_changed`, `cancelled`, `completed`, `no_show`, `note_added` |
 | Blocked time type | `holiday`, `vacation`, `break`, `maintenance`, `other` |
 | Recurrence frequency | `daily`, `weekly`, `biweekly`, `monthly` |
 | Day of week | 0 = Monday … 6 = Sunday |
