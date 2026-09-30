@@ -449,7 +449,10 @@ def main() -> int:
                 "day_of_week": datetime.date.fromisoformat(day).weekday(),
                 "time": at,
                 "duration_minutes": DURATION,
-                "start_date": datetime.date.today().isoformat(),
+                # `day`, not today (appointments#266): starting today put today's 14:00 in the
+                # past every afternoon, and the report said `invalid_start` for it instead of
+                # her shift. `day` is a week or more ahead and on the series' own weekday.
+                "start_date": day,
             },
         )
         status, body = hub.command(
