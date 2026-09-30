@@ -48,7 +48,7 @@ A refused transition rolls back **everything**: no row change, no history entry 
 | Appointments per bulk creation | 50 |
 | Appointments per bulk deletion | 50 |
 | Appointments materialised per run of a recurring template | 50 |
-| Appointments an edit of «this and all following» treats | All of them, however long the series: one change, no per-run cap |
+| Appointments an edit of «this and all following» treats | All of them in one change, no per-run cap. Measured on a real hub: a daily series booked to the 400-day horizon (400 appointments from the cut) moves whole while the professional has up to ~3,400 other live appointments ahead. Beyond that the hub refuses the edit and nothing changes (the whole change is undone) |
 | How far ahead a run of a recurring template books | 400 days (the professional's hours are checked that far; later occurrences are booked by a later run) |
 | Rows per page (blocked time, recurring) | 50 |
 | Maximum rows a paginated request may ask for | 500 |
