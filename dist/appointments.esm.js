@@ -2080,6 +2080,7 @@ var es_default = {
     seriesMovedSkipped: "{moved} citas movidas \xB7 {skipped} no se han podido mover y se quedan a su hora:",
     seriesReassignedSkipped: "{moved} citas pasan a {staff} \xB7 {skipped} no le caben y se quedan como estaban:",
     seriesStaffChangeHint: "Desde el {from} atiende esta serie {staff}: sus {upcoming} citas reservadas pasan a su agenda si le caben; las que no, se quedan como est\xE1n y se listan al guardar.",
+    seriesServiceChangeHint: "Desde el {from} esta serie es {service}: sus {upcoming} citas reservadas pasan a ese servicio, con su precio y su duraci\xF3n, si caben en la agenda; las que no, se quedan como est\xE1n y se listan al guardar.",
     seriesSkipStaffUnknown: "no se ha podido comprobar el horario del profesional para esa cita",
     seriesMoveSkipOther: "no se ha podido mover",
     seriesSplitFrom: "Esta serie contin\xFAa a otra anterior ({id}): se parti\xF3 cuando alguien la edit\xF3 de una cita en adelante.",
@@ -2346,6 +2347,7 @@ var en_default = {
     seriesMovedSkipped: "{moved} appointments moved \xB7 {skipped} could not be moved and keep their time:",
     seriesReassignedSkipped: "{moved} appointments handed to {staff} \xB7 {skipped} did not fit and stay as they were:",
     seriesStaffChangeHint: "From {from}, {staff} does this series: its {upcoming} booked appointments move over if they fit that agenda; the ones that do not stay as they are and are listed after saving.",
+    seriesServiceChangeHint: "From {from}, this series is {service}: its {upcoming} booked appointments take that service, its price and its length if they fit the agenda; the ones that do not stay as they are and are listed after saving.",
     seriesSkipStaffUnknown: "the professional's hours could not be checked for it",
     seriesMoveSkipOther: "it could not be moved",
     seriesSplitFrom: "This series continues an earlier one ({id}): it was split when someone edited it from one occurrence onwards.",
@@ -3097,7 +3099,7 @@ function ionTone(tone, variant) {
   }
 }
 
-// @erplora/outfitkit/dist/shared/searchbar-name.js
+// @erplora/outfitkit/dist/shared/searchbar-single-clear.js
 function syncSearchbarInputName(root, name) {
   const bar = root?.querySelector("ion-searchbar");
   if (!bar) return;
@@ -3109,6 +3111,13 @@ function syncSearchbarInputName(root, name) {
   }).catch(() => {
   });
 }
+var searchbarSingleClear = i`
+  ion-searchbar input::-webkit-search-cancel-button {
+    -webkit-appearance: none;
+    appearance: none;
+    display: none;
+  }
+`;
 
 // @erplora/outfitkit/dist/ok-data-table.js
 var CSV_BOM = "\uFEFF";
@@ -3220,7 +3229,9 @@ var DEFAULT_LABELS2 = {
   recordPlural: "records",
   loadMore: "Load more",
   noMatches: "No results match your search or filters",
-  showAll: "Show all"
+  showAll: "Show all",
+  loadError: "Couldn't load the data",
+  retry: "Retry"
 };
 var ES_LABELS = {
   search: "Buscar\u2026",
@@ -3261,7 +3272,9 @@ var ES_LABELS = {
   recordPlural: "registros",
   loadMore: "Cargar m\xE1s",
   noMatches: "Ning\xFAn resultado coincide con la b\xFAsqueda o los filtros",
-  showAll: "Mostrar todo"
+  showAll: "Mostrar todo",
+  loadError: "No se han podido cargar los datos",
+  retry: "Reintentar"
 };
 var _OkDataTable = class _OkDataTable2 extends i3 {
   constructor() {
@@ -3311,6 +3324,9 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
     this.xOverflow = false;
     this.actionsTrackPx = 0;
     this.rowActionsCollapsed = false;
+    this.actionsLabelFits = true;
+    this.unfoldedCells = /* @__PURE__ */ new Set();
+    this.lastPointerType = "";
     this.fitDecidedAtWidth = -1;
     this.rowMenuOpen = false;
     this.columnChoice = /* @__PURE__ */ new Map();
@@ -3327,8 +3343,12 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
       this.measureXOverflow();
       this.measureRowActionsFit();
       this.syncSheetInsets();
+      this.syncContentAfter();
     };
     this.sheetContent = null;
+    this.notePointer = (e5) => {
+      this.lastPointerType = e5.pointerType;
+    };
     this.onSearch = (ev) => {
       const value = ev.target.value ?? "";
       if (this.serverSide) {
@@ -3340,9 +3360,12 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
         this.mobileShown = 0;
       }
     };
+    this.gapLabels = /* @__PURE__ */ new Map();
+    this.slotActionsCache = null;
   }
   static {
     this.styles = i`
+    ${searchbarSingleClear}
     :host {
       /* Vars overridable (estilo Ionic), default = cadena --ok-* → --ion-* → hex */
       --background: var(--ok-surface, var(--ion-card-background, var(--ion-background-color, #ffffff)));
@@ -3397,7 +3420,7 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
     @media (min-width: 834px) {
       .card.has-panel { display: grid; grid-template-columns: minmax(0, 1fr) 360px; grid-template-rows: auto minmax(0, 1fr) auto; }
       .card.has-panel > .bar { grid-column: 1; grid-row: 1; }
-      .card.has-panel > .scroll, .card.has-panel > .cards-grid, .card.has-panel > .empty { grid-column: 1; grid-row: 2; min-height: 0; overflow: auto; }
+      .card.has-panel > .scroll, .card.has-panel > .cards-grid, .card.has-panel > .empty, .card.has-panel > .load-error { grid-column: 1; grid-row: 2; min-height: 0; overflow: auto; }
       .card.has-panel > .pager { grid-column: 1; grid-row: 3; }
       .card.has-panel > .drawer { position: static; grid-column: 2; grid-row: 1 / -1; width: auto; max-width: none; height: auto; min-height: 0; animation: none; }
       .card.has-panel > .tk-scrim { display: none; }
@@ -3432,7 +3455,24 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
     /* Sin filas, renderTable/renderCards devuelven SOLO el bloque .empty (sin .scroll). En modo
        fill hay que estirarlo para que ocupe el hueco entre toolbar y pager y centre su contenido
        (icono + mensaje) en vertical; si no, queda pegado arriba con el pager a media altura. */
-    :host([fill]) .empty { flex: 1 1 auto; min-height: 0; }
+    :host([fill]) .empty, :host([fill]) .load-error { flex: 1 1 auto; min-height: 0; }
+    /* #218 — On a phone (MOBILE_BREAKPOINT, where the table turns into cards and «Load more») the
+       module paints other blocks above the table, and rows boxed in between toolbar and footer got
+       what was left: a 315px card in a 32-155px window, never readable whole. Phone lists scroll
+       WITH the page (Shopify, Square, Odoo): the card is as tall as its content, the rows are not a
+       scroller of their own and the shell's ion-content scrolls.
+       The host box stays as it was, so the blocks ABOVE keep their size (growing it squeezed an
+       ion-segment or ion-card to 0px), and the cards run past it into the page scroll. Only when
+       something in flow comes AFTER the table ([content-after], see syncContentAfter) does the box
+       grow, pushing that content down instead of painting over it. !important because every
+       module ships .page > ok-data-table { flex: 1 1 auto; min-height: 0 }, and only an important
+       declaration from inside the shadow wins over the page's own rule. */
+    @media (max-width: 640px) {
+      :host([fill]) .card { flex: 1 0 auto; }
+      :host([fill]) .scroll, :host([fill]) .cards-grid { flex: 0 0 auto; }
+      :host([fill]) .cards-grid { overflow: visible; }
+      :host([fill][content-after]) { height: auto; flex-shrink: 0 !important; }
+    }
 
     /* ── Topbar / cabecera (relieve) ─────────────────────────────────────────────────────── */
     .bar { display: flex; flex-direction: column; gap: 0.6rem; padding: 0.65rem 1rem; border-bottom: 1px solid var(--border-color); background: var(--header-background); }
@@ -3538,6 +3578,10 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
       background: var(--header-background); padding-top: 0.55rem; padding-bottom: 0.55rem; }
     .gcell { display: flex; align-items: center; min-width: 0; }
     .gcell > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    /* #217 - A touch screen has no hover to show the cell's title, so in a table whose rows open
+       nothing a tap on a clipped cell unfolds it in place (see onCellTap). Only that cell wraps; the rest of the row keeps
+       its one line. The grid track does not move: its minimum is the column's fixed floor. */
+    .gcell > span.unfolded { white-space: normal; overflow-wrap: anywhere; }
     .gcell.right { justify-content: flex-end; text-align: right; }
     .gcell.center { justify-content: center; text-align: center; }
     /* #67 - PINNED ACTIONS COLUMN. When the grid overflows (since #120 only when not even the
@@ -3634,7 +3678,12 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
 
     /* ── Estado vacío ────────────────────────────────────────────────────────────────────── */
     .empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.75rem; padding: 3.5rem 1rem; text-align: center; color: var(--color-muted); }
-    .empty .empty-ic { display: grid; place-items: center; width: 3.25rem; height: 3.25rem; border-radius: 999px; background: var(--header-background); font-size: 26px; }
+    /* pm#530 — Error state: same frame as the empty state, but its heading reads as text, not muted. */
+    .load-error { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.5rem; padding: 3.5rem 1rem; text-align: center; color: var(--color-muted); }
+    .load-error .load-error-title { color: var(--color); font-weight: 600; }
+    .load-error .empty-ic { color: var(--ok-danger, var(--ion-color-danger, #c5000f)); }
+    .load-error ion-button { margin-top: 0.25rem; }
+    .empty .empty-ic, .load-error .empty-ic { display: grid; place-items: center; width: 3.25rem; height: 3.25rem; border-radius: 999px; background: var(--header-background); font-size: 26px; }
 
     .actions { display: flex; gap: 0.25rem; justify-content: flex-end; }
     /* #121 - The buttons NEVER shrink. Their track is pinned to the width measured here
@@ -3642,10 +3691,15 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
        measurement, which would shrink the track again. flex: 0 0 auto is what makes the
        measurement a property of the CONTENT instead of a property of the current layout. */
     .actions ion-button { flex: 0 0 auto; }
+    /* #240 - Stand-in of a row action hidden on this row: it keeps the button's width (so the
+       others stay in their column) and paints nothing; aria-hidden + inert keep it out of the
+       accessibility tree, the tab order and the click path. */
+    .actions .action-gap { visibility: hidden; }
     /* #122 - Header of the actions column while the buttons are folded into the menu. "ACCIONES"
        measures 62.83px and the folded track is 44px: painted, it spills out of its own cell and
        over "Estado" - the very thing the issue is about. The column keeps its name for assistive
-       tech and paints nothing. */
+       tech and paints nothing. #211 - Same while expanded when the buttons leave no room for the
+       label (one icon: 32-44px), instead of painting "ACCI…". */
     .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden;
       clip-path: inset(50%); white-space: nowrap; border: 0; }
     /* Las acciones de fila son icon-only y de tamaño small en escritorio. En tablet/móvil se
@@ -3655,6 +3709,7 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
       .toolbtn { width: 44px; height: 44px; }
       .add-btn { min-height: 44px; }
       .pager .nav ion-button { min-width: 44px; min-height: 44px; margin: 0; }
+      .load-error ion-button { min-height: 44px; --padding-start: 1rem; --padding-end: 1rem; }
     }
     /* Spinner de acción en curso (loading): contenido dentro del ion-button small (Ionic lo fija
      * a 28px en el :host, por eso width/height y no font-size). Cubre tabla y tarjetas: los
@@ -3689,6 +3744,7 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
   connectedCallback() {
     super.connectedCallback();
     this.addEventListener("keydown", this.onKeydown);
+    if (this.hasUpdated) this.observeSiblings();
     if (typeof window !== "undefined") {
       window.addEventListener("erplora:locale-changed", this.onLocaleChanged);
       window.addEventListener("resize", this.onWindowResize);
@@ -3732,6 +3788,23 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
     for (const el of boxes) width = Math.max(width, Math.ceil(el.scrollWidth));
     if (width > 0 && width !== this.actionsTrackPx) this.actionsTrackPx = width;
   }
+  /** #211 - Does the header label fit the actions column, or would it be painted truncated?
+   *
+   * The label's `scrollWidth` is its natural width both painted and `.sr-only` (it never wraps),
+   * and the cell's width is the track the buttons pinned in px: hiding or showing the label
+   * changes neither, so the next measurement agrees with this one and nothing loops. Any change
+   * of that track is a state change, so it re-renders and lands here through `updated`. */
+  measureActionsLabel() {
+    const cell = this.renderRoot?.querySelector?.(".ghead .gcell.actions-col");
+    const label = cell?.querySelector("span");
+    if (!cell || !label) return;
+    const need = Math.ceil(label.scrollWidth);
+    if (need <= 0 || cell.clientWidth <= 0) return;
+    const cs = getComputedStyle(cell);
+    const room = cell.clientWidth - (parseFloat(cs.paddingLeft) || 0) - (parseFloat(cs.paddingRight) || 0);
+    const fits = need <= room;
+    if (this.actionsLabelFits !== fits) this.actionsLabelFits = fits;
+  }
   /** #122 — Decide si los botones de acción de la fila caben o se pliegan en el menú «⋮».
    *  El criterio y la garantía de que no oscila viven en `decideRowActionsFit`. */
   measureRowActionsFit() {
@@ -3745,6 +3818,37 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
     });
     this.fitDecidedAtWidth = next.decidedAtWidth;
     if (this.rowActionsCollapsed !== next.collapsed) this.rowActionsCollapsed = next.collapsed;
+  }
+  /** #218 — Marks the host `content-after` while an element in flow follows it in its parent (a
+   *  heading and a second table, a notice). Out of flow does not count: an inline `ion-modal`
+   *  (absolute until it reparents), a hidden block. Written only when it changes. */
+  syncContentAfter() {
+    let after = false;
+    if (this.fill && typeof getComputedStyle === "function") {
+      for (let el = this.nextElementSibling; el; el = el.nextElementSibling) {
+        const cs = getComputedStyle(el);
+        if (cs.display !== "none" && cs.position !== "absolute" && cs.position !== "fixed") {
+          after = true;
+          break;
+        }
+      }
+    }
+    if (this.hasAttribute("content-after") !== after) this.toggleAttribute("content-after", after);
+  }
+  /** #218 — (Re)starts watching the parent: children added/removed and a sibling shown or hidden
+   *  (`hidden`/`style`/`class` on a direct child). Deeper mutations are ignored, and so are the
+   *  table's own (the sheet insets write its `style` on every resize). */
+  observeSiblings() {
+    this.siblingsObserver?.disconnect();
+    this.siblingsObserver = void 0;
+    const parent = this.parentNode;
+    if (this.fill && parent && typeof MutationObserver !== "undefined") {
+      this.siblingsObserver = new MutationObserver((records) => {
+        if (records.some((r6) => r6.target === parent || r6.target !== this && r6.target.parentNode === parent)) this.syncContentAfter();
+      });
+      this.siblingsObserver.observe(parent, { childList: true, subtree: true, attributes: true, attributeFilter: ["hidden", "style", "class"] });
+    }
+    this.syncContentAfter();
   }
   /** Engancha el observador al contenedor de scroll del render actual (cambia entre vistas). */
   observeXOverflow() {
@@ -3762,12 +3866,14 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
     if (grid) this.xObserver.observe(grid);
   }
   updated(changed) {
+    if (changed.has("fill")) this.observeSiblings();
     this.observeXOverflow();
     this.measureXOverflow();
     if (changed.has("columns") || changed.has("actions") || changed.has("columnChoice") || changed.has("selectable")) {
       this.fitDecidedAtWidth = -1;
     }
     this.measureActionsTrack();
+    this.measureActionsLabel();
     this.measureRowActionsFit();
     if (changed.has("panel")) this.syncSheetInsets();
     syncSearchbarInputName(this.shadowRoot, () => this.effSearchPlaceholder);
@@ -3821,6 +3927,8 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
     }
     this.xObserver?.disconnect();
     this.xObserver = void 0;
+    this.siblingsObserver?.disconnect();
+    this.siblingsObserver = void 0;
     this.sheetObserver?.disconnect();
     this.sheetObserver = void 0;
     this.sheetContent = null;
@@ -3843,6 +3951,11 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
   /** Mensaje efectivo de estado vacío (prop explícita → label i18n → default inglés). */
   get effEmptyMessage() {
     return this.emptyMessage ?? this.t.empty;
+  }
+  /** pm#530 — The last load failed: rows, «empty» and counts would all be claims about data the
+   *  table does not have. */
+  get loadFailed() {
+    return !!this.error?.trim();
   }
   /** #171 — Effective "no matches" message (explicit prop → i18n label → English default). */
   get effNoMatchesMessage() {
@@ -4192,6 +4305,29 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
     }
     return result;
   }
+  /** #217 - The text cell of the list view. It keeps its one-line clip, and the full text rides
+   *  along as the native `title` (hover, like MUI DataGrid, Ant Design's `ellipsis.showTitle` and
+   *  ok-heatmap). Screen readers already get the whole text: the clip is only paint. */
+  textCell(col, row, rowKey) {
+    const text = String(this.cell(col, row) ?? "");
+    const id = `${rowKey}\u241F${col.key}`;
+    return b2`<span
+      class=${this.unfoldedCells.has(id) ? "unfolded" : A}
+      title=${text === "" ? A : text}
+      @pointerdown=${this.notePointer}
+      @click=${(e5) => this.onCellTap(e5, id)}
+    >${text}</span>`;
+  }
+  /** #217 - A touch screen has no hover, so the `title` never shows there. A row that opens a
+   *  record keeps opening it on the first tap (the record shows the full text; swallowing the tap
+   *  would make "open" a two-tap gesture on some rows only). In a table whose rows open nothing, a
+   *  tap on a clipped cell unfolds it in place. A cell that fits, and a mouse click, change nothing. */
+  onCellTap(e5, id) {
+    if (this.rowClickable || this.lastPointerType !== "touch") return;
+    const span = e5.currentTarget;
+    if (span.scrollWidth <= span.clientWidth) return;
+    this.unfoldedCells = new Set(this.unfoldedCells).add(id);
+  }
   cell(col, row) {
     if (col.format) return col.format(row);
     const v3 = row[col.key];
@@ -4291,10 +4427,11 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
   /** #122 — Las mismas acciones de la fila, como lista. Respeta `disabled`/`loading` por fila: una
    *  acción que no se puede pulsar en su botón tampoco se puede pulsar aquí. */
   renderRowMenu() {
-    const row = this.rowMenuRow;
-    if (!this.actions.length || !row) return A;
+    const kept = this.rowMenuRow;
+    if (!this.actions.length || !kept) return A;
+    const key = this.keyOf(kept);
+    const row = key && this.rows.find((r6) => this.keyOf(r6) === key) || kept;
     const actions = this.visibleActions(row);
-    const key = this.keyOf(row);
     return b2`
       <ion-popover
         class="row-menu"
@@ -4316,7 +4453,7 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
                      would pick one at random. -->
                 <ion-item
                   button
-                  data-testid=${this.rowActionsCollapsed ? this.tid(`row-${key}-${a3.id}`) : A}
+                  data-testid=${this.rowActionsFolded(actions) ? this.tid(`row-${key}-${a3.id}`) : A}
                   ?disabled=${disabled}
                   aria-disabled=${disabled ? "true" : A}
                   .detail=${false}
@@ -4356,6 +4493,11 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
    */
   willUpdate(changed) {
     this.applyInitialView();
+    if (changed.has("rows") && this.unfoldedCells.size) this.unfoldedCells = /* @__PURE__ */ new Set();
+    if (changed.has("rows") || changed.has("actions")) {
+      this.gapLabels.clear();
+      this.slotActionsCache = null;
+    }
     if (changed.has("filterValues")) this.serverFilters = { ...this.filterValues ?? {} };
     if (changed.has("search") && this.search !== void 0) {
       this.q = this.search;
@@ -4544,13 +4686,34 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
   visibleActions(row) {
     return this.actions.filter((a3) => a3.hidden?.(row) !== true);
   }
+  /** #213 — Are THESE row actions folded into the "..." menu? Only when the list view folds (#122)
+   *  AND there is more than one: an overflow menu groups several actions, it never replaces a
+   *  single one (Polaris, MUI DataGrid) — it would take the same width and cost one more tap.
+   *  Except a single TEXT-only action (no icon): its button is wider than the "..." one, and left
+   *  out it spills over the data columns (measured at 390px), so folding it does free width. */
+  rowActionsFolded(actions) {
+    return this.rowActionsCollapsed && (actions.length > 1 || actions.length === 1 && !actions[0].icon);
+  }
+  gapLabel(a3) {
+    if (typeof a3.label !== "function") return a3.label;
+    let text = this.gapLabels.get(a3);
+    if (text === void 0) {
+      const shown = this.rows.find((r6) => a3.hidden?.(r6) !== true);
+      text = shown ? a3.label(shown) : "";
+      this.gapLabels.set(a3, text);
+    }
+    return text;
+  }
+  slotActions() {
+    return this.slotActionsCache ??= this.actions.filter((a3) => this.rows.some((r6) => a3.hidden?.(r6) !== true));
+  }
   actionButtons(row, collapsible = false) {
     if (!this.actions.length) return A;
     const key = this.keyOf(row);
     const actions = this.visibleActions(row);
     if (collapsible && this.rowActionsCollapsed) {
       if (!actions.length) return b2`<div class="actions"></div>`;
-      return b2`
+      if (this.rowActionsFolded(actions)) return b2`
         <div class="actions">
           <ion-button
             size="small"
@@ -4567,10 +4730,18 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
         </div>
       `;
     }
+    const slots = collapsible && !this.rowActionsCollapsed ? this.slotActions() : actions;
     return b2`
       <div class="actions">
-        ${actions.map(
+        ${slots.map(
       (a3) => {
+        if (a3.hidden?.(row) === true) {
+          return b2`
+              <ion-button class="action-gap" size="small" fill="clear" data-slot-for=${a3.id} aria-hidden="true" inert>
+                ${a3.icon ? b2`<ion-icon slot="icon-only" .icon=${okIcon(a3.icon)}></ion-icon>` : this.gapLabel(a3)}
+              </ion-button>
+            `;
+        }
         const loading = a3.loading?.(row) === true;
         const disabled = loading || a3.disabled?.(row) === true;
         const label = typeof a3.label === "function" ? a3.label(row) : a3.label;
@@ -4594,11 +4765,14 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
       </div>
     `;
   }
-  // Botón de barra icon-only (filtros / alta / conmutador de vista). `on` = estado activo.
-  // `badge` opcional → contador (p.ej. nº de filtros activos), look del Hub.
-  toolButton(icon, on, onClick, label, badge, testid = A) {
+  // Icon-only bar button (filters / create / view switch). `on` = active look.
+  // Optional `badge` → counter (e.g. number of active filters), Hub look.
+  // #247 - `toggle` makes it a toggle button: `on` is also announced as `aria-pressed`, so a screen
+  // reader hears which view is on instead of it living only in the fill. Ionic 8 copies
+  // `aria-pressed` to its inner <button> and watches it, so every later switch reaches the AX tree.
+  toolButton(icon, on, onClick, label, badge, testid = A, toggle = false) {
     return b2`
-      <ion-button class="toolbtn" size="small" fill=${on ? "solid" : "outline"} data-testid=${testid} title=${label} aria-label=${label} @click=${onClick}>
+      <ion-button class="toolbtn" size="small" fill=${on ? "solid" : "outline"} data-testid=${testid} title=${label} aria-label=${label} aria-pressed=${toggle ? String(on) : A} @click=${onClick}>
         <ion-icon slot="icon-only" .icon=${okIcon(icon)}></ion-icon>
         ${badge && badge > 0 ? b2`<span class="badge">${badge}</span>` : A}
       </ion-button>
@@ -4664,6 +4838,7 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
     const served = this.serverSide ? (current + 1) * ps : Math.min(this.mobileShown || ps, count);
     const canLoadMore = this.isMobile && served < count;
     const rangeTo = this.isMobile && !this.serverSide ? Math.min(served, count) : Math.min((current + 1) * ps, count);
+    const rangeFrom = !this.isMobile ? current * ps + 1 : this.serverSide ? this.rows.length ? Math.max(1, rangeTo - this.rows.length + 1) : current * ps + 1 : 1;
     const loadMore = () => {
       if (this.serverSide) this.emit("pageChange", current + 1);
       else this.mobileShown = Math.min((this.mobileShown || ps) + ps, count);
@@ -4688,7 +4863,7 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
         ${showTopbar ? b2`
               <div class="bar">
                 <div class="bar-main">
-                  ${this.title ? b2`<div class="title-wrap"><h2 class="title">${this.title}</h2><span class="title-count">${count}</span></div>` : A}
+                  ${this.title ? b2`<div class="title-wrap"><h2 class="title">${this.title}</h2>${this.loadFailed ? A : b2`<span class="title-count">${count}</span>`}</div>` : A}
                   ${this.hasSearch ? b2`<div class="search">${searchbar}</div>` : A}
                   ${this.inlineFilters ? this.renderInlineFilters() : A}
                   <span class="tk-spacer"></span>
@@ -4718,8 +4893,8 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
                         ` : A}
                     ${this.viewToggle ? b2`
                           <span class="viewseg">
-                            ${this.toolButton("list-outline", this.viewMode === "table", () => this.setViewMode("table"), this.t.viewList)}
-                            ${this.toolButton("grid-outline", this.viewMode === "cards", () => this.setViewMode("cards"), this.t.viewCards)}
+                            ${this.toolButton("list-outline", this.viewMode === "table", () => this.setViewMode("table"), this.t.viewList, void 0, A, true)}
+                            ${this.toolButton("grid-outline", this.viewMode === "cards", () => this.setViewMode("cards"), this.t.viewCards, void 0, A, true)}
                           </span>
                         ` : A}
                     ${this.hasFilterRow && !this.inlineFilters ? this.toolButton("funnel-outline", this.panel === "filters" || this.activeFilterCount > 0, () => this.toggle("filters"), this.t.filters, this.activeFilterCount) : A}
@@ -4766,13 +4941,13 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
               </div>
             ` : A}
 
-        ${this.viewMode === "cards" && this.cardViewEnabled ? this.renderCards(visible) : this.renderTable(visible)}
+        ${this.loadFailed ? this.errorState() : this.viewMode === "cards" && this.cardViewEnabled ? this.renderCards(visible) : this.renderTable(visible)}
 
-        ${pages > 1 || this.effPageSizes.length ? b2`
+        ${!this.loadFailed && (pages > 1 || this.effPageSizes.length) ? b2`
               <div class="pager">
                 <div class="left">
                   <span>
-                    ${pages > 1 ? b2`${this.t.showing.replace("{from}", String(this.isMobile && !this.serverSide ? 1 : current * ps + 1)).replace("{to}", String(rangeTo))} ` : A}
+                    ${pages > 1 ? b2`${this.t.showing.replace("{from}", String(rangeFrom)).replace("{to}", String(rangeTo))} ` : A}
                     <span class="strong">${count}</span> ${count === 1 ? this.t.recordSingular : this.t.recordPlural}
                   </span>
                   ${!showTopbar && this.effPageSizes.length ? b2`
@@ -4878,6 +5053,18 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
       </div>
     `;
   }
+  /** pm#530 — The load failed. Not the empty state: «No customers» over a hub that did not answer
+   *  made people believe their data was gone. Says so, gives the reason and offers to retry. */
+  errorState() {
+    return b2`
+      <div class="load-error" role="alert" data-role="load-error">
+        <span class="empty-ic"><ion-icon .icon=${okIcon("alert-circle-outline")}></ion-icon></span>
+        <strong class="load-error-title">${this.t.loadError}</strong>
+        <span class="load-error-reason">${this.error}</span>
+        <ion-button size="small" data-role="load-error-retry" data-testid=${this.tid("retry")} @click=${() => this.emit("retry", {})}>${this.t.retry}</ion-button>
+      </div>
+    `;
+  }
   // Vista LISTA en CSS GRID (no <table>): permite ancho por columna y cabecera sticky.
   renderTable(visible) {
     if (visible.length === 0) return this.emptyState();
@@ -4902,13 +5089,13 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
                   role="columnheader"
                   @click=${() => this.onHeaderClick(c5)}
                 >
-                  <span>${c5.header}</span>
+                  <span title=${c5.header || A}>${c5.header}</span>
                   ${sortable ? b2`<span class=${`caret${active ? " on" : ""}`}><ion-icon .icon=${okIcon(caretIcon)}></ion-icon></span>` : A}
                 </div>
               `;
     })}
             ${this.actions.length ? b2`<div class="gcell gh right actions-col" role="columnheader">
-                  ${this.rowActionsCollapsed ? b2`<span class="sr-only">${this.t.actions}</span>` : b2`<span>${this.t.actions}</span>`}
+                  <span class=${this.rowActionsCollapsed || !this.actionsLabelFits ? "sr-only" : ""}>${this.t.actions}</span>
                 </div>` : A}
           </div>
 
@@ -4931,7 +5118,7 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
                 >
                   ${this.selectable ? b2`<span class="selcb" @click=${(e5) => e5.stopPropagation()}><ion-checkbox .checked=${selected} aria-label=${this.t.selectRow} @ionChange=${() => this.toggleRow(key)}></ion-checkbox></span>` : A}
                   ${cols.map(
-          (c5) => b2`<div class=${`gcell ${alignCls(c5.align)}${c5.pinned === "end" ? " actions-col" : ""}`} role="cell">${c5.render ? c5.render(row) : b2`<span>${this.cell(c5, row)}</span>`}</div>`
+          (c5) => b2`<div class=${`gcell ${alignCls(c5.align)}${c5.pinned === "end" ? " actions-col" : ""}`} role="cell">${c5.render ? c5.render(row) : this.textCell(c5, row, key)}</div>`
         )}
                   ${this.actions.length ? b2`<div class="gcell right actions-col" role="cell" @click=${(e5) => e5.stopPropagation()}>${this.actionButtons(row, true)}</div>` : A}
                 </div>
@@ -5021,6 +5208,9 @@ __decorateClass4([
 __decorateClass4([
   n4({ attribute: "no-matches-message" })
 ], _OkDataTable.prototype, "noMatchesMessage");
+__decorateClass4([
+  n4({ type: String })
+], _OkDataTable.prototype, "error");
 __decorateClass4([
   n4({ attribute: "search-placeholder" })
 ], _OkDataTable.prototype, "searchPlaceholder");
@@ -5171,6 +5361,12 @@ __decorateClass4([
 __decorateClass4([
   r5()
 ], _OkDataTable.prototype, "rowActionsCollapsed");
+__decorateClass4([
+  r5()
+], _OkDataTable.prototype, "actionsLabelFits");
+__decorateClass4([
+  r5()
+], _OkDataTable.prototype, "unfoldedCells");
 __decorateClass4([
   r5()
 ], _OkDataTable.prototype, "rowMenuOpen");
@@ -7230,6 +7426,7 @@ var ErpAppointmentsSeries = class extends i3 {
     this.editTime = "";
     this.editDuration = "";
     this.editStaffId = "";
+    this.editServiceId = "";
     this.customers = [];
     this.services = [];
     this.staffMembers = [];
@@ -7316,6 +7513,37 @@ var ErpAppointmentsSeries = class extends i3 {
     const picked = this.editStaffOptions.find((o7) => o7.id === this.editStaffId);
     return { id: this.editStaffId, name: picked?.name ?? this.editStaffId };
   }
+  /** appointments#252 — the services the edit panel offers: the bookable ones and, when it no
+   *  longer is one, the series' current service, so the field still says what it books today. */
+  get editServiceOptions() {
+    const options = this.services.map((s5) => ({ id: s5.id, name: s5.name }));
+    const tmpl = this.template;
+    if (tmpl?.service_id && !options.some((o7) => o7.id === tmpl.service_id)) {
+      options.unshift({ id: tmpl.service_id, name: tmpl.service_name || tmpl.service_id });
+    }
+    return options;
+  }
+  /** appointments#252 — the service picked in the edit panel when it is not the series' one. */
+  get serviceChange() {
+    const tmpl = this.template;
+    if (!tmpl || !this.editServiceId || this.editServiceId === (tmpl.service_id ?? "")) return null;
+    const picked = this.editServiceOptions.find((o7) => o7.id === this.editServiceId);
+    return { id: this.editServiceId, name: picked?.name ?? this.editServiceId };
+  }
+  /** appointments#252 — picking another service PRE-FILLS «Min.» with its catalogue length, as the
+   *  new-series form does: the receptionist sees how long the series books before saving. Back to
+   *  the series' own service, its own minutes come back. */
+  onEditServiceChange(serviceId) {
+    this.editServiceId = serviceId;
+    const tmpl = this.template;
+    if (!tmpl) return;
+    if (serviceId === (tmpl.service_id ?? "")) {
+      this.editDuration = String(tmpl.duration_minutes ?? "");
+      return;
+    }
+    const m4 = Number(this.services.find((s5) => s5.id === serviceId)?.duration_minutes);
+    if (Number.isFinite(m4) && m4 >= 1) this.editDuration = String(m4);
+  }
   async refresh() {
     this.loading = true;
     this.error = "";
@@ -7399,6 +7627,7 @@ var ErpAppointmentsSeries = class extends i3 {
       this.timeDraft = { ...this.timeDraft, edit: null };
       this.editDuration = String(tmpl.duration_minutes ?? "");
       this.editStaffId = tmpl.staff_id ?? "";
+      this.editServiceId = tmpl.service_id ?? "";
       const today = todayISO();
       this.fromOccurrence = this.occurrences.map((o7) => o7.occurrence_date).find((d3) => d3 >= today) ?? today;
       await this.updateComplete;
@@ -7454,7 +7683,8 @@ var ErpAppointmentsSeries = class extends i3 {
     if (!tmpl || this.saving) return;
     const changed = this.changedFields();
     const staffChange = this.staffChange;
-    if (Object.keys(changed).length === 0 && !staffChange) {
+    const serviceChange = this.serviceChange;
+    if (Object.keys(changed).length === 0 && !staffChange && !serviceChange) {
       this.closePanel();
       return;
     }
@@ -7471,6 +7701,9 @@ var ErpAppointmentsSeries = class extends i3 {
           // `current_staff_id` (the selector), the new one as `staff_id` and the service, which
           // decides whether she can take it; the moved occurrences are judged on HER agenda.
           ...staffChange ? { current_staff_id: tmpl.staff_id ?? "", staff_id: staffChange.id, service_id: tmpl.service_id ?? "" } : { staff_id: tmpl.staff_id ?? "" },
+          // appointments#252: on a change of service the current one travels as
+          // `current_service_id` (the selector) and the new one as `service_id`.
+          ...serviceChange ? { current_service_id: tmpl.service_id ?? "", service_id: serviceChange.id } : {},
           scope: "this_and_following",
           from_occurrence_date: this.fromOccurrence,
           ...changed
@@ -7479,7 +7712,11 @@ var ErpAppointmentsSeries = class extends i3 {
       let report = null;
       const gotItsFirstProfessional = !tmpl.staff_id && !!staffChange;
       if (result?.pattern_changed === true || gotItsFirstProfessional) {
-        const booked = staffChange ? { ...tmpl, staff_id: staffChange.id } : tmpl;
+        const booked = {
+          ...tmpl,
+          ...staffChange ? { staff_id: staffChange.id } : {},
+          ...serviceChange ? { service_id: serviceChange.id } : {}
+        };
         report = await this.bookWindow(String(result?.recurring_id ?? this.editingId), booked);
       }
       const notMoved = result && Array.isArray(result.skipped) ? skippedDates(result) : [];
@@ -7753,6 +7990,7 @@ var ErpAppointmentsSeries = class extends i3 {
     const { upcoming, invoiced } = this.affected;
     const booked = this.occurrences.length;
     const staffChange = this.staffChange;
+    const serviceChange = this.serviceChange;
     return b2`<form slot="create" data-testid="appointments-series-form" data-mode="series-edit" class="form" @submit=${(e5) => this.submitEdit(e5)}>
       <p class="ctx" data-role="series-context">
         <strong>${tmpl.customer_name}</strong> · ${tmpl.service_name} · ${tmpl.staff_name || "\u2014"}
@@ -7785,6 +8023,21 @@ var ErpAppointmentsSeries = class extends i3 {
           @ionChange=${(e5) => this.editStaffId = e5.target.value ?? ""}
         >
           ${this.editStaffOptions.map((o7) => b2`<ion-select-option .value=${o7.id}>${o7.name}</ion-select-option>`)}
+        </ion-select>
+        <!-- appointments#252: the service of the series, for this and the following dates — the
+             customer moves to another service without the series being deleted. -->
+        <ion-select
+          data-testid="appointments-series-service"
+          data-role="series-service"
+          fill="outline"
+          mode="md"
+          label=${t5("ui.fieldService")}
+          placeholder=${t5("ui.pickService")}
+          label-placement="floating"
+          .value=${this.editServiceId}
+          @ionChange=${(e5) => this.onEditServiceChange(e5.target.value ?? "")}
+        >
+          ${this.editServiceOptions.map((o7) => b2`<ion-select-option .value=${o7.id}>${o7.name}</ion-select-option>`)}
         </ion-select>
         <ion-select
           data-testid="appointments-series-frequency"
@@ -7845,6 +8098,9 @@ var ErpAppointmentsSeries = class extends i3 {
           >` : A}
       ${staffChange && tmpl.staff_id ? b2`<ok-inline-feedback data-testid="appointments-series-staff-hint" tone="info" icon="swap-horizontal-outline"
             >${t5("ui.seriesStaffChangeHint", { from: this.shownDate(this.fromOccurrence), upcoming, staff: staffChange.name })}</ok-inline-feedback
+          >` : A}
+      ${serviceChange ? b2`<ok-inline-feedback data-testid="appointments-series-service-hint" tone="info" icon="swap-horizontal-outline"
+            >${t5("ui.seriesServiceChangeHint", { from: this.shownDate(this.fromOccurrence), upcoming, service: serviceChange.name })}</ok-inline-feedback
           >` : A}
       <ok-inline-feedback data-testid="appointments-series-scope-hint" tone="info" icon="information-circle-outline"
         >${t5("ui.seriesScopeHint", { from: this.shownDate(this.fromOccurrence) })}</ok-inline-feedback
@@ -8262,6 +8518,9 @@ __decorateClass([
 __decorateClass([
   r5()
 ], ErpAppointmentsSeries.prototype, "editStaffId", 2);
+__decorateClass([
+  r5()
+], ErpAppointmentsSeries.prototype, "editServiceId", 2);
 __decorateClass([
   r5()
 ], ErpAppointmentsSeries.prototype, "customers", 2);

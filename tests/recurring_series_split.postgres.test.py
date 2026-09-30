@@ -116,6 +116,41 @@ def check_manifest() -> None:
                 "without knowing what is on the books is moving an unknown set"
             )
 
+    # A `required` read keyed by a payload field the schema does NOT require is fed a null key on
+    # every edit that leaves it out — and a query whose params demand a string refuses it, which
+    # aborts the WHOLE command with `read_unavailable`. Seen on the real hub: after
+    # appointments#252 keyed `services.services.get` by `payload.service_id`, an edit that only
+    # changes the TIME (the screen sends no service then) was refused. The handler already refuses
+    # a service change whose catalogue read is missing (`catalog_unavailable`), so that read does
+    # not need to abort anything. Only a query proven to answer a null key may stay required.
+    null_key_tolerant = {
+        # appointments#248: no params schema, and its SQL compares `:service_id`, so a null key
+        # answers no rows instead of failing — `services.services.get` declares a schema that
+        # demands a string.
+        "staff.services.eligible_for_service",
+    }
+    schema_required = set()
+    if schema_rel and (MODULE_DIR / schema_rel).exists():
+        schema_required = set(
+            json.loads((MODULE_DIR / schema_rel).read_text()).get("required") or []
+        )
+    for read in cmd.get("reads") or []:
+        if not isinstance(read, dict) or read.get("required") is not True:
+            continue
+        optional_keys = [
+            src
+            for src in (read.get("params") or {}).values()
+            if isinstance(src, str)
+            and src.startswith("payload.")
+            and src.split(".", 1)[1] not in schema_required
+        ]
+        if optional_keys and read.get("query") not in null_key_tolerant:
+            fail(
+                f"{COMMAND}.reads[{read.get('query')}]: `required` but keyed by {optional_keys} "
+                "that the payload may leave out — every edit without it would be aborted "
+                "(read_unavailable)"
+            )
+
     # The read has to hand back what the move needs, or the handler cannot address a row.
     occ_sql = (
         MODULE_DIR / MANIFEST["queries"]["appointments.recurring.occurrences"]["sql"]
@@ -351,13 +386,23 @@ def seed_occurrence(
     )
 
 
-def move(appointment_id: str, hub: str = HUB, staff_id: str = "", staff_name: str = "") -> None:
+def move(
+    appointment_id: str,
+    hub: str = HUB,
+    staff_id: str = "",
+    staff_name: str = "",
+    service: tuple[str, str, int] = ("", "", 0),
+) -> None:
     """The WHOLE `sql[]` of `_recurring_move_occurrence`, bound ONCE — the way the runtime runs
     one operation: the move and then its history line, sharing `:now` (appointments#196). An
-    empty `staff_id` is what the handler sends when the edit changes no professional."""
+    empty `staff_id` is what the handler sends when the edit changes no professional, and an
+    empty service (id, name, price) when it changes no service (appointments#252)."""
     params = {
         "staff_id": staff_id,
         "staff_name": staff_name,
+        "service_id": service[0],
+        "service_name": service[1],
+        "service_price": service[2],
         "hub_id": hub,
         "appointment_id": appointment_id,
         "recurring_id": "r2",
@@ -567,6 +612,8 @@ def check_staff_handover() -> None:
                 "day_of_week": None,
                 "staff_id": "s2",
                 "staff_name": "Carla",
+                "service_id": "s-corte",
+                "service_name": "Corte",
                 "current_user_id": "u1",
                 "now": NOW,
             },
@@ -588,6 +635,79 @@ def check_staff_handover() -> None:
         fail(
             "_recurring_edit.sql: it reached another hub's series "
             f"(got {staff_of('appointments_recurring', 'r-hand-neighbour')!r})"
+        )
+
+
+def service_of(table: str, row_id: str) -> str:
+    price = ", ' ', service_price" if table == "appointments_appointment" else ""
+    return scalar(
+        f"SELECT concat(COALESCE(service_id, ''), ' ', service_name{price}) FROM {table} "
+        f"WHERE id = {literal(row_id)}"
+    )
+
+
+def check_service_change() -> None:
+    """appointments#252 — changing the service of «this and following»: the moved occurrence
+    takes the new service (id, name AND price), an empty service keeps the one it has, a sold one
+    is never touched, and neither the move nor the in-place edit reaches another hub's row."""
+    colour = ("s-color", "Corte y color", 4500)
+    seed_occurrence("o-colour", HUB, "r1", "2026-12-14")
+    move("o-colour", service=colour)
+    if service_of("appointments_appointment", "o-colour") != "s-color Corte y color 4500":
+        fail(
+            "_recurring_move_occurrence.sql: the occurrence did not take the new service "
+            f"(got {service_of('appointments_appointment', 'o-colour')!r})"
+        )
+    seed_occurrence("o-colour-stay", HUB, "r1", "2026-12-15")
+    move("o-colour-stay")
+    if service_of("appointments_appointment", "o-colour-stay") != "s-corte Corte 2000":
+        fail(
+            "_recurring_move_occurrence.sql: a move that changes no service rewrote it "
+            f"(got {service_of('appointments_appointment', 'o-colour-stay')!r})"
+        )
+    seed_occurrence("o-colour-sold", HUB, "r1", "2026-12-16", sale="sale-10")
+    move("o-colour-sold", service=colour)
+    if service_of("appointments_appointment", "o-colour-sold") != "s-corte Corte 2000":
+        fail("_recurring_move_occurrence.sql: it changed the service of an occurrence already turned into a sale")
+    # The neighbour's appointment with the id this hub names: its `hub_id` is the only guard.
+    seed_occurrence("o-colour-neighbour", OTHER_HUB, "r1", "2026-12-14")
+    move("o-colour-neighbour", hub=HUB, service=colour)
+    if service_of("appointments_appointment", "o-colour-neighbour") != "s-corte Corte 2000":
+        fail("_recurring_move_occurrence.sql: it changed the service of another hub's appointment")
+
+    def recolour_series(series_id: str) -> None:
+        """`_recurring_edit` as THIS hub runs it, moving the series to «Corte y color»."""
+        run_command(
+            "commands/_recurring_edit.sql",
+            {
+                "hub_id": HUB,
+                "recurring_id": series_id,
+                "time": "11:00",
+                "duration_minutes": 60,
+                "frequency": "weekly",
+                "day_of_week": None,
+                "staff_id": "s1",
+                "staff_name": "Bea",
+                "service_id": "s-color",
+                "service_name": "Corte y color",
+                "current_user_id": "u1",
+                "now": NOW,
+            },
+        )
+
+    seed_series("r-colour")
+    recolour_series("r-colour")
+    if service_of("appointments_recurring", "r-colour") != "s-color Corte y color":
+        fail(
+            "_recurring_edit.sql: the series did not take the new service "
+            f"(got {service_of('appointments_recurring', 'r-colour')!r})"
+        )
+    seed_series("r-colour-neighbour", OTHER_HUB)
+    recolour_series("r-colour-neighbour")
+    if service_of("appointments_recurring", "r-colour-neighbour") != "s-corte Corte":
+        fail(
+            "_recurring_edit.sql: it reached another hub's series "
+            f"(got {service_of('appointments_recurring', 'r-colour-neighbour')!r})"
         )
 
 
@@ -738,6 +858,7 @@ def check_against_postgres() -> None:
         check_cancel_door()
         check_keep_door()
         check_staff_handover()
+        check_service_change()
     finally:
         psql(["-c", f'DROP DATABASE IF EXISTS "{DB}"'])
 

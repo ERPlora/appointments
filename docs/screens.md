@@ -237,6 +237,21 @@ is kept.
 A series saved without a professional says so in the panel: choosing one and saving books its
 appointments straight away.
 
+### Changing the service of a series (appointments#252)
+
+The edit panel also has a **Service** field, with the series' current service picked. A customer
+who goes from «Cut» to «Cut and colour» no longer means deleting the series and creating it again:
+picking another service changes it from that occurrence **and all the following ones**, the same cut
+as a pattern change — the earlier dates keep the service they had. Only active, bookable services
+are offered, and the hub refuses one the series' professional does not perform.
+
+Picking a service fills the minutes with its catalogue length, as the new-series form does; you
+can still type other minutes. Before saving, the panel says how many booked
+appointments take the new service. Each of them takes the new service's **name, price and length**
+(her own price for it first, then the catalogue's) — so the same series never charges two prices —
+if the longer slot still fits the agenda; the ones that do not **stay as they were, with the service
+and price they had**, and after saving the screen lists them with the reason.
+
 ## Settings
 
 The module keeps a per-hub settings row read with `appointments.settings.get` and written with

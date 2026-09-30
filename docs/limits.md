@@ -130,3 +130,9 @@ booking, and a single run creates at most 50.
 could), and a series is booked for a customer, a service and a professional from your records.
 Open **Edit series**, choose who does it and save: its appointments are booked with them
 (appointments#248).
+
+**"I changed the service of a series and some appointments kept the old one."** The new service is
+longer and those appointments no longer fit the agenda (her shift, blocked time or another booking
+right after). They keep their service and their price, and the screen listed them after saving:
+move them one by one, or book the new service on another day (appointments#252). Appointments
+already in progress or already turned into a sale never change service.

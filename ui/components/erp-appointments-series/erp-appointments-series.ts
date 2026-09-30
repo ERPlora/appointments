@@ -274,6 +274,8 @@ export class ErpAppointmentsSeries extends LitElement {
   @state() editDuration = '';
   /** appointments#248 — who does the series from the cut on; starts as its current professional. */
   @state() editStaffId = '';
+  /** appointments#252 — the service of the series from the cut on; starts as its current one. */
+  @state() editServiceId = '';
 
   // ── appointments#209 — the NEW-series form ──────────────────────────────────────────────────
   // Linked catalogs: a series is booked against real records, same as erp-appointments-list.
@@ -368,6 +370,40 @@ export class ErpAppointmentsSeries extends LitElement {
     if (!tmpl || !this.editStaffId || this.editStaffId === (tmpl.staff_id ?? '')) return null;
     const picked = this.editStaffOptions.find((o) => o.id === this.editStaffId);
     return { id: this.editStaffId, name: picked?.name ?? this.editStaffId };
+  }
+
+  /** appointments#252 — the services the edit panel offers: the bookable ones and, when it no
+   *  longer is one, the series' current service, so the field still says what it books today. */
+  private get editServiceOptions(): { id: string; name: string }[] {
+    const options = this.services.map((s) => ({ id: s.id, name: s.name }));
+    const tmpl = this.template;
+    if (tmpl?.service_id && !options.some((o) => o.id === tmpl.service_id)) {
+      options.unshift({ id: tmpl.service_id, name: tmpl.service_name || tmpl.service_id });
+    }
+    return options;
+  }
+
+  /** appointments#252 — the service picked in the edit panel when it is not the series' one. */
+  private get serviceChange(): { id: string; name: string } | null {
+    const tmpl = this.template;
+    if (!tmpl || !this.editServiceId || this.editServiceId === (tmpl.service_id ?? '')) return null;
+    const picked = this.editServiceOptions.find((o) => o.id === this.editServiceId);
+    return { id: this.editServiceId, name: picked?.name ?? this.editServiceId };
+  }
+
+  /** appointments#252 — picking another service PRE-FILLS «Min.» with its catalogue length, as the
+   *  new-series form does: the receptionist sees how long the series books before saving. Back to
+   *  the series' own service, its own minutes come back. */
+  private onEditServiceChange(serviceId: string): void {
+    this.editServiceId = serviceId;
+    const tmpl = this.template;
+    if (!tmpl) return;
+    if (serviceId === (tmpl.service_id ?? '')) {
+      this.editDuration = String(tmpl.duration_minutes ?? '');
+      return;
+    }
+    const m = Number(this.services.find((s) => s.id === serviceId)?.duration_minutes);
+    if (Number.isFinite(m) && m >= 1) this.editDuration = String(m);
   }
 
   async refresh(): Promise<void> {
@@ -477,6 +513,7 @@ export class ErpAppointmentsSeries extends LitElement {
       this.timeDraft = { ...this.timeDraft, edit: null };
       this.editDuration = String(tmpl.duration_minutes ?? '');
       this.editStaffId = tmpl.staff_id ?? '';
+      this.editServiceId = tmpl.service_id ?? '';
       // EL PASADO ESTÁ CONGELADO: el corte nunca apunta a una ocurrencia ya servida. Si no queda
       // ninguna futura reservada, se corta hoy — que es lo que el servidor haría de todos modos.
       const today = todayISO();
@@ -542,9 +579,10 @@ export class ErpAppointmentsSeries extends LitElement {
     if (!tmpl || this.saving) return;
     const changed = this.changedFields();
     const staffChange = this.staffChange;
-    // Guardar sin tocar nada no escribe: el command lo rechazaría («nada que cambiar») y el panel
-    // habría prometido algo que no ocurrió.
-    if (Object.keys(changed).length === 0 && !staffChange) {
+    const serviceChange = this.serviceChange;
+    // Saving without touching anything writes nothing: the command would refuse it («nothing to
+    // change») and the panel would have promised something that did not happen.
+    if (Object.keys(changed).length === 0 && !staffChange && !serviceChange) {
       this.closePanel();
       return;
     }
@@ -563,6 +601,9 @@ export class ErpAppointmentsSeries extends LitElement {
           ...(staffChange
             ? { current_staff_id: tmpl.staff_id ?? '', staff_id: staffChange.id, service_id: tmpl.service_id ?? '' }
             : { staff_id: tmpl.staff_id ?? '' }),
+          // appointments#252: on a change of service the current one travels as
+          // `current_service_id` (the selector) and the new one as `service_id`.
+          ...(serviceChange ? { current_service_id: tmpl.service_id ?? '', service_id: serviceChange.id } : {}),
           scope: 'this_and_following',
           from_occurrence_date: this.fromOccurrence,
           ...changed,
@@ -578,7 +619,11 @@ export class ErpAppointmentsSeries extends LitElement {
       let report: SeriesBookingReport | null = null;
       const gotItsFirstProfessional = !tmpl.staff_id && !!staffChange;
       if (result?.pattern_changed === true || gotItsFirstProfessional) {
-        const booked = staffChange ? { ...tmpl, staff_id: staffChange.id } : tmpl;
+        const booked = {
+          ...tmpl,
+          ...(staffChange ? { staff_id: staffChange.id } : {}),
+          ...(serviceChange ? { service_id: serviceChange.id } : {}),
+        };
         report = await this.bookWindow(String(result?.recurring_id ?? this.editingId), booked);
       }
       const notMoved = result && Array.isArray(result.skipped) ? skippedDates(result) : [];
@@ -899,6 +944,7 @@ export class ErpAppointmentsSeries extends LitElement {
     const { upcoming, invoiced } = this.affected;
     const booked = this.occurrences.length;
     const staffChange = this.staffChange;
+    const serviceChange = this.serviceChange;
     return html`<form slot="create" data-testid="appointments-series-form" data-mode="series-edit" class="form" @submit=${(e: Event) => this.submitEdit(e)}>
       <p class="ctx" data-role="series-context">
         <strong>${tmpl.customer_name}</strong> · ${tmpl.service_name} · ${tmpl.staff_name || '—'}
@@ -935,6 +981,21 @@ export class ErpAppointmentsSeries extends LitElement {
           @ionChange=${(e: any) => (this.editStaffId = e.target.value ?? '')}
         >
           ${this.editStaffOptions.map((o) => html`<ion-select-option .value=${o.id}>${o.name}</ion-select-option>`)}
+        </ion-select>
+        <!-- appointments#252: the service of the series, for this and the following dates — the
+             customer moves to another service without the series being deleted. -->
+        <ion-select
+          data-testid="appointments-series-service"
+          data-role="series-service"
+          fill="outline"
+          mode="md"
+          label=${t('ui.fieldService')}
+          placeholder=${t('ui.pickService')}
+          label-placement="floating"
+          .value=${this.editServiceId}
+          @ionChange=${(e: any) => this.onEditServiceChange(e.target.value ?? '')}
+        >
+          ${this.editServiceOptions.map((o) => html`<ion-select-option .value=${o.id}>${o.name}</ion-select-option>`)}
         </ion-select>
         <ion-select
           data-testid="appointments-series-frequency"
@@ -1000,6 +1061,11 @@ export class ErpAppointmentsSeries extends LitElement {
       ${staffChange && tmpl.staff_id
         ? html`<ok-inline-feedback data-testid="appointments-series-staff-hint" tone="info" icon="swap-horizontal-outline"
             >${t('ui.seriesStaffChangeHint', { from: this.shownDate(this.fromOccurrence), upcoming, staff: staffChange.name })}</ok-inline-feedback
+          >`
+        : nothing}
+      ${serviceChange
+        ? html`<ok-inline-feedback data-testid="appointments-series-service-hint" tone="info" icon="swap-horizontal-outline"
+            >${t('ui.seriesServiceChangeHint', { from: this.shownDate(this.fromOccurrence), upcoming, service: serviceChange.name })}</ok-inline-feedback
           >`
         : nothing}
       <ok-inline-feedback data-testid="appointments-series-scope-hint" tone="info" icon="information-circle-outline"
