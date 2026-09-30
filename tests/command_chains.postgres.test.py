@@ -576,7 +576,9 @@ def check_the_gate_table_is_drained() -> None:
     where it is actually executed: after a run that COMMITS the table is empty, and after a run the
     gate REFUSES it is empty too (the rollback takes the refusing row with it).
     """
-    psql([], db=DB, stdin="DELETE FROM appointments__gate;")  # a known floor, whatever ran before
+    psql(
+        [], db=DB, stdin="DELETE FROM appointments__gate;"
+    )  # a known floor, whatever ran before
 
     # A reschedule that passes both gates: a-1 to a day nobody else uses.
     err = run_chain(
@@ -629,6 +631,9 @@ def check_the_gate_table_is_drained() -> None:
             30,
             now="2026-08-20T10:20:00+02:00",
             notes="edited",
+            # The runtime mints a fresh `:new_id` per command; since appointments#260 the edit
+            # writes a history line with it, so it cannot reuse the one the create chain took.
+            new_id="n-a-1-edit",
         ),
     )
     if err:
@@ -650,7 +655,9 @@ def check_control_still_sees_the_accumulation() -> None:
     psql([], db=DB, stdin="DELETE FROM appointments__gate;")
     without_drain = [c for c in RESCHEDULE_CHAIN if c != GATE_CLEAR]
     if without_drain == RESCHEDULE_CHAIN:
-        fail(f"the control cannot remove `{GATE_CLEAR}`: it is not in the reschedule chain")
+        fail(
+            f"the control cannot remove `{GATE_CLEAR}`: it is not in the reschedule chain"
+        )
         return
     err = run_chain(
         without_drain,

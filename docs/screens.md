@@ -120,6 +120,12 @@ what (appointments#253): *Professional changed — Bea → Carla* when the serie
 professional, *Service changed — Cut → Cut and colour* when its service changes, and the new time
 only when the time really moved. A move that changes neither stays *Time changed*.
 
+Editing **one appointment** (the `appointments.appointments.update` command the assistant, flows and
+API keys use) leaves the same entry (appointments#260): *Professional changed*, else *Service
+changed*, else *Time changed* with the new time, and who made the change. An edit that changes none
+of those — only the notes or the customer's contact details — leaves no entry, and neither does an
+edit the agenda refuses (for example because it would double-book the professional).
+
 ### Delete
 
 Destructive, with confirmation, and **admin only** (`appointments.delete_appointment`). Prefer
