@@ -236,13 +236,14 @@ def details(appointment_id: str, **changes) -> dict:
 
 
 def run(commands: list[str], params: dict, hub: str = HUB) -> str | None:
-    """Each operation in the chain gets its own system params (its own `:now`), as the runtime binds
-    a WASM handler's operations; one transaction for the whole command. None = committed."""
-    body = "\n".join(
-        shim(bind((MODULE_DIR / f).read_text(), {**params, **system(hub)}))
-        for c in commands
-        for f in files_of(c)
-    )
+    """Each operation in the chain gets its own system params (its own `:now`), shared by the files
+    of that operation's `sql[]`, as the runtime binds a WASM handler's operations; one transaction for
+    the whole command. None = committed."""
+    parts = []
+    for c in commands:
+        binds = {**params, **system(hub)}
+        parts.extend(shim(bind((MODULE_DIR / f).read_text(), binds)) for f in files_of(c))
+    body = "\n".join(parts)
     try:
         psql([], db=DB, stdin=f"BEGIN;\n{body}\nCOMMIT;\n")
         return None
