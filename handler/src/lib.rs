@@ -8223,6 +8223,61 @@ mod tests {
         assert!(out.operations.is_empty(), "a refused batch writes nothing");
     }
 
+    /// appointments#265: the batch judges its slots against her agenda indexed ONCE, and a slot
+    /// still clashes with an EARLIER slot of the same batch, which no read holds yet.
+    #[test]
+    fn a_batch_refuses_two_of_its_own_slots_that_overlap() {
+        let out = bulk_create_pure(batch_input(
+            batch(json!([slot("2026-08-03T11:00:00Z"), slot("2026-08-03T11:15:00Z")])),
+            None,
+        ))
+        .expect("an overlap is a refusal, not a command fault");
+        assert_eq!(
+            domain_code(&out).as_deref(),
+            Some("appointments.overlapping_appointment")
+        );
+        assert!(out.operations.is_empty(), "a refused batch writes nothing");
+    }
+
+    /// appointments#265: of two bookings of hers in the slot, the refusal names the FIRST in the
+    /// read's order — the long one that began hours earlier — exactly what walking every row did.
+    #[test]
+    fn a_batch_names_the_first_clash_of_the_read_not_the_nearest_one() {
+        let reads = json!({ "appointments.appointments.upcoming_for_staff": [
+            { "id": "a-long", "appointment_number": "APT-LONG", "staff_id": "s1", "status": "confirmed",
+              "start_datetime": "2026-08-03T08:00:00Z", "end_datetime": "2026-08-03T18:00:00Z" },
+            { "id": "a-short", "appointment_number": "APT-SHORT", "staff_id": "s1", "status": "confirmed",
+              "start_datetime": "2026-08-03T11:15:00Z", "end_datetime": "2026-08-03T11:45:00Z" }
+        ]});
+        let out = bulk_create_pure(batch_input(
+            batch(json!([slot("2026-08-10T11:00:00Z"), slot("2026-08-03T11:00:00Z")])),
+            Some(reads),
+        ))
+        .unwrap();
+        let refusal = out.error.expect("a domain refusal");
+        assert_eq!(refusal.code, "appointments.overlapping_appointment");
+        assert!(refusal.message.contains("APT-LONG"), "{}", refusal.message);
+    }
+
+    /// appointments#265: a booking of hers written with no offset (older rows) is still a clash:
+    /// the index only orders the rows that carry one, and the rest are walked as before.
+    #[test]
+    fn a_batch_clashes_with_a_booking_of_hers_written_without_an_offset() {
+        let reads = json!({ "appointments.appointments.upcoming_for_staff": [
+            { "id": "a-naive", "appointment_number": "APT-NAIVE", "staff_id": "s1", "status": "confirmed",
+              "start_datetime": "2026-08-03T11:15:00", "end_datetime": "2026-08-03T11:45:00" }
+        ]});
+        let out = bulk_create_pure(batch_input(
+            batch(json!([slot("2026-08-03T11:00:00Z")])),
+            Some(reads),
+        ))
+        .unwrap();
+        assert_eq!(
+            domain_code(&out).as_deref(),
+            Some("appointments.overlapping_appointment")
+        );
+    }
+
     /// A series skips the occurrences it cannot book and materializes the rest — the behaviour it
     /// already had for overlaps, now also for a blocked day.
     #[test]
