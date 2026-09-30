@@ -13532,6 +13532,54 @@ mod tests {
         );
     }
 
+    /// The assistant may send only what changes: a new length with no end is still a move.
+    #[test]
+    fn update_of_the_length_alone_without_an_end_is_judged() {
+        let mut p = edit_of_beas_cut();
+        p["duration_minutes"] = json!(90);
+        p["end_datetime"] = Value::Null;
+        let out = edit(p, json!({}));
+        assert!(out.error.is_none(), "{:?}", out.error);
+        let r = op_params(&out, "_reschedule_row");
+        assert_eq!(
+            r.get("end_datetime"),
+            Some(&json!("2026-07-31T12:30:00+00:00"))
+        );
+    }
+
+    /// …and so is a new start with no end: the end follows it, keeping the length.
+    #[test]
+    fn update_of_the_start_alone_without_an_end_is_judged() {
+        let mut p = edit_of_beas_cut();
+        p["start_datetime"] = json!("2026-07-31T15:00:00Z");
+        p["end_datetime"] = Value::Null;
+        let out = edit(p, json!({}));
+        assert!(out.error.is_none(), "{:?}", out.error);
+        let r = op_params(&out, "_reschedule_row");
+        assert_eq!(
+            r.get("start_datetime"),
+            Some(&json!("2026-07-31T15:00:00+00:00"))
+        );
+        assert_eq!(
+            r.get("end_datetime"),
+            Some(&json!("2026-07-31T16:00:00+00:00"))
+        );
+    }
+
+    /// A start that is not an instant is refused, not read as «the same time» and dropped.
+    #[test]
+    fn update_refuses_a_start_that_is_not_an_instant() {
+        let mut p = edit_of_beas_cut();
+        p["start_datetime"] = json!("tomorrow at five");
+        p["end_datetime"] = Value::Null;
+        let out = edit(p, json!({}));
+        assert_eq!(
+            domain_code(&out).as_deref(),
+            Some("appointments.invalid_start")
+        );
+        assert!(out.operations.is_empty());
+    }
+
     /// The end is arithmetic (start + length): an end that says something else is refused rather
     /// than silently dropped — «until 13:00» with the old 60 minutes is a request nobody can read.
     #[test]
