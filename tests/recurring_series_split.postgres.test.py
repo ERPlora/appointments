@@ -554,27 +554,40 @@ def check_staff_handover() -> None:
     if staff_of("appointments_appointment", "o-hand-sold") != "s1 Bea":
         fail("_recurring_move_occurrence.sql: it handed over an occurrence already turned into a sale")
 
+    def hand_series(series_id: str) -> None:
+        """`_recurring_edit` as THIS hub runs it, handing the series to Carla."""
+        run_command(
+            "commands/_recurring_edit.sql",
+            {
+                "hub_id": HUB,
+                "recurring_id": series_id,
+                "time": "11:00",
+                "duration_minutes": 30,
+                "frequency": "weekly",
+                "day_of_week": None,
+                "staff_id": "s2",
+                "staff_name": "Carla",
+                "current_user_id": "u1",
+                "now": NOW,
+            },
+        )
+
     seed_series("r-hand")
     psql(["-c", "UPDATE appointments_recurring SET staff_id = NULL, staff_name = '' WHERE id = 'r-hand'"], db=DB)
-    run_command(
-        "commands/_recurring_edit.sql",
-        {
-            "hub_id": HUB,
-            "recurring_id": "r-hand",
-            "time": "11:00",
-            "duration_minutes": 30,
-            "frequency": "weekly",
-            "day_of_week": None,
-            "staff_id": "s2",
-            "staff_name": "Carla",
-            "current_user_id": "u1",
-            "now": NOW,
-        },
-    )
+    hand_series("r-hand")
     if staff_of("appointments_recurring", "r-hand") != "s2 Carla":
         fail(
             "_recurring_edit.sql: the series did not become the new professional's "
             f"(got {staff_of('appointments_recurring', 'r-hand')!r})"
+        )
+    # The in-place edit now writes WHO does the series: its `hub_id` is the only thing between
+    # this hub and a neighbour's series whose id it happens to name.
+    seed_series("r-hand-neighbour", OTHER_HUB)
+    hand_series("r-hand-neighbour")
+    if staff_of("appointments_recurring", "r-hand-neighbour") != "s1 Bea":
+        fail(
+            "_recurring_edit.sql: it reached another hub's series "
+            f"(got {staff_of('appointments_recurring', 'r-hand-neighbour')!r})"
         )
 
 
