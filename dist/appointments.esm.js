@@ -2019,6 +2019,11 @@ var es_default = {
     historyByFrontDesk: "Lo hizo el mostrador",
     historyNewTime: "Nueva hora",
     historyReason: "Motivo",
+    historyActionStaffChanged: "Cambio de profesional",
+    historyActionServiceChanged: "Cambio de servicio",
+    historyProfessional: "Profesional",
+    historyService: "Servicio",
+    historyNobody: "Sin asignar",
     actionReschedule: "Reprogramar",
     rescheduleTitle: "Mover la cita",
     reschedulePastNotice: "Esta hora ya ha pasado. La cita quedar\xE1 en la hora en que de verdad se atendi\xF3.",
@@ -2286,6 +2291,11 @@ var en_default = {
     historyByFrontDesk: "Done at the front desk",
     historyNewTime: "New time",
     historyReason: "Reason",
+    historyActionStaffChanged: "Professional changed",
+    historyActionServiceChanged: "Service changed",
+    historyProfessional: "Professional",
+    historyService: "Service",
+    historyNobody: "Unassigned",
     actionReschedule: "Reschedule",
     rescheduleTitle: "Move appointment",
     reschedulePastNotice: "This time has already passed. The appointment will be moved to when it really took place.",
@@ -2748,7 +2758,9 @@ var ACTION_LABEL_KEYS = {
   completed: "ui.historyActionCompleted",
   cancelled: "ui.historyActionCancelled",
   no_show: "ui.historyActionNoShow",
-  rescheduled: "ui.historyActionRescheduled"
+  rescheduled: "ui.historyActionRescheduled",
+  staff_changed: "ui.historyActionStaffChanged",
+  service_changed: "ui.historyActionServiceChanged"
 };
 function actionVisual(action) {
   switch (action) {
@@ -2759,6 +2771,10 @@ function actionVisual(action) {
       return { icon: "checkmark-done-outline" };
     case "rescheduled":
       return { icon: "calendar-outline" };
+    case "staff_changed":
+      return { icon: "people-outline" };
+    case "service_changed":
+      return { icon: "swap-horizontal-outline" };
     case "confirmed":
       return { icon: "checkmark-circle-outline" };
     case "started":
@@ -2863,6 +2879,22 @@ var ErpAppointmentsHistory = class extends i3 {
       else if (channel === "staff") parts.push(t5("ui.historyByFrontDesk"));
       if (row.action === "rescheduled" && typeof value.start_datetime === "string") {
         parts.push(`${t5("ui.historyNewTime")}: ${formatWhen2(value.start_datetime, locale)}`);
+      }
+      if (row.action === "staff_changed" || row.action === "service_changed") {
+        const had = parseNewValue(row.old_value);
+        const text = (v3) => typeof v3 === "string" ? v3.trim() : "";
+        if (text(had.staff_id) !== text(value.staff_id)) {
+          const from = text(had.staff_name) || t5("ui.historyNobody");
+          const to = text(value.staff_name) || t5("ui.historyNobody");
+          parts.push(`${t5("ui.historyProfessional")}: ${from} \u2192 ${to}`);
+        }
+        if (text(had.service_id) !== text(value.service_id)) {
+          parts.push(`${t5("ui.historyService")}: ${text(had.service_name)} \u2192 ${text(value.service_name)}`);
+        }
+        const start = text(value.start_datetime);
+        if (start && start !== text(had.start_datetime)) {
+          parts.push(`${t5("ui.historyNewTime")}: ${formatWhen2(start, locale)}`);
+        }
       }
       if (row.action === "cancelled") {
         const reason = typeof value.reason === "string" ? value.reason.trim() : "";
