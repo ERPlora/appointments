@@ -3207,6 +3207,10 @@ pub fn update_recurring_series_pure(input: Value) -> Result<Output, String> {
     let mut cancelled_pattern_change = 0i64;
     // appointments#236: what could not be moved, with its date and code — said, never moved anyway.
     let mut skipped: Vec<Value> = Vec::new();
+    // appointments#251: NO per-call ceiling. A cap here moved the first fifty and left the rest
+    // at the old time on the closed half, unsaid. The edit is applied to the whole series in
+    // this one transaction, as Google Calendar and Outlook do; the occurrence read is already
+    // the whole series and `materialize`'s 400-day horizon bounds it.
     for row in occurrences.iter() {
         let date = as_str(row.get("occurrence_date").unwrap_or(&Value::Null));
         let Some(d) = parse_dt(&date) else { continue };
@@ -3229,9 +3233,6 @@ pub fn update_recurring_series_pure(input: Value) -> Result<Output, String> {
         let appointment_id = as_str(row.get("id").unwrap_or(&Value::Null));
         if appointment_id.is_empty() {
             continue;
-        }
-        if moved + cancelled_pattern_change + skipped.len() as i64 >= 50 {
-            break; // same per-invocation ceiling as `materialize` and `bulk_create`
         }
         // appointments#90 — PATTERN CHANGE. If the date no longer falls on the new pattern there is
         // no slot to move it to: it gets CANCELLED, which is what the receptionist would do by hand
@@ -6860,21 +6861,34 @@ mod tests {
         );
     }
 
-    /// The per-invocation ceiling counts what is left behind too: an occurrence that does not
-    /// move still writes an operation of its own (it follows the new half), so sixty dates that
-    /// do not fit are not sixty writes in one command.
-    #[test]
-    fn series_edit_ceiling_counts_the_occurrences_it_leaves_behind() {
+    // ── appointments#251 · a long series is edited WHOLE ────────────────────────────────────
+    //
+    // A 50-per-call ceiling moved the first fifty occurrences and left the rest at the old time,
+    // hanging off the closed half (so `materialize` of the new one booked those days twice), with
+    // nothing in the answer saying so. Google Calendar and Outlook apply the edit to the whole
+    // series, and so does this command now: every occurrence from the cut is treated in the same
+    // transaction — the occurrence read is already the whole series, and the 400-day horizon of
+    // `materialize` bounds how many there can be.
+
+    /// A daily series with `n` confirmed occurrences from 2026-08-17, the salon open every day
+    /// 09:00–18:00, edited from its first future date to `time`.
+    fn long_series_edit(n: i64, time: &str, extra_payload: Value) -> Output {
         let first = days_from_civil(2026, 8, 17);
-        let occurrences: Vec<Value> = (0..60)
-            .map(|n| {
-                let (y, mo, d) = civil_from_days(first + n);
+        let occurrences: Vec<Value> = (0..n)
+            .map(|k| {
+                let (y, mo, d) = civil_from_days(first + k);
                 occurrence(&format!("{y:04}-{mo:02}-{d:02}"), "confirmed", json!({}))
             })
             .collect();
+        let mut payload = edit_payload("2026-08-17", time);
+        if let Value::Object(fields) = extra_payload {
+            for (k, v) in fields {
+                payload[k] = v;
+            }
+        }
         let mut inp = series_edit_input(
-            edit_payload("2026-08-17", "19:00"),
-            template(json!({ "max_occurrences": null })),
+            payload,
+            template(json!({ "max_occurrences": null, "frequency": "daily", "day_of_week": null })),
             Value::Array(occurrences),
         );
         let every_day = Value::Array((0..7).map(|dow| bh(dow, "09:00", "18:00")).collect());
@@ -6885,9 +6899,52 @@ mod tests {
         }
         let out = update_recurring_series_pure(inp).unwrap();
         assert!(out.error.is_none(), "{:?}", out.error);
+        out
+    }
+
+    /// 🔴 THE SYMPTOM. Sixty future appointments, the time changed: all sixty move, onto the new
+    /// half, and the answer counts sixty — not the first fifty with ten left behind unsaid.
+    #[test]
+    fn series_edit_moves_every_occurrence_of_a_long_series() {
+        let out = long_series_edit(60, "12:00", json!({}));
+        let moves = ops_named(&out, "_recurring_move_occurrence");
+        assert_eq!(moves.len(), 60, "occurrences left at the old time");
+        let target = out.result.as_ref().unwrap()["recurring_id"].clone();
+        assert!(
+            moves
+                .iter()
+                .all(|op| op.params.get("recurring_id") == Some(&target)),
+            "an occurrence stayed on the closed half"
+        );
+        assert_eq!(out.result.as_ref().unwrap()["moved"], json!(60));
+        assert!(skipped_of(&out).is_empty());
+    }
+
+    /// The dates that do not fit are all reported, and all follow the new half: sixty after
+    /// closing time are sixty in `skipped`, sixty `_recurring_keep_occurrence` — none left
+    /// behind on the closed half for `materialize` to book twice.
+    #[test]
+    fn series_edit_reports_every_occurrence_it_leaves_behind() {
+        let out = long_series_edit(60, "19:00", json!({}));
         assert!(moved_ids(&out).is_empty(), "moved after closing time");
-        assert_eq!(skipped_of(&out).len(), 50);
-        assert_eq!(ops_named(&out, "_recurring_keep_occurrence").len(), 50);
+        assert_eq!(skipped_of(&out).len(), 60);
+        assert_eq!(ops_named(&out, "_recurring_keep_occurrence").len(), 60);
+    }
+
+    /// A pattern change on a long series treats every date too: daily → weekly on Mondays keeps
+    /// the Mondays (moved) and cancels the rest, across all sixty.
+    #[test]
+    fn series_edit_pattern_change_treats_every_occurrence_of_a_long_series() {
+        let out = long_series_edit(
+            60,
+            "12:00",
+            json!({ "frequency": "weekly", "day_of_week": 0 }),
+        );
+        let r = out.result.as_ref().unwrap();
+        // 2026-08-17 is a Monday: nine Mondays in sixty days (17/08 … 12/10).
+        assert_eq!(r["moved"], json!(9));
+        assert_eq!(r["cancelled_pattern_change"], json!(51));
+        assert_eq!(ops_named(&out, "_recurring_cancel_occurrence").len(), 51);
     }
 
     // ── appointments#248 · handing «this and following» to another professional ─────────────
