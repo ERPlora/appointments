@@ -25,7 +25,7 @@ A refused transition rolls back **everything**: no row change, no history entry 
 |---|---|
 | Create | `customer_id`, `customer_name`, `service_id`, `staff_id`, `start_datetime` |
 | Update | `appointment_id`, `customer_name`, `start_datetime`, `end_datetime`, `duration_minutes` |
-| Reschedule | `appointment_id`, `start_datetime`, `end_datetime`, `duration_minutes` |
+| Reschedule | `appointment_id`, `start_datetime` (optional: `duration_minutes`; `staff_id` + `service_id` together to hand it to another professional or service) |
 | Cancel | `appointment_id` (plus the reason) |
 | Create blocked time | `title`, `start_datetime`, `end_datetime` |
 | Create a recurring template | `customer_id`, `customer_name`, `service_id`, `service_name`, `staff_id`, `frequency`, `time`, `duration_minutes`, `start_date` |
@@ -120,7 +120,7 @@ module; nothing here writes to it.
 it is given literally. It must be handed local wall-clock time, not a UTC instant.
 
 **"Old appointments have no professional."** They predate the requirement and live in the
-**unassigned** lane. Edit them to assign someone.
+**unassigned** lane. Open them with **Edit** and pick a professional (appointments#263).
 
 **"I materialised a recurring template and got fewer appointments than expected."** Occurrences in
 the past and occurrences that clash are skipped, the window is bounded by your maximum advance

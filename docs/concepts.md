@@ -88,6 +88,11 @@ knows to ignore the appointment being moved.
 Rescheduling something already completed, cancelled or marked no-show **fails** rather than quietly
 succeeding.
 
+The same move can hand the appointment to another professional and/or service (appointments#263).
+Then the slot is judged on the **new** professional's agenda, hours and blocked time, and she must
+be bookable and perform the service — exactly what booking it fresh would check. The history line
+says what changed, from who to who.
+
 ## Availability has reasons, and they are worth reading
 
 When a slot is not free, the availability check tells you **why**:
