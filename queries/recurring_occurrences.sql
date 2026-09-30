@@ -16,8 +16,10 @@
 -- `converted_sale_id` para no tocar la que ya arrastra registro fiscal (ADR-0331).
 -- appointments#236: `staff_id` because an occurrence handed by hand to another professional cannot
 -- be judged on the series' professional's agenda and days — it is reported, never moved blind.
+-- appointments#253: who does it and its service, by name — the history line of a move says what
+-- the occurrence HAD, and by then the row is already rewritten.
 SELECT id, occurrence_date, status, start_datetime, end_datetime, duration_minutes,
-       converted_sale_id, staff_id
+       converted_sale_id, staff_id, staff_name, service_id, service_name
 FROM appointments_appointment
 WHERE hub_id = :hub_id
   AND is_deleted = 0

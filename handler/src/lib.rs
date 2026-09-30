@@ -3341,10 +3341,22 @@ pub fn update_recurring_series_pure(input: Value) -> Result<Output, String> {
         mv.insert("service_name".into(), json!(to_service_name));
         mv.insert("service_price".into(), json!(new_service_price.unwrap_or(0)));
         mv.insert("channel".into(), json!("staff"));
+        // appointments#253: what the occurrence HAD — from the read, never from the payload — so
+        // its history line can say who did it before and what changed; the row is already
+        // rewritten when that statement runs.
+        for (to, from) in [
+            ("from_staff_id", "staff_id"),
+            ("from_staff_name", "staff_name"),
+            ("from_service_id", "service_id"),
+            ("from_service_name", "service_name"),
+            ("from_start_datetime", "start_datetime"),
+        ] {
+            mv.insert(to.into(), json!(str_or(row, from, "")));
+        }
         // Every move leaves an audit row, like every other transition of this module: the audit
         // row now rides `_recurring_move_occurrence`'s own `sql[]` as a later statement of this
         // SAME command (appointments#196), because the runtime binds `:now` once per command and
-        // `_history_reschedule.sql` finds the row this run just wrote by `a.updated_at = :now`.
+        // `_history_series_move.sql` finds the row this run just wrote by `a.updated_at = :now`.
         ops.push(Operation::sql(
             "appointments._recurring_move_occurrence",
             mv,
@@ -6941,6 +6953,74 @@ mod tests {
         let result = out.result.clone().unwrap();
         assert_eq!(result["staff_changed"], json!(true));
         assert_eq!(result["moved"], json!(2));
+    }
+
+    // ── appointments#253 · the history says WHO did the appointment before ───────────────────
+    //
+    // The line each moved occurrence leaves said only «rescheduled», with the time it already
+    // had: nowhere did it say that another professional does it now, nor who did it before. The
+    // row is rewritten by then, so what it HAD travels with the move (`from_*`, from the
+    // occurrences read — never from the payload) and the history statement compares it with
+    // what the row has after the UPDATE.
+
+    /// 🔴 THE SYMPTOM. Handing the series to Carla: each move carries who did it (Bea), the
+    /// service it had and the slot it was on, as the occurrence row says.
+    #[test]
+    fn series_edit_move_carries_what_the_occurrence_had_for_its_history() {
+        let had = json!({ "staff_id": "s1", "staff_name": "Bea Pro", "service_id": "s-corte", "service_name": "Corte" });
+        let mut inp = series_edit_input(
+            change_staff_payload("2026-08-17"),
+            template(json!({ "max_occurrences": null })),
+            json!([
+                occurrence("2026-08-17", "confirmed", had.clone()),
+                // Handed to a third professional by hand before: what it had is HERS.
+                occurrence("2026-08-24", "pending", json!({ "staff_id": "s2", "staff_name": "Carla Pro", "service_id": "s-corte", "service_name": "Corte" }))
+            ]),
+        );
+        for (k, v) in carla_reads().as_object().unwrap() {
+            inp["context"]["reads"][k] = v.clone();
+        }
+        let out = update_recurring_series_pure(inp).unwrap();
+        assert!(out.error.is_none(), "{:?}", out.error);
+        let moved = ops_named(&out, "_recurring_move_occurrence");
+        let had_before: Vec<_> = moved
+            .iter()
+            .map(|op| {
+                (
+                    param(op, "from_staff_id"),
+                    param(op, "from_staff_name"),
+                    param(op, "from_service_id"),
+                    param(op, "from_service_name"),
+                    param(op, "from_start_datetime"),
+                )
+            })
+            .collect();
+        assert_eq!(
+            had_before,
+            vec![
+                ("s1".into(), "Bea Pro".into(), "s-corte".into(), "Corte".into(), "2026-08-17T11:00:00+02:00".into()),
+                ("s2".into(), "Carla Pro".into(), "s-corte".into(), "Corte".into(), "2026-08-24T11:00:00+02:00".into()),
+            ]
+        );
+    }
+
+    /// An occurrence of a series saved without a professional (before appointments#246) had
+    /// nobody: `from_staff_id` is empty, never a missing key the SQL would bind as garbage.
+    #[test]
+    fn series_edit_move_of_an_occurrence_without_a_professional_had_nobody() {
+        let mut inp = series_edit_input(
+            change_staff_payload("2026-08-17"),
+            template(json!({ "max_occurrences": null })),
+            json!([occurrence("2026-08-17", "confirmed", json!({ "staff_id": null, "staff_name": null }))]),
+        );
+        for (k, v) in carla_reads().as_object().unwrap() {
+            inp["context"]["reads"][k] = v.clone();
+        }
+        let out = update_recurring_series_pure(inp).unwrap();
+        let moved = ops_named(&out, "_recurring_move_occurrence");
+        assert_eq!(moved.len(), 1, "{:?}", out.error);
+        assert_eq!(moved[0].params.get("from_staff_id"), Some(&json!("")));
+        assert_eq!(moved[0].params.get("from_staff_name"), Some(&json!("")));
     }
 
     /// Without a change of professional, a move never writes one: an occurrence keeps whoever it

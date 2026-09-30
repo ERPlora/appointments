@@ -86,6 +86,8 @@ const ACTION_LABEL_KEYS: Record<string, string> = {
   cancelled: 'ui.historyActionCancelled',
   no_show: 'ui.historyActionNoShow',
   rescheduled: 'ui.historyActionRescheduled',
+  staff_changed: 'ui.historyActionStaffChanged',
+  service_changed: 'ui.historyActionServiceChanged',
 };
 
 /** The dot each action paints: a closed appointment (done, cancelled or missed) reads as
@@ -99,6 +101,10 @@ function actionVisual(action: string): { icon: string; color?: string } {
       return { icon: 'checkmark-done-outline' };
     case 'rescheduled':
       return { icon: 'calendar-outline' };
+    case 'staff_changed':
+      return { icon: 'people-outline' };
+    case 'service_changed':
+      return { icon: 'swap-horizontal-outline' };
     case 'confirmed':
       return { icon: 'checkmark-circle-outline' };
     case 'started':
@@ -224,6 +230,24 @@ export class ErpAppointmentsHistory extends LitElement {
       else if (channel === 'staff') parts.push(t('ui.historyByFrontDesk'));
       if (row.action === 'rescheduled' && typeof value.start_datetime === 'string') {
         parts.push(`${t('ui.historyNewTime')}: ${formatWhen(value.start_datetime, locale)}`);
+      }
+      if (row.action === 'staff_changed' || row.action === 'service_changed') {
+        // appointments#253: a series move says what the appointment HAD (old_value) and what it
+        // has now — who does it, which service, and the time only when it really moved.
+        const had = parseNewValue(row.old_value);
+        const text = (v: unknown): string => (typeof v === 'string' ? v.trim() : '');
+        if (text(had.staff_id) !== text(value.staff_id)) {
+          const from = text(had.staff_name) || t('ui.historyNobody');
+          const to = text(value.staff_name) || t('ui.historyNobody');
+          parts.push(`${t('ui.historyProfessional')}: ${from} → ${to}`);
+        }
+        if (text(had.service_id) !== text(value.service_id)) {
+          parts.push(`${t('ui.historyService')}: ${text(had.service_name)} → ${text(value.service_name)}`);
+        }
+        const start = text(value.start_datetime);
+        if (start && start !== text(had.start_datetime)) {
+          parts.push(`${t('ui.historyNewTime')}: ${formatWhen(start, locale)}`);
+        }
       }
       if (row.action === 'cancelled') {
         const reason = typeof value.reason === 'string' ? value.reason.trim() : '';

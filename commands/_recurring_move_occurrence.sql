@@ -10,9 +10,9 @@
 -- touched even if the handler got it wrong — a converted one drags a fiscal record and the
 -- VeriFactu chain is not rewritten (ADR-0331).
 --
--- `updated_at = :now` pins the run: `_history_reschedule.sql` runs right after it as a later
--- statement of this SAME `_recurring_move_occurrence` command, never as a separate operation, and
--- finds this row by that same mark — so a move that does not happen leaves NO audit trail (a
+-- `updated_at = :now` pins the run: `_history_series_move.sql` (appointments#253) runs right after
+-- it as a later statement of this SAME `_recurring_move_occurrence` command, never as a separate
+-- operation, and finds this row by that same mark — so a move that does not happen leaves NO audit trail (a
 -- separate operation would never match the pin, appointments#196).
 --
 -- appointments#248: when the edit hands the series to another professional the occurrence follows
