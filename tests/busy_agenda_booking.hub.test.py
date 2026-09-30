@@ -11,7 +11,9 @@ error on screen. Every slot re-walked the whole agenda.
 Only the runtime counts that fuel, so only a battery against the runtime can pin it: the unit
 tests in `handler/` run natively, where there is no budget at all. The sizes are the busiest chair
 this hub is built for: a salon and a professional open every day, a weekly break blocked to the
-400-day horizon and her agenda carrying 2 000 other live bookings ahead (five a day, every day to the horizon).
+400-day horizon and her agenda carrying 3 200 other live bookings ahead (eight a day, every day to
+the horizon). Measured against the handler of v1.1.129: the series already runs out at 1 500 of
+her bookings, the batch still fits at 2 000 and runs out at this size — so both doors are pinned.
 
 Usage: tests/busy_agenda_booking.hub.test.py   (exit 0 = green)
   Needs a live runtime with `taxes`+`customers`+`services`+`staff`+`appointments` installed:
@@ -23,8 +25,8 @@ import sys
 
 from hub_harness import Hub, business_instant, seed_links, set_booking_policy
 
-# The professional's OTHER live bookings ahead — a busy chair, five a day.
-OTHER_BOOKINGS = 2000
+# The professional's OTHER live bookings ahead — a busy chair, eight a day.
+OTHER_BOOKINGS = 3200
 EVERY_DAY = range(0, 7)  # 0=Monday … 6=Sunday
 BATCH = 50  # the largest batch `bulk_create` takes
 
@@ -108,10 +110,10 @@ def run(hub: Hub) -> int:
             },
         )
 
-    print(f"§0 her agenda is full: {OTHER_BOOKINGS} other bookings ahead, five a day")
+    print(f"§0 her agenda is full: {OTHER_BOOKINGS} other bookings ahead, eight a day")
     made = 0
     for day in horizon:
-        for hhmm in ("15:00", "16:00", "17:00", "18:00", "19:00"):
+        for hhmm in ("11:00", "12:00", "13:00", "15:00", "16:00", "17:00", "18:00", "19:00"):
             if made == OTHER_BOOKINGS:
                 break
             hub.run(

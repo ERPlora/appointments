@@ -40,7 +40,7 @@
 use erplora_guest_sdk::money;
 use erplora_guest_sdk::{DomainError, Operation, Output};
 use serde_json::{json, Map, Value};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 #[cfg(feature = "guest")]
 use extism_pdk::*;
@@ -1249,17 +1249,6 @@ const STAFF_TEAM_READ: &str = "staff.availability.team_day_at";
 const OUTSIDE_STAFF_HOURS: &str = "appointments.outside_staff_hours";
 const STAFF_HOURS_UNAVAILABLE: &str = "appointments.staff_hours_unavailable";
 
-/// Where a booking door reads the professional's day from. Every door judges it with the same
-/// [`staff_day_verdict`]; they differ only in which read their payload can key (appointments#229).
-#[derive(Clone, Copy, PartialEq)]
-enum StaffHoursGate {
-    /// `create` and `availability.check`: `day_at`, the one day the booking falls on.
-    OneDay,
-    /// The batch and the series, which book across many days: `days_ahead`, the rows of the
-    /// booking's own business date picked out of her days from today.
-    DaysAhead,
-}
-
 /// The PROFESSIONAL's working hours, enforced (appointments#98) and read from their owner.
 ///
 /// The business being open (#89, [`schedule_refusal`]) says nothing about whether this person
@@ -1276,28 +1265,11 @@ enum StaffHoursGate {
 ///
 /// Missing read, no `day` row, or a restricting answer about ANOTHER day = refusal
 /// (`staff_hours_unavailable`), never an open door and never a verdict about the wrong day.
-fn staff_hours_refusal(
-    input: &Value,
-    gate: StaffHoursGate,
-    tz: chrono_tz::Tz,
-    start: &Dt,
-    end: &Dt,
-) -> Option<DomainError> {
-    let day = match gate {
-        StaffHoursGate::OneDay => staff_day_of(input),
-        // The rows of the booking's own business date. A date the read does not answer (beyond
-        // the days it covers) has no `day` row, and that is a refusal, never «she is free».
-        StaffHoursGate::DaysAhead => match (
-            read_rows(input, STAFF_DAYS_READ),
-            business_wall_stamp(start, tz),
-        ) {
-            (Some(rows), Some(from)) => {
-                staff_day_in(rows.iter().filter(|row| text_at(row, "day") == from.date))
-            }
-            _ => Err(staff_hours_unavailable()),
-        },
-    };
-    staff_day_verdict(day, tz, start, end)
+///
+/// This is the ONE-day door (`create`, `availability.check`: `day_at`). The doors that book across
+/// many days judge her `days_ahead` rows through [`StaffAgenda`], indexed once (appointments#265).
+fn staff_hours_refusal(input: &Value, tz: chrono_tz::Tz, start: &Dt, end: &Dt) -> Option<DomainError> {
+    staff_day_verdict(staff_day_of(input), tz, start, end)
 }
 
 /// The move of an appointment (appointments#229), judged on its OWN professional: her rows picked
@@ -1631,7 +1603,7 @@ pub fn check_availability_pure(input: Value) -> Result<Output, String> {
     // appointments#98: the professional's hours, in the rank the door gives them. Asked about the
     // whole agenda (no professional), there is nobody's day to judge.
     if !str_or(&payload, "staff_id", "").trim().is_empty() {
-        match staff_hours_refusal(&input, StaffHoursGate::OneDay, business_tz(&input), &start, &end) {
+        match staff_hours_refusal(&input, business_tz(&input), &start, &end) {
             Some(refusal) if refusal.code == OUTSIDE_STAFF_HOURS => {
                 return Ok(verdict(0, "outside_staff_hours"));
             }
@@ -2103,7 +2075,7 @@ fn prepare_appointment(
     history_description: &str,
     series: Option<&SeriesStamp>,
     counter: CounterDeclaration,
-    staff_hours: StaffHoursGate,
+    agenda: Option<&StaffAgenda>,
 ) -> Result<Vec<Operation>, PrepareError> {
     let customer_name = resolved.customer_name.clone();
     if customer_name.is_empty() {
@@ -2173,23 +2145,30 @@ fn prepare_appointment(
     }
     // appointments#89: opening hours before blocked time, the same order `availability_check.sql`
     // reports its `reason` in — the screen and the door must not rank the same refusals differently.
-    if let Some(refusal) = schedule_refusal(input, business_tz(input), &start, &end) {
-        return Err(PrepareError::Domain(refusal));
-    }
-    // appointments#98: the professional's hours, right below the business's — the same rank
-    // `availability.check` gives them.
-    if let Some(refusal) = staff_hours_refusal(input, staff_hours, business_tz(input), &start, &end) {
+    // appointments#98: the professional's hours sit right below the business's, the same rank
+    // `availability.check` gives them. A door that books across many days hands over the agenda it
+    // read and indexed ONCE (appointments#265); `create` judges the reads of its one day.
+    let tz = business_tz(input);
+    let refusal = match agenda {
+        Some(agenda) => agenda.refusal(input, tz, &resolved.staff_id, &start, &end),
+        None => schedule_refusal(input, tz, &start, &end)
+            .or_else(|| staff_hours_refusal(input, tz, &start, &end))
+            .or_else(|| blocked_refusal(input, &resolved.staff_id, &start, &end)),
+    };
+    if let Some(refusal) = refusal {
         return Err(PrepareError::Domain(refusal));
     }
 
-    if let Some(refusal) = blocked_refusal(input, &resolved.staff_id, &start, &end) {
-        return Err(PrepareError::Domain(refusal));
-    }
-
+    // With an agenda, `candidates` holds only what this very call is booking: the read's
+    // appointments are asked of the index first, so the clash named is still the read's first.
     if !allow_overlapping_of(settings) {
-        if let Some(c) = candidates
-            .iter()
-            .find(|c| cmp_secs(&c.start, &end) < 0 && cmp_secs(&c.end, &start) > 0)
+        if let Some(c) = agenda
+            .and_then(|agenda| agenda.overlap("", &start, &end))
+            .or_else(|| {
+                candidates
+                    .iter()
+                    .find(|c| cmp_secs(&c.start, &end) < 0 && cmp_secs(&c.end, &start) > 0)
+            })
         {
             return Err(PrepareError::Domain(overlap_refusal(c)));
         }
@@ -2748,7 +2727,7 @@ pub fn create_appointment_pure(input: Value) -> Result<Output, String> {
         } else {
             CounterDeclaration::from_request(&input, &payload)
         },
-        StaffHoursGate::OneDay,
+        None,
     ) {
         Ok(ops) => ops,
         Err(PrepareError::Domain(refusal)) => return Ok(Output::new().with_error(refusal)),
@@ -2820,9 +2799,13 @@ pub fn bulk_create_pure(input: Value) -> Result<Output, String> {
             "The booking settings could not be read; the appointments were not booked.",
         )));
     };
-    let Some(mut candidates) = candidates_from(&input, &resolved.staff_id, "") else {
+    let Some(read) = candidates_from(&input, &resolved.staff_id, "") else {
         return Ok(Output::new().with_error(availability_unavailable()));
     };
+    // appointments#265: her agenda read and indexed ONCE for the whole batch. Judging every slot
+    // by walking it again ran a full agenda out of the WASM instruction budget, nothing booked.
+    let agenda = StaffAgenda::of(&input, &read);
+    let mut candidates: Vec<Candidate> = Vec::new();
     let mut ops: Vec<Operation> = Vec::new();
     let mut events: Vec<erplora_guest_sdk::Event> = Vec::new();
     let mut errors: Vec<String> = Vec::new();
@@ -2845,7 +2828,7 @@ pub fn bulk_create_pure(input: Value) -> Result<Output, String> {
             None,
             CounterDeclaration::NONE,
             // appointments#229: a batch books across many days, each judged on its own date.
-            StaffHoursGate::DaysAhead,
+            Some(&agenda),
         ) {
             Ok(item_ops) => {
                 // appointments#138: every booked slot is announced like a one-by-one booking —
@@ -3201,7 +3184,7 @@ fn update_recurring_series_of(input: &Value) -> Result<Output, String> {
     if !staff_id.is_empty() && read_rows(&input, STAFF_DAYS_READ).is_none() {
         return Ok(Output::new().with_error(staff_hours_unavailable()));
     }
-    let agenda = SeriesAgenda::of(&input, &candidates);
+    let agenda = StaffAgenda::of(&input, &candidates);
 
     // THE PAST IS FROZEN: the cut can never land before the business day that is running.
     let today = business_day_of(&ctx.now, ctx.tz);
@@ -3510,11 +3493,13 @@ fn update_recurring_series_of(input: &Value) -> Result<Output, String> {
     })))
 }
 
-/// What every occurrence of a series edit is judged against, read and measured ONCE before the
-/// loop (appointments#251). Judging each occurrence by walking the whole reads again — her 400
-/// days, every block, every live appointment of hers, parsing their dates each time — ran a daily
-/// series at the horizon five times over the WASM instruction budget; indexed, the edit is linear.
-struct SeriesAgenda<'a> {
+/// What every slot of a door that books across many days is judged against — a series edit
+/// (appointments#251), a batch and a series materialization (appointments#265) — read and measured
+/// ONCE before the loop. Judging each slot by walking the whole reads again — her 400 days, every
+/// block, every live appointment of hers, parsing their dates each time — ran a daily series at the
+/// horizon five times over the WASM instruction budget, and a batch on a full agenda out of it
+/// with nothing booked; indexed, every one of those doors is linear.
+struct StaffAgenda<'a> {
     /// Her live appointments, each with its slot already measured, in the read's order.
     candidates: Vec<(Secs, Secs, &'a Candidate)>,
     /// When every one of them carries an offset (what the runtime hands over): `(start in UTC,
@@ -3531,8 +3516,8 @@ struct SeriesAgenda<'a> {
     staff_days: Option<BTreeMap<&'a str, Vec<&'a Value>>>,
 }
 
-impl<'a> SeriesAgenda<'a> {
-    fn of(input: &'a Value, candidates: &'a [Candidate]) -> SeriesAgenda<'a> {
+impl<'a> StaffAgenda<'a> {
+    fn of(input: &'a Value, candidates: &'a [Candidate]) -> StaffAgenda<'a> {
         let staff_days = read_rows(input, STAFF_DAYS_READ).map(|rows| {
             let mut days: BTreeMap<&str, Vec<&Value>> = BTreeMap::new();
             for row in rows {
@@ -3571,7 +3556,7 @@ impl<'a> SeriesAgenda<'a> {
         let weekly = read_rows(input, SCHEDULES_HOURS_READ)
             .filter(|hours| !hours.is_empty())
             .map(|hours| std::array::from_fn(|dow| weekly_opening(hours, dow as i64)));
-        SeriesAgenda {
+        StaffAgenda {
             candidates,
             by_start,
             blocks: blocks_of(input),
@@ -3580,8 +3565,40 @@ impl<'a> SeriesAgenda<'a> {
         }
     }
 
-    /// [`staff_hours_refusal`]'s `DaysAhead` verdict, on the indexed days: a date the read does
-    /// not answer has no `day` row, and that is a refusal, never «she is free».
+    /// Why `[start, end)` cannot be booked for `staff_id` on the agenda, in `reschedule`'s and
+    /// `create`'s order: the opening hours, her working hours, blocked periods. The overlap is
+    /// asked apart ([`Self::overlap`]), because a setting can switch it off.
+    fn refusal(
+        &self,
+        input: &Value,
+        tz: chrono_tz::Tz,
+        staff_id: &str,
+        start: &Dt,
+        end: &Dt,
+    ) -> Option<DomainError> {
+        // Read on the business clock ONCE for the opening hours and her day alike.
+        let (Some(from), Some(to)) = (business_wall_stamp(start, tz), business_wall_stamp(end, tz))
+        else {
+            return Some(unreadable_on_the_business_clock());
+        };
+        if let Some(refusal) = schedule_refusal_at(input, &from, &to, self.weekly.as_ref()) {
+            return Some(refusal);
+        }
+        // A series without a professional (older than appointments#246) has nobody's day to
+        // judge. The batch and `materialize` always name one (`resolve_booking` refuses without).
+        if !staff_id.is_empty() {
+            if let Some(refusal) = self.staff_hours_refusal(&from, &to) {
+                return Some(refusal);
+            }
+        }
+        let Some(blocks) = &self.blocks else {
+            return Some(availability_unavailable());
+        };
+        block_refusal_in(blocks, staff_id, start, end)
+    }
+
+    /// Her `days_ahead` verdict, on the indexed days: a date the read does not answer has no
+    /// `day` row, and that is a refusal, never «she is free».
     fn staff_hours_refusal(&self, from: &WallStamp, to: &WallStamp) -> Option<DomainError> {
         let day = match &self.staff_days {
             Some(days) => staff_day_in(days.get(from.date.as_str()).into_iter().flatten().copied()),
@@ -3591,12 +3608,14 @@ impl<'a> SeriesAgenda<'a> {
     }
 
     /// Another live appointment of hers in `[start, end)`; `appointment_id`'s own old slot is not
-    /// a conflict with itself.
+    /// a conflict with itself. Empty = a slot being booked, which excludes nothing.
     fn overlap(&self, appointment_id: &str, start: &Dt, end: &Dt) -> Option<&'a Candidate> {
         let (start, end) = (Secs::of(start), Secs::of(end));
         let clashes = |i: usize| {
             let (c_start, c_end, c) = &self.candidates[i];
-            c.id != appointment_id && c_start.cmp(end) < 0 && c_end.cmp(start) > 0
+            (appointment_id.is_empty() || c.id != appointment_id)
+                && c_start.cmp(end) < 0
+                && c_end.cmp(start) > 0
         };
         let Some((order, max_end)) = self
             .by_start
@@ -3631,7 +3650,7 @@ impl<'a> SeriesAgenda<'a> {
 fn series_move_refusal(
     input: &Value,
     settings: &Value,
-    agenda: &SeriesAgenda,
+    agenda: &StaffAgenda,
     ctx: &HostCtx,
     staff_id: &str,
     appointment_id: &str,
@@ -3647,26 +3666,7 @@ fn series_move_refusal(
     if let Some(refusal) = lead_time_refusal(settings, start, &ctx.now, false) {
         return Some(refusal);
     }
-    // Read on the business clock ONCE for the opening hours and her day alike.
-    let (Some(from), Some(to)) = (
-        business_wall_stamp(start, ctx.tz),
-        business_wall_stamp(end, ctx.tz),
-    ) else {
-        return Some(unreadable_on_the_business_clock());
-    };
-    if let Some(refusal) = schedule_refusal_at(input, &from, &to, agenda.weekly.as_ref()) {
-        return Some(refusal);
-    }
-    // A series without a professional (older than appointments#246) has nobody's day to judge.
-    if !staff_id.is_empty() {
-        if let Some(refusal) = agenda.staff_hours_refusal(&from, &to) {
-            return Some(refusal);
-        }
-    }
-    let Some(blocks) = &agenda.blocks else {
-        return Some(availability_unavailable());
-    };
-    if let Some(refusal) = block_refusal_in(blocks, staff_id, start, end) {
+    if let Some(refusal) = agenda.refusal(input, ctx.tz, staff_id, start, end) {
         return Some(refusal);
     }
     if !allow_overlapping_of(settings) {
@@ -3978,9 +3978,12 @@ pub fn materialize_recurring_pure(input: Value) -> Result<Output, String> {
         return Err("no_occurrences: la plantilla no genera ocurrencias en la ventana".to_string());
     }
 
-    let Some(mut candidates) = candidates_from(&input, &resolved.staff_id, "") else {
+    let Some(read) = candidates_from(&input, &resolved.staff_id, "") else {
         return Ok(Output::new().with_error(availability_unavailable()));
     };
+    // appointments#265: her agenda read and indexed ONCE for the whole run, like the batch.
+    let agenda = StaffAgenda::of(&input, &read);
+    let mut candidates: Vec<Candidate> = Vec::new();
     let mut ops: Vec<Operation> = Vec::new();
     let mut events: Vec<erplora_guest_sdk::Event> = Vec::new();
     let mut created = 0usize;
@@ -3995,7 +3998,7 @@ pub fn materialize_recurring_pure(input: Value) -> Result<Output, String> {
             "The occurrences already booked for this recurring appointment could not be read; nothing was booked.",
         ));
     };
-    let booked: Vec<String> = rows
+    let booked: BTreeSet<String> = rows
         .iter()
         .map(|row| as_str(row.get("occurrence_date").unwrap_or(&Value::Null)))
         .filter(|d| !d.is_empty())
@@ -4027,7 +4030,7 @@ pub fn materialize_recurring_pure(input: Value) -> Result<Output, String> {
         }
         let (y, mo, d) = civil_from_days(days);
         let occurrence_date = format!("{y:04}-{mo:02}-{d:02}");
-        if booked.iter().any(|b| *b == occurrence_date) {
+        if booked.contains(&occurrence_date) {
             skipped_as_booked += 1;
             continue;
         }
@@ -4072,7 +4075,7 @@ pub fn materialize_recurring_pure(input: Value) -> Result<Output, String> {
             Some(&stamp),
             CounterDeclaration::NONE,
             // appointments#229: each occurrence judged on its own date, like the batch.
-            StaffHoursGate::DaysAhead,
+            Some(&agenda),
         ) {
             Ok(item_ops) => {
                 // appointments#172: every booked occurrence is announced like the other doors (#138,
@@ -6937,7 +6940,7 @@ mod tests {
     }
 
     fn agenda_overlap(candidates: &[Candidate], appointment_id: &str, start: &str, end: &str) -> Option<String> {
-        SeriesAgenda::of(&json!({}), candidates)
+        StaffAgenda::of(&json!({}), candidates)
             .overlap(appointment_id, &parse_dt(start).unwrap(), &parse_dt(end).unwrap())
             .map(|c| c.id.clone())
     }
