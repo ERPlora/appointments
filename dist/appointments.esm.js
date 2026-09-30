@@ -2050,6 +2050,8 @@ var es_default = {
     seriesCreate: "Crear cita peri\xF3dica",
     seriesSave: "Guardar de esta cita en adelante",
     seriesNoEnd: "Sin fin",
+    seriesEndsAfterOne: "Tras {n} cita",
+    seriesEndsAfter: "Tras {n} citas",
     seriesNotFound: "Esa cita peri\xF3dica ya no est\xE1 en este negocio.",
     seriesLoadError: "No se han podido cargar las citas peri\xF3dicas.",
     seriesSaveError: "No se ha podido guardar la cita peri\xF3dica.",
@@ -2314,6 +2316,8 @@ var en_default = {
     seriesCreate: "Create repeating appointment",
     seriesSave: "Save from this occurrence on",
     seriesNoEnd: "No end",
+    seriesEndsAfterOne: "After {n} appointment",
+    seriesEndsAfter: "After {n} appointments",
     seriesNotFound: "That repeating appointment is no longer in this business.",
     seriesLoadError: "Repeating appointments could not be loaded.",
     seriesSaveError: "The repeating appointment could not be saved.",
@@ -7635,7 +7639,7 @@ var ErpAppointmentsSeries = class extends i3 {
       { key: "frequency", header: t5("ui.colPattern"), format: (r6) => this.patternLabel(r6) },
       // appointments#217: dates in the hub's day/month order, not raw ISO.
       { key: "start_date", header: t5("ui.colStarts"), format: (r6) => this.shownDate(r6.start_date) },
-      { key: "end_date", header: t5("ui.colEnds"), format: (r6) => this.shownDate(r6.end_date) || t5("ui.seriesNoEnd") },
+      { key: "end_date", header: t5("ui.colEnds"), format: (r6) => this.endsLabel(r6) },
       {
         key: "is_active",
         header: t5("ui.colStatus"),
@@ -7653,6 +7657,23 @@ var ErpAppointmentsSeries = class extends i3 {
         `
       }
     ];
+  }
+  /**
+   * When the series stops (appointments#254): its end date, «After N appointments» when it has a
+   * fixed number of them, both when it has both (it stops at whichever comes first), and «No end»
+   * only with neither.
+   */
+  endsLabel(row) {
+    const t5 = (k2, p4) => erplora3().t(CATALOG3, k2, p4);
+    const parts = [];
+    const date = this.shownDate(row.end_date);
+    if (date) parts.push(date);
+    const count = Math.trunc(Number(row.max_occurrences));
+    if (Number.isFinite(count) && count >= 1) {
+      const plural = new Intl.PluralRules(erplora3().locale).select(count);
+      parts.push(t5(plural === "one" ? "ui.seriesEndsAfterOne" : "ui.seriesEndsAfter", { n: count }));
+    }
+    return parts.join(" \xB7 ") || t5("ui.seriesNoEnd");
   }
   /** A stored `YYYY-MM-DD` as the hub language writes it; anything unreadable is shown as stored. */
   shownDate(value) {
