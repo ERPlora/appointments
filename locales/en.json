@@ -163,6 +163,8 @@
     "seriesCreate": "Create repeating appointment",
     "seriesSave": "Save from this occurrence on",
     "seriesNoEnd": "No end",
+    "seriesEndsAfterOne": "After {n} appointment",
+    "seriesEndsAfter": "After {n} appointments",
     "seriesNotFound": "That repeating appointment is no longer in this business.",
     "seriesLoadError": "Repeating appointments could not be loaded.",
     "seriesSaveError": "The repeating appointment could not be saved.",

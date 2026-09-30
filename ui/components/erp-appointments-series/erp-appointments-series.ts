@@ -773,7 +773,7 @@ export class ErpAppointmentsSeries extends LitElement {
       { key: 'frequency', header: t('ui.colPattern'), format: (r) => this.patternLabel(r as unknown as Series) },
       // appointments#217: dates in the hub's day/month order, not raw ISO.
       { key: 'start_date', header: t('ui.colStarts'), format: (r) => this.shownDate(r.start_date) },
-      { key: 'end_date', header: t('ui.colEnds'), format: (r) => this.shownDate(r.end_date) || t('ui.seriesNoEnd') },
+      { key: 'end_date', header: t('ui.colEnds'), format: (r) => this.endsLabel(r as unknown as Series) },
       {
         key: 'is_active',
         header: t('ui.colStatus'),
@@ -792,6 +792,24 @@ export class ErpAppointmentsSeries extends LitElement {
         `,
       },
     ];
+  }
+
+  /**
+   * When the series stops (appointments#254): its end date, «After N appointments» when it has a
+   * fixed number of them, both when it has both (it stops at whichever comes first), and «No end»
+   * only with neither.
+   */
+  private endsLabel(row: Series): string {
+    const t = (k: string, p?: Record<string, unknown>): string => erplora().t(CATALOG, k, p);
+    const parts: string[] = [];
+    const date = this.shownDate(row.end_date);
+    if (date) parts.push(date);
+    const count = Math.trunc(Number(row.max_occurrences));
+    if (Number.isFinite(count) && count >= 1) {
+      const plural = new Intl.PluralRules(erplora().locale).select(count);
+      parts.push(t(plural === 'one' ? 'ui.seriesEndsAfterOne' : 'ui.seriesEndsAfter', { n: count }));
+    }
+    return parts.join(' · ') || t('ui.seriesNoEnd');
   }
 
   /** A stored `YYYY-MM-DD` as the hub language writes it; anything unreadable is shown as stored. */
