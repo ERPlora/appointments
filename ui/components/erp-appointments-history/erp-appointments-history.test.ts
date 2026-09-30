@@ -383,7 +383,9 @@ describe('every string the history paints exists in English and Spanish', () => 
   // Every action the module writes (handler `created`/`confirmed`, `_history_*.sql`) has its label.
   it('covers every action the module writes', () => {
     const written = new Set<string>(['created', 'confirmed']);
-    for (const f of ['cancel', 'complete', 'confirm', 'no_show', 'reschedule', 'start']) {
+    // appointments#263: `reschedule` writes through `_history_series_move.sql` (below) since it can
+    // hand the appointment to another professional or service.
+    for (const f of ['cancel', 'complete', 'confirm', 'no_show', 'start']) {
       const sql = readFileSync(join(ROOT, 'commands', `_history_${f}.sql`), 'utf8');
       const m = sql.match(/SELECT\s+:new_id,\s*:hub_id,\s*a\.id,\s*'([a-z_]+)'/);
       expect(m, `action literal in _history_${f}.sql`).not.toBeNull();

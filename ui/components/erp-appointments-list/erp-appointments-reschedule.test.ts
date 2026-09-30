@@ -14,12 +14,9 @@
 // `ok-data-table` already exposes for exactly this
 // ("open('create') → the edit form pre-filled", ok-data-table.ts:848).
 //
-// WHAT THE PANEL DOES NOT DO: change the professional. `reschedule` is Tier 0 SQL and moves time
-// only; letting the browser send a new `staff_id` + `staff_name` would put the professional's
-// identity back in the caller's hands, which is the very thing appointments#11 took OUT of
-// `create`. The professional rides along when `reschedule` becomes authoritative through `reads`
-// (appointments#10/#13). Here it is shown, read-only, so the receptionist knows whose column she
-// is moving inside.
+// The professional and the service are pickers of the same sheet since appointments#263 (see
+// erp-appointments-reschedule-handover.test.ts): they travel as ids and the handler resolves and
+// judges them. The customer stays out: another customer is another appointment.
 import { beforeEach, describe, expect, it } from 'vitest';
 
 // appointments#12 — the clock of these fixtures is PINNED, it is not the machine's.
@@ -188,7 +185,7 @@ describe('the row bar can move an appointment', () => {
     expect(form.getAttribute('data-mode'), 'the panel is in reschedule mode').toBe('reschedule');
     expect(
       form.querySelector('ion-select[data-role="customer"]'),
-      'reschedule moves time: customer and service are not up for grabs',
+      'another customer is another appointment: the customer is not up for grabs',
     ).toBeNull();
     // appointments#204: the new slot is a date field + a time field (keyboard-friendly).
     // appointments#205: the day is a text field in the hub language (see erp-appointments-hub-locale-dates.test.ts).

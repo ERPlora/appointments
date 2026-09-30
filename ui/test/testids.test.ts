@@ -100,7 +100,11 @@ const COVERED: Record<
       'appointments-list-reschedule-form',
       'appointments-list-reschedule-hint',
       'appointments-list-reschedule-history',
+      // appointments#263 — the appointment sheet picks the service and the professional.
+      'appointments-list-reschedule-needs-staff',
       'appointments-list-reschedule-past-notice',
+      'appointments-list-reschedule-service',
+      'appointments-list-reschedule-staff',
       'appointments-list-reschedule-start',
       // appointments#205 — same calendar, on the "Move" panel's date field.
       'appointments-list-reschedule-start-calendar',

@@ -14,10 +14,10 @@
 //      panel already uses) with the new start in UTC and the row's duration, then refreshes;
 //   3. a server refusal (overlap, blocked, lead time) calls `revert()` and is VISIBLE: the
 //      shell toast (`notify({type:'error'})`) plus the inline feedback the view already paints;
-//   4. a drop on ANOTHER lane is refused with a clear message and `revert()`: dragging between
-//      columns changes the PROFESSIONAL, and `reschedule` moves time only (appointments#11 took
-//      the professional's identity out of the caller's hands). Letting the drop "succeed" would
-//      save one thing (the hour) while showing another (the lane) — a lie in the agenda.
+//   4. a drop on ANOTHER lane hands the appointment to that professional (appointments#263):
+//      `reschedule` takes `staff_id` + `service_id` together and judges the slot on HER hours,
+//      blocked time and appointments. A drop on the «unassigned» lane is still refused: taking a
+//      professional away is not a move, and the command has no «nobody» to hand it to.
 //   5. a terminal appointment (cancelled/completed/…) cannot be dragged either: the command
 //      would refuse it, so the block goes back before anyone is told it moved.
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -301,7 +301,7 @@ describe('the agenda wires the drag of ok-scheduler (appointments#74)', () => {
     ).toBeGreaterThan(0);
   });
 
-  it('a drop on ANOTHER lane is refused: changing professional is not a drag (yet)', async () => {
+  it('a drop on ANOTHER lane hands the appointment to that professional, with its service (appointments#263)', async () => {
     const el = await mount();
     const scheduler = await staffView(el);
     el.day = '2026-08-07';
@@ -313,7 +313,27 @@ describe('the agenda wires the drag of ok-scheduler (appointments#74)', () => {
       from: { resourceId: 's1', start: '10:00', end: '10:30' },
     });
 
-    expect(rescheduleSent(), 'reschedule moves time only — the lane change must not half-succeed').toBeUndefined();
+    const sent = rescheduleSent();
+    expect(sent, 'the lane change is a handover, not a refusal').toBeTruthy();
+    expect(sent!.payload.staff_id).toBe('s2');
+    expect(sent!.payload.service_id, 'the professional is judged for the service: they travel together').toBe('sv1');
+    expect(String(sent!.payload.start_datetime).slice(0, 16)).toBe('2026-08-07T12:00');
+    expect(wasReverted(), 'an accepted handover does not go back').toBe(false);
+  });
+
+  it('a drop on the unassigned lane is refused: taking the professional away is not a move', async () => {
+    const el = await mount();
+    const scheduler = await staffView(el);
+    el.day = '2026-08-07';
+    const wasReverted = await drop(scheduler, {
+      id: 'a1',
+      resourceId: 'unassigned',
+      start: '12:00',
+      end: '12:30',
+      from: { resourceId: 's1', start: '10:00', end: '10:30' },
+    });
+
+    expect(rescheduleSent(), 'the command has no «nobody» to hand the appointment to').toBeUndefined();
     expect(wasReverted()).toBe(true);
     expect(notifyCalls.some((n) => n.type === 'error'), 'the receptionist is told WHY the block jumped back').toBe(true);
   });
