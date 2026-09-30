@@ -215,15 +215,20 @@ def run(hub: Hub) -> int:
     hub.check(
         "§3 every run fits in the kernel's budget (no `wasm` error)", failures, []
     )
+    # Her days are read 400 days ahead COUNTING today (`staff.availability.days_ahead`, days=400):
+    # the last date of the window is past what can be judged, so it is left for a later run —
+    # neither booked unjudged nor reported as refused.
+    judged = [day for day in horizon if day < today + datetime.timedelta(days=400)]
+    hub.check("§3 the window reaches one day past her read hours", len(horizon) - len(judged), 1)
     hub.check(
-        "§3 every day but her blocked Sundays booked",
+        "§3 every judged day but her blocked Sundays booked",
         booked,
-        len(horizon) - len(sundays),
+        len([day for day in judged if day not in sundays]),
     )
     hub.check(
         "§3 her blocked Sundays are reported, each with the `blocked` code",
         sorted((s["occurrence_date"], s["code"]) for s in skipped),
-        sorted((day.isoformat(), "appointments.blocked") for day in sundays),
+        sorted((day.isoformat(), "appointments.blocked") for day in sundays if day in judged),
     )
     occurrences = [
         row
