@@ -106,9 +106,13 @@ pub fn materialize_recurring(input: Json<erplora_guest_sdk::Input>) -> FnResult<
 #[cfg(feature = "guest")]
 #[plugin_fn]
 pub fn update_recurring_series(input: Json<erplora_guest_sdk::Input>) -> FnResult<Json<Output>> {
-    guest_result(update_recurring_series_pure(
-        input.into_inner().into_value(),
-    ))
+    let input = input.into_inner().into_value();
+    let out = update_recurring_series_of(&input);
+    // Not freed: the hub runs every call in a fresh instance whose memory is thrown away whole
+    // (`wasm-host`, `each_instance_gets_fresh_linear_memory`), and freeing a read of a series at
+    // the horizon node by node was 8 % of the instruction budget (appointments#251).
+    std::mem::forget(input);
+    guest_result(out)
 }
 
 #[cfg(feature = "guest")]
@@ -2951,7 +2955,11 @@ pub fn bulk_delete_pure(input: Value) -> Result<Output, String> {
 /// audit trail, new slot on the business clock. That is better than deleting and re-materializing,
 /// which is what loses the history the salon needs at the chair.
 pub fn update_recurring_series_pure(input: Value) -> Result<Output, String> {
-    let payload = payload_of(&input);
+    update_recurring_series_of(&input)
+}
+
+fn update_recurring_series_of(input: &Value) -> Result<Output, String> {
+    let payload = payload_of(input);
     let ctx = host_ctx(&input)?;
 
     let recurring_id = str_or(&payload, "recurring_id", "");
