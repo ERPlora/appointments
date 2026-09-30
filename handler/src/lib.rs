@@ -6814,6 +6814,34 @@ mod tests {
         assert!(skipped_of(&out).is_empty());
     }
 
+    /// appointments#251: the series judge reads the weekly hours once, one opening per weekday.
+    /// Each occurrence has to be judged against ITS weekday: the salon opens Mondays until 18:00
+    /// but Tuesdays only until 13:00, so moving the series to 15:00 moves Monday and skips Tuesday.
+    #[test]
+    fn series_edit_judges_each_occurrence_against_the_hours_of_its_own_weekday() {
+        let mut inp = series_edit_input(
+            edit_payload("2026-08-17", "15:00"),
+            template(json!({ "max_occurrences": null })),
+            json!([
+                occurrence("2026-08-17", "confirmed", json!({})),
+                occurrence("2026-08-18", "pending", json!({}))
+            ]),
+        );
+        let reads = sched_hours(json!([bh(0, "09:00", "18:00"), bh(1, "09:00", "13:00")]));
+        if let Value::Object(extra) = reads {
+            for (k, v) in extra {
+                inp["context"]["reads"][k] = v;
+            }
+        }
+        let out = update_recurring_series_pure(inp).unwrap();
+        assert!(out.error.is_none(), "{:?}", out.error);
+        assert_eq!(moved_ids(&out), vec!["apt-2026-08-17"]);
+        assert_eq!(
+            skipped_of(&out),
+            vec![("2026-08-18".to_string(), "appointments.outside_schedule".to_string())]
+        );
+    }
+
     /// A block on one of the dates skips that date only; the rest of the series moves.
     #[test]
     fn series_edit_skips_the_occurrence_that_lands_on_a_blocked_period() {
