@@ -401,6 +401,14 @@ def check_length_change() -> None:
         fail(
             f"{HISTORY_FILE}: a new length wrote {line['action']!r}, expected 'rescheduled'"
         )
+    after = parsed(line["new_value"]) if line else {}
+    if line and (after.get("end_datetime"), after.get("duration_minutes")) != (
+        "2026-09-14T12:00:00+02:00",
+        60,
+    ):
+        fail(
+            f"{HISTORY_FILE}: the line does not carry the new end and length (new={after!r})"
+        )
 
     # Same end, earlier start: only the start tells the move.
     seed(
