@@ -187,7 +187,7 @@ def judged_like_the_agenda(hub: Hub, links, day: str) -> None:
             "is_bookable": 1,
         },
     )
-    subject = book(hub, links, links.staff_id, instant(day, "17:00"), DURATION)
+    subject = book(hub, links, links.staff_id, instant(day, "13:00"), DURATION)
     edit = {
         "appointment_id": subject,
         "customer_name": "Cliente",
@@ -195,8 +195,8 @@ def judged_like_the_agenda(hub: Hub, links, day: str) -> None:
         "service_name": links.service_name,
         "staff_id": links.staff_id,
         "staff_name": links.staff_name,
-        "start_datetime": instant(day, "17:00"),
-        "end_datetime": instant(day, "17:30"),
+        "start_datetime": instant(day, "13:00"),
+        "end_datetime": instant(day, "13:30"),
         "duration_minutes": DURATION,
     }
 
@@ -227,8 +227,8 @@ def judged_like_the_agenda(hub: Hub, links, day: str) -> None:
         {
             "title": "Formación",
             "staff_id": links.other_staff_id,
-            "start_datetime": instant(day, "16:30"),
-            "end_datetime": instant(day, "18:30"),
+            "start_datetime": instant(day, "12:30"),
+            "end_datetime": instant(day, "14:30"),
         },
     )
     hub.refused(
