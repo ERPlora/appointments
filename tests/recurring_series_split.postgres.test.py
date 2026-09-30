@@ -975,7 +975,7 @@ def check_against_postgres() -> None:
             # appointments#196: the move leaves ITS line, pinned to this run and to no other.
             if rescheduled_lines(f"o-{status}") != "1":
                 fail(
-                    f"_history_reschedule.sql: a moved {status} occurrence has "
+                    f"_history_series_move.sql: a moved {status} occurrence has "
                     f"{rescheduled_lines(f'o-{status}')} «rescheduled» lines, expected exactly 1"
                 )
 
@@ -1008,7 +1008,7 @@ def check_against_postgres() -> None:
             # `updated_at = :now` stamp the UPDATE did not write (appointments#196).
             if rescheduled_lines(oid) != "0":
                 fail(
-                    f"_history_reschedule.sql: it recorded a move of an occurrence that is {label} "
+                    f"_history_series_move.sql: it recorded a move of an occurrence that is {label} "
                     "and did NOT move — the history line is not pinned to the run"
                 )
 
