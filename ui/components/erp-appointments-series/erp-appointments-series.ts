@@ -133,6 +133,8 @@ function bookingReport(answer: unknown): SeriesBookingReport | null {
  *  and the ones it left on their own slot. */
 interface SeriesMoveReport {
   moved: number;
+  /** appointments#248 — the professional they were handed to, when the edit changed it. */
+  staff?: string;
   skipped: { occurrence_date: string; code: string }[];
 }
 
@@ -270,6 +272,8 @@ export class ErpAppointmentsSeries extends LitElement {
   @state() editDayOfWeek = '';
   @state() editTime = '';
   @state() editDuration = '';
+  /** appointments#248 — who does the series from the cut on; starts as its current professional. */
+  @state() editStaffId = '';
 
   // ── appointments#209 — the NEW-series form ──────────────────────────────────────────────────
   // Linked catalogs: a series is booked against real records, same as erp-appointments-list.
@@ -344,6 +348,26 @@ export class ErpAppointmentsSeries extends LitElement {
   /** Professionals that can receive appointments: the ones the `staff` module marks bookable. */
   private get bookableStaff(): StaffMember[] {
     return this.staffMembers.filter((m) => Number(m.is_bookable) === 1 && m.status !== 'terminated');
+  }
+
+  /** appointments#248 — who the edit panel offers: the bookable professionals and, when she no
+   *  longer is one (she left, or stopped taking appointments), the series' current professional, so
+   *  the field still says who does it today instead of showing up empty. */
+  private get editStaffOptions(): { id: string; name: string }[] {
+    const options = this.bookableStaff.map((m) => ({ id: m.id, name: m.full_name }));
+    const tmpl = this.template;
+    if (tmpl?.staff_id && !options.some((o) => o.id === tmpl.staff_id)) {
+      options.unshift({ id: tmpl.staff_id, name: tmpl.staff_name || tmpl.staff_id });
+    }
+    return options;
+  }
+
+  /** appointments#248 — the professional picked in the edit panel when it is not the series' one. */
+  private get staffChange(): { id: string; name: string } | null {
+    const tmpl = this.template;
+    if (!tmpl || !this.editStaffId || this.editStaffId === (tmpl.staff_id ?? '')) return null;
+    const picked = this.editStaffOptions.find((o) => o.id === this.editStaffId);
+    return { id: this.editStaffId, name: picked?.name ?? this.editStaffId };
   }
 
   async refresh(): Promise<void> {
@@ -452,6 +476,7 @@ export class ErpAppointmentsSeries extends LitElement {
       this.editTime = tmpl.time ?? '';
       this.timeDraft = { ...this.timeDraft, edit: null };
       this.editDuration = String(tmpl.duration_minutes ?? '');
+      this.editStaffId = tmpl.staff_id ?? '';
       // EL PASADO ESTÁ CONGELADO: el corte nunca apunta a una ocurrencia ya servida. Si no queda
       // ninguna futura reservada, se corta hoy — que es lo que el servidor haría de todos modos.
       const today = todayISO();
@@ -516,9 +541,10 @@ export class ErpAppointmentsSeries extends LitElement {
     const tmpl = this.template;
     if (!tmpl || this.saving) return;
     const changed = this.changedFields();
+    const staffChange = this.staffChange;
     // Guardar sin tocar nada no escribe: el command lo rechazaría («nada que cambiar») y el panel
     // habría prometido algo que no ocurrió.
-    if (Object.keys(changed).length === 0) {
+    if (Object.keys(changed).length === 0 && !staffChange) {
       this.closePanel();
       return;
     }
@@ -531,7 +557,12 @@ export class ErpAppointmentsSeries extends LitElement {
           recurring_id: this.editingId,
           // appointments#236: the series' professional as SELECTOR (the handler refuses another
           // one) — every occurrence it moves is judged on HER agenda and working days.
-          staff_id: tmpl.staff_id ?? '',
+          // appointments#248: on a change of professional the current one travels as
+          // `current_staff_id` (the selector), the new one as `staff_id` and the service, which
+          // decides whether she can take it; the moved occurrences are judged on HER agenda.
+          ...(staffChange
+            ? { current_staff_id: tmpl.staff_id ?? '', staff_id: staffChange.id, service_id: tmpl.service_id ?? '' }
+            : { staff_id: tmpl.staff_id ?? '' }),
           scope: 'this_and_following',
           from_occurrence_date: this.fromOccurrence,
           ...changed,
@@ -542,18 +573,32 @@ export class ErpAppointmentsSeries extends LitElement {
       // que no, pero no reserva los días nuevos: eso es `materialize`, que es quien tiene las
       // reads de catálogo y disponibilidad. Sin este paso la clienta se queda sin nada en el día
       // nuevo, que es la mitad del gesto que ella pidió.
+      // appointments#248: a series that had no professional had nothing booked — getting one is
+      // what makes it bookable, so saving books it (with her: the new template's selector).
       let report: SeriesBookingReport | null = null;
-      if (result?.pattern_changed === true) {
-        report = await this.bookWindow(String(result.recurring_id ?? this.editingId), tmpl);
+      const gotItsFirstProfessional = !tmpl.staff_id && !!staffChange;
+      if (result?.pattern_changed === true || gotItsFirstProfessional) {
+        const booked = staffChange ? { ...tmpl, staff_id: staffChange.id } : tmpl;
+        report = await this.bookWindow(String(result?.recurring_id ?? this.editingId), booked);
       }
       const notMoved = result && Array.isArray(result.skipped) ? skippedDates(result) : [];
-      this.notifyOutcome(result, notMoved.length > 0);
+      // Nothing of it was booked before: «0 moved · 0 cancelled» would say nothing happened.
+      if (!gotItsFirstProfessional) this.notifyOutcome(result, notMoved.length > 0);
       this.closePanel();
       await this.refresh();
       // After refresh(), which clears them: the dates left on their slot and the new days that
       // could not be booked are said.
-      this.moveReport = notMoved.length > 0 ? { moved: Number(result?.moved ?? 0), skipped: notMoved } : null;
-      this.showSkipped(report);
+      this.moveReport =
+        notMoved.length > 0
+          ? {
+              moved: Number(result?.moved ?? 0),
+              skipped: notMoved,
+              ...(staffChange && result?.staff_changed === true ? { staff: staffChange.name } : {}),
+            }
+          : null;
+      if (!this.showSkipped(report) && gotItsFirstProfessional) {
+        erplora().notify?.({ type: 'success', message: erplora().t(CATALOG, 'ui.seriesMaterialized') });
+      }
     } catch (e) {
       this.editError = e instanceof Error && e.message ? e.message : erplora().t(CATALOG, 'ui.seriesSaveError');
     } finally {
@@ -815,7 +860,11 @@ export class ErpAppointmentsSeries extends LitElement {
    *  with its reason, as Mindbody or SimplyBook.me say it when a repeating edit leaves dates out. */
   private renderMoveReport(report: SeriesMoveReport, t: (k: string, p?: Record<string, unknown>) => string) {
     return html`<ok-inline-feedback data-testid="appointments-series-not-moved" tone="warning" icon="alert-circle-outline">
-      <strong>${t('ui.seriesMovedSkipped', { moved: report.moved, skipped: report.skipped.length })}</strong>
+      <strong
+        >${report.staff
+          ? t('ui.seriesReassignedSkipped', { moved: report.moved, skipped: report.skipped.length, staff: report.staff })
+          : t('ui.seriesMovedSkipped', { moved: report.moved, skipped: report.skipped.length })}</strong
+      >
       <ul class="skipped">
         ${report.skipped.map(
           (s) => html`<li data-testid=${`appointments-series-not-moved-${s.occurrence_date}`}>
@@ -831,6 +880,7 @@ export class ErpAppointmentsSeries extends LitElement {
     if (!tmpl) return nothing;
     const { upcoming, invoiced } = this.affected;
     const booked = this.occurrences.length;
+    const staffChange = this.staffChange;
     return html`<form slot="create" data-testid="appointments-series-form" data-mode="series-edit" class="form" @submit=${(e: Event) => this.submitEdit(e)}>
       <p class="ctx" data-role="series-context">
         <strong>${tmpl.customer_name}</strong> · ${tmpl.service_name} · ${tmpl.staff_name || '—'}
@@ -853,6 +903,21 @@ export class ErpAppointmentsSeries extends LitElement {
           >`
         : nothing}
       <div class="grid">
+        <!-- appointments#248: the professional of the series, for this and the following dates —
+             the front desk hands a series to someone else without deleting it (Fresha, Square). -->
+        <ion-select
+          data-testid="appointments-series-staff"
+          data-role="series-staff"
+          fill="outline"
+          mode="md"
+          label=${t('ui.fieldStaff')}
+          placeholder=${t('ui.pickStaff')}
+          label-placement="floating"
+          .value=${this.editStaffId}
+          @ionChange=${(e: any) => (this.editStaffId = e.target.value ?? '')}
+        >
+          ${this.editStaffOptions.map((o) => html`<ion-select-option .value=${o.id}>${o.name}</ion-select-option>`)}
+        </ion-select>
         <ion-select
           data-testid="appointments-series-frequency"
           fill="outline"
@@ -909,6 +974,16 @@ export class ErpAppointmentsSeries extends LitElement {
           @ionInput=${(e: any) => (this.editDuration = e.target.value)}
         ></ion-input>
       </div>
+      ${!tmpl.staff_id && !staffChange
+        ? html`<ok-inline-feedback data-testid="appointments-series-no-staff" tone="warning" icon="person-outline"
+            >${t('ui.seriesPickStaffToBook')}</ok-inline-feedback
+          >`
+        : nothing}
+      ${staffChange && tmpl.staff_id
+        ? html`<ok-inline-feedback data-testid="appointments-series-staff-hint" tone="info" icon="swap-horizontal-outline"
+            >${t('ui.seriesStaffChangeHint', { from: this.shownDate(this.fromOccurrence), upcoming, staff: staffChange.name })}</ok-inline-feedback
+          >`
+        : nothing}
       <ok-inline-feedback data-testid="appointments-series-scope-hint" tone="info" icon="information-circle-outline"
         >${t('ui.seriesScopeHint', { from: this.shownDate(this.fromOccurrence) })}</ok-inline-feedback
       >

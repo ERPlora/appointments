@@ -351,10 +351,13 @@ def seed_occurrence(
     )
 
 
-def move(appointment_id: str, hub: str = HUB) -> None:
+def move(appointment_id: str, hub: str = HUB, staff_id: str = "", staff_name: str = "") -> None:
     """The WHOLE `sql[]` of `_recurring_move_occurrence`, bound ONCE — the way the runtime runs
-    one operation: the move and then its history line, sharing `:now` (appointments#196)."""
+    one operation: the move and then its history line, sharing `:now` (appointments#196). An
+    empty `staff_id` is what the handler sends when the edit changes no professional."""
     params = {
+        "staff_id": staff_id,
+        "staff_name": staff_name,
         "hub_id": hub,
         "appointment_id": appointment_id,
         "recurring_id": "r2",
@@ -521,6 +524,73 @@ def check_keep_door() -> None:
         fail("_recurring_keep_occurrence.sql: it reached another hub's appointment")
 
 
+def staff_of(table: str, row_id: str) -> str:
+    return scalar(
+        f"SELECT COALESCE(staff_id, '') || ' ' || staff_name FROM {table} "
+        f"WHERE id = {literal(row_id)}"
+    )
+
+
+def check_staff_handover() -> None:
+    """appointments#248 — handing «this and following» to another professional: the moved
+    occurrence goes to her (id AND name), an empty professional keeps whoever it has, and the
+    in-place edit writes the template's professional, repairing one created without it."""
+    seed_occurrence("o-hand", HUB, "r1", "2026-12-07")
+    move("o-hand", staff_id="s2", staff_name="Carla")
+    if staff_of("appointments_appointment", "o-hand") != "s2 Carla":
+        fail(
+            "_recurring_move_occurrence.sql: the occurrence did not follow the new professional "
+            f"(got {staff_of('appointments_appointment', 'o-hand')!r})"
+        )
+    seed_occurrence("o-stay", HUB, "r1", "2026-12-08")
+    move("o-stay")
+    if staff_of("appointments_appointment", "o-stay") != "s1 Bea":
+        fail(
+            "_recurring_move_occurrence.sql: a move that changes no professional reassigned it "
+            f"(got {staff_of('appointments_appointment', 'o-stay')!r})"
+        )
+    seed_occurrence("o-hand-sold", HUB, "r1", "2026-12-09", sale="sale-9")
+    move("o-hand-sold", staff_id="s2", staff_name="Carla")
+    if staff_of("appointments_appointment", "o-hand-sold") != "s1 Bea":
+        fail("_recurring_move_occurrence.sql: it handed over an occurrence already turned into a sale")
+
+    def hand_series(series_id: str) -> None:
+        """`_recurring_edit` as THIS hub runs it, handing the series to Carla."""
+        run_command(
+            "commands/_recurring_edit.sql",
+            {
+                "hub_id": HUB,
+                "recurring_id": series_id,
+                "time": "11:00",
+                "duration_minutes": 30,
+                "frequency": "weekly",
+                "day_of_week": None,
+                "staff_id": "s2",
+                "staff_name": "Carla",
+                "current_user_id": "u1",
+                "now": NOW,
+            },
+        )
+
+    seed_series("r-hand")
+    psql(["-c", "UPDATE appointments_recurring SET staff_id = NULL, staff_name = '' WHERE id = 'r-hand'"], db=DB)
+    hand_series("r-hand")
+    if staff_of("appointments_recurring", "r-hand") != "s2 Carla":
+        fail(
+            "_recurring_edit.sql: the series did not become the new professional's "
+            f"(got {staff_of('appointments_recurring', 'r-hand')!r})"
+        )
+    # The in-place edit now writes WHO does the series: its `hub_id` is the only thing between
+    # this hub and a neighbour's series whose id it happens to name.
+    seed_series("r-hand-neighbour", OTHER_HUB)
+    hand_series("r-hand-neighbour")
+    if staff_of("appointments_recurring", "r-hand-neighbour") != "s1 Bea":
+        fail(
+            "_recurring_edit.sql: it reached another hub's series "
+            f"(got {staff_of('appointments_recurring', 'r-hand-neighbour')!r})"
+        )
+
+
 def check_against_postgres() -> None:
     if failures:
         return
@@ -667,6 +737,7 @@ def check_against_postgres() -> None:
 
         check_cancel_door()
         check_keep_door()
+        check_staff_handover()
     finally:
         psql(["-c", f'DROP DATABASE IF EXISTS "{DB}"'])
 

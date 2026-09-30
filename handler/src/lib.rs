@@ -1791,27 +1791,10 @@ fn resolve_booking(
             "That service cannot be booked: it is inactive or not bookable.",
         )));
     }
-    let Some(member) = members.iter().find(|r| same_id(r, "id", &staff_id)) else {
-        return Ok(Err(DomainError::new(
-            "appointments.staff_not_found",
-            "That professional does not exist in this business.",
-        )));
+    let (staff_name, competency) = match resolve_professional(members, eligible, &staff_id) {
+        Ok(found) => found,
+        Err(refusal) => return Ok(Err(refusal)),
     };
-    let member_active = str_or(member, "status", "active") == "active";
-    let member_bookable = member.get("is_bookable").map(as_bool).unwrap_or(true);
-    if !member_active || !member_bookable {
-        return Ok(Err(DomainError::new(
-            "appointments.staff_not_bookable",
-            "That professional cannot take appointments: inactive or not bookable.",
-        )));
-    }
-    let competency = eligible.iter().find(|r| same_id(r, "staff_id", &staff_id));
-    if !eligible.is_empty() && competency.is_none() {
-        return Ok(Err(DomainError::new(
-            "appointments.staff_not_eligible",
-            "That professional does not perform this service.",
-        )));
-    }
 
     let override_price = competency
         .and_then(|c| c.get("custom_price"))
@@ -1827,20 +1810,6 @@ fn resolve_booking(
         .filter(|v| !v.is_null())
         .map(|v| as_i64(v, 0))
         .filter(|d| *d >= 1);
-    let staff_name = {
-        let full = str_or(member, "full_name", "");
-        if full.is_empty() {
-            format!(
-                "{} {}",
-                str_or(member, "first_name", ""),
-                str_or(member, "last_name", "")
-            )
-            .trim()
-            .to_string()
-        } else {
-            full
-        }
-    };
 
     Ok(Ok(ResolvedBooking {
         customer_id,
@@ -1855,6 +1824,54 @@ fn resolve_booking(
         staff_id,
         staff_name,
     }))
+}
+
+/// The professional `staff_id` against `staff.members.get` and
+/// `staff.services.eligible_for_service`: her name and her competency row for the service, or the
+/// refusal that says why she cannot take it (the rules of [`resolve_booking`]). Shared with the
+/// series edit that hands «this and following» to another professional (appointments#248), so a
+/// series can never be given to someone a single booking would refuse.
+fn resolve_professional<'a>(
+    members: &[Value],
+    eligible: &'a [Value],
+    staff_id: &str,
+) -> Result<(String, Option<&'a Value>), DomainError> {
+    let same_id =
+        |row: &&Value, key: &str| as_str(row.get(key).unwrap_or(&Value::Null)) == staff_id;
+    let Some(member) = members.iter().find(|r| same_id(r, "id")) else {
+        return Err(DomainError::new(
+            "appointments.staff_not_found",
+            "That professional does not exist in this business.",
+        ));
+    };
+    let member_active = str_or(member, "status", "active") == "active";
+    let member_bookable = member.get("is_bookable").map(as_bool).unwrap_or(true);
+    if !member_active || !member_bookable {
+        return Err(DomainError::new(
+            "appointments.staff_not_bookable",
+            "That professional cannot take appointments: inactive or not bookable.",
+        ));
+    }
+    let competency = eligible.iter().find(|r| same_id(r, "staff_id"));
+    if !eligible.is_empty() && competency.is_none() {
+        return Err(DomainError::new(
+            "appointments.staff_not_eligible",
+            "That professional does not perform this service.",
+        ));
+    }
+    let full = str_or(member, "full_name", "");
+    let name = if full.is_empty() {
+        format!(
+            "{} {}",
+            str_or(member, "first_name", ""),
+            str_or(member, "last_name", "")
+        )
+        .trim()
+        .to_string()
+    } else {
+        full
+    };
+    Ok((name, competency))
 }
 
 // ───────────────────────────── núcleo: una cita → intenciones ─────────────────────────────
@@ -2877,13 +2894,21 @@ pub fn update_recurring_series_pure(input: Value) -> Result<Output, String> {
         }
     };
 
+    // appointments#248: the CURRENT professional travels as the selector (`current_staff_id`) and
+    // `staff_id` is the one who governs from the cut on — the reads key on her. Without
+    // `current_staff_id`, `staff_id` is the selector alone, as it was before (appointments#236).
+    let current_staff = payload.get("current_staff_id").map(as_str);
+    let staff_id = str_or(&payload, "staff_id", "");
+    let staff_requested = current_staff.as_ref().is_some_and(|c| *c != staff_id);
+
     if new_time.is_none()
         && new_duration.is_none()
         && new_frequency.is_none()
         && new_day_of_week.is_none()
+        && !staff_requested
     {
         return Err(
-            "invalid_payload: nada que cambiar (se espera `time`, `duration_minutes`, `frequency` o `day_of_week`)"
+            "invalid_payload: nothing to change (expected `time`, `duration_minutes`, `frequency`, `day_of_week` or a new `staff_id`)"
                 .to_string(),
         );
     }
@@ -2911,16 +2936,52 @@ pub fn update_recurring_series_pure(input: Value) -> Result<Output, String> {
     };
 
     // appointments#236: every occurrence that moves is judged like a single `reschedule`, on the
-    // series' professional's agenda and days. She travels as a SELECTOR (the only place
-    // `reads.params` can key those reads on), checked against the template the runtime loaded —
-    // judging the moves on somebody else's agenda would be judging nothing.
-    let staff_id = str_or(&tmpl, "staff_id", "");
-    if str_or(&payload, "staff_id", "") != staff_id {
+    // agenda and days of the professional who governs from the cut on. The reads are keyed on
+    // `payload.staff_id` (the only place `reads.params` can key them on), so the selector is
+    // checked against the template the runtime loaded — judging the moves on somebody else's
+    // agenda would be judging nothing.
+    let tmpl_staff = str_or(&tmpl, "staff_id", "");
+    if current_staff.as_deref().unwrap_or(staff_id.as_str()) != tmpl_staff {
         return Ok(refuse(
             "appointments.recurring_mismatch",
             "The recurring appointment does not match the professional sent; nothing was changed.",
         ));
     }
+    // appointments#248: a NEW professional must be able to take the series, like a single booking
+    // would require of her — and her competency is read for the series' service, which is why the
+    // service travels as a selector too.
+    let new_staff_name = if staff_id != tmpl_staff {
+        if staff_id.trim().is_empty() {
+            return Err(
+                "invalid_payload: staff_id (the new professional) cannot be empty".to_string(),
+            );
+        }
+        if str_or(&payload, "service_id", "") != str_or(&tmpl, "service_id", "") {
+            return Ok(refuse(
+                "appointments.recurring_mismatch",
+                "The recurring appointment does not match the service sent; nothing was changed.",
+            ));
+        }
+        let (Some(members), Some(eligible)) = (
+            read_rows(&input, "staff.members.get"),
+            read_rows(&input, "staff.services.eligible_for_service"),
+        ) else {
+            return Ok(refuse(
+                "appointments.catalog_unavailable",
+                "The staff catalogue could not be read; nothing was changed.",
+            ));
+        };
+        match resolve_professional(members, eligible, &staff_id) {
+            Ok((name, _)) => Some(name),
+            Err(refusal) => return Ok(Output::new().with_error(refusal)),
+        }
+    } else {
+        None
+    };
+    let staff_changed = new_staff_name.is_some();
+    let governing_staff_name = new_staff_name
+        .clone()
+        .unwrap_or_else(|| str_or(&tmpl, "staff_name", ""));
     // What the judges need, or nothing moves: a read that did not arrive is not «nothing says no».
     let Some(settings) = settings_read(&input) else {
         return Ok(refuse(
@@ -2989,6 +3050,9 @@ pub fn update_recurring_series_pure(input: Value) -> Result<Output, String> {
             "day_of_week".into(),
             day_of_week.map(Value::from).unwrap_or(Value::Null),
         );
+        // appointments#248: the professional who governs — the template's own when unchanged.
+        p.insert("staff_id".into(), json!(staff_id));
+        p.insert("staff_name".into(), json!(governing_staff_name));
         ops.push(Operation::sql("appointments._recurring_edit", p));
         recurring_id.clone()
     } else {
@@ -3007,16 +3071,13 @@ pub fn update_recurring_series_pure(input: Value) -> Result<Output, String> {
         let mut split = Map::new();
         split.insert("new_id".into(), json!(new_series_id));
         split.insert("split_from_id".into(), json!(recurring_id));
-        for key in [
-            "customer_id",
-            "customer_name",
-            "service_id",
-            "service_name",
-            "staff_id",
-            "staff_name",
-        ] {
+        for key in ["customer_id", "customer_name", "service_id", "service_name"] {
             split.insert(key.into(), json!(str_or(&tmpl, key, "")));
         }
+        // appointments#248: the new half is the governing professional's (the same one when
+        // unchanged), her name from the staff read, never from the payload.
+        split.insert("staff_id".into(), json!(staff_id));
+        split.insert("staff_name".into(), json!(governing_staff_name));
         // appointments#90: la mitad nueva nace con la PAUTA nueva (heredada si no se pidió otra).
         split.insert("frequency".into(), json!(frequency));
         split.insert(
@@ -3127,9 +3188,13 @@ pub fn update_recurring_series_pure(input: Value) -> Result<Output, String> {
             continue;
         };
         let occurrence_staff = str_or(row, "staff_id", "");
-        let refusal = if !occurrence_staff.is_empty() && occurrence_staff != staff_id {
-            // Handed by hand to another professional: her agenda and her days are not the ones
-            // read, so there is nothing to judge the move on.
+        let refusal = if !occurrence_staff.is_empty()
+            && occurrence_staff != staff_id
+            && occurrence_staff != tmpl_staff
+        {
+            // Handed by hand to a third professional: her agenda and her days are not the ones
+            // read, so there is nothing to judge the move on. One of the series' old professional
+            // follows the series to the new one (appointments#248), judged on HER agenda.
             Some(staff_hours_unavailable())
         } else {
             series_move_refusal(
@@ -3168,6 +3233,14 @@ pub fn update_recurring_series_pure(input: Value) -> Result<Output, String> {
         mv.insert("start_datetime".into(), json!(start_iso));
         mv.insert("end_datetime".into(), json!(end_iso));
         mv.insert("duration_minutes".into(), json!(duration));
+        // appointments#248: it follows the new professional; empty = keeps whoever it has, so an
+        // edit that changes no professional never reassigns an occurrence.
+        let (to_staff, to_staff_name) = match &new_staff_name {
+            Some(name) => (staff_id.clone(), name.clone()),
+            None => (String::new(), String::new()),
+        };
+        mv.insert("staff_id".into(), json!(to_staff));
+        mv.insert("staff_name".into(), json!(to_staff_name));
         mv.insert("channel".into(), json!("staff"));
         // Every move leaves an audit row, like every other transition of this module: the audit
         // row now rides `_recurring_move_occurrence`'s own `sql[]` as a later statement of this
@@ -3189,6 +3262,7 @@ pub fn update_recurring_series_pure(input: Value) -> Result<Output, String> {
         "split": target_series != recurring_id,
         "from_occurrence_date": cut,
         "pattern_changed": pattern_changed,
+        "staff_changed": staff_changed,
         "moved": moved,
         "cancelled_pattern_change": cancelled_pattern_change,
         "locked_invoiced": locked_invoiced,
@@ -6702,6 +6776,319 @@ mod tests {
         assert!(moved_ids(&out).is_empty(), "moved after closing time");
         assert_eq!(skipped_of(&out).len(), 50);
         assert_eq!(ops_named(&out, "_recurring_keep_occurrence").len(), 50);
+    }
+
+    // ── appointments#248 · handing «this and following» to another professional ─────────────
+    //
+    // The professional could not be changed: the only way out was deleting the series and
+    // creating it again, losing its history and its link with what was already booked. Now the
+    // series' current professional travels as the SELECTOR (`current_staff_id`) and `staff_id` is
+    // the one that governs from the cut on — the reads key on her, so every occurrence is judged
+    // on HER agenda and days, exactly as a single reschedule would judge it.
+
+    /// Carla (s2), bookable, and nothing narrowing who performs the service.
+    fn carla_reads() -> Value {
+        json!({
+            "staff.members.get": [
+                { "id": "s2", "full_name": "Carla Pro", "status": "active", "is_bookable": 1 }
+            ],
+            "staff.services.eligible_for_service": []
+        })
+    }
+
+    fn change_staff_payload(from: &str) -> Value {
+        json!({
+            "recurring_id": "r1",
+            "scope": "this_and_following",
+            "from_occurrence_date": from,
+            "current_staff_id": "s1",
+            "staff_id": "s2",
+            "service_id": "s-corte"
+        })
+    }
+
+    fn param(op: &Operation, key: &str) -> String {
+        as_str(op.params.get(key).unwrap_or(&Value::Null))
+    }
+
+    /// 🔴 THE SYMPTOM. Handing the series to Carla from 08-17 closes the old half, opens a new one
+    /// that is HERS (name from the read, never from the payload), and her two future appointments
+    /// follow her on the same time — the past stays with Bea.
+    #[test]
+    fn series_edit_hands_the_following_occurrences_to_another_professional() {
+        let out = judged_edit(change_staff_payload("2026-08-17"), carla_reads());
+        assert!(out.error.is_none(), "{:?}", out.error);
+
+        let split = ops_named(&out, "_recurring_split");
+        assert_eq!(split.len(), 1, "cutting at 08-17 splits the series");
+        assert_eq!(param(split[0], "staff_id"), "s2");
+        assert_eq!(param(split[0], "staff_name"), "Carla Pro");
+        assert_eq!(param(split[0], "time"), "11:00", "the time is inherited");
+
+        let moved = ops_named(&out, "_recurring_move_occurrence");
+        let handed: Vec<_> = moved
+            .iter()
+            .map(|op| (param(op, "appointment_id"), param(op, "staff_id"), param(op, "staff_name")))
+            .collect();
+        assert_eq!(
+            handed,
+            vec![
+                ("apt-2026-08-17".to_string(), "s2".to_string(), "Carla Pro".to_string()),
+                ("apt-2026-08-24".to_string(), "s2".to_string(), "Carla Pro".to_string()),
+            ]
+        );
+        assert_eq!(param(moved[0], "start_datetime"), "2026-08-17T11:00:00+02:00");
+        let result = out.result.clone().unwrap();
+        assert_eq!(result["staff_changed"], json!(true));
+        assert_eq!(result["moved"], json!(2));
+    }
+
+    /// Without a change of professional, a move never writes one: an occurrence keeps whoever it
+    /// has (an empty value leaves the column alone), and the in-place edit keeps the template's.
+    #[test]
+    fn series_edit_without_a_new_professional_does_not_reassign_anything() {
+        let out = judged_edit(edit_payload("2026-08-17", "12:00"), json!({}));
+        assert_eq!(out.result.clone().unwrap()["staff_changed"], json!(false));
+        for op in ops_named(&out, "_recurring_move_occurrence") {
+            assert_eq!(param(op, "staff_id"), "", "a move without a change reassigned");
+            assert_eq!(param(op, "staff_name"), "");
+        }
+        let out = update_recurring_series_pure(series_edit_input(
+            edit_payload("2026-08-03", "12:00"),
+            template(json!({ "max_occurrences": null })),
+            json!([occurrence("2026-08-03", "confirmed", json!({}))]),
+        ))
+        .unwrap();
+        let edit = ops_named(&out, "_recurring_edit");
+        assert_eq!(edit.len(), 1);
+        assert_eq!(param(edit[0], "staff_id"), "s1");
+        assert_eq!(param(edit[0], "staff_name"), "Bea Pro");
+    }
+
+    /// Cut at the first occurrence: the series is edited in place and becomes Carla's.
+    #[test]
+    fn series_edit_in_place_hands_the_whole_series_to_another_professional() {
+        let mut inp = series_edit_input(
+            change_staff_payload("2026-08-03"),
+            template(json!({ "max_occurrences": null })),
+            json!([occurrence("2026-08-03", "confirmed", json!({}))]),
+        );
+        for (k, v) in carla_reads().as_object().unwrap() {
+            inp["context"]["reads"][k] = v.clone();
+        }
+        let out = update_recurring_series_pure(inp).unwrap();
+        assert!(out.error.is_none(), "{:?}", out.error);
+        let edit = ops_named(&out, "_recurring_edit");
+        assert_eq!(edit.len(), 1);
+        assert_eq!(param(edit[0], "staff_id"), "s2");
+        assert_eq!(param(edit[0], "staff_name"), "Carla Pro");
+        assert!(ops_named(&out, "_recurring_split").is_empty());
+        assert_eq!(moved_ids(&out), vec!["apt-2026-08-03"]);
+    }
+
+    /// Each occurrence is judged on the NEW professional's agenda: the one where Carla is already
+    /// busy stays with Bea on its slot, and it is said.
+    #[test]
+    fn series_edit_leaves_with_the_old_professional_what_does_not_fit_the_new_one() {
+        let mut reads = carla_reads();
+        reads["appointments.appointments.upcoming_for_staff"] = json!([
+            { "id": "carla-busy", "appointment_number": "A-50", "staff_id": "s2", "status": "confirmed",
+              "start_datetime": "2026-08-24T11:00:00+02:00", "end_datetime": "2026-08-24T12:00:00+02:00" }
+        ]);
+        let out = judged_edit(change_staff_payload("2026-08-17"), reads);
+        assert!(out.error.is_none(), "{:?}", out.error);
+        assert_eq!(moved_ids(&out), vec!["apt-2026-08-17"]);
+        assert_eq!(
+            skipped_of(&out),
+            vec![("2026-08-24".to_string(), "appointments.overlapping_appointment".to_string())]
+        );
+        let kept = ops_named(&out, "_recurring_keep_occurrence");
+        assert_eq!(kept.len(), 1);
+        assert!(kept[0].params.get("staff_id").is_none(), "what did not fit changed hands anyway");
+
+        // Her day off on 08-24 turns it away too.
+        let mut reads = carla_reads();
+        reads[DAYS_READ] = staff_days(&[
+            staff_day("2026-08-17", &[("09:00:00", "18:00:00")], json!([])),
+            staff_day("2026-08-24", &[("09:00:00", "18:00:00")], full_day_off("2026-08-24")),
+        ]);
+        let out = judged_edit(change_staff_payload("2026-08-17"), reads);
+        assert_eq!(moved_ids(&out), vec!["apt-2026-08-17"]);
+        assert_eq!(skipped_of(&out), vec![("2026-08-24".to_string(), OUTSIDE_STAFF_HOURS.to_string())]);
+    }
+
+    /// The new professional must be able to take the series, like when it is created: she exists
+    /// in this hub, is active and bookable, and performs the service when it has declared who does.
+    #[test]
+    fn series_edit_refuses_a_new_professional_who_cannot_take_the_series() {
+        let cases = [
+            (json!({ "staff.members.get": [] }), "appointments.staff_not_found"),
+            (
+                json!({ "staff.members.get": [
+                    { "id": "s2", "full_name": "Carla Pro", "status": "inactive", "is_bookable": 1 } ] }),
+                "appointments.staff_not_bookable",
+            ),
+            (
+                json!({ "staff.members.get": [
+                    { "id": "s2", "full_name": "Carla Pro", "status": "active", "is_bookable": 0 } ] }),
+                "appointments.staff_not_bookable",
+            ),
+            (
+                json!({ "staff.services.eligible_for_service": [
+                    { "staff_id": "s1", "full_name": "Bea Pro", "custom_duration": null,
+                      "custom_price": null, "is_primary": 1 } ] }),
+                "appointments.staff_not_eligible",
+            ),
+        ];
+        for (extra, code) in cases {
+            let mut reads = carla_reads();
+            for (k, v) in extra.as_object().unwrap() {
+                reads[k] = v.clone();
+            }
+            let out = judged_edit(change_staff_payload("2026-08-17"), reads);
+            assert_eq!(domain_code(&out).as_deref(), Some(code), "{extra}");
+            assert!(out.operations.is_empty(), "{code}: something was written");
+        }
+
+        // A read of hers that did not arrive is not «nothing says no».
+        for read in ["staff.members.get", "staff.services.eligible_for_service"] {
+            let mut inp = series_edit_input(
+                change_staff_payload("2026-08-17"),
+                template(json!({ "max_occurrences": null })),
+                json!([occurrence("2026-08-17", "confirmed", json!({}))]),
+            );
+            for (k, v) in carla_reads().as_object().unwrap() {
+                inp["context"]["reads"][k] = v.clone();
+            }
+            inp["context"]["reads"].as_object_mut().unwrap().remove(read);
+            let out = update_recurring_series_pure(inp).unwrap();
+            assert_eq!(domain_code(&out).as_deref(), Some("appointments.catalog_unavailable"), "{read}");
+            assert!(out.operations.is_empty(), "{read}: something was written");
+        }
+    }
+
+    /// The selectors must match the template the runtime loaded: the CURRENT professional (or the
+    /// reads were keyed for another series) and the service (or her competency was read for
+    /// another one). A new professional that is empty is a caller bug, never «no professional».
+    #[test]
+    fn series_edit_refuses_a_change_of_professional_with_the_wrong_selectors() {
+        for (key, value) in [
+            ("current_staff_id", json!("s9")),
+            ("service_id", json!("s-tinte")),
+            ("service_id", Value::Null),
+        ] {
+            let mut payload = change_staff_payload("2026-08-17");
+            if value.is_null() {
+                payload.as_object_mut().unwrap().remove(key);
+            } else {
+                payload[key] = value.clone();
+            }
+            let out = judged_edit(payload, carla_reads());
+            assert_eq!(
+                domain_code(&out).as_deref(),
+                Some("appointments.recurring_mismatch"),
+                "{key} = {value}"
+            );
+            assert!(out.operations.is_empty());
+        }
+        let mut payload = change_staff_payload("2026-08-17");
+        payload["staff_id"] = json!("");
+        let mut inp = series_edit_input(
+            payload,
+            template(json!({ "max_occurrences": null })),
+            json!([occurrence("2026-08-17", "confirmed", json!({}))]),
+        );
+        for (k, v) in carla_reads().as_object().unwrap() {
+            inp["context"]["reads"][k] = v.clone();
+        }
+        let err = update_recurring_series_pure(inp).unwrap_err();
+        assert!(err.starts_with("invalid_payload"), "{err}");
+    }
+
+    /// 🔴 The series created WITHOUT a professional (before appointments#246) is repaired by giving
+    /// it one — no longer only by deleting it. Her working days judge the moves from then on.
+    #[test]
+    fn a_series_without_a_professional_gets_one() {
+        let edit = |days: Value| {
+            let mut payload = change_staff_payload("2026-08-17");
+            payload["current_staff_id"] = json!("");
+            let mut inp = series_edit_input(
+                payload,
+                template(json!({ "staff_id": "", "staff_name": "", "max_occurrences": null })),
+                json!([
+                    occurrence("2026-08-17", "confirmed", json!({ "staff_id": "" })),
+                    occurrence("2026-08-24", "pending", json!({ "staff_id": null }))
+                ]),
+            );
+            for (k, v) in carla_reads().as_object().unwrap() {
+                inp["context"]["reads"][k] = v.clone();
+            }
+            inp["context"]["reads"][DAYS_READ] = days;
+            update_recurring_series_pure(inp).unwrap()
+        };
+        let out = edit(ungoverned_days(2026, 8, 1, 60));
+        assert!(out.error.is_none(), "{:?}", out.error);
+        assert_eq!(moved_ids(&out), vec!["apt-2026-08-17", "apt-2026-08-24"]);
+        assert_eq!(param(ops_named(&out, "_recurring_split")[0], "staff_id"), "s2");
+        for op in ops_named(&out, "_recurring_move_occurrence") {
+            assert_eq!(param(op, "staff_id"), "s2");
+        }
+        let out = edit(staff_days(&[
+            staff_day("2026-08-17", &[("09:00:00", "18:00:00")], json!([])),
+            staff_day("2026-08-24", &[("09:00:00", "18:00:00")], full_day_off("2026-08-24")),
+        ]));
+        assert_eq!(moved_ids(&out), vec!["apt-2026-08-17"]);
+        assert_eq!(skipped_of(&out), vec![("2026-08-24".to_string(), OUTSIDE_STAFF_HOURS.to_string())]);
+    }
+
+    /// An occurrence already handed by hand to the NEW professional is judged on her agenda and
+    /// follows the series, and so does one still with the series' OLD professional (what the
+    /// occurrences read returns for a series never touched by hand); one handed to a THIRD one is
+    /// not judged blind.
+    #[test]
+    fn series_edit_to_another_professional_judges_occurrences_she_already_had() {
+        let mut inp = series_edit_input(
+            change_staff_payload("2026-08-17"),
+            template(json!({ "max_occurrences": null })),
+            json!([
+                occurrence("2026-08-17", "confirmed", json!({ "staff_id": "s2" })),
+                occurrence("2026-08-24", "pending", json!({ "staff_id": "s3" })),
+                occurrence("2026-08-31", "pending", json!({ "staff_id": "s1" }))
+            ]),
+        );
+        for (k, v) in carla_reads().as_object().unwrap() {
+            inp["context"]["reads"][k] = v.clone();
+        }
+        let out = update_recurring_series_pure(inp).unwrap();
+        assert_eq!(moved_ids(&out), vec!["apt-2026-08-17", "apt-2026-08-31"]);
+        assert_eq!(skipped_of(&out), vec![("2026-08-24".to_string(), STAFF_HOURS_UNAVAILABLE.to_string())]);
+    }
+
+    /// The reads of the new professional's record and competency, keyed on the payload.
+    #[test]
+    fn the_series_edit_declares_the_reads_of_the_new_professional() {
+        let manifest: Value = serde_json::from_str(MANIFEST).expect("module.json parses");
+        let reads = manifest["commands"]["appointments.recurring.update"]["reads"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default();
+        for (query, params) in [
+            ("staff.members.get", json!({ "staff_id": "payload.staff_id" })),
+            ("staff.services.eligible_for_service", json!({ "service_id": "payload.service_id" })),
+        ] {
+            let read = reads.iter().find(|r| r["query"] == query);
+            assert!(read.is_some(), "recurring.update does not declare {query}");
+            assert_eq!(read.unwrap()["required"], json!(true), "{query}");
+            assert_eq!(read.unwrap()["params"], params, "{query}");
+        }
+        let schema: Value = serde_json::from_str(
+            &std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../schemas/recurring_update.json"))
+                .expect("schema"),
+        )
+        .expect("schema parses");
+        for key in ["current_staff_id", "service_id"] {
+            assert!(schema["properties"][key].is_object(), "{key} is not accepted");
+        }
     }
 
     /// The series edit declares every read its judges need, keyed on the professional selector.

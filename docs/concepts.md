@@ -30,7 +30,8 @@ One place deliberately does **not** ask:
   like a single move (opening hours, her shift, blocked time, the past, the minimum notice and —
   with the toggle off — another appointment): the ones that do not fit stay on their own slot and
   the screen lists them with the reason, instead of the whole series being refused or moved on top
-  of somebody.
+  of somebody. Handing the series to another professional (appointments#248) follows the same rule
+  on the **new** professional's agenda: what does not fit keeps its slot and its professional.
 
 With the toggle **off** nothing changed: no prompt, and the server refuses the booking
 (`_appointment_overlap_assert.sql`). Offering a "book anyway" that always fails would be worse than

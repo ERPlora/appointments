@@ -128,4 +128,5 @@ booking, and a single run creates at most 50.
 **"«Book appointments» on a series says it has no professional."** The series was saved without one
 (before appointments#246 the assistant and the API could create it that way; the screen never
 could), and a series is booked for a customer, a service and a professional from your records.
-Delete it and create it again choosing who does it.
+Open **Edit series**, choose who does it and save: its appointments are booked with them
+(appointments#248).

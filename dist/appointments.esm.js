@@ -2054,7 +2054,8 @@ var es_default = {
     seriesLoadError: "No se han podido cargar las citas peri\xF3dicas.",
     seriesSaveError: "No se ha podido guardar la cita peri\xF3dica.",
     seriesMaterializeError: "No se han podido reservar las citas de esta serie.",
-    seriesNoStaff: "Esta serie no tiene profesional y sus citas no se pueden reservar. B\xF3rrala y vuelve a crearla eligiendo qui\xE9n la atiende.",
+    seriesNoStaff: "Esta serie no tiene profesional y sus citas no se pueden reservar. \xC1brela y elige qui\xE9n la atiende.",
+    seriesPickStaffToBook: "Esta serie no tiene profesional: elige qui\xE9n la atiende y al guardar se reservan sus citas.",
     seriesNoCustomer: "Esta serie no tiene un cliente de tu lista y sus citas no se pueden reservar. B\xF3rrala y vuelve a crearla eligiendo el cliente.",
     seriesNoService: "Esta serie no tiene un servicio de tu lista y sus citas no se pueden reservar. B\xF3rrala y vuelve a crearla eligiendo el servicio.",
     seriesDeleteError: "No se ha podido borrar la cita peri\xF3dica.",
@@ -2075,6 +2076,8 @@ var es_default = {
     seriesSkipTooFar: "demasiado lejos para reservarla",
     seriesSkipOther: "no se ha podido reservar",
     seriesMovedSkipped: "{moved} citas movidas \xB7 {skipped} no se han podido mover y se quedan a su hora:",
+    seriesReassignedSkipped: "{moved} citas pasan a {staff} \xB7 {skipped} no le caben y se quedan como estaban:",
+    seriesStaffChangeHint: "Desde el {from} atiende esta serie {staff}: sus {upcoming} citas reservadas pasan a su agenda si le caben; las que no, se quedan como est\xE1n y se listan al guardar.",
     seriesSkipStaffUnknown: "no se ha podido comprobar el horario del profesional para esa cita",
     seriesMoveSkipOther: "no se ha podido mover",
     seriesSplitFrom: "Esta serie contin\xFAa a otra anterior ({id}): se parti\xF3 cuando alguien la edit\xF3 de una cita en adelante.",
@@ -2315,7 +2318,8 @@ var en_default = {
     seriesLoadError: "Repeating appointments could not be loaded.",
     seriesSaveError: "The repeating appointment could not be saved.",
     seriesMaterializeError: "The appointments of this series could not be booked.",
-    seriesNoStaff: "This series has no professional, so its appointments cannot be booked. Delete it and create it again choosing who does it.",
+    seriesNoStaff: "This series has no professional, so its appointments cannot be booked. Edit it and choose who does it.",
+    seriesPickStaffToBook: "This series has no professional: choose who does it and saving books its appointments.",
     seriesNoCustomer: "This series has no customer from your list, so its appointments cannot be booked. Delete it and create it again choosing the customer.",
     seriesNoService: "This series has no service from your list, so its appointments cannot be booked. Delete it and create it again choosing the service.",
     seriesDeleteError: "The repeating appointment could not be deleted.",
@@ -2336,6 +2340,8 @@ var en_default = {
     seriesSkipTooFar: "too far ahead to book",
     seriesSkipOther: "it could not be booked",
     seriesMovedSkipped: "{moved} appointments moved \xB7 {skipped} could not be moved and keep their time:",
+    seriesReassignedSkipped: "{moved} appointments handed to {staff} \xB7 {skipped} did not fit and stay as they were:",
+    seriesStaffChangeHint: "From {from}, {staff} does this series: its {upcoming} booked appointments move over if they fit that agenda; the ones that do not stay as they are and are listed after saving.",
     seriesSkipStaffUnknown: "the professional's hours could not be checked for it",
     seriesMoveSkipOther: "it could not be moved",
     seriesSplitFrom: "This series continues an earlier one ({id}): it was split when someone edited it from one occurrence onwards.",
@@ -7219,6 +7225,7 @@ var ErpAppointmentsSeries = class extends i3 {
     this.editDayOfWeek = "";
     this.editTime = "";
     this.editDuration = "";
+    this.editStaffId = "";
     this.customers = [];
     this.services = [];
     this.staffMembers = [];
@@ -7286,6 +7293,24 @@ var ErpAppointmentsSeries = class extends i3 {
   /** Professionals that can receive appointments: the ones the `staff` module marks bookable. */
   get bookableStaff() {
     return this.staffMembers.filter((m4) => Number(m4.is_bookable) === 1 && m4.status !== "terminated");
+  }
+  /** appointments#248 — who the edit panel offers: the bookable professionals and, when she no
+   *  longer is one (she left, or stopped taking appointments), the series' current professional, so
+   *  the field still says who does it today instead of showing up empty. */
+  get editStaffOptions() {
+    const options = this.bookableStaff.map((m4) => ({ id: m4.id, name: m4.full_name }));
+    const tmpl = this.template;
+    if (tmpl?.staff_id && !options.some((o7) => o7.id === tmpl.staff_id)) {
+      options.unshift({ id: tmpl.staff_id, name: tmpl.staff_name || tmpl.staff_id });
+    }
+    return options;
+  }
+  /** appointments#248 — the professional picked in the edit panel when it is not the series' one. */
+  get staffChange() {
+    const tmpl = this.template;
+    if (!tmpl || !this.editStaffId || this.editStaffId === (tmpl.staff_id ?? "")) return null;
+    const picked = this.editStaffOptions.find((o7) => o7.id === this.editStaffId);
+    return { id: this.editStaffId, name: picked?.name ?? this.editStaffId };
   }
   async refresh() {
     this.loading = true;
@@ -7369,6 +7394,7 @@ var ErpAppointmentsSeries = class extends i3 {
       this.editTime = tmpl.time ?? "";
       this.timeDraft = { ...this.timeDraft, edit: null };
       this.editDuration = String(tmpl.duration_minutes ?? "");
+      this.editStaffId = tmpl.staff_id ?? "";
       const today = todayISO();
       this.fromOccurrence = this.occurrences.map((o7) => o7.occurrence_date).find((d3) => d3 >= today) ?? today;
       await this.updateComplete;
@@ -7423,7 +7449,8 @@ var ErpAppointmentsSeries = class extends i3 {
     const tmpl = this.template;
     if (!tmpl || this.saving) return;
     const changed = this.changedFields();
-    if (Object.keys(changed).length === 0) {
+    const staffChange = this.staffChange;
+    if (Object.keys(changed).length === 0 && !staffChange) {
       this.closePanel();
       return;
     }
@@ -7436,22 +7463,33 @@ var ErpAppointmentsSeries = class extends i3 {
           recurring_id: this.editingId,
           // appointments#236: the series' professional as SELECTOR (the handler refuses another
           // one) — every occurrence it moves is judged on HER agenda and working days.
-          staff_id: tmpl.staff_id ?? "",
+          // appointments#248: on a change of professional the current one travels as
+          // `current_staff_id` (the selector), the new one as `staff_id` and the service, which
+          // decides whether she can take it; the moved occurrences are judged on HER agenda.
+          ...staffChange ? { current_staff_id: tmpl.staff_id ?? "", staff_id: staffChange.id, service_id: tmpl.service_id ?? "" } : { staff_id: tmpl.staff_id ?? "" },
           scope: "this_and_following",
           from_occurrence_date: this.fromOccurrence,
           ...changed
         })
       );
       let report = null;
-      if (result?.pattern_changed === true) {
-        report = await this.bookWindow(String(result.recurring_id ?? this.editingId), tmpl);
+      const gotItsFirstProfessional = !tmpl.staff_id && !!staffChange;
+      if (result?.pattern_changed === true || gotItsFirstProfessional) {
+        const booked = staffChange ? { ...tmpl, staff_id: staffChange.id } : tmpl;
+        report = await this.bookWindow(String(result?.recurring_id ?? this.editingId), booked);
       }
       const notMoved = result && Array.isArray(result.skipped) ? skippedDates(result) : [];
-      this.notifyOutcome(result, notMoved.length > 0);
+      if (!gotItsFirstProfessional) this.notifyOutcome(result, notMoved.length > 0);
       this.closePanel();
       await this.refresh();
-      this.moveReport = notMoved.length > 0 ? { moved: Number(result?.moved ?? 0), skipped: notMoved } : null;
-      this.showSkipped(report);
+      this.moveReport = notMoved.length > 0 ? {
+        moved: Number(result?.moved ?? 0),
+        skipped: notMoved,
+        ...staffChange && result?.staff_changed === true ? { staff: staffChange.name } : {}
+      } : null;
+      if (!this.showSkipped(report) && gotItsFirstProfessional) {
+        erplora3().notify?.({ type: "success", message: erplora3().t(CATALOG3, "ui.seriesMaterialized") });
+      }
     } catch (e5) {
       this.editError = e5 instanceof Error && e5.message ? e5.message : erplora3().t(CATALOG3, "ui.seriesSaveError");
     } finally {
@@ -7676,7 +7714,9 @@ var ErpAppointmentsSeries = class extends i3 {
    *  with its reason, as Mindbody or SimplyBook.me say it when a repeating edit leaves dates out. */
   renderMoveReport(report, t5) {
     return b2`<ok-inline-feedback data-testid="appointments-series-not-moved" tone="warning" icon="alert-circle-outline">
-      <strong>${t5("ui.seriesMovedSkipped", { moved: report.moved, skipped: report.skipped.length })}</strong>
+      <strong
+        >${report.staff ? t5("ui.seriesReassignedSkipped", { moved: report.moved, skipped: report.skipped.length, staff: report.staff }) : t5("ui.seriesMovedSkipped", { moved: report.moved, skipped: report.skipped.length })}</strong
+      >
       <ul class="skipped">
         ${report.skipped.map(
       (s5) => b2`<li data-testid=${`appointments-series-not-moved-${s5.occurrence_date}`}>
@@ -7691,6 +7731,7 @@ var ErpAppointmentsSeries = class extends i3 {
     if (!tmpl) return A;
     const { upcoming, invoiced } = this.affected;
     const booked = this.occurrences.length;
+    const staffChange = this.staffChange;
     return b2`<form slot="create" data-testid="appointments-series-form" data-mode="series-edit" class="form" @submit=${(e5) => this.submitEdit(e5)}>
       <p class="ctx" data-role="series-context">
         <strong>${tmpl.customer_name}</strong> · ${tmpl.service_name} · ${tmpl.staff_name || "\u2014"}
@@ -7709,6 +7750,21 @@ var ErpAppointmentsSeries = class extends i3 {
             >${t5("ui.seriesLockedInvoiced", { invoiced })}</ok-inline-feedback
           >` : A}
       <div class="grid">
+        <!-- appointments#248: the professional of the series, for this and the following dates —
+             the front desk hands a series to someone else without deleting it (Fresha, Square). -->
+        <ion-select
+          data-testid="appointments-series-staff"
+          data-role="series-staff"
+          fill="outline"
+          mode="md"
+          label=${t5("ui.fieldStaff")}
+          placeholder=${t5("ui.pickStaff")}
+          label-placement="floating"
+          .value=${this.editStaffId}
+          @ionChange=${(e5) => this.editStaffId = e5.target.value ?? ""}
+        >
+          ${this.editStaffOptions.map((o7) => b2`<ion-select-option .value=${o7.id}>${o7.name}</ion-select-option>`)}
+        </ion-select>
         <ion-select
           data-testid="appointments-series-frequency"
           fill="outline"
@@ -7763,6 +7819,12 @@ var ErpAppointmentsSeries = class extends i3 {
           @ionInput=${(e5) => this.editDuration = e5.target.value}
         ></ion-input>
       </div>
+      ${!tmpl.staff_id && !staffChange ? b2`<ok-inline-feedback data-testid="appointments-series-no-staff" tone="warning" icon="person-outline"
+            >${t5("ui.seriesPickStaffToBook")}</ok-inline-feedback
+          >` : A}
+      ${staffChange && tmpl.staff_id ? b2`<ok-inline-feedback data-testid="appointments-series-staff-hint" tone="info" icon="swap-horizontal-outline"
+            >${t5("ui.seriesStaffChangeHint", { from: this.shownDate(this.fromOccurrence), upcoming, staff: staffChange.name })}</ok-inline-feedback
+          >` : A}
       <ok-inline-feedback data-testid="appointments-series-scope-hint" tone="info" icon="information-circle-outline"
         >${t5("ui.seriesScopeHint", { from: this.shownDate(this.fromOccurrence) })}</ok-inline-feedback
       >
@@ -8176,6 +8238,9 @@ __decorateClass([
 __decorateClass([
   r5()
 ], ErpAppointmentsSeries.prototype, "editDuration", 2);
+__decorateClass([
+  r5()
+], ErpAppointmentsSeries.prototype, "editStaffId", 2);
 __decorateClass([
   r5()
 ], ErpAppointmentsSeries.prototype, "customers", 2);
