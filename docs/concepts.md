@@ -192,7 +192,7 @@ what you are changing).
 | Scope | What it does |
 |---|---|
 | **This appointment only** *(preselected)* | The `reschedule` of always, over one row. The rest of the series does not move. |
-| **This and all following** | The series is **split in two**: the original template stops the day before, a new one starts at this occurrence, and the appointments already booked from here on move to the new time. |
+| **This and all following** | The series is **split in two**: the original template stops the day before, a new one starts at this occurrence, and **every** appointment already booked from here on moves to the new time, in one change however long the series is. |
 
 **«All events» does not exist, on purpose.** It means rewriting a past that is already charged,
 invoiced and chained into VeriFactu. No product of the salon vertical offers it — Fresha gives «all
