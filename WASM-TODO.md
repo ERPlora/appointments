@@ -82,9 +82,11 @@ plantilla recurrente.
 
 ## 7. Cálculo de end_datetime al editar/reagendar (Tier 1, ya resuelto en UI)
 Origen: `Appointment.reschedule` / `update` (recalculan `end = start + duration`).
-- Los SQL `appointment_update.sql` / `appointment_reschedule.sql` esperan `end_datetime` ya
- resuelto (el SDK/UI lo calcula `start + duration`). Si se quiere blindar server-side,
- moverlo al handler (suma de minutos = capacidad de reloj del host). No bloqueante.
+- ✅ Blindado server-side: `reschedule` calcula `end = start + duration` en el handler, y
+ `update` (appointments#271) corre el handler `update_appointment`, que manda hueco,
+ profesional y servicio por el mismo camino que `reschedule` y rechaza con
+ `appointments.invalid_end` un `end_datetime` que no cuadra. `appointment_update.sql` ya solo
+ escribe contacto y notas (`appointments._update_details`).
 - ✅ El SOLAPE en reagendar/editar ya NO depende del caller: `reschedule`/`update` llevan
  `commands/_appointment_overlap_assert.sql` (tabla-gate con CHECK, appointments#20) que
  revierte la transacción si la nueva franja pisa una cita viva del mismo staff con
