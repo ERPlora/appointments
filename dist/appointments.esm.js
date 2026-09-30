@@ -2080,6 +2080,7 @@ var es_default = {
     seriesMovedSkipped: "{moved} citas movidas \xB7 {skipped} no se han podido mover y se quedan a su hora:",
     seriesReassignedSkipped: "{moved} citas pasan a {staff} \xB7 {skipped} no le caben y se quedan como estaban:",
     seriesStaffChangeHint: "Desde el {from} atiende esta serie {staff}: sus {upcoming} citas reservadas pasan a su agenda si le caben; las que no, se quedan como est\xE1n y se listan al guardar.",
+    seriesServiceChangeHint: "Desde el {from} esta serie es {service}: sus {upcoming} citas reservadas pasan a ese servicio, con su precio y su duraci\xF3n, si caben en la agenda; las que no, se quedan como est\xE1n y se listan al guardar.",
     seriesSkipStaffUnknown: "no se ha podido comprobar el horario del profesional para esa cita",
     seriesMoveSkipOther: "no se ha podido mover",
     seriesSplitFrom: "Esta serie contin\xFAa a otra anterior ({id}): se parti\xF3 cuando alguien la edit\xF3 de una cita en adelante.",
@@ -2346,6 +2347,7 @@ var en_default = {
     seriesMovedSkipped: "{moved} appointments moved \xB7 {skipped} could not be moved and keep their time:",
     seriesReassignedSkipped: "{moved} appointments handed to {staff} \xB7 {skipped} did not fit and stay as they were:",
     seriesStaffChangeHint: "From {from}, {staff} does this series: its {upcoming} booked appointments move over if they fit that agenda; the ones that do not stay as they are and are listed after saving.",
+    seriesServiceChangeHint: "From {from}, this series is {service}: its {upcoming} booked appointments take that service, its price and its length if they fit the agenda; the ones that do not stay as they are and are listed after saving.",
     seriesSkipStaffUnknown: "the professional's hours could not be checked for it",
     seriesMoveSkipOther: "it could not be moved",
     seriesSplitFrom: "This series continues an earlier one ({id}): it was split when someone edited it from one occurrence onwards.",
@@ -7230,6 +7232,7 @@ var ErpAppointmentsSeries = class extends i3 {
     this.editTime = "";
     this.editDuration = "";
     this.editStaffId = "";
+    this.editServiceId = "";
     this.customers = [];
     this.services = [];
     this.staffMembers = [];
@@ -7316,6 +7319,37 @@ var ErpAppointmentsSeries = class extends i3 {
     const picked = this.editStaffOptions.find((o7) => o7.id === this.editStaffId);
     return { id: this.editStaffId, name: picked?.name ?? this.editStaffId };
   }
+  /** appointments#252 — the services the edit panel offers: the bookable ones and, when it no
+   *  longer is one, the series' current service, so the field still says what it books today. */
+  get editServiceOptions() {
+    const options = this.services.map((s5) => ({ id: s5.id, name: s5.name }));
+    const tmpl = this.template;
+    if (tmpl?.service_id && !options.some((o7) => o7.id === tmpl.service_id)) {
+      options.unshift({ id: tmpl.service_id, name: tmpl.service_name || tmpl.service_id });
+    }
+    return options;
+  }
+  /** appointments#252 — the service picked in the edit panel when it is not the series' one. */
+  get serviceChange() {
+    const tmpl = this.template;
+    if (!tmpl || !this.editServiceId || this.editServiceId === (tmpl.service_id ?? "")) return null;
+    const picked = this.editServiceOptions.find((o7) => o7.id === this.editServiceId);
+    return { id: this.editServiceId, name: picked?.name ?? this.editServiceId };
+  }
+  /** appointments#252 — picking another service PRE-FILLS «Min.» with its catalogue length, as the
+   *  new-series form does: the receptionist sees how long the series books before saving. Back to
+   *  the series' own service, its own minutes come back. */
+  onEditServiceChange(serviceId) {
+    this.editServiceId = serviceId;
+    const tmpl = this.template;
+    if (!tmpl) return;
+    if (serviceId === (tmpl.service_id ?? "")) {
+      this.editDuration = String(tmpl.duration_minutes ?? "");
+      return;
+    }
+    const m4 = Number(this.services.find((s5) => s5.id === serviceId)?.duration_minutes);
+    if (Number.isFinite(m4) && m4 >= 1) this.editDuration = String(m4);
+  }
   async refresh() {
     this.loading = true;
     this.error = "";
@@ -7399,6 +7433,7 @@ var ErpAppointmentsSeries = class extends i3 {
       this.timeDraft = { ...this.timeDraft, edit: null };
       this.editDuration = String(tmpl.duration_minutes ?? "");
       this.editStaffId = tmpl.staff_id ?? "";
+      this.editServiceId = tmpl.service_id ?? "";
       const today = todayISO();
       this.fromOccurrence = this.occurrences.map((o7) => o7.occurrence_date).find((d3) => d3 >= today) ?? today;
       await this.updateComplete;
@@ -7454,7 +7489,8 @@ var ErpAppointmentsSeries = class extends i3 {
     if (!tmpl || this.saving) return;
     const changed = this.changedFields();
     const staffChange = this.staffChange;
-    if (Object.keys(changed).length === 0 && !staffChange) {
+    const serviceChange = this.serviceChange;
+    if (Object.keys(changed).length === 0 && !staffChange && !serviceChange) {
       this.closePanel();
       return;
     }
@@ -7471,6 +7507,9 @@ var ErpAppointmentsSeries = class extends i3 {
           // `current_staff_id` (the selector), the new one as `staff_id` and the service, which
           // decides whether she can take it; the moved occurrences are judged on HER agenda.
           ...staffChange ? { current_staff_id: tmpl.staff_id ?? "", staff_id: staffChange.id, service_id: tmpl.service_id ?? "" } : { staff_id: tmpl.staff_id ?? "" },
+          // appointments#252: on a change of service the current one travels as
+          // `current_service_id` (the selector) and the new one as `service_id`.
+          ...serviceChange ? { current_service_id: tmpl.service_id ?? "", service_id: serviceChange.id } : {},
           scope: "this_and_following",
           from_occurrence_date: this.fromOccurrence,
           ...changed
@@ -7479,7 +7518,11 @@ var ErpAppointmentsSeries = class extends i3 {
       let report = null;
       const gotItsFirstProfessional = !tmpl.staff_id && !!staffChange;
       if (result?.pattern_changed === true || gotItsFirstProfessional) {
-        const booked = staffChange ? { ...tmpl, staff_id: staffChange.id } : tmpl;
+        const booked = {
+          ...tmpl,
+          ...staffChange ? { staff_id: staffChange.id } : {},
+          ...serviceChange ? { service_id: serviceChange.id } : {}
+        };
         report = await this.bookWindow(String(result?.recurring_id ?? this.editingId), booked);
       }
       const notMoved = result && Array.isArray(result.skipped) ? skippedDates(result) : [];
@@ -7753,6 +7796,7 @@ var ErpAppointmentsSeries = class extends i3 {
     const { upcoming, invoiced } = this.affected;
     const booked = this.occurrences.length;
     const staffChange = this.staffChange;
+    const serviceChange = this.serviceChange;
     return b2`<form slot="create" data-testid="appointments-series-form" data-mode="series-edit" class="form" @submit=${(e5) => this.submitEdit(e5)}>
       <p class="ctx" data-role="series-context">
         <strong>${tmpl.customer_name}</strong> · ${tmpl.service_name} · ${tmpl.staff_name || "\u2014"}
@@ -7785,6 +7829,21 @@ var ErpAppointmentsSeries = class extends i3 {
           @ionChange=${(e5) => this.editStaffId = e5.target.value ?? ""}
         >
           ${this.editStaffOptions.map((o7) => b2`<ion-select-option .value=${o7.id}>${o7.name}</ion-select-option>`)}
+        </ion-select>
+        <!-- appointments#252: the service of the series, for this and the following dates — the
+             customer moves to another service without the series being deleted. -->
+        <ion-select
+          data-testid="appointments-series-service"
+          data-role="series-service"
+          fill="outline"
+          mode="md"
+          label=${t5("ui.fieldService")}
+          placeholder=${t5("ui.pickService")}
+          label-placement="floating"
+          .value=${this.editServiceId}
+          @ionChange=${(e5) => this.onEditServiceChange(e5.target.value ?? "")}
+        >
+          ${this.editServiceOptions.map((o7) => b2`<ion-select-option .value=${o7.id}>${o7.name}</ion-select-option>`)}
         </ion-select>
         <ion-select
           data-testid="appointments-series-frequency"
@@ -7845,6 +7904,9 @@ var ErpAppointmentsSeries = class extends i3 {
           >` : A}
       ${staffChange && tmpl.staff_id ? b2`<ok-inline-feedback data-testid="appointments-series-staff-hint" tone="info" icon="swap-horizontal-outline"
             >${t5("ui.seriesStaffChangeHint", { from: this.shownDate(this.fromOccurrence), upcoming, staff: staffChange.name })}</ok-inline-feedback
+          >` : A}
+      ${serviceChange ? b2`<ok-inline-feedback data-testid="appointments-series-service-hint" tone="info" icon="swap-horizontal-outline"
+            >${t5("ui.seriesServiceChangeHint", { from: this.shownDate(this.fromOccurrence), upcoming, service: serviceChange.name })}</ok-inline-feedback
           >` : A}
       <ok-inline-feedback data-testid="appointments-series-scope-hint" tone="info" icon="information-circle-outline"
         >${t5("ui.seriesScopeHint", { from: this.shownDate(this.fromOccurrence) })}</ok-inline-feedback
@@ -8262,6 +8324,9 @@ __decorateClass([
 __decorateClass([
   r5()
 ], ErpAppointmentsSeries.prototype, "editStaffId", 2);
+__decorateClass([
+  r5()
+], ErpAppointmentsSeries.prototype, "editServiceId", 2);
 __decorateClass([
   r5()
 ], ErpAppointmentsSeries.prototype, "customers", 2);
