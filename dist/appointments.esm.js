@@ -1883,7 +1883,7 @@ __decorateClass3([
 ], OkTimeline.prototype, "align");
 define("ok-timeline", OkTimeline);
 
-// locales/es.json
+// @erplora/module-appointments/locales/es.json
 var es_default = {
   name: "Citas",
   description: "Agenda las citas de tus clientes con sus servicios y profesionales, y s\xEDguelas desde que se reservan hasta que se completan.",
@@ -2156,7 +2156,7 @@ var es_default = {
   }
 };
 
-// locales/en.json
+// @erplora/module-appointments/locales/en.json
 var en_default = {
   name: "Appointments",
   navigation: {
@@ -2428,7 +2428,7 @@ var en_default = {
   }
 };
 
-// ui/lib/business-time.ts
+// @erplora/module-appointments/ui/lib/business-time.ts
 var InvalidLocalTimeError = class extends Error {
   constructor(wall, timezone) {
     super(`invalid_local_time: ${wall} does not exist in ${timezone}`);
@@ -2595,7 +2595,7 @@ function deviceZoneDiffers(timezone = businessTimezone()) {
   return offsetMinutesAt(now, timezone) !== -new Date(now).getTimezoneOffset();
 }
 
-// ui/components/erp-appointments-customer-history/erp-appointments-customer-history.ts
+// @erplora/module-appointments/ui/components/erp-appointments-customer-history/erp-appointments-customer-history.ts
 var CATALOG = { es: es_default, en: en_default };
 function erplora() {
   const c5 = globalThis.erplora;
@@ -2739,7 +2739,7 @@ __decorateClass([
 ], ErpAppointmentsCustomerHistory.prototype, "error", 2);
 define("erp-appointments-customer-history", ErpAppointmentsCustomerHistory);
 
-// ui/components/erp-appointments-history/erp-appointments-history.ts
+// @erplora/module-appointments/ui/components/erp-appointments-history/erp-appointments-history.ts
 var CATALOG2 = { es: es_default, en: en_default };
 function erplora2() {
   const c5 = globalThis.erplora;
@@ -7270,7 +7270,7 @@ function dataTableLabels(locale = "es") {
   return locale.toLowerCase().startsWith("en") ? DATA_TABLE_LABELS_EN : DATA_TABLE_LABELS_ES;
 }
 
-// ui/lib/typed-start.ts
+// @erplora/module-appointments/ui/lib/typed-start.ts
 function pad2(n6) {
   return String(n6).padStart(2, "0");
 }
@@ -7388,7 +7388,7 @@ function formatTypedTime(time, locale) {
   return `${pad2(hour)}:${pad2(minute)}`;
 }
 
-// ui/components/erp-appointments-series/erp-appointments-series.ts
+// @erplora/module-appointments/ui/components/erp-appointments-series/erp-appointments-series.ts
 var CATALOG3 = { es: es_default, en: en_default };
 function erplora3() {
   const c5 = globalThis.erplora;
@@ -8628,7 +8628,7 @@ __decorateClass([
 ], ErpAppointmentsSeries.prototype, "calendarOpen", 2);
 define("erp-appointments-series", ErpAppointmentsSeries);
 
-// ui/components/erp-appointments-list/erp-appointments-list.ts
+// @erplora/module-appointments/ui/components/erp-appointments-list/erp-appointments-list.ts
 var CATALOG4 = { es: es_default, en: en_default };
 var STATUS_KEYS2 = {
   pending: "ui.statusPending",
