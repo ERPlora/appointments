@@ -58,9 +58,16 @@ RESCHEDULE_CHAIN = [
 # The gate table's drain (appointments#116). It is the last link of every chain that uses a gate,
 # so the table is empty once the command commits.
 GATE_CLEAR = "appointments._gate_clear"
-# `appointments.appointments.update` is DECLARATIVE: its chain is the manifest's own `sql[]`, and
-# it writes the same gate table through `_appointment_overlap_assert`.
-UPDATE_CHAIN = ["appointments.appointments.update"]
+# `appointments.appointments.update` runs the WASM handler `update_appointment` since
+# appointments#271: an edit that moves the slot or hands the appointment over emits the reschedule
+# chain with the details write before the drain — so it writes the same gate table through
+# `_reschedule_row`'s overlap assert.
+UPDATE_CHAIN = [
+    "appointments._reschedule_state_assert",
+    "appointments._reschedule_row",
+    "appointments._update_details",
+    "appointments._gate_clear",
+]
 
 failures: list[str] = []
 notes: list[str] = []
@@ -73,8 +80,7 @@ def fail(msg: str) -> None:
 def statements_of(command: str) -> list[str]:
     """Every statement of a command, in manifest order.
 
-    A command may chain several files — `appointments.appointments.update`, and the internal
-    `_reschedule_row`, whose row UPDATE, overlap gate and history line have to share one `:now`
+    A command may chain several files — the internal `_reschedule_row`, whose row UPDATE, overlap gate and history line have to share one `:now`
     (appointments#196) — and the runtime runs them in that order inside one transaction, bound
     with ONE set of params — so the battery has to as well.
     """
@@ -631,22 +637,25 @@ def check_the_gate_table_is_drained() -> None:
     if left != "0":
         fail(f"a refused reschedule left {left} row(s) in appointments__gate")
 
-    # The other consumer of the gate is the DECLARATIVE chain of `appointments.appointments.update`,
-    # whose overlap assert writes the very same table.
+    # The other consumer of the gate is the chain an EDIT emits when it moves the slot
+    # (`appointments.appointments.update`, appointments#271): the reschedule chain with the details
+    # write before the drain.
     err = run_chain(
         UPDATE_CHAIN,
-        booking(
-            HUB,
-            "a-1",
-            "20260825",
-            "2026-08-25T10:00:00+02:00",
-            30,
-            now="2026-08-20T10:20:00+02:00",
-            notes="edited",
-            # The runtime mints a fresh `:new_id` per command; since appointments#260 the edit
-            # writes a history line with it, so it cannot reuse the one the create chain took.
-            new_id="n-a-1-edit",
-        ),
+        {
+            **reschedule_params(
+                "a-1",
+                "2026-08-25T11:00:00+02:00",
+                "2026-08-25T11:30:00+02:00",
+                30,
+                "2026-08-20T10:20:00+02:00",
+            ),
+            "customer_name": "Ada Lovelace",
+            "customer_phone": "+34600000001",
+            "customer_email": "ada@example.com",
+            "notes": "edited",
+            "internal_notes": "",
+        },
     )
     if err:
         fail(f"a legitimate update was refused: {err}")

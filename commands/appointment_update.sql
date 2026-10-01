@@ -1,18 +1,17 @@
--- Edición de los datos de una cita (Tier 0; la UI envía el conjunto completo de campos).
--- Portado de AppointmentService.update. NO recalcula end_datetime cuando cambian
--- start/duration: ese recálculo (start + duration → end) lo resuelve el SDK/UI antes de
--- llamar, o el reagendado vía appointment_reschedule. Runtime inyecta :hub_id/:current_user_id/:now.
+-- The details of ONE appointment — `appointments._update_details`, the write of
+-- `appointments.appointments.update` that is not about the slot (appointments#271).
+--
+-- The edit used to be this file alone, and it wrote the professional, the service, their names and
+-- the slot exactly as the caller sent them. Since appointments#271 the command runs the WASM handler
+-- (`update_appointment`): the professional, the service and the slot take the agenda's own road
+-- (`_reschedule_row`, judged by `reschedule`), and this statement keeps only what the caller owns —
+-- the customer's contact on this appointment and the notes. That is also why it has no status
+-- filter: the notes of an appointment that already happened can still be written.
+-- The runtime injects :hub_id / :current_user_id / :now.
 UPDATE appointments_appointment SET
   customer_name    = :customer_name,
   customer_phone   = :customer_phone,
   customer_email   = :customer_email,
-  service_id       = :service_id,
-  service_name     = :service_name,
-  staff_id         = :staff_id,
-  staff_name       = :staff_name,
-  start_datetime   = :start_datetime,
-  end_datetime     = :end_datetime,
-  duration_minutes = :duration_minutes,
   notes            = :notes,
   internal_notes   = :internal_notes,
   updated_by       = :current_user_id,

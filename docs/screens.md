@@ -140,6 +140,16 @@ changed*, else *Time changed* with the new time, and who made the change. An edi
 of those — only the notes or the customer's contact details — leaves no entry, and neither does an
 edit the agenda refuses (for example because it would double-book the professional).
 
+That edit follows the same rules as moving an appointment in the agenda (appointments#271). A new
+professional, service, time or length is checked exactly as there: the professional and the service
+must exist in this business, she must perform that service, the new time must fall inside the
+opening hours and her working hours, outside her blocked time, without double-booking her. A new
+service brings its own name and price from the catalogue — the names the caller sends are ignored.
+The professional and the service are changed together; leaving them out keeps the ones the
+appointment has. The end is always the start plus the length: an end that says something else is
+refused. The notes and the customer's contact can be edited at any time, even on an appointment
+that already happened.
+
 ### Delete
 
 Destructive, with confirmation, and **admin only** (`appointments.delete_appointment`). Prefer

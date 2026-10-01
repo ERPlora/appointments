@@ -263,7 +263,10 @@
     "appointments.cannot_confirm": "This appointment can no longer be confirmed: it is not pending any more.",
     "appointments.cannot_mark_no_show": "This appointment cannot be marked as a no-show in its current state.",
     "appointments.cannot_start": "This appointment cannot be started: it is not confirmed.",
-    "appointments.cannot_update_settings": "The booking settings could not be changed: this business has no settings in use right now."
+    "appointments.cannot_update_settings": "The booking settings could not be changed: this business has no settings in use right now.",
+    "appointments.appointment_not_found": "That appointment does not exist in this business.",
+    "appointments.invalid_end": "The end does not match the start plus the duration.",
+    "appointments.handover_incomplete": "To change the professional or the service, send both the professional and the service, the one that stays included."
   },
   "bell": {
     "appointments.to_confirm": {

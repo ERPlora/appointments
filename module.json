@@ -3,6 +3,7 @@
   "name": "Appointments",
   "version": "1.1.131",
   "errors": {
+    "appointments.appointment_not_found": {},
     "appointments.availability_unavailable": {},
     "appointments.blocked": {},
     "appointments.cancellation_notice_required": {},
@@ -17,10 +18,11 @@
     "appointments.customer_cancellation_disabled": {},
     "appointments.customer_mismatch": {},
     "appointments.customer_not_found": {},
+    "appointments.handover_incomplete": {},
+    "appointments.invalid_end": {},
     "appointments.invalid_start": {},
     "appointments.outside_schedule": {},
     "appointments.outside_staff_hours": {},
-    "appointments.staff_hours_unavailable": {},
     "appointments.overlapping_appointment": {},
     "appointments.recurring_inactive": {},
     "appointments.recurring_mismatch": {},
@@ -29,6 +31,7 @@
     "appointments.service_not_bookable": {},
     "appointments.service_not_found": {},
     "appointments.settings_unavailable": {},
+    "appointments.staff_hours_unavailable": {},
     "appointments.staff_not_bookable": {},
     "appointments.staff_not_eligible": {},
     "appointments.staff_not_found": {},
@@ -467,6 +470,12 @@
         "commands/_history_series_move.sql"
       ]
     },
+    "appointments._update_details": {
+      "permission": "appointments.change_appointment",
+      "sql": [
+        "commands/appointment_update.sql"
+      ]
+    },
     "appointments._reschedule_state_assert": {
       "permission": "appointments.change_appointment",
       "sql": [
@@ -865,20 +874,86 @@
     },
     "appointments.appointments.update": {
       "permission": "appointments.change_appointment",
-      "transaction": true,
-      "sql": [
-        "commands/_history_appointment_edit.sql",
-        "commands/appointment_update.sql",
-        "commands/_appointment_overlap_assert.sql",
-        "commands/_gate_clear.sql"
-      ],
       "schema": "schemas/appointment_update.json",
+      "handler": {
+        "type": "wasm",
+        "file": "dist/handler.wasm",
+        "function": "update_appointment"
+      },
       "emit": [
         "appointments.appointment.updated"
       ],
       "ai": {
-        "description": "Updates an existing appointment's details such as notes, duration, or assigned employee."
-      }
+        "description": "Edits one appointment: the customer's name, phone and email, the notes, and — judged exactly like a move from the agenda — its time, length, professional or service. The professional and the service are resolved against the hub's records (never the names sent): to change either, send `staff_id` and `service_id` TOGETHER (the one that stays included); `null` keeps what the appointment has. A new service brings its catalogue name and price. `end_datetime` must equal the start plus `duration_minutes`. A change of time, length, professional or service is refused when the appointment is no longer pending or confirmed, or when it lands on a blocked period, outside opening hours or the professional's hours, on another of her appointments, or breaks the minimum notice or maximum advance; editing only the details and notes works in any state."
+      },
+      "reads": [
+        {
+          "query": "appointments.appointments.get",
+          "params": {
+            "appointment_id": "payload.appointment_id"
+          },
+          "required": true
+        },
+        {
+          "query": "staff.members.get",
+          "params": {
+            "staff_id": "payload.staff_id"
+          },
+          "required": false
+        },
+        {
+          "query": "staff.services.eligible_for_service",
+          "params": {
+            "service_id": "payload.service_id"
+          },
+          "required": false
+        },
+        {
+          "query": "services.services.get",
+          "params": {
+            "service_id": "payload.service_id"
+          },
+          "required": false
+        },
+        {
+          "query": "appointments.settings.get",
+          "required": true
+        },
+        {
+          "query": "appointments.appointments.conflicting",
+          "params": {
+            "start_datetime": "payload.start_datetime"
+          },
+          "required": true
+        },
+        {
+          "query": "appointments.blocked_times.upcoming",
+          "required": true
+        },
+        {
+          "query": "staff.availability.team_day_at",
+          "params": {
+            "at": "payload.start_datetime"
+          },
+          "required": true
+        },
+        {
+          "query": "schedules.business_hours.list",
+          "required": true
+        },
+        {
+          "query": "schedules.special_days.list",
+          "required": true
+        },
+        {
+          "query": "schedules.overrides.list",
+          "required": true
+        },
+        {
+          "query": "schedules.exception_intervals.list",
+          "required": true
+        }
+      ]
     },
     "appointments.availability.check": {
       "permission": "appointments.view_schedule",

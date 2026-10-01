@@ -151,9 +151,116 @@ def main() -> int:
     )
     hub.check("§5 the trail did not grow", len(trail(hub, edited)), before)
 
+    judged_like_the_agenda(hub, links, day)
+
     return hub.finish(
         "a move, a cancellation and an edit each leave exactly the history line that says what "
-        "happened and who asked, and a refused move or a notes-only edit leaves none"
+        "happened and who asked, a refused move or a notes-only edit leaves none, and an edit "
+        "that hands an appointment over is judged like the agenda's"
+    )
+
+
+def appointment(hub: Hub, appointment_id: str) -> dict:
+    rows = hub.query(
+        "appointments.appointments.get", {"appointment_id": appointment_id}
+    )
+    return rows[0] if rows else {}
+
+
+def judged_like_the_agenda(hub: Hub, links, day: str) -> None:
+    """appointments#271: the general edit (`update`, the one the assistant, flows and API keys
+    call) wrote the professional, the service and their names exactly as the caller sent them. It
+    now takes the agenda's road (`reschedule`, appointments#263): the professional and the service
+    are resolved against the hub's records, the price comes from the catalogue, and the slot is
+    judged on whoever will do it."""
+    colour_name = f"Tinte {links.service_name}"
+    tax_key = next(
+        (c["key"] for c in hub.query("taxes.categories.list") if c.get("key")), None
+    )
+    colour_id = hub.new_id(
+        "services.services.create",
+        {
+            "name": colour_name,
+            "tax_category_key": tax_key,
+            "duration_minutes": DURATION,
+            "price": 4500,
+            "is_bookable": 1,
+        },
+    )
+    subject = book(hub, links, links.staff_id, instant(day, "13:00"), DURATION)
+    edit = {
+        "appointment_id": subject,
+        "customer_name": "Cliente",
+        "service_id": links.service_id,
+        "service_name": links.service_name,
+        "staff_id": links.staff_id,
+        "staff_name": links.staff_name,
+        "start_datetime": instant(day, "13:00"),
+        "end_datetime": instant(day, "13:30"),
+        "duration_minutes": DURATION,
+    }
+
+    print("§6 an edit to a professional the hub does not have is refused (#271)")
+    hub.refused(
+        "§6 handing the appointment to an invented professional",
+        "appointments.appointments.update",
+        {**edit, "staff_id": "staff-that-does-not-exist", "staff_name": "Nadie"},
+        "appointments.staff_not_found",
+    )
+    hub.check(
+        "§6 …and the appointment keeps its professional",
+        appointment(hub, subject).get("staff_id"),
+        links.staff_id,
+    )
+
+    print("§7 an edit to a service the hub does not have is refused (#271)")
+    hub.refused(
+        "§7 changing to an invented service",
+        "appointments.appointments.update",
+        {**edit, "service_id": "service-that-does-not-exist", "service_name": "Nada"},
+        "appointments.service_not_found",
+    )
+
+    print("§8 an edit onto the new professional's blocked time is refused (#271)")
+    hub.run(
+        "appointments.blocked_times.create",
+        {
+            "title": "Formación",
+            "staff_id": links.other_staff_id,
+            "start_datetime": instant(day, "12:30"),
+            "end_datetime": instant(day, "14:30"),
+        },
+    )
+    hub.refused(
+        "§8 handing the appointment to a professional who is in training",
+        "appointments.appointments.update",
+        {
+            **edit,
+            "staff_id": links.other_staff_id,
+            "staff_name": links.other_staff_name,
+        },
+        "appointments.blocked",
+    )
+    hub.check(
+        "§8 …and the appointment stays with its professional",
+        appointment(hub, subject).get("staff_id"),
+        links.staff_id,
+    )
+
+    print(
+        "§9 a new service brings its catalogue name and price, not the caller's (#271)"
+    )
+    hub.run(
+        "appointments.appointments.update",
+        {**edit, "service_id": colour_id, "service_name": "lo-decide-el-payload"},
+    )
+    row = appointment(hub, subject)
+    hub.check("§9 the service changed", row.get("service_id"), colour_id)
+    hub.check("§9 …with the catalogue's name", row.get("service_name"), colour_name)
+    hub.check_true(
+        "§9 …and the catalogue's price",
+        int(row.get("service_price") or 0) == 4500,
+        f"service_price: {row.get('service_price')!r}",
     )
 
 
