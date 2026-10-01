@@ -335,6 +335,19 @@ describe('the new-series form only offers who performs the service (appointments
     expect(notice(el, 'eligible-staff-unavailable'), '…after the series was saved: not this form’s news').toBeNull();
   });
 
+  it('a series saved with a narrowed service leaves the whole team for the next one', async () => {
+    const el = await mount();
+    await pick(el, 'appointments-series-create-customer', 'c1');
+    await pick(el, CREATE_SERVICE, 'sv2');
+    await pick(el, CREATE_STAFF, 's1');
+    await type(el, 'appointments-series-create-start', '2099-10-01');
+    await type(el, 'appointments-series-create-start-time', '17:30');
+    expect(offered(el, CREATE_STAFF)).toEqual(['s1']);
+    await submit(el, 'appointments-series-create-form');
+    expect(commands.some((c) => c.name === 'appointments.recurring.create')).toBe(true);
+    expect(offered(el, CREATE_STAFF), 'the next series has no service yet').toEqual(['s1', 's2']);
+  });
+
   it('a series saved after a failed check does not carry the warning into the next one', async () => {
     eligibleFails = true;
     const el = await mount();
@@ -365,6 +378,14 @@ describe('the series edit panel only offers who performs the service (appointmen
     expect(el.editStaffId, 'opening changes nothing').toBe('s2');
     expect(offered(el, EDIT_STAFF), 'his name stays as the current value').toEqual(['s2', 's1']);
     expect(notice(el, 'staff-not-for-service'), 'nothing was changed: no notice').toBeNull();
+  });
+
+  it('with the series’ own service, its professional can be picked back after trying another', async () => {
+    template = LUIS_COLOUR;
+    const el = await mount();
+    await openEdit(el);
+    await pick(el, EDIT_STAFF, 's1');
+    expect(offered(el, EDIT_STAFF), 'nothing would change by going back to Luis').toEqual(['s2', 's1']);
   });
 
   it('a series whose service nobody narrowed offers the whole team', async () => {
