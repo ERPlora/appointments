@@ -14,7 +14,8 @@
       "customers.list",
       "hub.users.list",
       "services.services.list",
-      "staff.members.list"
+      "staff.members.list",
+      "staff.services.eligible_for_service"
     ],
     "optional_queries": [],
     "commands": [

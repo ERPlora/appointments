@@ -79,6 +79,7 @@
     "freeSlotsLoading": "Buscando horas libres…",
     "freeSlotsEmpty": "No quedan horas libres ese día para este profesional. Puedes escribir una hora igualmente.",
     "freeSlotsError": "No se han podido cargar las horas libres. Puedes escribir una hora igualmente.",
+    "staffDurationUnavailable": "No se ha podido leer la duración propia de esta profesional para el servicio; se propone la del catálogo. Revisa los minutos.",
     "freeSlotsRetry": "Reintentar",
     "openCalendar": "Abrir calendario",
     "calendarMonth": "Mes",

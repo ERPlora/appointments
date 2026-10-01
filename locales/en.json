@@ -78,6 +78,7 @@
     "freeSlotsLoading": "Looking for free times…",
     "freeSlotsEmpty": "No free times that day for this professional. You can still type a time.",
     "freeSlotsError": "The free times could not be loaded. You can still type a time.",
+    "staffDurationUnavailable": "This professional's own length for the service could not be read; the catalogue length is proposed. Check the minutes.",
     "freeSlotsRetry": "Try again",
     "openCalendar": "Open calendar",
     "calendarMonth": "Month",
