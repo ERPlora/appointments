@@ -2069,6 +2069,7 @@ var es_default = {
     seriesSaveError: "No se ha podido guardar la cita peri\xF3dica.",
     seriesMaterializeError: "No se han podido reservar las citas de esta serie.",
     seriesNoStaff: "Esta serie no tiene profesional y sus citas no se pueden reservar. \xC1brela y elige qui\xE9n la atiende.",
+    seriesStaffNotForService: "El profesional de la serie no realiza este servicio: elige qui\xE9n se queda con la serie desde esta fecha.",
     seriesPickStaffToBook: "Esta serie no tiene profesional: elige qui\xE9n la atiende y al guardar se reservan sus citas.",
     seriesNoCustomer: "Esta serie no tiene un cliente de tu lista y sus citas no se pueden reservar. B\xF3rrala y vuelve a crearla eligiendo el cliente.",
     seriesNoService: "Esta serie no tiene un servicio de tu lista y sus citas no se pueden reservar. B\xF3rrala y vuelve a crearla eligiendo el servicio.",
@@ -2351,6 +2352,7 @@ var en_default = {
     seriesSaveError: "The repeating appointment could not be saved.",
     seriesMaterializeError: "The appointments of this series could not be booked.",
     seriesNoStaff: "This series has no professional, so its appointments cannot be booked. Edit it and choose who does it.",
+    seriesStaffNotForService: "The series' professional does not perform this service: pick who takes the series over from this date.",
     seriesPickStaffToBook: "This series has no professional: choose who does it and saving books its appointments.",
     seriesNoCustomer: "This series has no customer from your list, so its appointments cannot be booked. Delete it and create it again choosing the customer.",
     seriesNoService: "This series has no service from your list, so its appointments cannot be booked. Delete it and create it again choosing the service.",
@@ -4224,17 +4226,17 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
       out.push(row);
     }
     const headers = out.shift() ?? [];
-    const rows5 = out.map((r6) => Object.fromEntries(headers.map((h4, i7) => [h4, r6[i7] ?? ""])));
-    return { headers, rows: rows5 };
+    const rows6 = out.map((r6) => Object.fromEntries(headers.map((h4, i7) => [h4, r6[i7] ?? ""])));
+    return { headers, rows: rows6 };
   }
   async onImportFile(ev) {
     const input = ev.target;
     const file = input.files?.[0];
     if (!file) return;
     const text = decodeCsvBuffer(await file.arrayBuffer());
-    const { headers, rows: rows5 } = this.parseCsv(text);
-    this.emit("csvImport", { headers, rows: rows5, count: rows5.length });
-    this.emit("import", { headers, rows: rows5, count: rows5.length });
+    const { headers, rows: rows6 } = this.parseCsv(text);
+    this.emit("csvImport", { headers, rows: rows6, count: rows6.length });
+    this.emit("import", { headers, rows: rows6, count: rows6.length });
     input.value = "";
   }
   toggle(p4) {
@@ -7528,6 +7530,33 @@ function formatTypedTime(time, locale) {
   return `${pad2(hour)}:${pad2(minute)}`;
 }
 
+// ui/lib/eligible-staff.ts
+function rows3(r6) {
+  if (Array.isArray(r6)) return r6;
+  if (r6 && typeof r6 === "object" && Array.isArray(r6.rows)) {
+    return r6.rows;
+  }
+  return [];
+}
+function eligibleReader(read) {
+  const byService = /* @__PURE__ */ new Map();
+  return (serviceId) => {
+    let found = byService.get(serviceId);
+    if (!found) {
+      found = read(serviceId).then((r6) => rows3(r6));
+      byService.set(serviceId, found);
+      found.catch(() => byService.delete(serviceId));
+    }
+    return found;
+  };
+}
+function eligibleIds(eligible) {
+  return eligible.length ? eligible.map((p4) => String(p4.staff_id)) : null;
+}
+function offeredStaff(team, ids) {
+  return ids ? team.filter((m4) => ids.includes(m4.id)) : team;
+}
+
 // ui/components/erp-appointments-series/erp-appointments-series.ts
 var CATALOG3 = { es: es_default, en: en_default };
 function erplora3() {
@@ -7535,7 +7564,7 @@ function erplora3() {
   if (!c5) throw new Error("erplora SDK not initialised by the shell");
   return c5;
 }
-function rows3(r6) {
+function rows4(r6) {
   if (Array.isArray(r6)) return r6;
   if (r6 && typeof r6 === "object" && Array.isArray(r6.rows)) {
     return r6.rows;
@@ -7636,6 +7665,15 @@ var ErpAppointmentsSeries = class extends i3 {
     this.dateDraft = { start: null, end: null };
     this.timeDraft = { new: null, edit: null };
     this.calendarOpen = "";
+    this.eligibleStaffIds = { new: null, edit: null };
+    this.eligibleStaffUnavailable = { new: false, edit: false };
+    this.staffCleared = { new: false, edit: false };
+    /** Bumped on every eligibility question: an answer for an older one is dropped. */
+    this.eligibleRequest = { new: 0, edit: 0 };
+    /** appointments#281 — the eligible professionals per service, read once per service. */
+    this.eligibleFor = eligibleReader(
+      (serviceId) => erplora3().query("staff.services.eligible_for_service", { service_id: serviceId })
+    );
     this.offLocale = null;
   }
   static {
@@ -7678,9 +7716,9 @@ var ErpAppointmentsSeries = class extends i3 {
       erplora3().query("services.services.list", { limit: 500 }).catch(() => []),
       erplora3().query("staff.members.list", { limit: 500 }).catch(() => [])
     ]);
-    this.customers = rows3(customers);
-    this.services = rows3(services).filter((s5) => s5.is_bookable === void 0 || Number(s5.is_bookable) === 1);
-    this.staffMembers = rows3(staffMembers);
+    this.customers = rows4(customers);
+    this.services = rows4(services).filter((s5) => s5.is_bookable === void 0 || Number(s5.is_bookable) === 1);
+    this.staffMembers = rows4(staffMembers);
   }
   /** Professionals that can receive appointments: the ones the `staff` module marks bookable. */
   get bookableStaff() {
@@ -7689,10 +7727,13 @@ var ErpAppointmentsSeries = class extends i3 {
   /** appointments#248 — who the edit panel offers: the bookable professionals and, when she no
    *  longer is one (she left, or stopped taking appointments), the series' current professional, so
    *  the field still says who does it today instead of showing up empty. */
+  /** appointments#281 — narrowed to who performs the chosen service; the series' professional stays
+   *  offered while the service is still hers (nothing would change) or she is the one picked. */
   get editStaffOptions() {
-    const options = this.bookableStaff.map((m4) => ({ id: m4.id, name: m4.full_name }));
+    const options = offeredStaff(this.bookableStaff, this.eligibleStaffIds.edit).map((m4) => ({ id: m4.id, name: m4.full_name }));
     const tmpl = this.template;
-    if (tmpl?.staff_id && !options.some((o7) => o7.id === tmpl.staff_id)) {
+    const stillHers = this.editServiceId === (tmpl?.service_id ?? "") || this.editStaffId === tmpl?.staff_id;
+    if (tmpl?.staff_id && stillHers && !options.some((o7) => o7.id === tmpl.staff_id)) {
       options.unshift({ id: tmpl.staff_id, name: tmpl.staff_name || tmpl.staff_id });
     }
     return options;
@@ -7728,6 +7769,7 @@ var ErpAppointmentsSeries = class extends i3 {
     this.editServiceId = serviceId;
     const tmpl = this.template;
     if (!tmpl) return;
+    void this.narrowStaff("edit", serviceId !== (tmpl.service_id ?? ""));
     if (serviceId === (tmpl.service_id ?? "")) {
       this.editDuration = String(tmpl.duration_minutes ?? "");
       return;
@@ -7735,13 +7777,73 @@ var ErpAppointmentsSeries = class extends i3 {
     const m4 = Number(this.services.find((s5) => s5.id === serviceId)?.duration_minutes);
     if (Number.isFinite(m4) && m4 >= 1) this.editDuration = String(m4);
   }
+  /** appointments#248/#281 — the professional picked in the edit panel. */
+  onEditStaffChange(staffId) {
+    this.editStaffId = staffId;
+    this.staffCleared = { ...this.staffCleared, edit: false };
+  }
+  /** appointments#281 — the professional picked in the new-series form. */
+  onCreateStaffChange(staffId) {
+    this.newStaffId = staffId;
+    this.staffCleared = { ...this.staffCleared, new: false };
+  }
+  /** appointments#281 — reads who performs the form's service and narrows the picker to them. With
+   *  `clear`, a picked professional who does not perform it is cleared and the form says why;
+   *  opening a series clears nothing: it keeps the professional it has. A failed read narrows
+   *  nothing and says so — the server still judges on save. */
+  async narrowStaff(form, clear) {
+    const request = ++this.eligibleRequest[form];
+    const serviceId = form === "new" ? this.newServiceId : this.editServiceId;
+    this.eligibleStaffIds = { ...this.eligibleStaffIds, [form]: null };
+    this.eligibleStaffUnavailable = { ...this.eligibleStaffUnavailable, [form]: false };
+    this.staffCleared = { ...this.staffCleared, [form]: false };
+    if (!serviceId) return;
+    let ids;
+    try {
+      ids = eligibleIds(await this.eligibleFor(serviceId));
+    } catch {
+      if (request === this.eligibleRequest[form]) {
+        this.eligibleStaffUnavailable = { ...this.eligibleStaffUnavailable, [form]: true };
+      }
+      return;
+    }
+    if (request !== this.eligibleRequest[form]) return;
+    this.eligibleStaffIds = { ...this.eligibleStaffIds, [form]: ids };
+    const staffId = form === "new" ? this.newStaffId : this.editStaffId;
+    if (!clear || !ids || !staffId || ids.includes(staffId)) return;
+    if (form === "new") this.newStaffId = "";
+    else this.editStaffId = "";
+    this.staffCleared = { ...this.staffCleared, [form]: true };
+  }
+  /** appointments#281 — forgets the form's narrowing: a late answer must not land on a clean form. */
+  resetNarrowing(form) {
+    this.eligibleRequest[form]++;
+    this.eligibleStaffIds = { ...this.eligibleStaffIds, [form]: null };
+    this.eligibleStaffUnavailable = { ...this.eligibleStaffUnavailable, [form]: false };
+    this.staffCleared = { ...this.staffCleared, [form]: false };
+  }
+  /** appointments#281 — why the picker changed under the person: the professional cleared because
+   *  she does not perform the service, or a list that could not be narrowed. */
+  renderStaffNotices(form, t5) {
+    return b2`${this.staffCleared[form] ? b2`<ok-inline-feedback data-testid="appointments-series-staff-not-for-service" tone="warning" icon="person-outline"
+          >${t5(form === "new" ? "ui.staffNotForService" : "ui.seriesStaffNotForService")}</ok-inline-feedback
+        >` : A}
+    ${this.eligibleStaffUnavailable[form] ? b2`<ok-inline-feedback data-testid="appointments-series-eligible-staff-unavailable" tone="warning" icon="alert-circle-outline"
+          >${t5("ui.eligibleStaffUnavailable")}</ok-inline-feedback
+        >` : A}`;
+  }
+  /** appointments#281 — the series' professional was cleared by a new service she does not do:
+   *  saving would hand the series to nobody, and the server refuses it. */
+  get editNeedsStaff() {
+    return !!this.template?.staff_id && !this.editStaffId;
+  }
   async refresh() {
     this.loading = true;
     this.error = "";
     this.bookingReport = null;
     this.moveReport = null;
     try {
-      this.series = rows3(await erplora3().query("appointments.recurring.list"));
+      this.series = rows4(await erplora3().query("appointments.recurring.list"));
     } catch (e5) {
       this.series = [];
       this.error = e5 instanceof Error && e5.message ? e5.message : erplora3().t(CATALOG3, "ui.seriesLoadError");
@@ -7788,7 +7890,7 @@ var ErpAppointmentsSeries = class extends i3 {
   /** Carga la plantilla AUTORITATIVA de la serie (la lista no trae los tres ids) y lo que ya está
    *  reservado, que es lo que decide dónde cae el corte y lo que hay que avisar antes de guardar. */
   async loadTemplate(recurringId) {
-    const tmpl = rows3(
+    const tmpl = rows4(
       await erplora3().query("appointments.recurring.get", { recurring_id: recurringId })
     )[0];
     return tmpl ?? null;
@@ -7810,7 +7912,7 @@ var ErpAppointmentsSeries = class extends i3 {
         return;
       }
       this.template = tmpl;
-      this.occurrences = rows3(occ);
+      this.occurrences = rows4(occ);
       this.editingId = id;
       this.editFrequency = tmpl.frequency ?? "";
       this.editDayOfWeek = tmpl.day_of_week === null || tmpl.day_of_week === void 0 ? "" : String(tmpl.day_of_week);
@@ -7819,6 +7921,7 @@ var ErpAppointmentsSeries = class extends i3 {
       this.editDuration = String(tmpl.duration_minutes ?? "");
       this.editStaffId = tmpl.staff_id ?? "";
       this.editServiceId = tmpl.service_id ?? "";
+      void this.narrowStaff("edit", false);
       const today = todayISO();
       this.fromOccurrence = this.occurrences.map((o7) => o7.occurrence_date).find((d3) => d3 >= today) ?? today;
       await this.updateComplete;
@@ -7871,7 +7974,7 @@ var ErpAppointmentsSeries = class extends i3 {
   async submitEdit(ev) {
     ev.preventDefault?.();
     const tmpl = this.template;
-    if (!tmpl || this.saving) return;
+    if (!tmpl || this.saving || this.editNeedsStaff) return;
     const changed = this.changedFields();
     const staffChange = this.staffChange;
     const serviceChange = this.serviceChange;
@@ -8211,10 +8314,11 @@ var ErpAppointmentsSeries = class extends i3 {
           placeholder=${t5("ui.pickStaff")}
           label-placement="floating"
           .value=${this.editStaffId}
-          @ionChange=${(e5) => this.editStaffId = e5.target.value ?? ""}
+          @ionChange=${(e5) => this.onEditStaffChange(e5.target.value ?? "")}
         >
           ${this.editStaffOptions.map((o7) => b2`<ion-select-option .value=${o7.id}>${o7.name}</ion-select-option>`)}
         </ion-select>
+        ${this.renderStaffNotices("edit", t5)}
         <!-- appointments#252: the service of the series, for this and the following dates — the
              customer moves to another service without the series being deleted. -->
         <ion-select
@@ -8300,7 +8404,7 @@ var ErpAppointmentsSeries = class extends i3 {
            and a banner on the page underneath it is never seen. -->
       ${this.editError ? b2`<ok-inline-feedback data-testid="appointments-series-form-error" tone="danger" icon="alert-circle-outline">${this.editError}</ok-inline-feedback>` : A}
       <!-- A half-typed time is not a time: saving would silently keep the old one (appointments#217). -->
-      <ion-button data-testid="appointments-series-submit" type="submit" expand="block" .disabled=${this.saving || !this.editTime}>${t5("ui.seriesSave")}</ion-button>
+      <ion-button data-testid="appointments-series-submit" type="submit" expand="block" .disabled=${this.saving || !this.editTime || this.editNeedsStaff}>${t5("ui.seriesSave")}</ion-button>
     </form>`;
   }
   /** appointments#209 — chosen service PRE-FILLS «Min.» with its catalog duration: the receptionist
@@ -8308,6 +8412,7 @@ var ErpAppointmentsSeries = class extends i3 {
    *  re-fills from the new one because the typed exception belonged to the old one. */
   onCreateServiceChange(serviceId) {
     this.newServiceId = serviceId;
+    void this.narrowStaff("new", true);
     const service = this.services.find((s5) => s5.id === serviceId);
     const m4 = Number(service?.duration_minutes);
     this.newDuration = Number.isFinite(m4) && m4 >= 1 ? String(m4) : "";
@@ -8415,6 +8520,7 @@ var ErpAppointmentsSeries = class extends i3 {
     this.dateDraft = { start: null, end: null };
     this.timeDraft = { ...this.timeDraft, new: null };
     this.calendarOpen = "";
+    this.resetNarrowing("new");
   }
   renderCreateForm(t5) {
     const customer = this.customers.find((c5) => c5.id === this.newCustomerId);
@@ -8459,10 +8565,11 @@ var ErpAppointmentsSeries = class extends i3 {
           placeholder=${t5("ui.pickStaff")}
           label-placement="floating"
           .value=${this.newStaffId}
-          @ionChange=${(e5) => this.newStaffId = e5.target.value ?? ""}
+          @ionChange=${(e5) => this.onCreateStaffChange(e5.target.value ?? "")}
         >
-          ${this.bookableStaff.map((m4) => b2`<ion-select-option .value=${m4.id}>${m4.full_name}</ion-select-option>`)}
+          ${offeredStaff(this.bookableStaff, this.eligibleStaffIds.new).map((m4) => b2`<ion-select-option .value=${m4.id}>${m4.full_name}</ion-select-option>`)}
         </ion-select>
+        ${this.renderStaffNotices("new", t5)}
         <ion-select
           data-testid="appointments-series-create-frequency"
           data-role="series-create-frequency"
@@ -8766,6 +8873,15 @@ __decorateClass([
 __decorateClass([
   r5()
 ], ErpAppointmentsSeries.prototype, "calendarOpen", 2);
+__decorateClass([
+  r5()
+], ErpAppointmentsSeries.prototype, "eligibleStaffIds", 2);
+__decorateClass([
+  r5()
+], ErpAppointmentsSeries.prototype, "eligibleStaffUnavailable", 2);
+__decorateClass([
+  r5()
+], ErpAppointmentsSeries.prototype, "staffCleared", 2);
 define("erp-appointments-series", ErpAppointmentsSeries);
 
 // ui/components/erp-appointments-list/erp-appointments-list.ts
@@ -8830,7 +8946,7 @@ function splitWall(value) {
   const v3 = String(value ?? "");
   return [v3.slice(0, 10), v3.slice(11, 16)];
 }
-function rows4(r6) {
+function rows5(r6) {
   if (Array.isArray(r6)) return r6;
   if (r6 && typeof r6 === "object" && Array.isArray(r6.rows)) {
     return r6.rows;
@@ -8868,7 +8984,9 @@ var ErpAppointmentsList = class extends i3 {
     this.newDuration = "";
     this.staffDurationUnavailable = { new: false, reschedule: false };
     /** appointments#272 — the eligible professionals per service, read once per service. */
-    this.eligibleByService = /* @__PURE__ */ new Map();
+    this.eligibleFor = eligibleReader(
+      (serviceId) => erplora4().query("staff.services.eligible_for_service", { service_id: serviceId })
+    );
     this.eligibleStaffIds = { new: null, reschedule: null };
     this.eligibleStaffUnavailable = { new: false, reschedule: false };
     this.pairCleared = { new: "", reschedule: "" };
@@ -9025,8 +9143,7 @@ var ErpAppointmentsList = class extends i3 {
   /** appointments#279 — the professionals the picker offers: only who performs the form's service
    *  when it has declared competencies, else the whole bookable team (`resolve_professional`). */
   staffOptions(form) {
-    const ids = this.eligibleStaffIds[form];
-    return ids ? this.bookableStaff.filter((m4) => ids.includes(m4.id)) : this.bookableStaff;
+    return offeredStaff(this.bookableStaff, this.eligibleStaffIds[form]);
   }
   /** appointments#279 — reads who performs the form's service and narrows the picker to them.
    *  When the chosen pair does not match, the OLDER choice is cleared (`clear`) and the form says
@@ -9049,7 +9166,7 @@ var ErpAppointmentsList = class extends i3 {
       return;
     }
     if (request !== this.eligibleRequest[form]) return;
-    const ids = eligible.length ? eligible.map((p4) => String(p4.staff_id)) : null;
+    const ids = eligibleIds(eligible);
     this.eligibleStaffIds = { ...this.eligibleStaffIds, [form]: ids };
     const staffId = form === "new" ? this.newStaffId : this.rescheduleStaffId;
     if (!ids || !staffId || ids.includes(staffId) || !clear) return;
@@ -9073,15 +9190,6 @@ var ErpAppointmentsList = class extends i3 {
   catalogueDuration(serviceId) {
     const minutes = Number(this.services.find((s5) => s5.id === serviceId)?.duration_minutes);
     return Number.isFinite(minutes) && minutes >= 1 ? minutes : null;
-  }
-  eligibleFor(serviceId) {
-    let found = this.eligibleByService.get(serviceId);
-    if (!found) {
-      found = erplora4().query("staff.services.eligible_for_service", { service_id: serviceId }).then((r6) => rows4(r6));
-      this.eligibleByService.set(serviceId, found);
-      found.catch(() => this.eligibleByService.delete(serviceId));
-    }
-    return found;
   }
   /** appointments#272 — the minutes a (service, professional) pair proposes: HER own length for
    *  the service when she has one (staff#9 `custom_duration`), else the catalogue — the same rule
@@ -9162,7 +9270,7 @@ var ErpAppointmentsList = class extends i3 {
       });
       if (request !== this.freeSlotsRequest) return;
       const slots = answer?.result;
-      this.freeSlots = rows4(slots).filter((slot) => typeof slot?.start_time === "string");
+      this.freeSlots = rows5(slots).filter((slot) => typeof slot?.start_time === "string");
       this.freeSlotsState = "ready";
     } catch (e5) {
       if (request !== this.freeSlotsRequest) return;
@@ -9339,10 +9447,10 @@ var ErpAppointmentsList = class extends i3 {
         erplora4().query("staff.members.list", { limit: 500 }).catch(() => []),
         erplora4().query("appointments.settings.get").catch(() => [])
       ]);
-      this.customers = rows4(customers);
-      this.services = rows4(services).filter((s5) => s5.is_bookable === void 0 || Number(s5.is_bookable) === 1);
-      this.staffMembers = rows4(staffMembers);
-      this.settings = rows4(settings)[0] ?? {};
+      this.customers = rows5(customers);
+      this.services = rows5(services).filter((s5) => s5.is_bookable === void 0 || Number(s5.is_bookable) === 1);
+      this.staffMembers = rows5(staffMembers);
+      this.settings = rows5(settings)[0] ?? {};
     } catch (e5) {
       this.error = e5 instanceof Error ? e5.message : erplora4().t(CATALOG4, "ui.errLoadCatalogs");
     }
@@ -9366,7 +9474,7 @@ var ErpAppointmentsList = class extends i3 {
         staff_id: "",
         limit: 100
       });
-      this.items = rows4(result);
+      this.items = rows5(result);
     } catch (e5) {
       this.error = e5 instanceof Error ? e5.message : erplora4().t(CATALOG4, "ui.errLoad");
     } finally {
@@ -9617,7 +9725,7 @@ var ErpAppointmentsList = class extends i3 {
       staff_id: staffId,
       start_datetime: startIso
     });
-    return rows4(found).filter((a3) => {
+    return rows5(found).filter((a3) => {
       if (a3.id === excludeId) return false;
       const s5 = toInstantMs(a3.start_datetime);
       const e5 = toInstantMs(a3.end_datetime);
@@ -9948,7 +10056,7 @@ var ErpAppointmentsList = class extends i3 {
     this.formError = "";
     try {
       if (scope === "this_and_following") {
-        const template = rows4(
+        const template = rows5(
           await erplora4().query("appointments.recurring.get", { recurring_id: this.rescheduleSeriesId })
         )[0];
         const answer = handlerAnswer(
