@@ -23,6 +23,8 @@ process.env.TZ = 'Europe/Madrid';
 
 const commands: { name: string; payload: Record<string, unknown> }[] = [];
 let eligibleFails = false;
+/** Services whose eligibility read fails, on top of `eligibleFails`. */
+const eligibleFailsFor = new Set<string>();
 let eligibleGate: Promise<void> | null = null;
 
 /** sv1 (Haircut) has no declared competencies; sv2 (Colour) is only Eva's (s1). */
@@ -50,6 +52,7 @@ const APPOINTMENT = {
 beforeEach(() => {
   commands.length = 0;
   eligibleFails = false;
+  eligibleFailsFor.clear();
   eligibleGate = null;
   (globalThis as Record<string, unknown>).erplora = {
     timezone: 'Europe/Madrid',
@@ -78,7 +81,7 @@ beforeEach(() => {
           };
         case 'staff.services.eligible_for_service':
           if (eligibleGate) await eligibleGate;
-          if (eligibleFails) throw new Error('forbidden');
+          if (eligibleFails || eligibleFailsFor.has(String(params?.service_id))) throw new Error('forbidden');
           return ELIGIBLE[String(params?.service_id)] ?? [];
         case 'appointments.settings.get':
           return [{ calendar_start_hour: 9, calendar_end_hour: 19, default_duration: 60, allow_overlapping: false }];
@@ -103,6 +106,7 @@ type Wc = HTMLElement & {
   newServiceId: string;
   newStaffId: string;
   newStart: string;
+  newDuration: string;
   rescheduleStaffId: string;
   rescheduleServiceId: string;
   onRowAction: (ev: CustomEvent<{ actionId: string; row: Record<string, unknown> }>) => Promise<void>;
@@ -274,6 +278,71 @@ describe('the create form only offers who performs the service (appointments#279
     await settle(el);
     expect(notice(createForm(el), 'staff-not-for-service')).toBeNull();
   });
+
+  it('while the new service is being checked, the list of the previous service is not offered', async () => {
+    const el = await mount();
+    await pick(el, createForm(el), 'service', 'sv2');
+    expect(offered(createForm(el), 'staff')).toEqual(['s1']);
+    let release!: () => void;
+    eligibleGate = new Promise((r) => (release = r));
+    await pick(el, createForm(el), 'service', 'sv1');
+    expect(offered(createForm(el), 'staff'), 'colours’ list is not the answer for haircuts').toEqual(['s1', 's2']);
+    release();
+    await settle(el);
+    expect(offered(createForm(el), 'staff')).toEqual(['s1', 's2']);
+  });
+
+  it('a failed read for the service picked BEFORE never says the one picked now could not be checked', async () => {
+    const el = await mount();
+    let release!: () => void;
+    eligibleGate = new Promise((r) => (release = r));
+    eligibleFailsFor.add('sv2');
+    await pick(el, createForm(el), 'service', 'sv2');
+    await pick(el, createForm(el), 'service', 'sv1');
+    release();
+    await settle(el);
+    expect(notice(createForm(el), 'eligible-staff-unavailable'), 'haircuts were checked fine').toBeNull();
+  });
+
+  it('a slot that clears the service also clears the minutes that service proposed', async () => {
+    const el = await mount();
+    await pick(el, createForm(el), 'service', 'sv2');
+    expect(el.newDuration).toBe('90');
+    await el.onSlotClick(new CustomEvent('slotClick', { detail: { resourceId: 's2', time: '11:00' } }));
+    await settle(el);
+    expect(el.newServiceId).toBe('');
+    expect(el.newDuration, 'no service, no colour minutes left behind').toBe('');
+  });
+
+  it('a booking saved after a failed check does not carry the warning into the next one', async () => {
+    eligibleFails = true;
+    const el = await mount();
+    el.newCustomerId = 'c1';
+    el.newStart = '2026-08-07T10:00';
+    await pick(el, createForm(el), 'staff', 's2');
+    await pick(el, createForm(el), 'service', 'sv2');
+    expect(notice(createForm(el), 'eligible-staff-unavailable')).toBeTruthy();
+    await el.createAppointment(new Event('submit'));
+    await settle(el);
+    expect(commands.some((c) => c.name === 'appointments.appointments.create')).toBe(true);
+    expect(notice(createForm(el), 'eligible-staff-unavailable')).toBeNull();
+  });
+
+  it('an answer that arrives after the booking was saved never narrows the clean form', async () => {
+    const el = await mount();
+    el.newCustomerId = 'c1';
+    el.newStart = '2026-08-07T10:00';
+    await pick(el, createForm(el), 'staff', 's1');
+    let release!: () => void;
+    eligibleGate = new Promise((r) => (release = r));
+    await pick(el, createForm(el), 'service', 'sv2');
+    await el.createAppointment(new Event('submit'));
+    await settle(el);
+    expect(commands.some((c) => c.name === 'appointments.appointments.create')).toBe(true);
+    release();
+    await settle(el);
+    expect(offered(createForm(el), 'staff'), 'the next booking has no service yet').toEqual(['s1', 's2']);
+  });
 });
 
 describe('the appointment sheet only offers who performs the service (appointments#279)', () => {
@@ -298,6 +367,7 @@ describe('the appointment sheet only offers who performs the service (appointmen
     expect(el.rescheduleStaffId, 'Luis does not do colours').toBe('');
     expect(notice(sheet(el), 'staff-not-for-service')).toBeTruthy();
     expect(offered(sheet(el), 'reschedule-staff')).toEqual(['s1']);
+    expect(notice(sheet(el), 'reschedule-needs-staff'), 'one notice says it, not two').toBeNull();
     await pick(el, sheet(el), 'reschedule-staff', 's1');
     expect(notice(sheet(el), 'staff-not-for-service')).toBeNull();
     await el.submitReschedule(new Event('submit'));
