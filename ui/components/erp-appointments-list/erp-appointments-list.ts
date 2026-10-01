@@ -115,6 +115,15 @@ interface StaffMember {
   color?: string;
 }
 
+/** appointments#272 — a professional eligible for a service (`staff.services.eligible_for_service`,
+ *  staff#9), with her own length for it when she has one. */
+interface EligibleProfessional {
+  staff_id: string;
+  custom_duration?: number | null;
+}
+
+type DurationForm = 'new' | 'reschedule';
+
 interface AppointmentSettings {
   calendar_start_hour?: number;
   calendar_end_hour?: number;
@@ -417,6 +426,13 @@ export class ErpAppointmentsList extends LitElement {
 
   @state() newDuration = '';
 
+  /** appointments#272 — the professional's own length could not be read for this form: the
+   *  catalogue length is proposed instead and the form says so. */
+  @state() private staffDurationUnavailable: Record<DurationForm, boolean> = { new: false, reschedule: false };
+
+  /** appointments#272 — the eligible professionals per service, read once per service. */
+  private eligibleByService = new Map<string, Promise<EligibleProfessional[]>>();
+
   /** appointments#232 — the free times of the chosen day for the chosen professional and service,
    *  as `appointments.availability.slots` answers them. The engine is the one the assistant and
    *  WhatsApp read (opening hours #127, blocked time, agenda, the professional's shift #230): the
@@ -531,11 +547,67 @@ export class ErpAppointmentsList extends LitElement {
   }
 
   /** appointments#263 — same rule as the create form (appointments#75): the service IS the
-   *  length, so picking another one re-fills the minutes from the catalogue. */
+   *  length, so picking another one re-fills the minutes (appointments#272: the professional's). */
   private onRescheduleServiceChange(serviceId: string): void {
     this.rescheduleServiceId = serviceId;
-    const fromCatalogue = Number(this.services.find((s) => s.id === serviceId)?.duration_minutes);
-    if (Number.isFinite(fromCatalogue) && fromCatalogue >= 1) this.rescheduleDuration = String(fromCatalogue);
+    void this.proposeDuration('reschedule');
+  }
+
+  /** appointments#272 — another professional is another length for the same service. */
+  private onRescheduleStaffChange(staffId: string): void {
+    this.rescheduleStaffId = staffId;
+    void this.proposeDuration('reschedule');
+  }
+
+  private catalogueDuration(serviceId: string): number | null {
+    const minutes = Number(this.services.find((s) => s.id === serviceId)?.duration_minutes);
+    return Number.isFinite(minutes) && minutes >= 1 ? minutes : null;
+  }
+
+  private eligibleFor(serviceId: string): Promise<EligibleProfessional[]> {
+    let found = this.eligibleByService.get(serviceId);
+    if (!found) {
+      found = erplora()
+        .query('staff.services.eligible_for_service', { service_id: serviceId })
+        .then((r) => rows<EligibleProfessional>(r));
+      this.eligibleByService.set(serviceId, found);
+      // A failed read is asked again on the next pick, not remembered as the answer.
+      found.catch(() => this.eligibleByService.delete(serviceId));
+    }
+    return found;
+  }
+
+  /** appointments#272 — the minutes a (service, professional) pair proposes: HER own length for
+   *  the service when she has one (staff#9 `custom_duration`), else the catalogue — the same rule
+   *  the commands apply when no length is sent (Fresha, Booksy, Square). The catalogue is painted
+   *  at once; her length replaces it when it arrives, unless the person moved on or typed. */
+  private async proposeDuration(form: DurationForm): Promise<void> {
+    const serviceId = form === 'new' ? this.newServiceId : this.rescheduleServiceId;
+    const staffId = form === 'new' ? this.newStaffId : this.rescheduleStaffId;
+    const catalogue = this.catalogueDuration(serviceId);
+    if (form === 'new') this.newDuration = catalogue === null ? '' : String(catalogue);
+    else if (catalogue !== null) this.rescheduleDuration = String(catalogue);
+    const proposed = form === 'new' ? this.newDuration : this.rescheduleDuration;
+    this.staffDurationUnavailable = { ...this.staffDurationUnavailable, [form]: false };
+    if (!serviceId || !staffId) return;
+
+    const stillAsked = (): boolean =>
+      form === 'new'
+        ? this.newServiceId === serviceId && this.newStaffId === staffId && this.newDuration === proposed
+        : this.rescheduleServiceId === serviceId &&
+          this.rescheduleStaffId === staffId &&
+          this.rescheduleDuration === proposed;
+    let eligible: EligibleProfessional[];
+    try {
+      eligible = await this.eligibleFor(serviceId);
+    } catch {
+      if (stillAsked()) this.staffDurationUnavailable = { ...this.staffDurationUnavailable, [form]: true };
+      return;
+    }
+    const own = Number(eligible.find((p) => p.staff_id === staffId)?.custom_duration);
+    if (!Number.isFinite(own) || own < 1 || !stillAsked()) return;
+    if (form === 'new') this.newDuration = String(own);
+    else this.rescheduleDuration = String(own);
   }
 
   /** Profesionales que pueden recibir citas: los que el módulo `staff` marca reservables. */
@@ -626,8 +698,13 @@ export class ErpAppointmentsList extends LitElement {
    *  cambiar de servicio re-llena desde el nuevo, porque la excepción era del anterior. */
   private onServiceChange(serviceId: string): void {
     this.newServiceId = serviceId;
-    const fromCatalogue = Number(this.services.find((s) => s.id === serviceId)?.duration_minutes);
-    this.newDuration = Number.isFinite(fromCatalogue) && fromCatalogue >= 1 ? String(fromCatalogue) : '';
+    void this.proposeDuration('new');
+  }
+
+  /** appointments#272 — the professional chosen for the service sets its length too. */
+  private onStaffChange(staffId: string): void {
+    this.newStaffId = staffId;
+    if (this.newServiceId) void this.proposeDuration('new');
   }
 
   // Getters (no campos): se re-evalúan en cada render para seguir el idioma activo.
@@ -1039,6 +1116,7 @@ export class ErpAppointmentsList extends LitElement {
       this.newStaffId = '';
       this.newStart = '';
       this.newDuration = '';
+      this.staffDurationUnavailable = { ...this.staffDurationUnavailable, new: false };
       this.dataTable()?.close(); // el panel del «+» taparía la tabla y la cita recién creada
       await this.refresh();
     } catch (e) {
@@ -1228,6 +1306,7 @@ export class ErpAppointmentsList extends LitElement {
     this.rescheduleStaffId = '';
     this.rescheduleServiceId = '';
     this.rescheduleServiceName = '';
+    this.staffDurationUnavailable = { ...this.staffDurationUnavailable, reschedule: false };
     this.rescheduleRowStaffId = '';
     this.rescheduleRowServiceId = '';
     this.rescheduleSeriesId = '';
@@ -1533,7 +1612,7 @@ export class ErpAppointmentsList extends LitElement {
     const { resourceId, time } = ev.detail;
     this.clearReschedule(); // an empty slot is a CREATE, not a move
     this.historyId = ''; // …nor the history left open before switching to the timeline
-    if (resourceId !== UNASSIGNED) this.newStaffId = resourceId;
+    if (resourceId !== UNASSIGNED) this.onStaffChange(resourceId);
     this.newStart = `${this.day}T${time}`;
     this.view = 'list';
     await this.updateComplete;
@@ -1727,7 +1806,7 @@ export class ErpAppointmentsList extends LitElement {
           : nothing}
         ${this.services.map((s) => html`<ion-select-option .value=${s.id}>${s.name}</ion-select-option>`)}
       </ion-select>
-      <ion-select data-testid="appointments-list-reschedule-staff" data-role="reschedule-staff" fill="outline" mode="md" label-placement="floating" label=${t('ui.fieldStaff')} placeholder=${t('ui.pickStaff')} .value=${this.rescheduleStaffId} @ionChange=${(e: any) => (this.rescheduleStaffId = e.target.value ?? '')}>
+      <ion-select data-testid="appointments-list-reschedule-staff" data-role="reschedule-staff" fill="outline" mode="md" label-placement="floating" label=${t('ui.fieldStaff')} placeholder=${t('ui.pickStaff')} .value=${this.rescheduleStaffId} @ionChange=${(e: any) => this.onRescheduleStaffChange(e.target.value ?? '')}>
         ${this.rescheduleStaffId && !this.bookableStaff.some((m) => m.id === this.rescheduleStaffId)
           ? html`<ion-select-option .value=${this.rescheduleStaffId}>${this.rescheduleStaffName || this.rescheduleStaffId}</ion-select-option>`
           : nothing}
@@ -1757,6 +1836,7 @@ export class ErpAppointmentsList extends LitElement {
         : nothing}
       <ion-input data-testid="appointments-list-reschedule-start-time" data-role="reschedule-start-time" fill="outline" mode="md" label-placement="floating" label=${t('ui.fieldTime')} type="text" inputmode="numeric" autocomplete="off" placeholder=${t('ui.timePlaceholder')} .value=${this.timeFieldValue('reschedule')} @ionInput=${(e: any) => this.onTimeFieldInput('reschedule', e.target.value ?? '')} @ionChange=${() => this.commitTimeDraft('reschedule')} @paste=${(e: Event) => this.onStartPaste('reschedule', e)}></ion-input>
       <ion-input data-testid="appointments-list-reschedule-duration" data-role="reschedule-duration" fill="outline" mode="md" label-placement="floating" label=${t('ui.fieldMinutes')} type="number" min="1" .value=${this.rescheduleDuration} @ionInput=${(e: any) => (this.rescheduleDuration = e.target.value)}></ion-input>
+      ${this.renderStaffDurationUnavailable('reschedule', t)}
       ${this.rescheduleStartIsPast
         ? html`<ok-inline-feedback data-testid="appointments-list-reschedule-past-notice" tone="warning" icon="time-outline">${t('ui.reschedulePastNotice')}</ok-inline-feedback>`
         : nothing}
@@ -1785,6 +1865,12 @@ export class ErpAppointmentsList extends LitElement {
   /** appointments#232 — the free times under the time field: buttons in the hub clock, one tap
    *  fills the hour; typing another one stays possible. Loading, empty and error are said in
    *  words: an empty list and a failed read must never look alike. */
+  /** appointments#272 — the catalogue length stands in for the professional's own: say so. */
+  private renderStaffDurationUnavailable(form: DurationForm, t: (k: string) => string) {
+    if (!this.staffDurationUnavailable[form]) return nothing;
+    return html`<ok-inline-feedback data-testid="appointments-list-staff-duration-unavailable" tone="warning" icon="alert-circle-outline">${t('ui.staffDurationUnavailable')}</ok-inline-feedback>`;
+  }
+
   private renderFreeSlots(t: (k: string) => string) {
     switch (this.freeSlotsState) {
       case 'idle':
@@ -1834,7 +1920,7 @@ export class ErpAppointmentsList extends LitElement {
             <ion-select data-testid="appointments-list-service" data-role="service" fill="outline" mode="md" label-placement="floating" label=${t('ui.fieldService')} placeholder=${t('ui.pickService')} .value=${this.newServiceId} @ionChange=${(e: any) => this.onServiceChange(e.target.value)}>
               ${this.services.map((s) => html`<ion-select-option .value=${s.id}>${s.name}</ion-select-option>`)}
             </ion-select>
-            <ion-select data-testid="appointments-list-staff" data-role="staff" fill="outline" mode="md" label-placement="floating" label=${t('ui.fieldStaff')} placeholder=${t('ui.pickStaff')} .value=${this.newStaffId} @ionChange=${(e: any) => (this.newStaffId = e.target.value)}>
+            <ion-select data-testid="appointments-list-staff" data-role="staff" fill="outline" mode="md" label-placement="floating" label=${t('ui.fieldStaff')} placeholder=${t('ui.pickStaff')} .value=${this.newStaffId} @ionChange=${(e: any) => this.onStaffChange(e.target.value ?? '')}>
               ${this.bookableStaff.map((m) => html`<ion-select-option .value=${m.id}>${m.full_name}</ion-select-option>`)}
             </ion-select>
             <!-- appointments#204: date + time, not datetime-local — its year segment takes 6 digits and never hands the caret to the hour, so a typed start never landed. -->
@@ -1865,6 +1951,7 @@ export class ErpAppointmentsList extends LitElement {
                  reserva va a tener tiene que estar EN PANTALLA; se teclea solo para excepciones
                  (una clienta que necesita más tiempo). -->
             <ion-input data-testid="appointments-list-duration" data-role="duration" fill="outline" mode="md" label-placement="floating" label=${t('ui.fieldMinutes')} type="number" min="1" .value=${this.newDuration} @ionInput=${(e: any) => (this.newDuration = e.target.value)}></ion-input>
+            ${this.renderStaffDurationUnavailable('new', t)}
             <!-- appointments#155 - the warning and the refusal, NEXT TO THE BUTTON. This is
                  where the person is looking; the list's inline feedback is covered by this very
                  panel. The past-start warning is informative (Acuity warns without blocking) and

@@ -48,7 +48,11 @@ Requires `appointments.view_appointment`.
 
 1. Press to create. **Customer, service and professional are all required** — you pick them from
    real lists, not by typing a name.
-2. The **service decides the duration** by default; you can override it for this one booking.
+2. The **service decides the duration** by default; you can override it for this one booking. When
+   the chosen professional has her **own length** for that service (set in Staff), that is the one
+   proposed, and changing the professional proposes hers (or the catalogue's when she has none).
+   Minutes typed by hand are kept. If her own length cannot be read, the catalogue's is proposed
+   and the form says so (appointments#272).
 3. Pick the start: a **Day** field and a **Time** field. Once the service, the professional and the
    day are chosen, the **free times** of that day for that professional appear as buttons under
    **Time** (`appointments.availability.slots`, the same list the assistant and WhatsApp offer: it
@@ -96,10 +100,13 @@ appointment sheet: date, time, minutes, **service** and **professional** (appoin
 any of them and save; the appointment keeps its number and its history, which records the change
 from who to who. The customer is not editable: another customer is another appointment.
 
-- A new **service** fills the minutes with its catalogue length (type other minutes if needed) and
-  brings its name and price; the professional's own price for that service wins, as when booking.
-- A new **professional** keeps the price. She must be bookable and perform the service, and the
-  slot is checked against **her** working hours, her blocked time and her appointments.
+- A new **service** fills the minutes with its length — the professional's own length for it when
+  she has one, else the catalogue's (type other minutes if needed) — and brings its name and price;
+  the professional's own price for that service wins, as when booking.
+- A new **professional** keeps the price and fills the minutes with **her** length for the service
+  (hers, or the catalogue's when she has none; appointments#272). She must be bookable and perform
+  the service, and the slot is checked against **her** working hours, her blocked time and her
+  appointments.
 - An old appointment without a professional needs one picked before its service can change.
 
 Pick the new date and time. The check that the slot is free **excludes the appointment itself**, so
