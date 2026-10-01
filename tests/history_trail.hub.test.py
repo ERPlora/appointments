@@ -24,7 +24,17 @@ Usage: tests/history_trail.hub.test.py   (exit 0 = green)
 import json
 import sys
 
-from hub_harness import Hub, book, instant, next_weekday, seed_links, set_booking_policy
+import datetime
+
+from hub_harness import (
+    Hub,
+    book,
+    business_instant,
+    instant,
+    next_weekday,
+    seed_links,
+    set_booking_policy,
+)
 
 DURATION = 30
 
@@ -267,6 +277,16 @@ def judged_like_the_agenda(hub: Hub, links, day: str) -> None:
     )
 
 
+def same_instant(stored, expected: str) -> bool:
+    """The row keeps the instant in whatever offset it was written with: compare instants."""
+    try:
+        return datetime.datetime.fromisoformat(str(stored).replace("Z", "+00:00")) == (
+            datetime.datetime.fromisoformat(expected)
+        )
+    except ValueError:
+        return False
+
+
 DETAILS = {
     "customer_name": "Ana García",
     "customer_phone": "+34600111222",
@@ -278,16 +298,19 @@ DETAILS = {
 
 def partial_edit_keeps_what_it_does_not_name(hub: Hub, links, day: str) -> None:
     """appointments#274: the assistant edits by sending what changes («move Ana's appointment to
-    17:30», «hand it to Carla»). The schema filled every contact and notes field it left out with
+    10:30», «hand it to Carla»). The schema filled every contact and notes field it left out with
     `""` — the runtime materialises a `default` BEFORE the handler runs — and the edit wrote them:
     the customer's phone, email and both notes were wiped without anyone asking. Only the runtime
     applies the schema, so only a battery against the runtime can say the default is gone."""
-    subject = book(hub, links, links.staff_id, instant(day, "17:00"), DURATION)
+    # 10:00 and 10:30 on the SALON's clock (open 09:00–18:00): 08:00Z or 09:00Z, free for both
+    # professionals here (§1 moved 10:00Z away, §8 blocks the other one from 12:30Z).
+    at, later = business_instant(hub, day, "10:00"), business_instant(hub, day, "10:30")
+    subject = book(hub, links, links.staff_id, at, DURATION)
     hub.run(
         "appointments.appointments.update",
         {
             "appointment_id": subject,
-            "start_datetime": instant(day, "17:00"),
+            "start_datetime": at,
             **DETAILS,
         },
     )
@@ -302,7 +325,7 @@ def partial_edit_keeps_what_it_does_not_name(hub: Hub, links, day: str) -> None:
             "appointment_id": subject,
             "staff_id": links.other_staff_id,
             "service_id": links.service_id,
-            "start_datetime": instant(day, "17:00"),
+            "start_datetime": at,
         },
     )
     row = appointment(hub, subject)
@@ -313,12 +336,12 @@ def partial_edit_keeps_what_it_does_not_name(hub: Hub, links, day: str) -> None:
     print("§11 moving it with only the new time keeps contact and notes (#274)")
     hub.run(
         "appointments.appointments.update",
-        {"appointment_id": subject, "start_datetime": instant(day, "17:30")},
+        {"appointment_id": subject, "start_datetime": later},
     )
     row = appointment(hub, subject)
     hub.check_true(
         "§11 the appointment moved",
-        str(row.get("start_datetime", "")).startswith(f"{day}T17:30"),
+        same_instant(row.get("start_datetime"), later),
         f"start_datetime: {row.get('start_datetime')!r}",
     )
     for key, value in DETAILS.items():
@@ -329,7 +352,7 @@ def partial_edit_keeps_what_it_does_not_name(hub: Hub, links, day: str) -> None:
         "appointments.appointments.update",
         {
             "appointment_id": subject,
-            "start_datetime": instant(day, "17:30"),
+            "start_datetime": later,
             "customer_phone": "",
             "internal_notes": "",
         },

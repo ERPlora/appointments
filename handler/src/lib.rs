@@ -2899,7 +2899,8 @@ pub fn update_appointment_pure(input: Value) -> Result<Output, String> {
         "notes",
         "internal_notes",
     ] {
-        let value = match payload.get(key).filter(|v| !v.is_null()) {
+        // The schema types these as strings, so a `null` never reaches the handler.
+        let value = match payload.get(key) {
             Some(sent) => as_str(sent),
             None => text_at(&row, key).into_owned(),
         };
