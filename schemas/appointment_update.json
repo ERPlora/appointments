@@ -1,15 +1,15 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "appointments.appointments.update",
-  "description": "Edits ONE appointment. The customer's contact and the notes are written as sent. Since appointments#271 the professional, the service and the slot are not: when any of them changes, the edit is judged exactly like a move from the agenda (`appointments.appointments.reschedule`) — the professional and the service resolved against the hub's records, the catalogue's name and price, the professional's hours, blocked time, overlap, notice — and a `null` professional or service keeps the one the appointment has.",
+  "description": "Edits ONE appointment and writes only what it names (appointments#274): the customer's name, phone and email and the notes are written as sent, a field left out keeps what the appointment has, and a field sent empty (`\"\"`) clears it — so none of them carries a `default`, which the runtime would fill in before the handler could tell «not sent» from «sent empty». Since appointments#271 the professional, the service and the slot are not: when any of them changes, the edit is judged exactly like a move from the agenda (`appointments.appointments.reschedule`) — the professional and the service resolved against the hub's records, the catalogue's name and price, the professional's hours, blocked time, overlap, notice — and a `null` professional or service keeps the one the appointment has.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["appointment_id", "customer_name", "start_datetime"],
+  "required": ["appointment_id", "start_datetime"],
   "properties": {
     "appointment_id": { "type": "string", "minLength": 1 },
-    "customer_name": { "type": "string", "minLength": 1, "maxLength": 200 },
-    "customer_phone": { "type": "string", "default": "", "maxLength": 50 },
-    "customer_email": { "type": "string", "default": "", "maxLength": 254 },
+    "customer_name": { "type": "string", "minLength": 1, "maxLength": 200, "description": "Left out = keeps the name the appointment has. It cannot be emptied." },
+    "customer_phone": { "type": "string", "maxLength": 50, "description": "Left out = keeps the phone the appointment has; `\"\"` clears it." },
+    "customer_email": { "type": "string", "maxLength": 254, "description": "Left out = keeps the email the appointment has; `\"\"` clears it." },
     "service_id": {
       "type": ["string", "null"],
       "default": null,
@@ -43,7 +43,7 @@
       "minimum": 1,
       "description": "Optional. When omitted the appointment keeps its length, or takes the new service's."
     },
-    "notes": { "type": "string", "default": "" },
-    "internal_notes": { "type": "string", "default": "" }
+    "notes": { "type": "string", "description": "Left out = keeps the notes the appointment has; `\"\"` clears them." },
+    "internal_notes": { "type": "string", "description": "Left out = keeps the internal notes the appointment has; `\"\"` clears them." }
   }
 }

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """A move and a cancellation leave their line in the appointment's history — regression of
-ERPlora/appointments#196, against the REAL kernel.
+ERPlora/appointments#196, against the REAL kernel. It also holds the general edit (`update`): judged
+like the agenda (#271) and writing only the fields it is sent (#274).
 
 What broke: `reschedule` and `cancel` are WASM commands. The handler returns its writes as separate
 operations, and the runtime binds the system params — `:now` among them — once PER OPERATION
@@ -23,7 +24,17 @@ Usage: tests/history_trail.hub.test.py   (exit 0 = green)
 import json
 import sys
 
-from hub_harness import Hub, book, instant, next_weekday, seed_links, set_booking_policy
+import datetime
+
+from hub_harness import (
+    Hub,
+    book,
+    business_instant,
+    instant,
+    next_weekday,
+    seed_links,
+    set_booking_policy,
+)
 
 DURATION = 30
 
@@ -152,11 +163,13 @@ def main() -> int:
     hub.check("§5 the trail did not grow", len(trail(hub, edited)), before)
 
     judged_like_the_agenda(hub, links, day)
+    partial_edit_keeps_what_it_does_not_name(hub, links, day)
 
     return hub.finish(
         "a move, a cancellation and an edit each leave exactly the history line that says what "
-        "happened and who asked, a refused move or a notes-only edit leaves none, and an edit "
-        "that hands an appointment over is judged like the agenda's"
+        "happened and who asked, a refused move or a notes-only edit leaves none, an edit "
+        "that hands an appointment over is judged like the agenda's, and a partial edit keeps "
+        "the contact and the notes it does not name"
     )
 
 
@@ -262,6 +275,93 @@ def judged_like_the_agenda(hub: Hub, links, day: str) -> None:
         int(row.get("service_price") or 0) == 4500,
         f"service_price: {row.get('service_price')!r}",
     )
+
+
+def same_instant(stored, expected: str) -> bool:
+    """The row keeps the instant in whatever offset it was written with: compare instants."""
+    try:
+        return datetime.datetime.fromisoformat(str(stored).replace("Z", "+00:00")) == (
+            datetime.datetime.fromisoformat(expected)
+        )
+    except ValueError:
+        return False
+
+
+DETAILS = {
+    "customer_name": "Ana García",
+    "customer_phone": "+34600111222",
+    "customer_email": "ana@example.com",
+    "notes": "allergic to ammonia",
+    "internal_notes": "pays by card",
+}
+
+
+def partial_edit_keeps_what_it_does_not_name(hub: Hub, links, day: str) -> None:
+    """appointments#274: the assistant edits by sending what changes («move Ana's appointment to
+    10:30», «hand it to Carla»). The schema filled every contact and notes field it left out with
+    `""` — the runtime materialises a `default` BEFORE the handler runs — and the edit wrote them:
+    the customer's phone, email and both notes were wiped without anyone asking. Only the runtime
+    applies the schema, so only a battery against the runtime can say the default is gone."""
+    # 10:00 and 10:30 on the SALON's clock (open 09:00–18:00): 08:00Z or 09:00Z, free for both
+    # professionals here (§1 moved 10:00Z away, §8 blocks the other one from 12:30Z).
+    at, later = business_instant(hub, day, "10:00"), business_instant(hub, day, "10:30")
+    subject = book(hub, links, links.staff_id, at, DURATION)
+    hub.run(
+        "appointments.appointments.update",
+        {
+            "appointment_id": subject,
+            "start_datetime": at,
+            **DETAILS,
+        },
+    )
+    row = appointment(hub, subject)
+    for key, value in DETAILS.items():
+        hub.check(f"§10 the full edit wrote {key}", row.get(key), value)
+
+    print("§10 handing the appointment over with nothing else keeps contact and notes (#274)")
+    hub.run(
+        "appointments.appointments.update",
+        {
+            "appointment_id": subject,
+            "staff_id": links.other_staff_id,
+            "service_id": links.service_id,
+            "start_datetime": at,
+        },
+    )
+    row = appointment(hub, subject)
+    hub.check("§10 the appointment changed hands", row.get("staff_id"), links.other_staff_id)
+    for key, value in DETAILS.items():
+        hub.check(f"§10 …and kept {key}", row.get(key), value)
+
+    print("§11 moving it with only the new time keeps contact and notes (#274)")
+    hub.run(
+        "appointments.appointments.update",
+        {"appointment_id": subject, "start_datetime": later},
+    )
+    row = appointment(hub, subject)
+    hub.check_true(
+        "§11 the appointment moved",
+        same_instant(row.get("start_datetime"), later),
+        f"start_datetime: {row.get('start_datetime')!r}",
+    )
+    for key, value in DETAILS.items():
+        hub.check(f"§11 …and kept {key}", row.get(key), value)
+
+    print("§12 a field sent empty is cleared, and only that one (#274)")
+    hub.run(
+        "appointments.appointments.update",
+        {
+            "appointment_id": subject,
+            "start_datetime": later,
+            "customer_phone": "",
+            "internal_notes": "",
+        },
+    )
+    row = appointment(hub, subject)
+    hub.check("§12 the phone sent empty is cleared", row.get("customer_phone"), "")
+    hub.check("§12 the internal notes sent empty are cleared", row.get("internal_notes"), "")
+    for key in ("customer_name", "customer_email", "notes"):
+        hub.check(f"§12 …and {key} is kept", row.get(key), DETAILS[key])
 
 
 if __name__ == "__main__":

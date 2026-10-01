@@ -2829,7 +2829,8 @@ pub fn reschedule_appointment_pure(input: Value) -> Result<Output, String> {
 /// names and the slot exactly as the caller sent them — a professional the hub does not have, one
 /// on holiday, a service she does not perform, the old service's price. Now the edit is split:
 /// - the customer's details and the notes are written as sent (`_update_details`), whatever the
-///   state of the appointment, so a finished appointment can still get its notes;
+///   state of the appointment, so a finished appointment can still get its notes — and only the
+///   ones sent: a field left out keeps the row's value, one sent empty clears it (appointments#274);
 /// - the professional, the service and the slot take the agenda's own road: when any of them
 ///   changes, [`reschedule_appointment_pure`] judges it (appointments#263 — records, competency,
 ///   catalogue name and price, hours, blocked time, overlap, notice) and its operations are the
@@ -2886,6 +2887,9 @@ pub fn update_appointment_pure(input: Value) -> Result<Output, String> {
         || !same_instant("start_datetime")
         || !same_instant("end_datetime");
 
+    // appointments#274: a field the caller does not send keeps what the appointment has — the
+    // assistant edits by sending what changes, and blanking the rest wiped the customer's phone,
+    // email and notes. One sent empty is a deliberate clear and is written as such.
     let mut details = Map::new();
     details.insert("appointment_id".into(), json!(appointment_id));
     for key in [
@@ -2895,7 +2899,12 @@ pub fn update_appointment_pure(input: Value) -> Result<Output, String> {
         "notes",
         "internal_notes",
     ] {
-        details.insert(key.into(), json!(str_or(&payload, key, "")));
+        // The schema types these as strings, so a `null` never reaches the handler.
+        let value = match payload.get(key) {
+            Some(sent) => as_str(sent),
+            None => text_at(&row, key).into_owned(),
+        };
+        details.insert(key.into(), json!(value));
     }
     let details = Operation::sql("appointments._update_details", details);
     if !moves {
@@ -13310,7 +13319,7 @@ mod tests {
     // of `reschedule` (appointments#263) and writes the customer's details and the notes itself.
 
     /// What the assistant sends for Bea's cut (11:00-12:00) when it changes nothing but the notes:
-    /// the whole set of fields, as the edit's contract asks.
+    /// the whole set of fields (since appointments#274 it may send only what changes).
     fn edit_of_beas_cut() -> Value {
         json!({
             "appointment_id": "apt-old",
@@ -13695,5 +13704,118 @@ mod tests {
                 "{code} is not declared"
             );
         }
+    }
+
+    // ── appointments#274: an edit only writes what it names ────────────────────────────────────
+    //
+    // The assistant edits by sending what changes («move Ana's appointment to 17:00», «hand it to
+    // Carla»). The schema filled every contact and notes field it left out with `""` and the edit
+    // wrote them, so the customer's phone, email and both notes were wiped without anyone asking.
+    // A field that is not sent keeps what the appointment has; a field sent empty clears it.
+
+    const DETAIL_KEYS: [&str; 5] = [
+        "customer_name",
+        "customer_phone",
+        "customer_email",
+        "notes",
+        "internal_notes",
+    ];
+
+    /// Bea's cut as the hub has it, with the customer's contact and both notes filled in.
+    fn beas_cut_with_details() -> Value {
+        let mut row = beas_cut();
+        row["customer_name"] = json!("Ana García");
+        row["customer_phone"] = json!("+34600111222");
+        row["customer_email"] = json!("ana@example.com");
+        row["notes"] = json!("allergic to ammonia");
+        row["internal_notes"] = json!("pays by card");
+        row
+    }
+
+    fn assert_details_kept(out: &Output) {
+        let d = op_params(out, "_update_details");
+        let row = beas_cut_with_details();
+        for key in DETAIL_KEYS {
+            assert_eq!(d.get(key), Some(&row[key]), "{key} was not kept");
+        }
+    }
+
+    /// 🔴 THE SYMPTOM, as the assistant sends it: «hand Ana's appointment to Carla» — the id, the
+    /// pair and the time, nothing about the customer or the notes. They are kept, not blanked.
+    #[test]
+    fn update_that_hands_over_without_the_details_keeps_contact_and_notes() {
+        let p = json!({
+            "appointment_id": "apt-old",
+            "staff_id": "s2",
+            "service_id": "s-corte",
+            "start_datetime": "2026-07-31T11:00:00Z"
+        });
+        let out = update_appointment_pure(reschedule_input(
+            p,
+            beas_cut_with_details(),
+            Some(handover_reads(cut(), both_do_it())),
+        ))
+        .unwrap();
+        assert!(out.error.is_none(), "{:?}", out.error);
+        assert!(op_commands(&out).iter().any(|c| c == "appointments._update_details"));
+        assert_details_kept(&out);
+    }
+
+    /// The same with nothing but the time: the write of the details keeps all five.
+    #[test]
+    fn update_with_only_the_time_keeps_contact_and_notes() {
+        let p = json!({ "appointment_id": "apt-old", "start_datetime": "2026-07-31T11:00:00Z" });
+        let out = update_appointment_pure(reschedule_input(p, beas_cut_with_details(), None))
+            .unwrap();
+        assert!(out.error.is_none(), "{:?}", out.error);
+        assert_eq!(op_commands(&out), vec!["appointments._update_details"]);
+        assert_details_kept(&out);
+    }
+
+    /// Clearing stays possible: a field SENT empty is written empty, the others are kept.
+    #[test]
+    fn update_that_sends_a_field_empty_clears_only_that_field() {
+        let p = json!({
+            "appointment_id": "apt-old",
+            "start_datetime": "2026-07-31T11:00:00Z",
+            "customer_phone": "",
+            "internal_notes": ""
+        });
+        let out = update_appointment_pure(reschedule_input(p, beas_cut_with_details(), None))
+            .unwrap();
+        let d = op_params(&out, "_update_details");
+        assert_eq!(d.get("customer_phone"), Some(&json!("")));
+        assert_eq!(d.get("internal_notes"), Some(&json!("")));
+        assert_eq!(d.get("customer_email"), Some(&json!("ana@example.com")));
+        assert_eq!(d.get("notes"), Some(&json!("allergic to ammonia")));
+        assert_eq!(d.get("customer_name"), Some(&json!("Ana García")));
+    }
+
+    /// The runtime materialises a schema `default` for every key the caller leaves out, BEFORE the
+    /// handler runs: one `default: ""` on these fields and the handler can no longer tell «not
+    /// sent» from «sent empty». And the name is not required: the assistant must not have to
+    /// re-type it (and risk shortening it) to move an appointment.
+    #[test]
+    fn update_schema_fills_in_no_contact_or_notes_the_caller_left_out() {
+        let schema: Value =
+            serde_json::from_str(include_str!("../../schemas/appointment_update.json"))
+                .expect("schema");
+        for key in DETAIL_KEYS {
+            let prop = &schema["properties"][key];
+            assert!(prop.is_object(), "{key} is not accepted");
+            assert!(prop.get("default").is_none(), "{key} has a default: {prop}");
+        }
+        let required: Vec<&str> = schema["required"]
+            .as_array()
+            .expect("required")
+            .iter()
+            .filter_map(Value::as_str)
+            .collect();
+        assert!(!required.contains(&"customer_name"), "{required:?}");
+        assert_eq!(
+            schema["properties"]["customer_name"]["minLength"],
+            json!(1),
+            "a name sent empty would blank the customer"
+        );
     }
 }

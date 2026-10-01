@@ -7,6 +7,8 @@
 -- (`_reschedule_row`, judged by `reschedule`), and this statement keeps only what the caller owns —
 -- the customer's contact on this appointment and the notes. That is also why it has no status
 -- filter: the notes of an appointment that already happened can still be written.
+-- appointments#274: every bind arrives filled — the handler copies from the row each field the
+-- caller left out, so a partial edit writes back what the appointment had instead of blanking it.
 -- The runtime injects :hub_id / :current_user_id / :now.
 UPDATE appointments_appointment SET
   customer_name    = :customer_name,
