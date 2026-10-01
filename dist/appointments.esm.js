@@ -1966,6 +1966,9 @@ var es_default = {
     freeSlotsEmpty: "No quedan horas libres ese d\xEDa para este profesional. Puedes escribir una hora igualmente.",
     freeSlotsError: "No se han podido cargar las horas libres. Puedes escribir una hora igualmente.",
     staffDurationUnavailable: "No se ha podido leer la duraci\xF3n propia de esta profesional para el servicio; se propone la del cat\xE1logo. Revisa los minutos.",
+    staffNotForService: "El profesional que hab\xEDas elegido no realiza este servicio: elige uno de los que s\xED lo hacen.",
+    serviceNotForStaff: "Este profesional no realiza el servicio que hab\xEDas elegido: vuelve a elegir el servicio.",
+    eligibleStaffUnavailable: "No se ha podido comprobar qui\xE9n realiza este servicio: se muestra todo el equipo y la cita se comprueba al guardar.",
     freeSlotsRetry: "Reintentar",
     openCalendar: "Abrir calendario",
     calendarMonth: "Mes",
@@ -2245,6 +2248,9 @@ var en_default = {
     freeSlotsEmpty: "No free times that day for this professional. You can still type a time.",
     freeSlotsError: "The free times could not be loaded. You can still type a time.",
     staffDurationUnavailable: "This professional's own length for the service could not be read; the catalogue length is proposed. Check the minutes.",
+    staffNotForService: "The professional you had chosen does not perform this service: pick one of those who do.",
+    serviceNotForStaff: "This professional does not perform the service you had chosen: pick the service again.",
+    eligibleStaffUnavailable: "Who performs this service could not be checked: the whole team is shown and the booking is checked when you save.",
     freeSlotsRetry: "Try again",
     openCalendar: "Open calendar",
     calendarMonth: "Month",
@@ -8835,6 +8841,11 @@ var ErpAppointmentsList = class extends i3 {
     this.staffDurationUnavailable = { new: false, reschedule: false };
     /** appointments#272 — the eligible professionals per service, read once per service. */
     this.eligibleByService = /* @__PURE__ */ new Map();
+    this.eligibleStaffIds = { new: null, reschedule: null };
+    this.eligibleStaffUnavailable = { new: false, reschedule: false };
+    this.pairCleared = { new: "", reschedule: "" };
+    /** Bumped on every eligibility question: an answer for an older one is dropped. */
+    this.eligibleRequest = { new: 0, reschedule: 0 };
     this.freeSlots = [];
     this.freeSlotsState = "idle";
     this.freeSlotsError = "";
@@ -8975,11 +8986,61 @@ var ErpAppointmentsList = class extends i3 {
   onRescheduleServiceChange(serviceId) {
     this.rescheduleServiceId = serviceId;
     void this.proposeDuration("reschedule");
+    void this.narrowStaff("reschedule", "staff");
   }
   /** appointments#272 — another professional is another length for the same service. */
   onRescheduleStaffChange(staffId) {
     this.rescheduleStaffId = staffId;
+    this.pairCleared = { ...this.pairCleared, reschedule: "" };
     void this.proposeDuration("reschedule");
+  }
+  /** appointments#279 — the professionals the picker offers: only who performs the form's service
+   *  when it has declared competencies, else the whole bookable team (`resolve_professional`). */
+  staffOptions(form) {
+    const ids = this.eligibleStaffIds[form];
+    return ids ? this.bookableStaff.filter((m4) => ids.includes(m4.id)) : this.bookableStaff;
+  }
+  /** appointments#279 — reads who performs the form's service and narrows the picker to them.
+   *  When the chosen pair does not match, the OLDER choice is cleared (`clear`) and the form says
+   *  why: a new service clears the professional, a slot tapped for another professional clears
+   *  the service. Opening the sheet clears nothing (`''`): the appointment keeps what it has. */
+  async narrowStaff(form, clear) {
+    const request = ++this.eligibleRequest[form];
+    const serviceId = form === "new" ? this.newServiceId : this.rescheduleServiceId;
+    this.eligibleStaffIds = { ...this.eligibleStaffIds, [form]: null };
+    this.eligibleStaffUnavailable = { ...this.eligibleStaffUnavailable, [form]: false };
+    this.pairCleared = { ...this.pairCleared, [form]: "" };
+    if (!serviceId) return;
+    let eligible;
+    try {
+      eligible = await this.eligibleFor(serviceId);
+    } catch {
+      if (request === this.eligibleRequest[form]) {
+        this.eligibleStaffUnavailable = { ...this.eligibleStaffUnavailable, [form]: true };
+      }
+      return;
+    }
+    if (request !== this.eligibleRequest[form]) return;
+    const ids = eligible.length ? eligible.map((p4) => String(p4.staff_id)) : null;
+    this.eligibleStaffIds = { ...this.eligibleStaffIds, [form]: ids };
+    const staffId = form === "new" ? this.newStaffId : this.rescheduleStaffId;
+    if (!ids || !staffId || ids.includes(staffId) || !clear) return;
+    if (clear === "staff") {
+      if (form === "new") this.newStaffId = "";
+      else this.rescheduleStaffId = "";
+    } else {
+      this.newServiceId = "";
+      this.eligibleStaffIds = { ...this.eligibleStaffIds, new: null };
+      void this.proposeDuration("new");
+    }
+    this.pairCleared = { ...this.pairCleared, [form]: clear };
+  }
+  /** appointments#279 — forgets the form's narrowing: a late answer must not land on a clean form. */
+  resetNarrowing(form) {
+    this.eligibleRequest[form]++;
+    this.eligibleStaffIds = { ...this.eligibleStaffIds, [form]: null };
+    this.eligibleStaffUnavailable = { ...this.eligibleStaffUnavailable, [form]: false };
+    this.pairCleared = { ...this.pairCleared, [form]: "" };
   }
   catalogueDuration(serviceId) {
     const minutes = Number(this.services.find((s5) => s5.id === serviceId)?.duration_minutes);
@@ -9095,10 +9156,12 @@ var ErpAppointmentsList = class extends i3 {
   onServiceChange(serviceId) {
     this.newServiceId = serviceId;
     void this.proposeDuration("new");
+    void this.narrowStaff("new", "staff");
   }
   /** appointments#272 — the professional chosen for the service sets its length too. */
   onStaffChange(staffId) {
     this.newStaffId = staffId;
+    this.pairCleared = { ...this.pairCleared, new: "" };
     if (this.newServiceId) void this.proposeDuration("new");
   }
   // Getters (no campos): se re-evalúan en cada render para seguir el idioma activo.
@@ -9483,6 +9546,7 @@ var ErpAppointmentsList = class extends i3 {
       this.newStart = "";
       this.newDuration = "";
       this.staffDurationUnavailable = { ...this.staffDurationUnavailable, new: false };
+      this.resetNarrowing("new");
       this.dataTable()?.close();
       await this.refresh();
     } catch (e5) {
@@ -9673,6 +9737,7 @@ var ErpAppointmentsList = class extends i3 {
     this.rescheduleRowServiceId = this.rescheduleServiceId;
     this.rescheduleSeriesId = String(row.recurring_id ?? "");
     this.rescheduleOccurrence = String(row.occurrence_date ?? "");
+    void this.narrowStaff("reschedule", "");
     this.error = "";
     this.view = "list";
     await this.updateComplete;
@@ -9909,7 +9974,10 @@ var ErpAppointmentsList = class extends i3 {
     const { resourceId, time } = ev.detail;
     this.clearReschedule();
     this.historyId = "";
-    if (resourceId !== UNASSIGNED) this.onStaffChange(resourceId);
+    if (resourceId !== UNASSIGNED) {
+      this.onStaffChange(resourceId);
+      void this.narrowStaff("new", "service");
+    }
     this.newStart = `${this.day}T${time}`;
     this.view = "list";
     await this.updateComplete;
@@ -10082,10 +10150,11 @@ var ErpAppointmentsList = class extends i3 {
         ${this.services.map((s5) => b2`<ion-select-option .value=${s5.id}>${s5.name}</ion-select-option>`)}
       </ion-select>
       <ion-select data-testid="appointments-list-reschedule-staff" data-role="reschedule-staff" fill="outline" mode="md" label-placement="floating" label=${t5("ui.fieldStaff")} placeholder=${t5("ui.pickStaff")} .value=${this.rescheduleStaffId} @ionChange=${(e5) => this.onRescheduleStaffChange(e5.target.value ?? "")}>
-        ${this.rescheduleStaffId && !this.bookableStaff.some((m4) => m4.id === this.rescheduleStaffId) ? b2`<ion-select-option .value=${this.rescheduleStaffId}>${this.rescheduleStaffName || this.rescheduleStaffId}</ion-select-option>` : A}
-        ${this.bookableStaff.map((m4) => b2`<ion-select-option .value=${m4.id}>${m4.full_name}</ion-select-option>`)}
+        ${this.rescheduleStaffId && !this.staffOptions("reschedule").some((m4) => m4.id === this.rescheduleStaffId) ? b2`<ion-select-option .value=${this.rescheduleStaffId}>${this.rescheduleStaffName || this.rescheduleStaffId}</ion-select-option>` : A}
+        ${this.staffOptions("reschedule").map((m4) => b2`<ion-select-option .value=${m4.id}>${m4.full_name}</ion-select-option>`)}
       </ion-select>
-      ${this.rescheduleHandoverIncomplete ? b2`<ok-inline-feedback data-testid="appointments-list-reschedule-needs-staff" tone="warning" icon="person-outline">${t5(this.rescheduleServiceId ? "ui.rescheduleNeedsStaff" : "ui.rescheduleNeedsService")}</ok-inline-feedback>` : A}
+      ${this.renderPairNotices("reschedule", t5)}
+      ${this.rescheduleHandoverIncomplete && this.pairCleared.reschedule !== "staff" ? b2`<ok-inline-feedback data-testid="appointments-list-reschedule-needs-staff" tone="warning" icon="person-outline">${t5(this.rescheduleServiceId ? "ui.rescheduleNeedsStaff" : "ui.rescheduleNeedsService")}</ok-inline-feedback>` : A}
       <!-- appointments#204: date + time, not datetime-local — its year segment takes 6 digits and never hands the caret to the hour, so a typed start never landed. -->
       <!-- appointments#205: text, painted in the hub's language, with an inline calendar. -->
       <ion-input data-testid="appointments-list-reschedule-start" data-role="reschedule-start" fill="outline" mode="md" label-placement="floating" label=${t5("ui.fieldDate")} type="text" inputmode="numeric" autocomplete="off" placeholder=${t5("ui.datePlaceholder")} .value=${this.dateFieldValue("reschedule")} @ionInput=${(e5) => this.onDateFieldInput("reschedule", e5.target.value ?? "")} @ionChange=${() => this.commitDateDraft("reschedule")} @keydown=${(e5) => this.onStartDateKeydown("reschedule", e5)} @paste=${(e5) => this.onStartPaste("reschedule", e5)}>
@@ -10131,6 +10200,13 @@ var ErpAppointmentsList = class extends i3 {
   /** appointments#232 — the free times under the time field: buttons in the hub clock, one tap
    *  fills the hour; typing another one stays possible. Loading, empty and error are said in
    *  words: an empty list and a failed read must never look alike. */
+  /** appointments#279 — why the picker changed under the person: a choice cleared because the
+   *  pair did not match, or a list that could not be narrowed. */
+  renderPairNotices(form, t5) {
+    const cleared = this.pairCleared[form];
+    return b2`${cleared === "staff" ? b2`<ok-inline-feedback data-testid="appointments-list-staff-not-for-service" tone="warning" icon="person-outline">${t5("ui.staffNotForService")}</ok-inline-feedback>` : cleared === "service" ? b2`<ok-inline-feedback data-testid="appointments-list-service-not-for-staff" tone="warning" icon="swap-horizontal-outline">${t5("ui.serviceNotForStaff")}</ok-inline-feedback>` : A}
+    ${this.eligibleStaffUnavailable[form] ? b2`<ok-inline-feedback data-testid="appointments-list-eligible-staff-unavailable" tone="warning" icon="alert-circle-outline">${t5("ui.eligibleStaffUnavailable")}</ok-inline-feedback>` : A}`;
+  }
   /** appointments#272 — the catalogue length stands in for the professional's own: say so. */
   renderStaffDurationUnavailable(form, t5) {
     if (!this.staffDurationUnavailable[form]) return A;
@@ -10185,8 +10261,9 @@ var ErpAppointmentsList = class extends i3 {
               ${this.services.map((s5) => b2`<ion-select-option .value=${s5.id}>${s5.name}</ion-select-option>`)}
             </ion-select>
             <ion-select data-testid="appointments-list-staff" data-role="staff" fill="outline" mode="md" label-placement="floating" label=${t5("ui.fieldStaff")} placeholder=${t5("ui.pickStaff")} .value=${this.newStaffId} @ionChange=${(e5) => this.onStaffChange(e5.target.value ?? "")}>
-              ${this.bookableStaff.map((m4) => b2`<ion-select-option .value=${m4.id}>${m4.full_name}</ion-select-option>`)}
+              ${this.staffOptions("new").map((m4) => b2`<ion-select-option .value=${m4.id}>${m4.full_name}</ion-select-option>`)}
             </ion-select>
+            ${this.renderPairNotices("new", t5)}
             <!-- appointments#204: date + time, not datetime-local — its year segment takes 6 digits and never hands the caret to the hour, so a typed start never landed. -->
             <!-- appointments#205: text, painted in the hub's language, with an inline calendar. -->
             <ion-input data-testid="appointments-list-start" data-role="start-date" fill="outline" mode="md" label-placement="floating" label=${t5("ui.fieldDate")} type="text" inputmode="numeric" autocomplete="off" placeholder=${t5("ui.datePlaceholder")} .value=${this.dateFieldValue("new")} @ionInput=${(e5) => this.onDateFieldInput("new", e5.target.value ?? "")} @ionChange=${() => this.commitDateDraft("new")} @keydown=${(e5) => this.onStartDateKeydown("new", e5)} @paste=${(e5) => this.onStartPaste("new", e5)}>
@@ -10290,6 +10367,15 @@ __decorateClass([
 __decorateClass([
   r5()
 ], ErpAppointmentsList.prototype, "staffDurationUnavailable", 2);
+__decorateClass([
+  r5()
+], ErpAppointmentsList.prototype, "eligibleStaffIds", 2);
+__decorateClass([
+  r5()
+], ErpAppointmentsList.prototype, "eligibleStaffUnavailable", 2);
+__decorateClass([
+  r5()
+], ErpAppointmentsList.prototype, "pairCleared", 2);
 __decorateClass([
   r5()
 ], ErpAppointmentsList.prototype, "freeSlots", 2);

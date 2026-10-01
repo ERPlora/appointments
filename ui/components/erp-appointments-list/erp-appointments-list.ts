@@ -433,6 +433,20 @@ export class ErpAppointmentsList extends LitElement {
   /** appointments#272 — the eligible professionals per service, read once per service. */
   private eligibleByService = new Map<string, Promise<EligibleProfessional[]>>();
 
+  /** appointments#279 — who the server accepts for the form's service, by id. `null` = the whole
+   *  bookable team: no service yet, a service without declared competencies, or the read is
+   *  pending or failed (the server still judges on save). */
+  @state() private eligibleStaffIds: Record<DurationForm, string[] | null> = { new: null, reschedule: null };
+
+  /** appointments#279 — the eligibility read failed: the whole team is offered and the form says so. */
+  @state() private eligibleStaffUnavailable: Record<DurationForm, boolean> = { new: false, reschedule: false };
+
+  /** appointments#279 — the earlier choice that was cleared because the pair did not match. */
+  @state() private pairCleared: Record<DurationForm, '' | 'staff' | 'service'> = { new: '', reschedule: '' };
+
+  /** Bumped on every eligibility question: an answer for an older one is dropped. */
+  private eligibleRequest: Record<DurationForm, number> = { new: 0, reschedule: 0 };
+
   /** appointments#232 — the free times of the chosen day for the chosen professional and service,
    *  as `appointments.availability.slots` answers them. The engine is the one the assistant and
    *  WhatsApp read (opening hours #127, blocked time, agenda, the professional's shift #230): the
@@ -551,12 +565,66 @@ export class ErpAppointmentsList extends LitElement {
   private onRescheduleServiceChange(serviceId: string): void {
     this.rescheduleServiceId = serviceId;
     void this.proposeDuration('reschedule');
+    void this.narrowStaff('reschedule', 'staff');
   }
 
   /** appointments#272 — another professional is another length for the same service. */
   private onRescheduleStaffChange(staffId: string): void {
     this.rescheduleStaffId = staffId;
+    this.pairCleared = { ...this.pairCleared, reschedule: '' };
     void this.proposeDuration('reschedule');
+  }
+
+  /** appointments#279 — the professionals the picker offers: only who performs the form's service
+   *  when it has declared competencies, else the whole bookable team (`resolve_professional`). */
+  private staffOptions(form: DurationForm): StaffMember[] {
+    const ids = this.eligibleStaffIds[form];
+    return ids ? this.bookableStaff.filter((m) => ids.includes(m.id)) : this.bookableStaff;
+  }
+
+  /** appointments#279 — reads who performs the form's service and narrows the picker to them.
+   *  When the chosen pair does not match, the OLDER choice is cleared (`clear`) and the form says
+   *  why: a new service clears the professional, a slot tapped for another professional clears
+   *  the service. Opening the sheet clears nothing (`''`): the appointment keeps what it has. */
+  private async narrowStaff(form: DurationForm, clear: '' | 'staff' | 'service'): Promise<void> {
+    const request = ++this.eligibleRequest[form];
+    const serviceId = form === 'new' ? this.newServiceId : this.rescheduleServiceId;
+    this.eligibleStaffIds = { ...this.eligibleStaffIds, [form]: null };
+    this.eligibleStaffUnavailable = { ...this.eligibleStaffUnavailable, [form]: false };
+    this.pairCleared = { ...this.pairCleared, [form]: '' };
+    if (!serviceId) return;
+    let eligible: EligibleProfessional[];
+    try {
+      eligible = await this.eligibleFor(serviceId);
+    } catch {
+      if (request === this.eligibleRequest[form]) {
+        this.eligibleStaffUnavailable = { ...this.eligibleStaffUnavailable, [form]: true };
+      }
+      return;
+    }
+    if (request !== this.eligibleRequest[form]) return;
+    // No declared competency: the hub has not narrowed the service and the server accepts anyone.
+    const ids = eligible.length ? eligible.map((p) => String(p.staff_id)) : null;
+    this.eligibleStaffIds = { ...this.eligibleStaffIds, [form]: ids };
+    const staffId = form === 'new' ? this.newStaffId : this.rescheduleStaffId;
+    if (!ids || !staffId || ids.includes(staffId) || !clear) return;
+    if (clear === 'staff') {
+      if (form === 'new') this.newStaffId = '';
+      else this.rescheduleStaffId = '';
+    } else {
+      this.newServiceId = '';
+      this.eligibleStaffIds = { ...this.eligibleStaffIds, new: null };
+      void this.proposeDuration('new');
+    }
+    this.pairCleared = { ...this.pairCleared, [form]: clear };
+  }
+
+  /** appointments#279 — forgets the form's narrowing: a late answer must not land on a clean form. */
+  private resetNarrowing(form: DurationForm): void {
+    this.eligibleRequest[form]++;
+    this.eligibleStaffIds = { ...this.eligibleStaffIds, [form]: null };
+    this.eligibleStaffUnavailable = { ...this.eligibleStaffUnavailable, [form]: false };
+    this.pairCleared = { ...this.pairCleared, [form]: '' };
   }
 
   private catalogueDuration(serviceId: string): number | null {
@@ -699,11 +767,13 @@ export class ErpAppointmentsList extends LitElement {
   private onServiceChange(serviceId: string): void {
     this.newServiceId = serviceId;
     void this.proposeDuration('new');
+    void this.narrowStaff('new', 'staff');
   }
 
   /** appointments#272 — the professional chosen for the service sets its length too. */
   private onStaffChange(staffId: string): void {
     this.newStaffId = staffId;
+    this.pairCleared = { ...this.pairCleared, new: '' };
     if (this.newServiceId) void this.proposeDuration('new');
   }
 
@@ -1117,6 +1187,7 @@ export class ErpAppointmentsList extends LitElement {
       this.newStart = '';
       this.newDuration = '';
       this.staffDurationUnavailable = { ...this.staffDurationUnavailable, new: false };
+      this.resetNarrowing('new');
       this.dataTable()?.close(); // el panel del «+» taparía la tabla y la cita recién creada
       await this.refresh();
     } catch (e) {
@@ -1332,6 +1403,7 @@ export class ErpAppointmentsList extends LitElement {
     this.rescheduleRowServiceId = this.rescheduleServiceId;
     this.rescheduleSeriesId = String(row.recurring_id ?? '');
     this.rescheduleOccurrence = String(row.occurrence_date ?? '');
+    void this.narrowStaff('reschedule', ''); // appointments#279 — offer who does the row's service
     this.error = '';
     this.view = 'list'; // el panel vive en la tabla
     await this.updateComplete;
@@ -1612,7 +1684,12 @@ export class ErpAppointmentsList extends LitElement {
     const { resourceId, time } = ev.detail;
     this.clearReschedule(); // an empty slot is a CREATE, not a move
     this.historyId = ''; // …nor the history left open before switching to the timeline
-    if (resourceId !== UNASSIGNED) this.onStaffChange(resourceId);
+    if (resourceId !== UNASSIGNED) {
+      this.onStaffChange(resourceId);
+      // appointments#279 — the tapped professional is the latest choice: a service she does not
+      // perform is the stale one.
+      void this.narrowStaff('new', 'service');
+    }
     this.newStart = `${this.day}T${time}`;
     this.view = 'list';
     await this.updateComplete;
@@ -1807,12 +1884,13 @@ export class ErpAppointmentsList extends LitElement {
         ${this.services.map((s) => html`<ion-select-option .value=${s.id}>${s.name}</ion-select-option>`)}
       </ion-select>
       <ion-select data-testid="appointments-list-reschedule-staff" data-role="reschedule-staff" fill="outline" mode="md" label-placement="floating" label=${t('ui.fieldStaff')} placeholder=${t('ui.pickStaff')} .value=${this.rescheduleStaffId} @ionChange=${(e: any) => this.onRescheduleStaffChange(e.target.value ?? '')}>
-        ${this.rescheduleStaffId && !this.bookableStaff.some((m) => m.id === this.rescheduleStaffId)
+        ${this.rescheduleStaffId && !this.staffOptions('reschedule').some((m) => m.id === this.rescheduleStaffId)
           ? html`<ion-select-option .value=${this.rescheduleStaffId}>${this.rescheduleStaffName || this.rescheduleStaffId}</ion-select-option>`
           : nothing}
-        ${this.bookableStaff.map((m) => html`<ion-select-option .value=${m.id}>${m.full_name}</ion-select-option>`)}
+        ${this.staffOptions('reschedule').map((m) => html`<ion-select-option .value=${m.id}>${m.full_name}</ion-select-option>`)}
       </ion-select>
-      ${this.rescheduleHandoverIncomplete
+      ${this.renderPairNotices('reschedule', t)}
+      ${this.rescheduleHandoverIncomplete && this.pairCleared.reschedule !== 'staff'
         ? html`<ok-inline-feedback data-testid="appointments-list-reschedule-needs-staff" tone="warning" icon="person-outline">${t(this.rescheduleServiceId ? 'ui.rescheduleNeedsStaff' : 'ui.rescheduleNeedsService')}</ok-inline-feedback>`
         : nothing}
       <!-- appointments#204: date + time, not datetime-local — its year segment takes 6 digits and never hands the caret to the hour, so a typed start never landed. -->
@@ -1865,6 +1943,20 @@ export class ErpAppointmentsList extends LitElement {
   /** appointments#232 — the free times under the time field: buttons in the hub clock, one tap
    *  fills the hour; typing another one stays possible. Loading, empty and error are said in
    *  words: an empty list and a failed read must never look alike. */
+  /** appointments#279 — why the picker changed under the person: a choice cleared because the
+   *  pair did not match, or a list that could not be narrowed. */
+  private renderPairNotices(form: DurationForm, t: (k: string) => string) {
+    const cleared = this.pairCleared[form];
+    return html`${cleared === 'staff'
+      ? html`<ok-inline-feedback data-testid="appointments-list-staff-not-for-service" tone="warning" icon="person-outline">${t('ui.staffNotForService')}</ok-inline-feedback>`
+      : cleared === 'service'
+        ? html`<ok-inline-feedback data-testid="appointments-list-service-not-for-staff" tone="warning" icon="swap-horizontal-outline">${t('ui.serviceNotForStaff')}</ok-inline-feedback>`
+        : nothing}
+    ${this.eligibleStaffUnavailable[form]
+      ? html`<ok-inline-feedback data-testid="appointments-list-eligible-staff-unavailable" tone="warning" icon="alert-circle-outline">${t('ui.eligibleStaffUnavailable')}</ok-inline-feedback>`
+      : nothing}`;
+  }
+
   /** appointments#272 — the catalogue length stands in for the professional's own: say so. */
   private renderStaffDurationUnavailable(form: DurationForm, t: (k: string) => string) {
     if (!this.staffDurationUnavailable[form]) return nothing;
@@ -1921,8 +2013,9 @@ export class ErpAppointmentsList extends LitElement {
               ${this.services.map((s) => html`<ion-select-option .value=${s.id}>${s.name}</ion-select-option>`)}
             </ion-select>
             <ion-select data-testid="appointments-list-staff" data-role="staff" fill="outline" mode="md" label-placement="floating" label=${t('ui.fieldStaff')} placeholder=${t('ui.pickStaff')} .value=${this.newStaffId} @ionChange=${(e: any) => this.onStaffChange(e.target.value ?? '')}>
-              ${this.bookableStaff.map((m) => html`<ion-select-option .value=${m.id}>${m.full_name}</ion-select-option>`)}
+              ${this.staffOptions('new').map((m) => html`<ion-select-option .value=${m.id}>${m.full_name}</ion-select-option>`)}
             </ion-select>
+            ${this.renderPairNotices('new', t)}
             <!-- appointments#204: date + time, not datetime-local — its year segment takes 6 digits and never hands the caret to the hour, so a typed start never landed. -->
             <!-- appointments#205: text, painted in the hub's language, with an inline calendar. -->
             <ion-input data-testid="appointments-list-start" data-role="start-date" fill="outline" mode="md" label-placement="floating" label=${t('ui.fieldDate')} type="text" inputmode="numeric" autocomplete="off" placeholder=${t('ui.datePlaceholder')} .value=${this.dateFieldValue('new')} @ionInput=${(e: any) => this.onDateFieldInput('new', e.target.value ?? '')} @ionChange=${() => this.commitDateDraft('new')} @keydown=${(e: KeyboardEvent) => this.onStartDateKeydown('new', e)} @paste=${(e: Event) => this.onStartPaste('new', e)}>
