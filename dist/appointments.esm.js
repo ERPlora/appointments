@@ -7538,12 +7538,12 @@ function rows3(r6) {
   }
   return [];
 }
-function eligibleReader(query) {
+function eligibleReader(read) {
   const byService = /* @__PURE__ */ new Map();
   return (serviceId) => {
     let found = byService.get(serviceId);
     if (!found) {
-      found = query(serviceId).then((r6) => rows3(r6));
+      found = read(serviceId).then((r6) => rows3(r6));
       byService.set(serviceId, found);
       found.catch(() => byService.delete(serviceId));
     }

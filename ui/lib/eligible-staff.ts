@@ -21,12 +21,12 @@ function rows<T>(r: unknown): T[] {
 
 /** Reads who performs each service ONCE; a failed read is asked again on the next call, never
  *  remembered as the answer. */
-export function eligibleReader(query: (serviceId: string) => Promise<unknown>): (serviceId: string) => Promise<EligibleProfessional[]> {
+export function eligibleReader(read: (serviceId: string) => Promise<unknown>): (serviceId: string) => Promise<EligibleProfessional[]> {
   const byService = new Map<string, Promise<EligibleProfessional[]>>();
   return (serviceId) => {
     let found = byService.get(serviceId);
     if (!found) {
-      found = query(serviceId).then((r) => rows<EligibleProfessional>(r));
+      found = read(serviceId).then((r) => rows<EligibleProfessional>(r));
       byService.set(serviceId, found);
       found.catch(() => byService.delete(serviceId));
     }

@@ -394,6 +394,21 @@ describe('the series edit panel only offers who performs the service (appointmen
     expect(offered(el, EDIT_STAFF)).toEqual(['s1', 's2']);
   });
 
+  it('a series without a service asks nobody’s competencies and offers the whole team', async () => {
+    template = { ...LUIS_HAIRCUT, service_id: null, service_name: '' };
+    const el = await mount();
+    await openEdit(el);
+    expect(eligibleAsked, 'no service, nothing to ask').toEqual([]);
+    expect(offered(el, EDIT_STAFF)).toEqual(['s1', 's2']);
+  });
+
+  it('a series without a professional offers no blank professional', async () => {
+    template = { ...LUIS_HAIRCUT, staff_id: null, staff_name: '' };
+    const el = await mount();
+    await openEdit(el);
+    expect(offered(el, EDIT_STAFF), 'only real team members').toEqual(['s1', 's2']);
+  });
+
   it('a new service the series’ professional does not do clears him, says why, and waits for who takes it', async () => {
     const el = await mount();
     await openEdit(el); // Luis, haircut
