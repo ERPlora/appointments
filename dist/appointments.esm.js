@@ -2152,7 +2152,8 @@ var es_default = {
     "appointments.cannot_start": "Esta cita no se puede iniciar: no est\xE1 confirmada.",
     "appointments.cannot_update_settings": "No se han podido cambiar los ajustes de reserva: este negocio no tiene ajustes en uso ahora mismo.",
     "appointments.appointment_not_found": "Esa cita no existe en este negocio.",
-    "appointments.invalid_end": "La hora de fin no coincide con la de inicio m\xE1s la duraci\xF3n."
+    "appointments.invalid_end": "La hora de fin no coincide con la de inicio m\xE1s la duraci\xF3n.",
+    "appointments.handover_incomplete": "Para cambiar la profesional o el servicio hay que enviar la profesional y el servicio a la vez, incluido el que no cambia."
   },
   bell: {
     "appointments.to_confirm": {
@@ -2429,7 +2430,8 @@ var en_default = {
     "appointments.cannot_start": "This appointment cannot be started: it is not confirmed.",
     "appointments.cannot_update_settings": "The booking settings could not be changed: this business has no settings in use right now.",
     "appointments.appointment_not_found": "That appointment does not exist in this business.",
-    "appointments.invalid_end": "The end does not match the start plus the duration."
+    "appointments.invalid_end": "The end does not match the start plus the duration.",
+    "appointments.handover_incomplete": "To change the professional or the service, send both the professional and the service, the one that stays included."
   },
   bell: {
     "appointments.to_confirm": {

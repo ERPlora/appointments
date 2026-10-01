@@ -266,7 +266,8 @@
     "appointments.cannot_start": "Esta cita no se puede iniciar: no está confirmada.",
     "appointments.cannot_update_settings": "No se han podido cambiar los ajustes de reserva: este negocio no tiene ajustes en uso ahora mismo.",
     "appointments.appointment_not_found": "Esa cita no existe en este negocio.",
-    "appointments.invalid_end": "La hora de fin no coincide con la de inicio más la duración."
+    "appointments.invalid_end": "La hora de fin no coincide con la de inicio más la duración.",
+    "appointments.handover_incomplete": "Para cambiar la profesional o el servicio hay que enviar la profesional y el servicio a la vez, incluido el que no cambia."
   },
   "bell": {
     "appointments.to_confirm": {

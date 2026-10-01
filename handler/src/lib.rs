@@ -2855,6 +2855,18 @@ pub fn update_appointment_pure(input: Value) -> Result<Output, String> {
     let service_id = str_or(&payload, "service_id", "");
     let hands_over = (!staff_id.is_empty() && staff_id != str_or(&row, "staff_id", ""))
         || (!service_id.is_empty() && service_id != str_or(&row, "service_id", ""));
+    // `reschedule` answers a half pair with a raw `Err` — a payload error, since the agenda screen
+    // always sends both. Here the caller is the assistant, told that `null` keeps what the
+    // appointment has, so «hand it to Carla» arrives with no `service_id`: that is a domain
+    // refusal it can read and act on (send the pair), not the opaque HTTP 400 `wasm` an `Err`
+    // becomes on the hub. It cannot be completed from the row: the competency read is keyed on
+    // the payload's `service_id`, and an empty read means «everyone performs it».
+    if hands_over && (staff_id.is_empty() || service_id.is_empty()) {
+        return Ok(refuse(
+            "appointments.handover_incomplete",
+            "To change the professional or the service, send staff_id and service_id together, the one that stays included.",
+        ));
+    }
     let same_instant = |key: &str| {
         let sent = as_str(payload.get(key).unwrap_or(&Value::Null));
         let had = as_str(row.get(key).unwrap_or(&Value::Null));
@@ -13595,14 +13607,35 @@ mod tests {
     }
 
     /// The professional and the service travel together (the competency read is keyed on the
-    /// service), as they do for `reschedule`.
+    /// service), as they do for `reschedule` — but here the caller is the assistant, told that
+    /// `null` keeps what the appointment has, so «change the professional to Carla» arrives as a
+    /// new `staff_id` and no `service_id`. That is a DOMAIN refusal it can read and correct, with
+    /// its `en`/`es` text, never the opaque HTTP 400 `wasm` a raw `Err` becomes on the hub.
     #[test]
     fn update_needs_the_professional_and_the_service_together_to_hand_over() {
+        for (staff, service) in [(json!("s2"), Value::Null), (Value::Null, json!("s-tinte"))] {
+            let mut p = edit_of_beas_cut();
+            p["staff_id"] = staff;
+            p["service_id"] = service;
+            let out = update_appointment_pure(reschedule_input(p, beas_cut(), None))
+                .expect("a half pair is a refusal, not a broken payload");
+            assert_eq!(
+                domain_code(&out).as_deref(),
+                Some("appointments.handover_incomplete")
+            );
+            assert!(out.operations.is_empty(), "a refusal writes nothing");
+        }
+    }
+
+    /// …and sending the pair the appointment already has, or the professional it has with no
+    /// service, is not a hand-over at all: nothing to complete, nothing refused.
+    #[test]
+    fn update_with_the_professional_it_has_and_no_service_is_not_a_half_pair() {
         let mut p = edit_of_beas_cut();
-        p["staff_id"] = json!("s2");
         p["service_id"] = Value::Null;
-        let err = update_appointment_pure(reschedule_input(p, beas_cut(), None)).unwrap_err();
-        assert!(err.starts_with("invalid_payload"), "{err}");
+        let out = edit(p, json!({}));
+        assert!(out.error.is_none(), "{:?}", out.error);
+        assert_eq!(op_commands(&out), vec!["appointments._update_details"]);
     }
 
     /// A finished appointment keeps who did it and when: only its notes can still be edited.
@@ -13655,6 +13688,7 @@ mod tests {
         for code in [
             "appointments.invalid_end",
             "appointments.appointment_not_found",
+            "appointments.handover_incomplete",
         ] {
             assert!(
                 manifest["errors"].get(code).is_some(),
