@@ -44,6 +44,8 @@ import {
 // appointments#204: a start typed or pasted as one string ("26/09/2026 10:00") is read in the
 // active language's day/month order and split into the date + time fields.
 import { parseTypedStart, formatTypedDate, formatTypedTime, type TypedStart } from '../../lib/typed-start';
+// appointments#281 — who performs a service: one rule shared with the series view.
+import { eligibleIds, eligibleReader, offeredStaff, type EligibleProfessional } from '../../lib/eligible-staff';
 const CATALOG: Record<string, unknown> = { es: esLocale, en: enLocale };
 
 interface ErploraClientLike {
@@ -113,13 +115,6 @@ interface StaffMember {
   status?: string;
   is_bookable?: number;
   color?: string;
-}
-
-/** appointments#272 — a professional eligible for a service (`staff.services.eligible_for_service`,
- *  staff#9), with her own length for it when she has one. */
-interface EligibleProfessional {
-  staff_id: string;
-  custom_duration?: number | null;
 }
 
 type DurationForm = 'new' | 'reschedule';
@@ -431,7 +426,9 @@ export class ErpAppointmentsList extends LitElement {
   @state() private staffDurationUnavailable: Record<DurationForm, boolean> = { new: false, reschedule: false };
 
   /** appointments#272 — the eligible professionals per service, read once per service. */
-  private eligibleByService = new Map<string, Promise<EligibleProfessional[]>>();
+  private eligibleFor = eligibleReader((serviceId) =>
+    erplora().query('staff.services.eligible_for_service', { service_id: serviceId }),
+  );
 
   /** appointments#279 — who the server accepts for the form's service, by id. `null` = the whole
    *  bookable team: no service yet, a service without declared competencies, or the read is
@@ -578,8 +575,7 @@ export class ErpAppointmentsList extends LitElement {
   /** appointments#279 — the professionals the picker offers: only who performs the form's service
    *  when it has declared competencies, else the whole bookable team (`resolve_professional`). */
   private staffOptions(form: DurationForm): StaffMember[] {
-    const ids = this.eligibleStaffIds[form];
-    return ids ? this.bookableStaff.filter((m) => ids.includes(m.id)) : this.bookableStaff;
+    return offeredStaff(this.bookableStaff, this.eligibleStaffIds[form]);
   }
 
   /** appointments#279 — reads who performs the form's service and narrows the picker to them.
@@ -604,7 +600,7 @@ export class ErpAppointmentsList extends LitElement {
     }
     if (request !== this.eligibleRequest[form]) return;
     // No declared competency: the hub has not narrowed the service and the server accepts anyone.
-    const ids = eligible.length ? eligible.map((p) => String(p.staff_id)) : null;
+    const ids = eligibleIds(eligible);
     this.eligibleStaffIds = { ...this.eligibleStaffIds, [form]: ids };
     const staffId = form === 'new' ? this.newStaffId : this.rescheduleStaffId;
     if (!ids || !staffId || ids.includes(staffId) || !clear) return;
@@ -630,19 +626,6 @@ export class ErpAppointmentsList extends LitElement {
   private catalogueDuration(serviceId: string): number | null {
     const minutes = Number(this.services.find((s) => s.id === serviceId)?.duration_minutes);
     return Number.isFinite(minutes) && minutes >= 1 ? minutes : null;
-  }
-
-  private eligibleFor(serviceId: string): Promise<EligibleProfessional[]> {
-    let found = this.eligibleByService.get(serviceId);
-    if (!found) {
-      found = erplora()
-        .query('staff.services.eligible_for_service', { service_id: serviceId })
-        .then((r) => rows<EligibleProfessional>(r));
-      this.eligibleByService.set(serviceId, found);
-      // A failed read is asked again on the next pick, not remembered as the answer.
-      found.catch(() => this.eligibleByService.delete(serviceId));
-    }
-    return found;
   }
 
   /** appointments#272 — the minutes a (service, professional) pair proposes: HER own length for

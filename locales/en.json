@@ -182,6 +182,7 @@
     "seriesSaveError": "The repeating appointment could not be saved.",
     "seriesMaterializeError": "The appointments of this series could not be booked.",
     "seriesNoStaff": "This series has no professional, so its appointments cannot be booked. Edit it and choose who does it.",
+    "seriesStaffNotForService": "The series' professional does not perform this service: pick who takes the series over from this date.",
     "seriesPickStaffToBook": "This series has no professional: choose who does it and saving books its appointments.",
     "seriesNoCustomer": "This series has no customer from your list, so its appointments cannot be booked. Delete it and create it again choosing the customer.",
     "seriesNoService": "This series has no service from your list, so its appointments cannot be booked. Delete it and create it again choosing the service.",

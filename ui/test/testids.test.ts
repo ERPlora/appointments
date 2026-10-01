@@ -189,6 +189,10 @@ const COVERED: Record<
       'appointments-series-split-from',
       'appointments-series-staff',
       'appointments-series-staff-hint',
+      // appointments#281 — the professional picker narrowed by service, in both forms: why a
+      // picked professional was cleared, and a list that could not be narrowed.
+      'appointments-series-staff-not-for-service',
+      'appointments-series-eligible-staff-unavailable',
       'appointments-series-submit',
       'appointments-series-time',
     ],
