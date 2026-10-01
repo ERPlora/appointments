@@ -122,6 +122,8 @@ const COVERED: Record<
       'appointments-list-slots-loading',
       'appointments-list-slots-retry',
       'appointments-list-staff',
+      // appointments#272 — the professional's own length could not be read: the catalogue's stands in.
+      'appointments-list-staff-duration-unavailable',
       'appointments-list-start',
       // appointments#205 — same calendar, on the create panel's date field.
       'appointments-list-start-calendar',
