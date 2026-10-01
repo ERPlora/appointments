@@ -114,6 +114,7 @@ type Wc = HTMLElement & {
   onRowAction: (ev: CustomEvent<{ actionId: string; row: Record<string, unknown> }>) => Promise<void>;
   createAppointment: (ev: Event) => Promise<void>;
   submitReschedule: (ev: Event) => Promise<void>;
+  onSlotClick: (ev: CustomEvent<{ resourceId: string; time: string }>) => Promise<void>;
   updateComplete: Promise<unknown>;
 };
 
@@ -255,5 +256,50 @@ describe('the appointment sheet proposes the professional’s own length (appoin
     await el.submitReschedule(new Event('submit'));
     const sent = commands.find((c) => c.name === 'appointments.appointments.reschedule')?.payload;
     expect(sent?.duration_minutes).toBe(45);
+  });
+});
+
+describe('the other ways in and out of the forms (appointments#272)', () => {
+  const warning = (form: Element) =>
+    form.querySelector('[data-testid="appointments-list-staff-duration-unavailable"]');
+
+  it('a tap on a free slot of the timeline proposes the length of THAT professional', async () => {
+    const el = await mount();
+    await pick(el, createForm(el), 'service', 'sv2');
+    await el.onSlotClick(new CustomEvent('slotClick', { detail: { resourceId: 's1', time: '11:00' } }));
+    await settle(el);
+    expect(el.newDuration, 'the slot was Eva’s: her 120, not the 90 of the catalogue').toBe('120');
+  });
+
+  it('picking the professional before the service keeps the minutes already typed', async () => {
+    const el = await mount();
+    el.newDuration = '50';
+    await pick(el, createForm(el), 'staff', 's1');
+    expect(el.newDuration, 'no service yet: there is nothing to propose, so nothing is wiped').toBe('50');
+  });
+
+  it('a booking saved with the warning showing leaves a clean form for the next one', async () => {
+    eligibleFails = true;
+    const el = await mount();
+    el.newCustomerId = 'c1';
+    el.newStart = '2026-08-07T10:00';
+    await pick(el, createForm(el), 'staff', 's1');
+    await pick(el, createForm(el), 'service', 'sv2');
+    expect(warning(createForm(el)), 'the read failed: the form says so').toBeTruthy();
+    await el.createAppointment(new Event('submit'));
+    await settle(el);
+    expect(warning(createForm(el)), 'the warning was about the booking just saved').toBeNull();
+  });
+
+  it('a sheet closed with the warning showing opens clean the next time', async () => {
+    eligibleFails = true;
+    const el = await mount();
+    await openSheet(el, APPOINTMENT);
+    await pick(el, sheet(el), 'reschedule-service', 'sv2');
+    expect(warning(sheet(el)), 'the read failed: the sheet says so').toBeTruthy();
+    (sheet(el).querySelector('[data-testid="appointments-list-reschedule-cancel"]') as HTMLElement).click();
+    await settle(el);
+    await openSheet(el, APPOINTMENT);
+    expect(warning(sheet(el)), 'nothing was asked on this opening: no warning').toBeNull();
   });
 });
