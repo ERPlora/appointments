@@ -183,6 +183,7 @@
     "seriesSaveError": "No se ha podido guardar la cita periódica.",
     "seriesMaterializeError": "No se han podido reservar las citas de esta serie.",
     "seriesNoStaff": "Esta serie no tiene profesional y sus citas no se pueden reservar. Ábrela y elige quién la atiende.",
+    "seriesStaffNotForService": "El profesional de la serie no realiza este servicio: elige quién se queda con la serie desde esta fecha.",
     "seriesPickStaffToBook": "Esta serie no tiene profesional: elige quién la atiende y al guardar se reservan sus citas.",
     "seriesNoCustomer": "Esta serie no tiene un cliente de tu lista y sus citas no se pueden reservar. Bórrala y vuelve a crearla eligiendo el cliente.",
     "seriesNoService": "Esta serie no tiene un servicio de tu lista y sus citas no se pueden reservar. Bórrala y vuelve a crearla eligiendo el servicio.",

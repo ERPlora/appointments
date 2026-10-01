@@ -17,6 +17,8 @@ import { todayISO } from '../../lib/business-time';
 // reschedule panels of `erp-appointments-list` use.
 // appointments#217: and the dates/times are painted in the hub's language by the same helpers.
 import { parseTypedStart, formatTypedDate, formatTypedTime, type TypedStart } from '../../lib/typed-start';
+// appointments#281 — who performs a service: the rule the agenda's pickers use (#279).
+import { eligibleIds, eligibleReader, offeredStaff } from '../../lib/eligible-staff';
 
 const CATALOG: Record<string, unknown> = { es: esLocale, en: enLocale };
 
@@ -223,6 +225,9 @@ const WEEKDAY_KEYS = [
 /** El día de la semana solo alinea las pautas que avanzan por semanas. */
 const ALIGNS_TO_WEEKDAY = ['weekly', 'biweekly'];
 
+/** appointments#281 — the two forms with a professional picker: the new series and the edit panel. */
+type PickerForm = 'new' | 'edit';
+
 export class ErpAppointmentsSeries extends LitElement {
   static styles = css`
     :host { display:flex; flex-direction:column; min-height:0; flex:1 1 auto;
@@ -316,6 +321,25 @@ export class ErpAppointmentsSeries extends LitElement {
    *  time: two open calendars would be two answers to "what day is this". */
   @state() private calendarOpen: '' | 'start' | 'end' = '';
 
+  /** appointments#281 — who the server accepts for the form's service, by id. `null` = the whole
+   *  bookable team: no service yet, a service without declared competencies, or the read is
+   *  pending or failed (the server still judges on save). */
+  @state() private eligibleStaffIds: Record<PickerForm, string[] | null> = { new: null, edit: null };
+
+  /** appointments#281 — the eligibility read failed: the whole team is offered and the form says so. */
+  @state() private eligibleStaffUnavailable: Record<PickerForm, boolean> = { new: false, edit: false };
+
+  /** appointments#281 — the professional was cleared because she does not perform the new service. */
+  @state() private staffCleared: Record<PickerForm, boolean> = { new: false, edit: false };
+
+  /** Bumped on every eligibility question: an answer for an older one is dropped. */
+  private eligibleRequest: Record<PickerForm, number> = { new: 0, edit: 0 };
+
+  /** appointments#281 — the eligible professionals per service, read once per service. */
+  private eligibleFor = eligibleReader((serviceId) =>
+    erplora().query('staff.services.eligible_for_service', { service_id: serviceId }),
+  );
+
   private offLocale: (() => void) | null = null;
 
   async connectedCallback(): Promise<void> {
@@ -355,10 +379,13 @@ export class ErpAppointmentsSeries extends LitElement {
   /** appointments#248 — who the edit panel offers: the bookable professionals and, when she no
    *  longer is one (she left, or stopped taking appointments), the series' current professional, so
    *  the field still says who does it today instead of showing up empty. */
+  /** appointments#281 — narrowed to who performs the chosen service; the series' professional stays
+   *  offered while the service is still hers (nothing would change) or she is the one picked. */
   private get editStaffOptions(): { id: string; name: string }[] {
-    const options = this.bookableStaff.map((m) => ({ id: m.id, name: m.full_name }));
+    const options = offeredStaff(this.bookableStaff, this.eligibleStaffIds.edit).map((m) => ({ id: m.id, name: m.full_name }));
     const tmpl = this.template;
-    if (tmpl?.staff_id && !options.some((o) => o.id === tmpl.staff_id)) {
+    const stillHers = this.editServiceId === (tmpl?.service_id ?? '') || this.editStaffId === tmpl?.staff_id;
+    if (tmpl?.staff_id && stillHers && !options.some((o) => o.id === tmpl.staff_id)) {
       options.unshift({ id: tmpl.staff_id, name: tmpl.staff_name || tmpl.staff_id });
     }
     return options;
@@ -398,12 +425,85 @@ export class ErpAppointmentsSeries extends LitElement {
     this.editServiceId = serviceId;
     const tmpl = this.template;
     if (!tmpl) return;
+    // appointments#281 — a new service the picked professional does not do clears her; back to the
+    // series' own service nothing is cleared: what is booked already has its professional.
+    void this.narrowStaff('edit', serviceId !== (tmpl.service_id ?? ''));
     if (serviceId === (tmpl.service_id ?? '')) {
       this.editDuration = String(tmpl.duration_minutes ?? '');
       return;
     }
     const m = Number(this.services.find((s) => s.id === serviceId)?.duration_minutes);
     if (Number.isFinite(m) && m >= 1) this.editDuration = String(m);
+  }
+
+  /** appointments#248/#281 — the professional picked in the edit panel. */
+  private onEditStaffChange(staffId: string): void {
+    this.editStaffId = staffId;
+    this.staffCleared = { ...this.staffCleared, edit: false };
+  }
+
+  /** appointments#281 — the professional picked in the new-series form. */
+  private onCreateStaffChange(staffId: string): void {
+    this.newStaffId = staffId;
+    this.staffCleared = { ...this.staffCleared, new: false };
+  }
+
+  /** appointments#281 — reads who performs the form's service and narrows the picker to them. With
+   *  `clear`, a picked professional who does not perform it is cleared and the form says why;
+   *  opening a series clears nothing: it keeps the professional it has. A failed read narrows
+   *  nothing and says so — the server still judges on save. */
+  private async narrowStaff(form: PickerForm, clear: boolean): Promise<void> {
+    const request = ++this.eligibleRequest[form];
+    const serviceId = form === 'new' ? this.newServiceId : this.editServiceId;
+    this.eligibleStaffIds = { ...this.eligibleStaffIds, [form]: null };
+    this.eligibleStaffUnavailable = { ...this.eligibleStaffUnavailable, [form]: false };
+    this.staffCleared = { ...this.staffCleared, [form]: false };
+    if (!serviceId) return;
+    let ids: string[] | null;
+    try {
+      ids = eligibleIds(await this.eligibleFor(serviceId));
+    } catch {
+      if (request === this.eligibleRequest[form]) {
+        this.eligibleStaffUnavailable = { ...this.eligibleStaffUnavailable, [form]: true };
+      }
+      return;
+    }
+    if (request !== this.eligibleRequest[form]) return;
+    this.eligibleStaffIds = { ...this.eligibleStaffIds, [form]: ids };
+    const staffId = form === 'new' ? this.newStaffId : this.editStaffId;
+    if (!clear || !ids || !staffId || ids.includes(staffId)) return;
+    if (form === 'new') this.newStaffId = '';
+    else this.editStaffId = '';
+    this.staffCleared = { ...this.staffCleared, [form]: true };
+  }
+
+  /** appointments#281 — forgets the form's narrowing: a late answer must not land on a clean form. */
+  private resetNarrowing(form: PickerForm): void {
+    this.eligibleRequest[form]++;
+    this.eligibleStaffIds = { ...this.eligibleStaffIds, [form]: null };
+    this.eligibleStaffUnavailable = { ...this.eligibleStaffUnavailable, [form]: false };
+    this.staffCleared = { ...this.staffCleared, [form]: false };
+  }
+
+  /** appointments#281 — why the picker changed under the person: the professional cleared because
+   *  she does not perform the service, or a list that could not be narrowed. */
+  private renderStaffNotices(form: PickerForm, t: (k: string) => string) {
+    return html`${this.staffCleared[form]
+      ? html`<ok-inline-feedback data-testid="appointments-series-staff-not-for-service" tone="warning" icon="person-outline"
+          >${t(form === 'new' ? 'ui.staffNotForService' : 'ui.seriesStaffNotForService')}</ok-inline-feedback
+        >`
+      : nothing}
+    ${this.eligibleStaffUnavailable[form]
+      ? html`<ok-inline-feedback data-testid="appointments-series-eligible-staff-unavailable" tone="warning" icon="alert-circle-outline"
+          >${t('ui.eligibleStaffUnavailable')}</ok-inline-feedback
+        >`
+      : nothing}`;
+  }
+
+  /** appointments#281 — the series' professional was cleared by a new service she does not do:
+   *  saving would hand the series to nobody, and the server refuses it. */
+  private get editNeedsStaff(): boolean {
+    return !!this.template?.staff_id && !this.editStaffId;
   }
 
   async refresh(): Promise<void> {
@@ -514,6 +614,7 @@ export class ErpAppointmentsSeries extends LitElement {
       this.editDuration = String(tmpl.duration_minutes ?? '');
       this.editStaffId = tmpl.staff_id ?? '';
       this.editServiceId = tmpl.service_id ?? '';
+      void this.narrowStaff('edit', false); // appointments#281 — offer who does the series' service
       // EL PASADO ESTÁ CONGELADO: el corte nunca apunta a una ocurrencia ya servida. Si no queda
       // ninguna futura reservada, se corta hoy — que es lo que el servidor haría de todos modos.
       const today = todayISO();
@@ -576,7 +677,7 @@ export class ErpAppointmentsSeries extends LitElement {
   async submitEdit(ev: Event): Promise<void> {
     ev.preventDefault?.();
     const tmpl = this.template;
-    if (!tmpl || this.saving) return;
+    if (!tmpl || this.saving || this.editNeedsStaff) return;
     const changed = this.changedFields();
     const staffChange = this.staffChange;
     const serviceChange = this.serviceChange;
@@ -978,10 +1079,11 @@ export class ErpAppointmentsSeries extends LitElement {
           placeholder=${t('ui.pickStaff')}
           label-placement="floating"
           .value=${this.editStaffId}
-          @ionChange=${(e: any) => (this.editStaffId = e.target.value ?? '')}
+          @ionChange=${(e: any) => this.onEditStaffChange(e.target.value ?? '')}
         >
           ${this.editStaffOptions.map((o) => html`<ion-select-option .value=${o.id}>${o.name}</ion-select-option>`)}
         </ion-select>
+        ${this.renderStaffNotices('edit', t)}
         <!-- appointments#252: the service of the series, for this and the following dates — the
              customer moves to another service without the series being deleted. -->
         <ion-select
@@ -1077,7 +1179,7 @@ export class ErpAppointmentsSeries extends LitElement {
         ? html`<ok-inline-feedback data-testid="appointments-series-form-error" tone="danger" icon="alert-circle-outline">${this.editError}</ok-inline-feedback>`
         : nothing}
       <!-- A half-typed time is not a time: saving would silently keep the old one (appointments#217). -->
-      <ion-button data-testid="appointments-series-submit" type="submit" expand="block" .disabled=${this.saving || !this.editTime}>${t('ui.seriesSave')}</ion-button>
+      <ion-button data-testid="appointments-series-submit" type="submit" expand="block" .disabled=${this.saving || !this.editTime || this.editNeedsStaff}>${t('ui.seriesSave')}</ion-button>
     </form>`;
   }
 
@@ -1086,6 +1188,7 @@ export class ErpAppointmentsSeries extends LitElement {
    *  re-fills from the new one because the typed exception belonged to the old one. */
   private onCreateServiceChange(serviceId: string): void {
     this.newServiceId = serviceId;
+    void this.narrowStaff('new', true); // appointments#281
     const service = this.services.find((s) => s.id === serviceId);
     const m = Number(service?.duration_minutes);
     this.newDuration = Number.isFinite(m) && m >= 1 ? String(m) : '';
@@ -1209,6 +1312,7 @@ export class ErpAppointmentsSeries extends LitElement {
     this.dateDraft = { start: null, end: null };
     this.timeDraft = { ...this.timeDraft, new: null };
     this.calendarOpen = '';
+    this.resetNarrowing('new');
   }
 
   private renderCreateForm(t: (k: string, p?: Record<string, unknown>) => string) {
@@ -1263,10 +1367,11 @@ export class ErpAppointmentsSeries extends LitElement {
           placeholder=${t('ui.pickStaff')}
           label-placement="floating"
           .value=${this.newStaffId}
-          @ionChange=${(e: any) => (this.newStaffId = e.target.value ?? '')}
+          @ionChange=${(e: any) => this.onCreateStaffChange(e.target.value ?? '')}
         >
-          ${this.bookableStaff.map((m) => html`<ion-select-option .value=${m.id}>${m.full_name}</ion-select-option>`)}
+          ${offeredStaff(this.bookableStaff, this.eligibleStaffIds.new).map((m) => html`<ion-select-option .value=${m.id}>${m.full_name}</ion-select-option>`)}
         </ion-select>
+        ${this.renderStaffNotices('new', t)}
         <ion-select
           data-testid="appointments-series-create-frequency"
           data-role="series-create-frequency"
