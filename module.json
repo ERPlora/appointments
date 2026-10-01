@@ -1,7 +1,7 @@
 {
   "id": "appointments",
   "name": "Appointments",
-  "version": "1.1.132",
+  "version": "1.1.133",
   "errors": {
     "appointments.appointment_not_found": {},
     "appointments.availability_unavailable": {},
@@ -884,7 +884,7 @@
         "appointments.appointment.updated"
       ],
       "ai": {
-        "description": "Edits one appointment: the customer's name, phone and email, the notes, and — judged exactly like a move from the agenda — its time, length, professional or service. The professional and the service are resolved against the hub's records (never the names sent): to change either, send `staff_id` and `service_id` TOGETHER (the one that stays included); `null` keeps what the appointment has. A new service brings its catalogue name and price. `end_datetime` must equal the start plus `duration_minutes`. A change of time, length, professional or service is refused when the appointment is no longer pending or confirmed, or when it lands on a blocked period, outside opening hours or the professional's hours, on another of her appointments, or breaks the minimum notice or maximum advance; editing only the details and notes works in any state."
+        "description": "Edits one appointment, writing only what is sent: a field left out keeps what the appointment has, and the phone, the email or the notes sent empty (\"\") are cleared — so to move an appointment or hand it over, send only the appointment_id, the start_datetime and what changes. It edits the customer's name, phone and email, the notes, and — judged exactly like a move from the agenda — its time, length, professional or service. The professional and the service are resolved against the hub's records (never the names sent): to change either, send `staff_id` and `service_id` TOGETHER (the one that stays included); `null` keeps what the appointment has. A new service brings its catalogue name and price. `end_datetime` must equal the start plus `duration_minutes`. A change of time, length, professional or service is refused when the appointment is no longer pending or confirmed, or when it lands on a blocked period, outside opening hours or the professional's hours, on another of her appointments, or breaks the minimum notice or maximum advance; editing only the details and notes works in any state."
       },
       "reads": [
         {

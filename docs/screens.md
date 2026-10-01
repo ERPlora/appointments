@@ -150,6 +150,11 @@ appointment has. The end is always the start plus the length: an end that says s
 refused. The notes and the customer's contact can be edited at any time, even on an appointment
 that already happened.
 
+The edit only changes what it is sent (appointments#274). Moving an appointment, or handing it to
+another professional, with nothing about the customer or the notes keeps the customer's name, phone
+and email and both notes exactly as they were. To clear the phone, the email or a note, send it
+empty on purpose; the name can be changed but never emptied.
+
 ### Delete
 
 Destructive, with confirmation, and **admin only** (`appointments.delete_appointment`). Prefer
