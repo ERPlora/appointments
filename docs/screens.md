@@ -228,6 +228,11 @@ customer, service and professional picked from their modules (only bookable serv
 professionals), the frequency, the weekday (weekly and every-two-weeks patterns only), the start as
 **Day + Time** — the same two fields as a new appointment, so it can be typed in one go or pasted —,
 the minutes (pre-filled from the service) and, optionally, an end date or a number of appointments.
+Once a service is chosen, the professional list only offers **who performs it**, exactly as when
+booking a single appointment: a service nobody has been assigned to yet offers the whole bookable
+team, switching to a service the chosen professional does not do clears her and says so, and if the
+list cannot be checked the whole team is shown, the form says so and the hub checks on save
+(appointments#281).
 **Create repeating appointment** creates the series and books its window straight away, so it lands
 on the agenda; if the booking fails the series is still created and listed, and the screen says to
 use **Book appointments** on its row. Tapping **Add** while a series is being edited (or still
@@ -280,8 +285,11 @@ never touched.
 The edit panel also has a **Professional** field, with the series' current professional picked (and
 kept in the list even when they no longer take appointments). Picking someone else hands the series
 to them from that occurrence **and all the following ones**, the same cut as a pattern change — the
-earlier dates keep who did them. Only professionals who take appointments are offered, and the hub
-refuses one who does not perform the series' service.
+earlier dates keep who did them. Only professionals who take appointments **and perform the chosen
+service** are offered (the whole team when nobody has been assigned to it), and the hub refuses one
+who does not. Picking a new service the series' professional does not do clears her, says so and
+keeps **Save** off until someone who does it is picked; going back to the series' own service keeps
+whoever it already has (appointments#281).
 
 Before saving, the panel says how many booked appointments go to them. Each of them is judged on the
 **new professional's** agenda (their shift, their blocked time, their other appointments): the ones that
