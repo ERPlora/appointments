@@ -414,6 +414,27 @@ describe('the series edit panel only offers who performs the service (appointmen
     expect(notice(el, 'eligible-staff-unavailable')).toBeTruthy();
   });
 
+  it('going back to the series’ own service never clears the professional it already has', async () => {
+    template = LUIS_COLOUR;
+    const el = await mount();
+    await openEdit(el);
+    await pick(el, EDIT_SERVICE, 'sv1');
+    await pick(el, EDIT_SERVICE, 'sv2'); // colours again: what is booked, with Luis
+    expect(el.editStaffId, 'nothing changes: the series keeps him').toBe('s2');
+    expect(offered(el, EDIT_STAFF)).toEqual(['s2', 's1']);
+    expect(notice(el, 'staff-not-for-service')).toBeNull();
+  });
+
+  it('a professional who no longer takes appointments stays on the field while she is still the one picked', async () => {
+    eligibleFails = true;
+    template = { ...LUIS_HAIRCUT, staff_id: 's3', staff_name: 'Marta Office' };
+    const el = await mount();
+    await openEdit(el);
+    await pick(el, EDIT_SERVICE, 'sv2'); // could not be checked: nothing is cleared
+    expect(el.editStaffId).toBe('s3');
+    expect(offered(el, EDIT_STAFF), 'the field still says who it is').toEqual(['s3', 's1', 's2']);
+  });
+
   it('another series opened after a cleared professional starts clean', async () => {
     const el = await mount();
     await openEdit(el);

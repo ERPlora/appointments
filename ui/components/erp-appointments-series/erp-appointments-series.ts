@@ -631,7 +631,6 @@ export class ErpAppointmentsSeries extends LitElement {
   }
 
   private closePanel(): void {
-    this.resetNarrowing('edit');
     this.editingId = '';
     this.template = null;
     this.occurrences = [];
