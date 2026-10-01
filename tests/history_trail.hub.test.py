@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """A move and a cancellation leave their line in the appointment's history — regression of
-ERPlora/appointments#196, against the REAL kernel.
+ERPlora/appointments#196, against the REAL kernel. It also holds the general edit (`update`): judged
+like the agenda (#271) and writing only the fields it is sent (#274).
 
 What broke: `reschedule` and `cancel` are WASM commands. The handler returns its writes as separate
 operations, and the runtime binds the system params — `:now` among them — once PER OPERATION
@@ -152,11 +153,13 @@ def main() -> int:
     hub.check("§5 the trail did not grow", len(trail(hub, edited)), before)
 
     judged_like_the_agenda(hub, links, day)
+    partial_edit_keeps_what_it_does_not_name(hub, links, day)
 
     return hub.finish(
         "a move, a cancellation and an edit each leave exactly the history line that says what "
-        "happened and who asked, a refused move or a notes-only edit leaves none, and an edit "
-        "that hands an appointment over is judged like the agenda's"
+        "happened and who asked, a refused move or a notes-only edit leaves none, an edit "
+        "that hands an appointment over is judged like the agenda's, and a partial edit keeps "
+        "the contact and the notes it does not name"
     )
 
 
@@ -262,6 +265,80 @@ def judged_like_the_agenda(hub: Hub, links, day: str) -> None:
         int(row.get("service_price") or 0) == 4500,
         f"service_price: {row.get('service_price')!r}",
     )
+
+
+DETAILS = {
+    "customer_name": "Ana García",
+    "customer_phone": "+34600111222",
+    "customer_email": "ana@example.com",
+    "notes": "allergic to ammonia",
+    "internal_notes": "pays by card",
+}
+
+
+def partial_edit_keeps_what_it_does_not_name(hub: Hub, links, day: str) -> None:
+    """appointments#274: the assistant edits by sending what changes («move Ana's appointment to
+    17:30», «hand it to Carla»). The schema filled every contact and notes field it left out with
+    `""` — the runtime materialises a `default` BEFORE the handler runs — and the edit wrote them:
+    the customer's phone, email and both notes were wiped without anyone asking. Only the runtime
+    applies the schema, so only a battery against the runtime can say the default is gone."""
+    subject = book(hub, links, links.staff_id, instant(day, "17:00"), DURATION)
+    hub.run(
+        "appointments.appointments.update",
+        {
+            "appointment_id": subject,
+            "start_datetime": instant(day, "17:00"),
+            **DETAILS,
+        },
+    )
+    row = appointment(hub, subject)
+    for key, value in DETAILS.items():
+        hub.check(f"§10 the full edit wrote {key}", row.get(key), value)
+
+    print("§10 handing the appointment over with nothing else keeps contact and notes (#274)")
+    hub.run(
+        "appointments.appointments.update",
+        {
+            "appointment_id": subject,
+            "staff_id": links.other_staff_id,
+            "service_id": links.service_id,
+            "start_datetime": instant(day, "17:00"),
+        },
+    )
+    row = appointment(hub, subject)
+    hub.check("§10 the appointment changed hands", row.get("staff_id"), links.other_staff_id)
+    for key, value in DETAILS.items():
+        hub.check(f"§10 …and kept {key}", row.get(key), value)
+
+    print("§11 moving it with only the new time keeps contact and notes (#274)")
+    hub.run(
+        "appointments.appointments.update",
+        {"appointment_id": subject, "start_datetime": instant(day, "17:30")},
+    )
+    row = appointment(hub, subject)
+    hub.check_true(
+        "§11 the appointment moved",
+        str(row.get("start_datetime", "")).startswith(f"{day}T17:30"),
+        f"start_datetime: {row.get('start_datetime')!r}",
+    )
+    for key, value in DETAILS.items():
+        hub.check(f"§11 …and kept {key}", row.get(key), value)
+
+    print("§12 a field sent empty is cleared, and only that one (#274)")
+    hub.run(
+        "appointments.appointments.update",
+        {
+            "appointment_id": subject,
+            "start_datetime": instant(day, "17:30"),
+            "customer_phone": "",
+            "internal_notes": "",
+        },
+    )
+    row = appointment(hub, subject)
+    hub.check("§12 the phone sent empty is cleared", row.get("customer_phone"), "")
+    hub.check("§12 the internal notes sent empty are cleared", row.get("internal_notes"), "")
+    for key in ("customer_name", "customer_email", "notes"):
+        hub.check(f"§12 …and {key} is kept", row.get(key), DETAILS[key])
 
 
 if __name__ == "__main__":
