@@ -47,7 +47,12 @@ Requires `appointments.view_appointment`.
 ### Book an appointment
 
 1. Press to create. **Customer, service and professional are all required** — you pick them from
-   real lists, not by typing a name.
+   real lists, not by typing a name. Once a service is chosen, the professional list only offers
+   **who performs it** (the competencies set in Staff); a service nobody has been assigned to yet
+   offers the whole bookable team. Switching to a service the chosen professional does not do
+   clears her and says so; tapping a gap of a professional who does not do the chosen service
+   keeps her and clears the service instead. If the list cannot be checked, the whole team is
+   shown, the form says so and the booking is checked when you save (appointments#279).
 2. The **service decides the duration** by default; you can override it for this one booking. When
    the chosen professional has her **own length** for that service (set in Staff), that is the one
    proposed, and changing the professional proposes hers (or the catalogue's when she has none).
@@ -107,6 +112,9 @@ from who to who. The customer is not editable: another customer is another appoi
   (hers, or the catalogue's when she has none; appointments#272). She must be bookable and perform
   the service, and the slot is checked against **her** working hours, her blocked time and her
   appointments.
+- The professional list only offers who performs the chosen service, as when booking; the
+  professional the appointment already has stays shown even if she no longer does it. A new
+  service she does not do clears her and says so (appointments#279).
 - An old appointment without a professional needs one picked before its service can change.
 
 Pick the new date and time. The check that the slot is free **excludes the appointment itself**, so

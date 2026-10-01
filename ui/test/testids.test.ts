@@ -85,6 +85,8 @@ const COVERED: Record<
       'appointments-list-day-calendar-picker',
       'appointments-list-device-zone-notice',
       'appointments-list-duration',
+      // appointments#279 — who performs the service could not be read: the whole team is offered.
+      'appointments-list-eligible-staff-unavailable',
       'appointments-list-error',
       'appointments-list-form',
       'appointments-list-form-error',
@@ -113,6 +115,8 @@ const COVERED: Record<
       'appointments-list-reschedule-submit',
       'appointments-list-series-scope',
       'appointments-list-service',
+      // appointments#279 — a slot tapped for a professional who does not perform the chosen service.
+      'appointments-list-service-not-for-staff',
       // appointments#232 — the free times of the day under the time field: the group, one button
       // per time (`appointments-list-slot-<HHMM>`, computed), and its hint/loading/empty/error states.
       'appointments-list-slots',
@@ -124,6 +128,8 @@ const COVERED: Record<
       'appointments-list-staff',
       // appointments#272 — the professional's own length could not be read: the catalogue's stands in.
       'appointments-list-staff-duration-unavailable',
+      // appointments#279 — the chosen professional does not perform the new service: she is cleared.
+      'appointments-list-staff-not-for-service',
       'appointments-list-start',
       // appointments#205 — same calendar, on the create panel's date field.
       'appointments-list-start-calendar',
