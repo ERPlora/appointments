@@ -18,8 +18,7 @@ Pasos:
 Entra: la petición de la clienta identificada por su ficha.
 Sale: la cita cancelada o movida con el canal «clienta» y su aviso (`appointments.appointment.cancelled` o `.rescheduled`).
 Si falla: si la cita no es suya se rechaza siempre igual, sin revelar si existe; fuera de plazo o con la cancelación desactivada se le explica que contacte con el negocio.
-Implicados: pendiente
-Pendiente de enlazar: whatsapp_inbox — la conversación que pide cancelar o mover y contesta a la clienta
+Implicados: WHATSAPP_INBOX-F14, WHATSAPP_INBOX-F22, REC_WA_CITA-F03, REC_WA_CITA-F08
 QA: W-04
 
 ### APPOINTMENTS-F16 Bloquear tiempo en la agenda
@@ -43,15 +42,15 @@ Pantalla: Agenda
 Pasos:
 1. La clienta pide hora por WhatsApp; la automatización le ofrece horas libres reales (APPOINTMENTS-F02) y ella elige.
 2. Con **Confirmar automáticamente las citas que reserva el cliente** encendido (por defecto), la
-   cita nace **Confirmada** y la clienta recibe la confirmación.
+   cita nace **Confirmada**: la clienta recibe la respuesta «te he reservado…» y, como nacer
+   confirmada avisa de cita confirmada, también el WhatsApp «¡Confirmada!…» (WHATSAPP_INBOX-F23).
 3. Con ese ajuste apagado, la cita nace **Pendiente**, suma en la campana **Citas por confirmar** y
    alguien la confirma en la Agenda (APPOINTMENTS-F03).
 4. La cita queda marcada como reservada por la clienta y sigue la antelación mínima: nunca en el pasado ni dentro de la ventana.
 Entra: la clienta reconocida por su teléfono, el servicio, el profesional (o cualquiera que lo haga) y la hora elegida.
 Sale: la cita con su historial («Reservada» y, si se confirma sola, «Confirmada») y los avisos de cita creada y confirmada.
 Si falla: la automatización le dice a la clienta que esa hora ya no está y le ofrece otra; nunca inventa una hora.
-Implicados: pendiente
-Pendiente de enlazar: whatsapp_inbox — la conversación que reserva la cita y confirma a la clienta
+Implicados: WHATSAPP_INBOX-F14, WHATSAPP_INBOX-F16, WHATSAPP_INBOX-F21, WHATSAPP_INBOX-F23, REC_WA_CITA-F03, REC_WA_CITA-F05, REC_WA_CITA-F06
 QA: W-02, W-03 (discrepa), W-07, BD-07, L-12
 
 ### APPOINTMENTS-F20 Ver las citas de una clienta en su ficha

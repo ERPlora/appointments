@@ -38,10 +38,9 @@ Pasos:
 Entra: horario del negocio (Horarios), turno y ausencias (Personal), bloqueos, citas vivas y ajustes de antelación propios.
 Sale: la lista de horas; no guarda nada. Es la misma lista que leen el asistente y WhatsApp.
 Si falla: «No se han podido cargar las horas libres» con **Reintentar**; se puede escribir una hora igualmente y la reserva se juzga al guardar. Sin horas: «No quedan horas libres ese día…».
-Implicados: pendiente
+Implicados: WHATSAPP_INBOX-F19, WHATSAPP_INBOX-F21, WHATSAPP_INBOX-F22, REC_WA_CITA-F04
 Pendiente de enlazar: schedules — la apertura del día con festivos, excepciones y descansos
 Pendiente de enlazar: staff — el turno y las ausencias aprobadas del profesional
-Pendiente de enlazar: whatsapp_inbox — la oferta de huecos que la automatización enseña a la clienta
 QA: B-02, BD-06, W-02
 
 ### APPOINTMENTS-F03 Confirmar una cita pendiente
@@ -53,10 +52,9 @@ Pasos:
 2. Pulsa **Confirmar** en su fila.
 3. La cita pasa a **Confirmada** y el historial dice «Confirmada».
 Entra: una cita pendiente (del mostrador, de una serie o de la clienta con la confirmación automática apagada).
-Sale: la cita confirmada, su línea de historial y el aviso de cita confirmada (`appointments.appointment.confirmed`), que dispara el WhatsApp de confirmación a la clienta si está activado.
+Sale: la cita confirmada, su línea de historial y el aviso de cita confirmada (`appointments.appointment.confirmed`), que dispara el WhatsApp de confirmación a la clienta si la tarjeta «Reservar citas» de WhatsApp está activa y su teléfono tiene conversación con el negocio (también si la cita era del mostrador).
 Si falla: «Esta cita ya no se puede confirmar: ya no está pendiente.»; no se escribe nada ni se avisa dos veces.
-Implicados: pendiente
-Pendiente de enlazar: whatsapp_inbox — mandar a la clienta el WhatsApp de cita confirmada
+Implicados: WHATSAPP_INBOX-F23, REC_WA_CITA-F06
 QA: BD-07, W-03 (discrepa)
 
 ### APPOINTMENTS-F04 Mover una cita o cambiarle el profesional o el servicio
@@ -100,7 +98,7 @@ Pasos:
 Entra: una cita confirmada.
 Sale: la cita en curso, su línea de historial y el aviso de servicio iniciado (`appointments.appointment.started`).
 Si falla: «Esta cita no se puede iniciar: no está confirmada.»
-Implicados: ninguno
+Implicados: REC_WA_CITA-F10
 QA: B-03
 
 ### APPOINTMENTS-F08 Completar la cita
@@ -113,7 +111,7 @@ Pasos:
 Entra: una cita confirmada o en curso.
 Sale: la cita completada, su línea de historial y el aviso de cita completada (`appointments.appointment.completed`).
 Si falla: «Esta cita no se puede completar…» si estaba pendiente, cancelada o ya completada.
-Implicados: ninguno
+Implicados: REC_WA_CITA-F10
 QA: B-04 (discrepa)
 
 ### APPOINTMENTS-F09 Marcar que la clienta no se presentó
@@ -126,7 +124,7 @@ Pasos:
 Entra: una cita pendiente o confirmada.
 Sale: la cita no presentada, su línea de historial y el aviso correspondiente (`appointments.appointment.no_show`).
 Si falla: «Esta cita no se puede marcar como no presentada en su estado actual.»
-Implicados: ninguno
+Implicados: REC_WA_CITA-F10
 QA: B-02, B-08
 
 ### APPOINTMENTS-F10 Ver el historial de una cita
@@ -168,7 +166,7 @@ Pasos:
 Entra: la cita leída por el TPV.
 Sale: la venta es del TPV; aquí solo queda anotado que la cita se cobró (al recibir `sales.sale.created_from_appointment`). El estado no cambia.
 Si falla: si la venta no se cierra, la cita sigue sin marcar como cobrada y **Cobrar** sigue activo para repetir; lo que enseña el TPV es de ventas (sin confirmar desde aquí).
-Implicados: pendiente
+Implicados: REC_WA_CITA-F10
 Pendiente de enlazar: sales — abrir el TPV con la cita y avisar a la agenda al cerrar la venta
 QA: B-05, B-06, BD-09
 
@@ -182,7 +180,7 @@ Pasos:
    clienta, la ventana del calendario, el intervalo entre huecos o la confirmación automática.
 3. Guarda: las reservas siguientes ya usan las reglas nuevas. «Enviar recordatorios» se guarda pero hoy no envía nada.
 Entra: nada de otros componentes.
-Sale: los ajustes del negocio y el aviso de ajustes cambiados (`appointments.settings.updated`).
+Sale: los ajustes del negocio y el aviso de ajustes cambiados (`appointments.settings.updated`). La confirmación automática es la misma que el interruptor de la tarjeta «Reservar citas» de WhatsApp (WHATSAPP_INBOX-F16) y solo vale para las citas que reserva la clienta: las del mostrador nacen siempre Pendiente.
 Si falla: el formulario del hub pinta el error (cómo, sin confirmar) y los ajustes guardados no cambian. Sin ajustes guardados se usan los valores por defecto.
-Implicados: ninguno
+Implicados: WHATSAPP_INBOX-F16, REC_WA_CITA-F06
 QA: W-02, W-03

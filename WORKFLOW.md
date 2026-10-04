@@ -35,7 +35,7 @@ también reserva, mueve y cancela sola por WhatsApp a través de una automatizac
 5. Comprueba en los ajustes del hub que la zona horaria del negocio es la correcta: la agenda
    siempre pinta el reloj del negocio, nunca el del dispositivo.
 6. Revisa los **Ajustes de Citas** (antelaciones, solape, confirmación automática, cancelación).
-7. Para la cita por WhatsApp: conecta el canal y activa «Citas» en la Bandeja de WhatsApp.
+7. Para la cita por WhatsApp: conecta el número y activa la tarjeta «Reservar citas» en **Bandeja de WhatsApp → Ajustes** (WHATSAPP_INBOX-F01, WHATSAPP_INBOX-F14). El camino entero, de punta a punta, está en el recorrido `REC_WA_CITA` (`architecture/workflows/whatsapp-cita.md`).
 
 ## Pantallas
 
@@ -212,3 +212,4 @@ Contra el código de `origin/main` (v1.1.140), una línea por discrepancia:
 - W-03 (`qa-hub-beauty.md`) espera «Rechazar → nada en la agenda»; Citas no tiene rechazar, y cancelar deja la cita en la agenda como Cancelada (APPOINTMENTS-F03, APPOINTMENTS-F18).
 - B-04 (`qa-hub.md` §6) espera servicios encadenados (corte + color) en una cita; una cita lleva un solo servicio (APPOINTMENTS-F08).
 - B-01 (`qa-hub.md` §6) espera la ocupación del día por profesional en la agenda; no se muestra.
+- `handler/src/lib.rs` nombra todavía «an approval from the inbox» entre las puertas de reserva; la bandeja de aprobación de WhatsApp está retirada y Citas no tiene ninguna orden de aprobar una petición (APPOINTMENTS-F18).
