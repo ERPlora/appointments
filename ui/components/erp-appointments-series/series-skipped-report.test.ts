@@ -391,6 +391,18 @@ describe('a series against an agenda too long for one run is booked page by page
     expect(materializeRuns()).toHaveLength(2);
     expect(el.error).toBe('');
   });
+
+  it('an agenda that keeps answering a later `next_from` is followed for 20 runs at most', async () => {
+    materializePages = Array.from({ length: 30 }, (_, i) => ({
+      ...FIRST_PAGE,
+      booked: 1,
+      next_from: `2099-11-${String(i + 10).padStart(2, '0')}`,
+    }));
+    const el = await mount();
+    await tapBook(el);
+    expect(materializeRuns()).toHaveLength(20);
+    expect(el.error).toBe('');
+  });
 });
 
 describe('a pattern change that books the new days reports the dates left out (appointments#238)', () => {
