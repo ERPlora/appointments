@@ -1112,17 +1112,54 @@
     },
     "appointments.recurring.create": {
       "permission": "appointments.add_appointment",
-      "transaction": true,
-      "sql": [
-        "commands/recurring_create.sql"
-      ],
       "schema": "schemas/recurring_create.json",
+      "handler": {
+        "type": "wasm",
+        "file": "dist/handler.wasm",
+        "function": "create_recurring"
+      },
       "emit": [
         "appointments.recurring.created"
       ],
       "ai": {
-        "description": "Creates a recurring appointment template with its repetition pattern. The customer, the service and the professional are required by id, from the hub's records: a series without any of them could never have its appointments booked, so ask for the professional before calling. It does not book any occurrence by itself — that is `materialize`."
-      }
+        "description": "Creates a recurring appointment template with its repetition pattern. The customer, the service and the professional are required by id, from the hub's records: a series without any of them could never have its appointments booked, so ask for the professional before calling. The three are resolved against the hub's records like a single booking: the professional must be active, bookable and perform the service (`staff_not_found`, `staff_not_bookable`, `staff_not_eligible`), the service must be bookable (`service_not_found`, `service_not_bookable`), and on a refusal nothing is saved; the names are the catalogue's, not the caller's. It does not book any occurrence by itself — that is `materialize`."
+      },
+      "reads": [
+        {
+          "query": "customers.get",
+          "params": {
+            "customer_id": "payload.customer_id"
+          },
+          "required": true
+        },
+        {
+          "query": "services.services.get",
+          "params": {
+            "service_id": "payload.service_id"
+          },
+          "required": true
+        },
+        {
+          "query": "staff.members.get",
+          "params": {
+            "staff_id": "payload.staff_id"
+          },
+          "required": true
+        },
+        {
+          "query": "staff.services.eligible_for_service",
+          "params": {
+            "service_id": "payload.service_id"
+          },
+          "required": true
+        }
+      ]
+    },
+    "appointments._recurring_insert": {
+      "permission": "appointments.add_appointment",
+      "sql": [
+        "commands/_recurring_insert.sql"
+      ]
     },
     "appointments.recurring.delete": {
       "permission": "appointments.change_appointment",

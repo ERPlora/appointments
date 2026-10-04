@@ -16,6 +16,7 @@
 | Slot not available — `too_soon` / `too_far` | Breaks the minimum notice or the maximum advance. The front desk is never refused as `too_soon`, neither when it books nor when it moves an appointment: the minimum notice applies to customer bookings only (appointments#157, #165). An automation (a flow or an API key) is not the front desk: it always keeps the minimum notice and can never book or move into the past (appointments#177) | Adjust the booking or the settings |
 | Slot not available — `invalid_start` | The start is in the past or malformed. The front desk may book or move an appointment into the past (appointments#155, #156); customer channels may not | Pick a valid future time |
 | Reschedule refused | The appointment is already finished, cancelled or a no-show | Create a new appointment instead |
+| `appointments.staff_not_eligible` | That professional does not perform the chosen service: in **Staff** the service is assigned to other team members. Checked by every door that books or saves with a professional — one appointment, a batch, a recurring series when it is created and when its appointments are booked, a move and a series edit — so the assistant or the API cannot save a series nobody can book (appointments#283). A service assigned to nobody is performed by the whole team | Pick a professional who performs the service, or assign the service to them in **Staff** |
 
 A refused transition rolls back **everything**: no row change, no history entry and no event.
 

@@ -349,9 +349,9 @@ def scalar(sql: str) -> str:
 
 def seed_series(series_id: str, hub: str = HUB) -> None:
     run_command(
-        "commands/recurring_create.sql",
+        "commands/_recurring_insert.sql",
         {
-            "new_id": series_id,
+            "recurring_id": series_id,
             "hub_id": hub,
             "customer_id": "c1",
             "customer_name": "Ada",

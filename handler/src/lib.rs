@@ -99,6 +99,12 @@ pub fn cancel_appointment(input: Json<erplora_guest_sdk::Input>) -> FnResult<Jso
 
 #[cfg(feature = "guest")]
 #[plugin_fn]
+pub fn create_recurring(input: Json<erplora_guest_sdk::Input>) -> FnResult<Json<Output>> {
+    guest_result(create_recurring_pure(input.into_inner().into_value()))
+}
+
+#[cfg(feature = "guest")]
+#[plugin_fn]
 pub fn materialize_recurring(input: Json<erplora_guest_sdk::Input>) -> FnResult<Json<Output>> {
     guest_result(materialize_recurring_pure(input.into_inner().into_value()))
 }
@@ -4058,6 +4064,62 @@ fn business_day_of(instant: &Dt, tz: chrono_tz::Tz) -> i64 {
     let mo: i64 = key[4..6].parse().unwrap_or(1);
     let d: i64 = key[6..8].parse().unwrap_or(1);
     days_from_civil(y, mo, d)
+}
+
+/// `appointments.recurring.create` (appointments#283) — the series door judges its three links
+/// with the SAME rule as a single booking ([`resolve_booking`]) before the template is written.
+///
+/// It used to be a bare INSERT: the assistant or the API could save a series with a professional
+/// who does not perform its service, and every `materialize` then refused it with
+/// `staff_not_eligible` — a series that sat in the list, active, and could never be booked. Now
+/// the refusal comes at the door, nothing is written, and the names are the catalogue's (like
+/// every booking since appointments#11), never the caller's. The repetition rule is copied as
+/// sent: its shape is the schema's job and its dates are judged by `materialize`.
+pub fn create_recurring_pure(input: Value) -> Result<Output, String> {
+    let payload = payload_of(&input);
+    let ctx = host_ctx(&input)?;
+    let recurring_id = ctx
+        .new_ids
+        .first()
+        .cloned()
+        .ok_or_else(|| "context.new_ids is empty (the host injects it)".to_string())?;
+
+    let resolved = match resolve_booking(&input, &payload)? {
+        Ok(r) => r,
+        Err(refusal) => return Ok(Output::new().with_error(refusal)),
+    };
+
+    let mut p = Map::new();
+    p.insert("recurring_id".into(), json!(recurring_id));
+    p.insert("customer_id".into(), json!(resolved.customer_id));
+    p.insert("customer_name".into(), json!(resolved.customer_name));
+    p.insert("service_id".into(), json!(resolved.service_id));
+    p.insert("service_name".into(), json!(resolved.service_name));
+    p.insert("staff_id".into(), json!(resolved.staff_id));
+    p.insert("staff_name".into(), json!(resolved.staff_name));
+    for key in [
+        "frequency",
+        "day_of_week",
+        "time",
+        "duration_minutes",
+        "start_date",
+        "end_date",
+        "max_occurrences",
+    ] {
+        p.insert(key.into(), payload.get(key).cloned().unwrap_or(Value::Null));
+    }
+
+    // The declarative door announced its bound params, where the series id travelled as
+    // `new_id`; the handler's copy keeps that key for the listeners already written against it.
+    let mut announced = p.clone();
+    announced.insert("new_id".into(), json!(recurring_id));
+    let event =
+        erplora_guest_sdk::Event::new("appointments.recurring.created", Value::Object(announced));
+    Ok(Output {
+        operations: vec![Operation::sql("appointments._recurring_insert", p)],
+        events: vec![event],
+        ..Default::default()
+    })
 }
 
 /// `appointments.recurring.materialize` — WASM-TODO pieza 6.
@@ -13817,5 +13879,131 @@ mod tests {
             json!(1),
             "a name sent empty would blank the customer"
         );
+    }
+
+    // ── appointments#283 · a series is CREATED only with whom it can be BOOKED ──
+    //
+    // `recurring.create` was a bare INSERT: the assistant or the API could save a series with a
+    // professional who does not perform its service, and every «Book appointments» then failed
+    // on `materialize` with `staff_not_eligible` — a series nobody could ever book. The door now
+    // judges the three links with the SAME rule as a single booking (`resolve_booking`).
+
+    fn series_create_payload() -> Value {
+        json!({
+            "customer_id": "c1", "customer_name": "Ada", "service_id": "s-corte",
+            "service_name": "Corte", "staff_id": "s1", "staff_name": "Bea",
+            "frequency": "weekly", "day_of_week": 0, "time": "11:00",
+            "duration_minutes": 30, "start_date": "2026-08-03",
+            "end_date": null, "max_occurrences": 4
+        })
+    }
+
+    fn series_create(payload: Value, reads: Option<Value>) -> Output {
+        let mut inp = input(payload, reads);
+        inp["context"]["new_ids"] = json!(["rec-1", "rec-2"]);
+        create_recurring_pure(inp).unwrap()
+    }
+
+    /// 🔴 THE SYMPTOM. «Tinte» is performed by Carla only; a series for Bea is refused at the
+    /// door with the code the single booking gives, and nothing is written or announced.
+    #[test]
+    fn series_create_refuses_a_professional_who_does_not_perform_the_service() {
+        let out = series_create(
+            series_create_payload(),
+            Some(json!({ "staff.services.eligible_for_service": [
+                { "staff_id": "s2", "full_name": "Carla Pro", "custom_duration": null,
+                  "custom_price": null, "is_primary": 1 } ] })),
+        );
+        assert_eq!(domain_code(&out).as_deref(), Some("appointments.staff_not_eligible"));
+        assert!(out.operations.is_empty(), "a refused series was written");
+        assert!(out.events.is_empty(), "a refused series was announced");
+    }
+
+    /// A service nobody has been assigned to is performed by the whole team (staff#9): the
+    /// door must not close for every hub that never configured competencies.
+    #[test]
+    fn series_create_accepts_anyone_when_the_service_has_no_competencies() {
+        let out = series_create(
+            series_create_payload(),
+            Some(json!({ "staff.services.eligible_for_service": [] })),
+        );
+        assert!(out.error.is_none(), "{:?}", out.error);
+        assert_eq!(out.operations.len(), 1);
+    }
+
+    /// The accepted series is written with the id the host minted (so `new_ids[0]` is the
+    /// series the screen books right after), the rule as sent, and the names of the CATALOGUE.
+    #[test]
+    fn series_create_writes_the_template_with_the_minted_id_and_the_catalogue_names() {
+        let out = series_create(series_create_payload(), None);
+        assert!(out.error.is_none(), "{:?}", out.error);
+        assert_eq!(out.operations.len(), 1);
+        let op = &out.operations[0];
+        assert_eq!(op.command, "appointments._recurring_insert");
+        for (key, want) in [
+            ("recurring_id", "rec-1"),
+            ("customer_id", "c1"),
+            ("customer_name", "Ada Lovelace"),
+            ("service_id", "s-corte"),
+            ("service_name", "Corte"),
+            ("staff_id", "s1"),
+            ("staff_name", "Bea Pro"),
+            ("frequency", "weekly"),
+            ("time", "11:00"),
+            ("start_date", "2026-08-03"),
+        ] {
+            assert_eq!(as_str(op.params.get(key).unwrap_or(&Value::Null)), want, "{key}");
+        }
+        assert_eq!(op.params.get("day_of_week"), Some(&json!(0)));
+        assert_eq!(op.params.get("duration_minutes"), Some(&json!(30)));
+        assert_eq!(op.params.get("end_date"), Some(&Value::Null));
+        assert_eq!(op.params.get("max_occurrences"), Some(&json!(4)));
+        assert_eq!(out.events.len(), 1);
+        assert_eq!(out.events[0].name, "appointments.recurring.created");
+        assert_eq!(out.events[0].payload["recurring_id"], json!("rec-1"));
+    }
+
+    /// The other links a single booking refuses are refused at the series door too.
+    #[test]
+    fn series_create_refuses_the_links_a_booking_refuses() {
+        let cases = [
+            (json!({ "staff.members.get": [] }), "appointments.staff_not_found"),
+            (
+                json!({ "staff.members.get": [
+                    { "id": "s1", "full_name": "Bea Pro", "status": "inactive", "is_bookable": 1 } ] }),
+                "appointments.staff_not_bookable",
+            ),
+            (json!({ "customers.get": [] }), "appointments.customer_not_found"),
+            (json!({ "services.services.get": [] }), "appointments.service_not_found"),
+            (
+                json!({ "services.services.get": [
+                    { "id": "s-corte", "name": "Corte", "price": 2000, "duration_minutes": 30,
+                      "is_bookable": 0, "is_active": 1 } ] }),
+                "appointments.service_not_bookable",
+            ),
+        ];
+        for (reads, code) in cases {
+            let out = series_create(series_create_payload(), Some(reads.clone()));
+            assert_eq!(domain_code(&out).as_deref(), Some(code), "{reads}");
+            assert!(out.operations.is_empty(), "{code}: something was written");
+        }
+    }
+
+    /// A catalogue read that did not arrive is not «nobody says no»: the series is not saved.
+    #[test]
+    fn series_create_without_its_catalogue_reads_writes_nothing() {
+        for read in [
+            "customers.get",
+            "services.services.get",
+            "staff.members.get",
+            "staff.services.eligible_for_service",
+        ] {
+            let mut inp = input(series_create_payload(), None);
+            inp["context"]["new_ids"] = json!(["rec-1"]);
+            inp["context"]["reads"].as_object_mut().unwrap().remove(read);
+            let out = create_recurring_pure(inp).unwrap();
+            assert_eq!(domain_code(&out).as_deref(), Some("appointments.catalog_unavailable"), "{read}");
+            assert!(out.operations.is_empty(), "{read}: something was written");
+        }
     }
 }
