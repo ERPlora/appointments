@@ -28,7 +28,8 @@ también reserva, mueve y cancela sola por WhatsApp a través de una automatizac
 1. Instala **Clientes**, **Servicios**, **Personal** y **Horarios** (Citas los exige y se instalan con ella).
 2. En **Servicios**, da de alta los servicios reservables con su precio y su duración.
 3. En **Personal**, da de alta a los profesionales, márcalos como reservables, asígnales los
-   servicios que hacen (si un servicio no tiene a nadie asignado, lo hace todo el equipo) y, si
+   servicios que hacen (si un servicio no tiene a nadie asignado, o quien lo tiene no está Activo y
+   Reservable, lo hace todo el equipo reservable: STAFF-F12) y, si
    quieres que la agenda respete su turno, su horario y sus ausencias.
 4. En **Horarios**, pon el horario semanal, los festivos y las excepciones. Sin ninguna regla la
    agenda deja reservar a cualquier hora.
@@ -132,12 +133,12 @@ misma gramática y el mismo prefijo. Antes de tocar código, lee el fichero del 
 | Reserva de la clienta que se confirma sola salvo revisión | hecho | APPOINTMENTS-F18, APPOINTMENTS-F19 |
 | Política de cancelación de la clienta | hecho | APPOINTMENTS-F06 |
 | Citas periódicas, editar «esta y siguientes», saltos con motivo | hecho | APPOINTMENTS-F12, APPOINTMENTS-F13, APPOINTMENTS-F14, APPOINTMENTS-F15 |
-| Cita → cobro en el TPV sin re-teclear | parcial — no completa la cita y la cita cobrada se puede mover, cancelar o borrar | APPOINTMENTS-F17 |
+| Cita → cobro en el TPV sin re-teclear | parcial — no completa la cita, la cita cobrada se puede mover, cancelar o borrar, y anulada la venta sigue como cobrada | APPOINTMENTS-F17, SALES-F26 |
 | Motivo al cancelar y confirmación al borrar | parcial | APPOINTMENTS-F05, APPOINTMENTS-F11 |
 | Bloqueos de agenda (festivo, vacaciones de un profesional) con pantalla | parcial — solo asistente o API | APPOINTMENTS-F16 |
 | Bono o paquete de sesiones | parcial — solo asistente o API | APPOINTMENTS-F21 |
 | Notas de la visita (fórmula) desde la agenda | parcial — solo asistente o API | APPOINTMENTS-F22 |
-| Alta rápida de la clienta sin ficha (walk-in) desde el formulario | no hecho — hay que crearla en Clientes | — |
+| Alta rápida de la clienta sin ficha (walk-in) desde el formulario | no hecho — hay que crearla en Clientes | CUSTOMERS-F25 |
 | Varios servicios encadenados en una cita (corte + color) | no hecho — una cita = un servicio; B-04 lo pide | — |
 | Ocupación del día por profesional en la agenda | no hecho — B-01 lo pide | — |
 | Recordatorios automáticos | no hecho — ajuste visible pero inerte; fuera del MVP según appointments#6 | — |
@@ -203,6 +204,9 @@ misma gramática y el mismo prefijo. Antes de tocar código, lee el fichero del 
 
 ## Lo que NO hace, a propósito
 - No guarda el horario del negocio (es de Horarios) ni el turno del profesional (es de Personal).
+- No escucha nada de Personal: desactivar o dar de baja a una profesional, o aprobarle una ausencia,
+  no toca sus citas ya reservadas, que siguen en la agenda sin aviso; solo las reservas nuevas se
+  rechazan (STAFF-F05, STAFF-F06, STAFF-F18).
 - No cobra ni arma ventas: Cobrar abre el TPV; Citas solo anota que se cobró.
 - No envía mensajes ni recordatorios: eso es de WhatsApp y de las automatizaciones.
 - No cambia todas las citas de una serie: solo **Solo esta cita** o **Esta y todas las siguientes**.

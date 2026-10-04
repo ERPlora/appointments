@@ -65,8 +65,7 @@ Pasos:
 Entra: la clienta abierta en la ficha.
 Sale: nada; solo lectura. Si Citas no está instalada, la ficha no tiene el bloque.
 Si falla: «No se pudo cargar el historial de visitas.»
-Implicados: pendiente
-Pendiente de enlazar: customers — la ficha de la clienta que aloja el bloque
+Implicados: CUSTOMERS-F03, CUSTOMERS-F24
 QA: B-03, L-10
 
 ### APPOINTMENTS-F22 Cambiar las notas o el contacto de una cita
@@ -94,6 +93,5 @@ Pasos:
 Entra: la fusión de fichas (`customer.merged`).
 Sale: citas y series apuntando a la ficha que se queda.
 Si falla: no hay nada que ver en pantalla; repetir la fusión no cambia nada más.
-Implicados: pendiente
-Pendiente de enlazar: customers — fusionar dos fichas de clienta
+Implicados: CUSTOMERS-F13
 QA: ninguno
