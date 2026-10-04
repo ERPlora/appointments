@@ -435,6 +435,16 @@ def main() -> int:
     # booked; the same series at 12:00 books. Since appointments#247 a series with every
     # date refused answers `ok` + a report naming each date and why, not a bare
     # `no_occurrences` — so the proof is what got booked and what the report says.
+    #
+    # FOUR weeks, not an open series (appointments#276): with no end and no `to`, `materialize`
+    # runs to today + `max_advance_booking`, and on the weekdays that put the last date on that
+    # very edge it came back `too_far` instead of her shift — red on Thursdays only. Four dates
+    # from `day` end at most 34 days ahead, nowhere near the 90-day edge, whatever the day.
+    weeks = [
+        (datetime.date.fromisoformat(day) + datetime.timedelta(weeks=n)).isoformat()
+        for n in range(4)
+    ]
+
     def series(at: str) -> tuple[bool, list, dict]:
         recurring_id = hub.new_id(
             "appointments.recurring.create",
@@ -453,6 +463,7 @@ def main() -> int:
                 # past every afternoon, and the report said `invalid_start` for it instead of
                 # her shift. `day` is a week or more ahead and on the series' own weekday.
                 "start_date": day,
+                "max_occurrences": len(weeks),
             },
         )
         status, body = hub.command(
@@ -473,18 +484,68 @@ def main() -> int:
         (ok, [r["occurrence_date"] for r in rows], report.get("booked")),
         (True, [], 0),
     )
-    hub.check_true(
+    hub.check(
         "§7 …and the report names every date as outside her shift",
-        bool(skipped)
-        and {s.get("code") for s in skipped} == {"appointments.outside_staff_hours"},
-        f"skipped={skipped}",
+        [(s.get("occurrence_date"), s.get("code")) for s in skipped],
+        [(week, "appointments.outside_staff_hours") for week in weeks],
     )
     ok, rows, _ = series("12:00")
-    hub.check_true(
-        "§7 …and the same series at 12:00 books",
-        ok and bool(rows),
-        f"ok={ok} occurrences={[r['occurrence_date'] for r in rows]}",
+    hub.check(
+        "§7 …and the same series at 12:00 books every date",
+        (ok, sorted(r["occurrence_date"] for r in rows)),
+        (True, weeks),
     )
+
+    # THE WINDOW the hub closes by itself (appointments#276): materialized with no `to`, a series
+    # stops at today + `max_advance_booking`. It was proven above by accident, with an open series
+    # whose last date sat on the edge on Thursdays. Now on purpose and on no edge: the series ends
+    # half a year out, so only the window can stop it, and the window ends THREE days after its
+    # sixth date — the seventh is outside, and no date is ever on the edge, whose verdict depends
+    # on the hour the battery runs.
+    ahead = (datetime.date.fromisoformat(day) - datetime.date.today()).days
+    set_booking_policy(
+        hub, allow_overlapping=False, max_advance_booking=ahead + 7 * 5 + 3
+    )
+    inside = [
+        (datetime.date.fromisoformat(day) + datetime.timedelta(weeks=n)).isoformat()
+        for n in range(6)
+    ]
+    windowed = hub.new_id(
+        "appointments.recurring.create",
+        {
+            "customer_id": hours.customer_id,
+            "customer_name": "Cliente",
+            "service_id": hours.service_id,
+            "service_name": hours.service_name,
+            "staff_id": hours.staff_id,
+            "staff_name": hours.staff_name,
+            "frequency": "weekly",
+            "day_of_week": datetime.date.fromisoformat(day).weekday(),
+            "time": "12:30",
+            "duration_minutes": DURATION,
+            "start_date": day,
+            "end_date": (
+                datetime.date.fromisoformat(day) + datetime.timedelta(days=180)
+            ).isoformat(),
+        },
+    )
+    report = hub.result(
+        "appointments.recurring.materialize", {**batch, "recurring_id": windowed}
+    )
+    hub.check(
+        "§7 a series with no `to` books up to the hub's own booking window, and no further",
+        (
+            sorted(
+                r["occurrence_date"]
+                for r in hub.query(
+                    "appointments.recurring.occurrences", {"recurring_id": windowed}
+                )
+            ),
+            report.get("skipped") or [],
+        ),
+        (inside, []),
+    )
+    set_booking_policy(hub, allow_overlapping=False)
 
     # ── 8 · THE COUNTER's LIST reaches inside the minimum notice (appointments#234) ────────
     #

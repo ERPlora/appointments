@@ -17,10 +17,9 @@ Usage: tests/recurring_create_links.hub.test.py   (exit 0 = green)
   `erplora test <dir> --against-hub` (see tests/hub_harness.py). Without one it FAILS.
 """
 
-import datetime
 import sys
 
-from hub_harness import Hub, seed_links, set_booking_policy
+from hub_harness import Hub, next_weekday, seed_links, set_booking_policy
 
 
 def main() -> int:
@@ -37,7 +36,9 @@ def main() -> int:
         "frequency": "weekly",
         "time": "12:00",
         "duration_minutes": 30,
-        "start_date": (datetime.date.today() + datetime.timedelta(days=7)).isoformat(),
+        # A WEEKDAY a week or more ahead (appointments#287): «today + 7» is today's weekday, so a
+        # run on a Sunday started the series on a day the business is shut and booked nothing.
+        "start_date": next_weekday(),
         "max_occurrences": 2,
     }
 
