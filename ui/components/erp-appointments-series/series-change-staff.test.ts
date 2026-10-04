@@ -280,6 +280,102 @@ describe('changing the professional of a series (appointments#248)', () => {
     expect(toasts).toEqual([{ type: 'success', message: ES.seriesMaterialized }]);
   });
 
+  // appointments#256 — handing the series over is not «moving» it: the closing notice names who
+  // takes the appointments, the confirmation of what the person just asked for.
+  async function changeTime(el: Wc, value: string) {
+    const time = byTestId(el, 'appointments-series-time') as HTMLElement & { value?: unknown };
+    time.value = value;
+    time.dispatchEvent(new CustomEvent('ionInput', { detail: { value }, bubbles: true, composed: true }));
+    time.dispatchEvent(new CustomEvent('ionChange', { detail: { value }, bubbles: true, composed: true }));
+    await settle(el);
+  }
+
+  it('the closing notice names the professional the appointments were handed to (#256)', async () => {
+    const el = await mount();
+    await openEdit(el);
+    await pickStaff(el, 's2');
+    await save(el);
+    expect(toasts).toEqual([
+      { type: 'success', message: fill(ES.seriesHandedOutcome, { moved: 2, staff: 'Carla Pro', cancelled: 0, locked: 0 }) },
+    ]);
+    expect(toasts[0].message).toContain('Carla Pro');
+  });
+
+  it('when the time changes too, the notice says they moved AND who takes them (#256)', async () => {
+    const el = await mount();
+    await openEdit(el);
+    await pickStaff(el, 's2');
+    await changeTime(el, '11:00');
+    await save(el);
+    expect(updates()[0].payload).toMatchObject({ staff_id: 's2', time: '11:00' });
+    expect(toasts).toEqual([
+      { type: 'success', message: fill(ES.seriesMovedAndHandedOutcome, { moved: 2, staff: 'Carla Pro', cancelled: 0, locked: 0 }) },
+    ]);
+  });
+
+  it('when the pattern changes too, the notice says they moved AND who takes them (#256)', async () => {
+    updateResult = { ...HANDED_ALL, pattern_changed: true, moved: 1, cancelled_pattern_change: 1, locked_invoiced: 1 };
+    const el = await mount();
+    await openEdit(el);
+    await pickStaff(el, 's2');
+    const freq = byTestId(el, 'appointments-series-frequency') as HTMLElement & { value?: unknown };
+    freq.value = 'biweekly';
+    freq.dispatchEvent(new CustomEvent('ionChange', { detail: { value: 'biweekly' }, bubbles: true, composed: true }));
+    await settle(el);
+    await save(el);
+    expect(toasts[0]).toEqual({
+      type: 'success',
+      message: fill(ES.seriesMovedAndHandedOutcome, { moved: 1, staff: 'Carla Pro', cancelled: 1, locked: 1 }),
+    });
+  });
+
+  it('with dates left behind the notice still names her, as a warning (#256)', async () => {
+    updateResult = {
+      ...HANDED_ALL,
+      moved: 1,
+      skipped: [{ occurrence_date: '2099-10-13', code: 'appointments.overlapping_appointment' }],
+    };
+    const el = await mount();
+    await openEdit(el);
+    await pickStaff(el, 's2');
+    await save(el);
+    expect(toasts).toEqual([
+      { type: 'warning', message: fill(ES.seriesHandedOutcome, { moved: 1, staff: 'Carla Pro', cancelled: 0, locked: 0 }) },
+    ]);
+  });
+
+  it('without a change of professional the notice is the plain «moved» one (#256)', async () => {
+    const el = await mount();
+    await openEdit(el);
+    await changeTime(el, '11:00');
+    updateResult = { ...HANDED_ALL, staff_changed: false };
+    await save(el);
+    expect(toasts).toEqual([
+      { type: 'success', message: fill(ES.seriesUpdateOutcome, { moved: 2, cancelled: 0, locked: 0 }) },
+    ]);
+  });
+
+  it('the notice trusts the answer: no hand-over announced, no name said (#256)', async () => {
+    updateResult = { ...HANDED_ALL, staff_changed: false };
+    const el = await mount();
+    await openEdit(el);
+    await pickStaff(el, 's2');
+    await save(el);
+    expect(toasts).toEqual([
+      { type: 'success', message: fill(ES.seriesUpdateOutcome, { moved: 2, cancelled: 0, locked: 0 }) },
+    ]);
+  });
+
+  it('the hand-over notices exist in en and es with every placeholder (#256)', () => {
+    for (const cat of [ES, EN]) {
+      for (const key of ['seriesHandedOutcome', 'seriesMovedAndHandedOutcome']) {
+        for (const ph of ['{moved}', '{staff}', '{cancelled}', '{locked}']) expect(cat[key], `${key} ${ph}`).toContain(ph);
+      }
+    }
+    expect(ES.seriesHandedOutcome).not.toBe(EN.seriesHandedOutcome);
+    expect(ES.seriesMovedAndHandedOutcome).not.toBe(EN.seriesMovedAndHandedOutcome);
+  });
+
   it('«Book appointments» on a series without a professional says how to fix it: edit it', () => {
     for (const cat of [ES, EN]) {
       expect(cat.seriesNoStaff).toBeTruthy();

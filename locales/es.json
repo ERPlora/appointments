@@ -215,6 +215,8 @@
     "seriesLockedInvoiced": "{invoiced} de las citas por delante ya están cobradas y no se van a tocar.",
     "seriesScopeHint": "El cambio se aplica a esta cita ({from}) y a todas las siguientes. Lo ya pasado se queda tal cual.",
     "seriesUpdateOutcome": "{moved} citas movidas · {cancelled} canceladas porque ya no caben en la pauta · {locked} intactas porque ya están cobradas",
+    "seriesHandedOutcome": "{moved} citas pasan a {staff} · {cancelled} canceladas porque ya no caben en la pauta · {locked} intactas porque ya están cobradas",
+    "seriesMovedAndHandedOutcome": "{moved} citas movidas y asignadas a {staff} · {cancelled} canceladas porque ya no caben en la pauta · {locked} intactas porque ya están cobradas",
     "colPattern": "Repetición",
     "colStarts": "Empieza",
     "colEnds": "Termina",

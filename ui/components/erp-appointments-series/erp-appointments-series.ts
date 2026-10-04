@@ -729,7 +729,12 @@ export class ErpAppointmentsSeries extends LitElement {
       }
       const notMoved = result && Array.isArray(result.skipped) ? skippedDates(result) : [];
       // Nothing of it was booked before: «0 moved · 0 cancelled» would say nothing happened.
-      if (!gotItsFirstProfessional) this.notifyOutcome(result, notMoved.length > 0);
+      if (!gotItsFirstProfessional) {
+        // appointments#256: a hand-over names who takes them; «moved» only if the slot changed too.
+        const handedTo = staffChange && result?.staff_changed === true ? staffChange.name : null;
+        const rescheduled = 'time' in changed || result?.pattern_changed === true;
+        this.notifyOutcome(result, notMoved.length > 0, handedTo, rescheduled);
+      }
       this.closePanel();
       await this.refresh();
       // After refresh(), which clears them: the dates left on their slot and the new days that
@@ -753,13 +758,25 @@ export class ErpAppointmentsSeries extends LitElement {
   }
 
   /** Lo que NO se movió se DICE. Callarlo es el fallo nº1 que reportan los foros de este gesto. */
-  private notifyOutcome(result: Record<string, unknown> | null, leftBehind: boolean): void {
+  private notifyOutcome(
+    result: Record<string, unknown> | null,
+    leftBehind: boolean,
+    handedTo: string | null,
+    rescheduled: boolean,
+  ): void {
     if (!result) return;
     const t = (k: string, p?: Record<string, unknown>): string => erplora().t(CATALOG, k, p);
-    const message = t('ui.seriesUpdateOutcome', {
+    const key =
+      handedTo === null
+        ? 'ui.seriesUpdateOutcome'
+        : rescheduled
+          ? 'ui.seriesMovedAndHandedOutcome'
+          : 'ui.seriesHandedOutcome';
+    const message = t(key, {
       moved: Number(result.moved ?? 0),
       cancelled: Number(result.cancelled_pattern_change ?? 0),
       locked: Number(result.locked_invoiced ?? 0),
+      ...(handedTo === null ? {} : { staff: handedTo }),
     });
     // Some date stayed where it was: the move did not do all it was asked, so it is not a success.
     erplora().notify?.({ type: leftBehind ? 'warning' : 'success', message });
