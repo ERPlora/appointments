@@ -2101,6 +2101,8 @@ var es_default = {
     seriesLockedInvoiced: "{invoiced} de las citas por delante ya est\xE1n cobradas y no se van a tocar.",
     seriesScopeHint: "El cambio se aplica a esta cita ({from}) y a todas las siguientes. Lo ya pasado se queda tal cual.",
     seriesUpdateOutcome: "{moved} citas movidas \xB7 {cancelled} canceladas porque ya no caben en la pauta \xB7 {locked} intactas porque ya est\xE1n cobradas",
+    seriesHandedOutcome: "{moved} citas pasan a {staff} \xB7 {cancelled} canceladas porque ya no caben en la pauta \xB7 {locked} intactas porque ya est\xE1n cobradas",
+    seriesMovedAndHandedOutcome: "{moved} citas movidas y asignadas a {staff} \xB7 {cancelled} canceladas porque ya no caben en la pauta \xB7 {locked} intactas porque ya est\xE1n cobradas",
     colPattern: "Repetici\xF3n",
     colStarts: "Empieza",
     colEnds: "Termina",
@@ -2384,6 +2386,8 @@ var en_default = {
     seriesLockedInvoiced: "{invoiced} of the upcoming appointments are already charged and will not be touched.",
     seriesScopeHint: "The change applies to this occurrence ({from}) and all the following ones. What is already past stays exactly as it is.",
     seriesUpdateOutcome: "{moved} appointments moved \xB7 {cancelled} cancelled because they no longer fit the pattern \xB7 {locked} left alone because they are already charged",
+    seriesHandedOutcome: "{moved} appointments handed to {staff} \xB7 {cancelled} cancelled because they no longer fit the pattern \xB7 {locked} left alone because they are already charged",
+    seriesMovedAndHandedOutcome: "{moved} appointments moved and handed to {staff} \xB7 {cancelled} cancelled because they no longer fit the pattern \xB7 {locked} left alone because they are already charged",
     colPattern: "Repeats",
     colStarts: "Starts",
     colEnds: "Ends",
@@ -8014,7 +8018,11 @@ var ErpAppointmentsSeries = class extends i3 {
         report = await this.bookWindow(String(result?.recurring_id ?? this.editingId), booked);
       }
       const notMoved = result && Array.isArray(result.skipped) ? skippedDates(result) : [];
-      if (!gotItsFirstProfessional) this.notifyOutcome(result, notMoved.length > 0);
+      if (!gotItsFirstProfessional) {
+        const handedTo = staffChange && result?.staff_changed === true ? staffChange.name : null;
+        const rescheduled = "time" in changed || result?.pattern_changed === true;
+        this.notifyOutcome(result, notMoved.length > 0, handedTo, rescheduled);
+      }
       this.closePanel();
       await this.refresh();
       this.moveReport = notMoved.length > 0 ? {
@@ -8032,13 +8040,15 @@ var ErpAppointmentsSeries = class extends i3 {
     }
   }
   /** Lo que NO se movió se DICE. Callarlo es el fallo nº1 que reportan los foros de este gesto. */
-  notifyOutcome(result, leftBehind) {
+  notifyOutcome(result, leftBehind, handedTo, rescheduled) {
     if (!result) return;
     const t5 = (k2, p4) => erplora3().t(CATALOG3, k2, p4);
-    const message = t5("ui.seriesUpdateOutcome", {
+    const key = handedTo === null ? "ui.seriesUpdateOutcome" : rescheduled ? "ui.seriesMovedAndHandedOutcome" : "ui.seriesHandedOutcome";
+    const message = t5(key, {
       moved: Number(result.moved ?? 0),
       cancelled: Number(result.cancelled_pattern_change ?? 0),
-      locked: Number(result.locked_invoiced ?? 0)
+      locked: Number(result.locked_invoiced ?? 0),
+      ...handedTo === null ? {} : { staff: handedTo }
     });
     erplora3().notify?.({ type: leftBehind ? "warning" : "success", message });
   }
