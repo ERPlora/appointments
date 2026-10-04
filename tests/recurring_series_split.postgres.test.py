@@ -20,6 +20,8 @@ So this file covers, against a scratch Postgres built from this module's own mig
      - migration 007 applies and `split_from_id` exists;
      - `_recurring_split` inserts the new half with the trail back to the old one;
      - `_recurring_close` writes the `UNTIL` without deactivating or deleting the old half;
+     - both halves stay home (appointments#291): the close never reaches another hub's series,
+       and the new half is born active in this hub's list and absent from a neighbour's;
      - `_recurring_move_occurrence` MOVES a `pending`/`confirmed` occurrence…
      - …and REFUSES to touch one that is `completed`, `cancelled`, soft-deleted, already turned
        into a sale, or belongs to another hub — each one checked separately, because a `WHERE`
@@ -183,7 +185,8 @@ def check_manifest() -> None:
     # finds the row by `updated_at = :now`, and the runtime mints a fresh `:now` for every operation
     # a WASM handler returns, so an operation of its own would never match (appointments#196).
     move_sql = (
-        MANIFEST.get("commands", {}).get("appointments._recurring_move_occurrence") or {}
+        MANIFEST.get("commands", {}).get("appointments._recurring_move_occurrence")
+        or {}
     ).get("sql")
     # appointments#253: its OWN history statement, not the one of a single reschedule — a series
     # move can hand the appointment to another professional or change its service, and the line
@@ -412,12 +415,24 @@ def occurrence_had(appointment_id: str, hub: str, series: str) -> dict:
     """What the handler learns about an occurrence: the row the REAL occurrences read hands back
     for it (appointments#253), or nothing when that hub's read does not see it."""
     sql = bind(
-        (MODULE_DIR / MANIFEST["queries"]["appointments.recurring.occurrences"]["sql"]).read_text(),
+        (
+            MODULE_DIR
+            / MANIFEST["queries"]["appointments.recurring.occurrences"]["sql"]
+        ).read_text(),
         {"hub_id": hub, "recurring_id": series},
     )
-    columns = ", ".join(f"COALESCE(CAST(q.{c} AS TEXT), '')" for c in OCCURRENCE_COLUMNS)
+    columns = ", ".join(
+        f"COALESCE(CAST(q.{c} AS TEXT), '')" for c in OCCURRENCE_COLUMNS
+    )
     out = psql(
-        ["-t", "-A", "-F", "\t", "-c", f"SELECT {columns} FROM ({sql.rstrip().rstrip(';')}) q"],
+        [
+            "-t",
+            "-A",
+            "-F",
+            "\t",
+            "-c",
+            f"SELECT {columns} FROM ({sql.rstrip().rstrip(';')}) q",
+        ],
         db=DB,
     )
     for line in out.splitlines():
@@ -589,7 +604,9 @@ def check_keep_door() -> None:
                 f"half on its own slot (got {series_of(oid)!r})"
             )
         if rescheduled_lines(oid) != "0":
-            fail("_recurring_keep_occurrence.sql: it left a «rescheduled» line for a stay")
+            fail(
+                "_recurring_keep_occurrence.sql: it left a «rescheduled» line for a stay"
+            )
 
     blocked = [
         ("completed", dict(status="completed")),
@@ -642,7 +659,9 @@ def check_staff_handover() -> None:
     seed_occurrence("o-hand-sold", HUB, "r1", "2026-12-09", sale="sale-9")
     move("o-hand-sold", staff_id="s2", staff_name="Carla")
     if staff_of("appointments_appointment", "o-hand-sold") != "s1 Bea":
-        fail("_recurring_move_occurrence.sql: it handed over an occurrence already turned into a sale")
+        fail(
+            "_recurring_move_occurrence.sql: it handed over an occurrence already turned into a sale"
+        )
 
     def hand_series(series_id: str) -> None:
         """`_recurring_edit` as THIS hub runs it, handing the series to Carla."""
@@ -665,7 +684,13 @@ def check_staff_handover() -> None:
         )
 
     seed_series("r-hand")
-    psql(["-c", "UPDATE appointments_recurring SET staff_id = NULL, staff_name = '' WHERE id = 'r-hand'"], db=DB)
+    psql(
+        [
+            "-c",
+            "UPDATE appointments_recurring SET staff_id = NULL, staff_name = '' WHERE id = 'r-hand'",
+        ],
+        db=DB,
+    )
     hand_series("r-hand")
     if staff_of("appointments_recurring", "r-hand") != "s2 Carla":
         fail(
@@ -698,7 +723,10 @@ def check_service_change() -> None:
     colour = ("s-color", "Corte y color", 4500)
     seed_occurrence("o-colour", HUB, "r1", "2026-12-14")
     move("o-colour", service=colour)
-    if service_of("appointments_appointment", "o-colour") != "s-color Corte y color 4500":
+    if (
+        service_of("appointments_appointment", "o-colour")
+        != "s-color Corte y color 4500"
+    ):
         fail(
             "_recurring_move_occurrence.sql: the occurrence did not take the new service "
             f"(got {service_of('appointments_appointment', 'o-colour')!r})"
@@ -713,12 +741,19 @@ def check_service_change() -> None:
     seed_occurrence("o-colour-sold", HUB, "r1", "2026-12-16", sale="sale-10")
     move("o-colour-sold", service=colour)
     if service_of("appointments_appointment", "o-colour-sold") != "s-corte Corte 2000":
-        fail("_recurring_move_occurrence.sql: it changed the service of an occurrence already turned into a sale")
+        fail(
+            "_recurring_move_occurrence.sql: it changed the service of an occurrence already turned into a sale"
+        )
     # The neighbour's appointment with the id this hub names: its `hub_id` is the only guard.
     seed_occurrence("o-colour-neighbour", OTHER_HUB, "r1", "2026-12-14")
     move("o-colour-neighbour", hub=HUB, service=colour)
-    if service_of("appointments_appointment", "o-colour-neighbour") != "s-corte Corte 2000":
-        fail("_recurring_move_occurrence.sql: it changed the service of another hub's appointment")
+    if (
+        service_of("appointments_appointment", "o-colour-neighbour")
+        != "s-corte Corte 2000"
+    ):
+        fail(
+            "_recurring_move_occurrence.sql: it changed the service of another hub's appointment"
+        )
 
     def recolour_series(series_id: str) -> None:
         """`_recurring_edit` as THIS hub runs it, moving the series to «Corte y color»."""
@@ -795,21 +830,28 @@ def check_series_move_history() -> None:
         )
     else:
         line = lines[0]
-        before = (line["old"] or {})
-        after = (line["new"] or {})
+        before = line["old"] or {}
+        after = line["new"] or {}
         if (before.get("staff_id"), before.get("staff_name")) != ("s1", "Bea"):
-            fail(f"_history_series_move.sql: the line does not say who did it before (old={before!r})")
+            fail(
+                f"_history_series_move.sql: the line does not say who did it before (old={before!r})"
+            )
         if (after.get("staff_id"), after.get("staff_name")) != ("s2", "Carla"):
-            fail(f"_history_series_move.sql: the line does not say who does it now (new={after!r})")
-        if before.get("start_datetime") != "2026-12-21T11:00:00+02:00" or after.get(
-            "start_datetime"
-        ) != "2026-08-24T12:00:00+02:00":
+            fail(
+                f"_history_series_move.sql: the line does not say who does it now (new={after!r})"
+            )
+        if (
+            before.get("start_datetime") != "2026-12-21T11:00:00+02:00"
+            or after.get("start_datetime") != "2026-08-24T12:00:00+02:00"
+        ):
             fail(
                 "_history_series_move.sql: the line lost the slot it had or the one it landed on "
                 f"(old={before!r}, new={after!r})"
             )
         if line["hub_id"] != HUB:
-            fail(f"_history_series_move.sql: the line was written for hub {line['hub_id']!r}")
+            fail(
+                f"_history_series_move.sql: the line was written for hub {line['hub_id']!r}"
+            )
 
     colour = ("s-color", "Corte y color", 4500)
     seed_occurrence("o-hist-service", HUB, "r1", "2026-12-22")
@@ -820,11 +862,16 @@ def check_series_move_history() -> None:
             "_history_series_move.sql: changing the service must leave ONE «service_changed» "
             f"line (got {[line['action'] for line in lines]!r})"
         )
-    elif ((lines[0]["old"] or {}).get("service_name"), (lines[0]["new"] or {}).get("service_name")) != (
+    elif (
+        (lines[0]["old"] or {}).get("service_name"),
+        (lines[0]["new"] or {}).get("service_name"),
+    ) != (
         "Corte",
         "Corte y color",
     ):
-        fail(f"_history_series_move.sql: the line does not say which service it was and is ({lines[0]!r})")
+        fail(
+            f"_history_series_move.sql: the line does not say which service it was and is ({lines[0]!r})"
+        )
 
     # Both at once: the professional is what the receptionist is asked about, so it wins the
     # action — and the service still travels in the values.
@@ -836,11 +883,16 @@ def check_series_move_history() -> None:
             "_history_series_move.sql: a move that changes professional AND service must leave "
             f"ONE «staff_changed» line (got {[line['action'] for line in lines]!r})"
         )
-    elif ((lines[0]["old"] or {}).get("service_name"), (lines[0]["new"] or {}).get("service_name")) != (
+    elif (
+        (lines[0]["old"] or {}).get("service_name"),
+        (lines[0]["new"] or {}).get("service_name"),
+    ) != (
         "Corte",
         "Corte y color",
     ):
-        fail(f"_history_series_move.sql: the service change was lost from the line ({lines[0]!r})")
+        fail(
+            f"_history_series_move.sql: the service change was lost from the line ({lines[0]!r})"
+        )
 
     seed_occurrence("o-hist-time", HUB, "r1", "2026-12-24")
     move("o-hist-time")
@@ -856,24 +908,90 @@ def check_series_move_history() -> None:
         move("o-hist-quote", staff_id="s3", staff_name='Carla "la rubia" \\ B')
         history_of("o-hist-quote")
     except (RuntimeError, ValueError) as exc:
-        fail(f"_history_series_move.sql: a name with a double quote broke the line's JSON ({exc})")
+        fail(
+            f"_history_series_move.sql: a name with a double quote broke the line's JSON ({exc})"
+        )
 
     # A move that does not happen leaves no line of any kind.
     seed_occurrence("o-hist-sold", HUB, "r1", "2026-12-28", sale="sale-11")
     move("o-hist-sold", staff_id="s2", staff_name="Carla")
     if history_of("o-hist-sold"):
-        fail("_history_series_move.sql: it recorded a hand-over of an occurrence that did not move")
+        fail(
+            "_history_series_move.sql: it recorded a hand-over of an occurrence that did not move"
+        )
 
     # The neighbour's appointment this hub names, stamped by its own hub on the same `:now`: the
     # UPDATE does not reach it, and only the line's `hub_id` keeps it from getting OUR history.
     seed_occurrence("o-hist-neighbour", OTHER_HUB, "r1", "2026-12-21")
     psql(
-        ["-c", f"UPDATE appointments_appointment SET updated_at = {literal(NOW)} WHERE id = 'o-hist-neighbour'"],
+        [
+            "-c",
+            f"UPDATE appointments_appointment SET updated_at = {literal(NOW)} WHERE id = 'o-hist-neighbour'",
+        ],
         db=DB,
     )
     move("o-hist-neighbour", hub=HUB, staff_id="s2", staff_name="Carla")
     if history_of("o-hist-neighbour"):
-        fail("_history_series_move.sql: it wrote a history line on another hub's appointment")
+        fail(
+            "_history_series_move.sql: it wrote a history line on another hub's appointment"
+        )
+
+
+def listed(hub: str) -> dict[str, str]:
+    """`recurring_list.sql` as the runtime runs it for `hub`: series id → `is_active`."""
+    sql = bind((MODULE_DIR / "queries/recurring_list.sql").read_text(), {"hub_id": hub})
+    rows = psql(
+        ["-t", "-A", "-F", "|"], db=DB, stdin=f"SELECT id, is_active FROM ({sql}) AS l"
+    )
+    return dict(line.split("|", 1) for line in rows.splitlines() if line.strip())
+
+
+def check_split_stays_home() -> None:
+    """appointments#291: both halves of the split stay inside the hub that edited the series.
+
+    Runs right after the split of `r1` into `r2` by `HUB`. Two rules nothing else watched: the
+    close of the old half reaches only this hub's series, and the new half is born ACTIVE and in
+    THIS hub — so the list the business reads shows it, and a neighbour's list does not.
+    """
+    # The new half: this hub's, active, alive.
+    row = scalar(
+        "SELECT hub_id || '/' || is_active || '/' || is_deleted "
+        "FROM appointments_recurring WHERE id = 'r2'"
+    )
+    if row != f"{HUB}/1/0":
+        fail(
+            "_recurring_split.sql: the new half was not born active in the hub that edited it "
+            f"(hub_id/is_active/is_deleted = {row!r})"
+        )
+    if listed(HUB).get("r2") != "1":
+        fail(
+            "_recurring_split.sql: the new half is not an active series in the hub's own list "
+            f"(got {listed(HUB).get('r2')!r})"
+        )
+    if "r2" in listed(OTHER_HUB):
+        fail("_recurring_split.sql: the new half shows up in another hub's list")
+
+    # The close: with OUR hub_id and a neighbour's series id, which is how a leak would look.
+    seed_series("r-close-neighbour", OTHER_HUB)
+    run_command(
+        "commands/_recurring_close.sql",
+        {
+            "hub_id": HUB,
+            "recurring_id": "r-close-neighbour",
+            "end_date": "2026-08-23",
+            "current_user_id": "u-intruder",
+            "now": "2026-08-21T09:00:00+02:00",
+        },
+    )
+    untouched = scalar(
+        "SELECT coalesce(end_date::text, '-') || '/' || updated_by || '/' || is_active "
+        "FROM appointments_recurring WHERE id = 'r-close-neighbour'"
+    )
+    if untouched != "-/u1/1":
+        fail(
+            "_recurring_close.sql: it reached another hub's series "
+            f"(end_date/updated_by/is_active = {untouched!r})"
+        )
 
 
 def check_against_postgres() -> None:
@@ -951,6 +1069,7 @@ def check_against_postgres() -> None:
             )
         if scalar("SELECT time FROM appointments_recurring WHERE id = 'r2'") != "12:00":
             fail("_recurring_split.sql: the new half did not take the new time")
+        check_split_stays_home()
 
         # ── the door: what moves ────────────────────────────────────────────────────────
         # One per day: two occurrences of the same series cannot share an `occurrence_date`
