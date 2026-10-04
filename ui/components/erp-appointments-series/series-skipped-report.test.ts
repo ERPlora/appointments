@@ -47,6 +47,8 @@ const TWO_SKIPPED = {
 const NONE_SKIPPED = { booked: 4, already_booked: 0, skipped: [] };
 
 let materializeResult: unknown = NONE_SKIPPED;
+/** appointments#267 — when set, each `materialize` run answers the next of these, in order. */
+let materializePages: unknown[] = [];
 let failing = '';
 const UPDATE_PATTERN_CHANGED = {
   recurring_id: 'r2',
@@ -69,6 +71,7 @@ beforeEach(() => {
   commands.length = 0;
   toasts.length = 0;
   materializeResult = NONE_SKIPPED;
+  materializePages = [];
   updateResult = UPDATE_PATTERN_CHANGED;
   failing = '';
   document.body.innerHTML = '';
@@ -99,6 +102,7 @@ beforeEach(() => {
       // What `erplora().command` really resolves to: the dispatcher's `data`, where a WASM
       // handler's own answer travels in `result` (seen on the hub:stable bench, not assumed).
       if (name === 'appointments.recurring.materialize') {
+        if (materializePages.length) return { ok: true, new_ids: [], operations: 1, result: materializePages.shift() };
         return { ok: true, new_ids: ['a4', 'a5'], operations: 6, ...(materializeResult === undefined ? {} : { result: materializeResult }) };
       }
       if (name === 'appointments.recurring.update') {
@@ -340,6 +344,50 @@ describe('«Book appointments» on a row reports the dates left out (appointment
     await tapBook(el);
     expect(toasts.map((n) => n.message)).toContain(ES.seriesMaterialized);
     expect(byTestId(el, 'appointments-series-skipped')).toBeNull();
+  });
+});
+
+// appointments#267 — a professional with thousands of bookings ahead: one run of the series reads
+// one page of her agenda and, when the page ends before the window does, answers where to go on
+// (`next_from`) and up to when (`to`). The screen follows it, so the whole window is booked with
+// one tap and the report adds every page up — instead of a series half booked with «booked» on
+// screen, and a second tap that could never get past that page.
+describe('a series against an agenda too long for one run is booked page by page (appointments#267)', () => {
+  const FIRST_PAGE = { booked: 7, already_booked: 0, skipped: [], next_from: '2099-11-10', to: '2100-01-05' };
+  const materializeRuns = () => commands.filter((c) => c.name === 'appointments.recurring.materialize');
+
+  it('«Book appointments» goes on from `next_from` to the same `to` and reports both pages', async () => {
+    materializePages = [
+      FIRST_PAGE,
+      { booked: 3, already_booked: 0, skipped: [{ occurrence_date: '2099-11-17', code: 'appointments.blocked' }] },
+    ];
+    const el = await mount();
+    await tapBook(el);
+    const runs = materializeRuns();
+    expect(runs).toHaveLength(2);
+    expect(runs[0].payload.from).toBeUndefined();
+    expect(runs[1].payload).toMatchObject({ recurring_id: 'r1', staff_id: 's1', from: '2099-11-10', to: '2100-01-05' });
+    expect(byTestId(el, 'appointments-series-skipped')?.textContent?.replace(/\s+/g, ' ')).toContain(
+      translate({ es: esLocale } as never, 'ui.seriesBookedSkipped', { booked: 10, skipped: 1 }),
+    );
+  });
+
+  it('creating a series books every page before saying «created and booked»', async () => {
+    materializePages = [FIRST_PAGE, { booked: 2, already_booked: 0, skipped: [] }];
+    const el = await mount();
+    await createThroughTheForm(el);
+    const runs = materializeRuns();
+    expect(runs).toHaveLength(2);
+    expect(runs[1].payload).toMatchObject({ from: '2099-11-10', to: '2100-01-05' });
+    expect(toasts.map((n) => n.message)).toContain(ES.seriesCreated);
+  });
+
+  it('a `next_from` that does not move on stops instead of asking forever', async () => {
+    materializePages = [FIRST_PAGE, { ...FIRST_PAGE, booked: 0 }, { ...FIRST_PAGE, booked: 0 }];
+    const el = await mount();
+    await tapBook(el);
+    expect(materializeRuns()).toHaveLength(2);
+    expect(el.error).toBe('');
   });
 });
 
