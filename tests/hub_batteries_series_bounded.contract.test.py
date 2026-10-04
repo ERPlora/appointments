@@ -14,7 +14,8 @@ So the rule held here, for every `*.hub.test.py`: a battery that calls
 `max_occurrences` or `end_date`, so none of its dates reaches the edge of the window. A battery
 that passes `to` closes the window on purpose and is judging the horizon (`series_edit_at_horizon`,
 `busy_agenda_booking`). It reads the code's syntax tree, so a payload built in a variable, spread
-with `**` or filtered with a comprehension is followed to the dict that defines it.
+with `**`, filtered with a comprehension or returned by a function of the battery is followed to
+the dict that defines it.
 
 Usage: tests/hub_batteries_series_bounded.contract.test.py   (exit 0 = green)
 """
@@ -36,6 +37,11 @@ def unbounded_series(source: str) -> list[int]:
     """Line numbers of the series `source` creates with no end while materializing with no `to`."""
     tree = ast.parse(source)
     assigned: dict[str, list[ast.expr]] = {}
+    builders: dict[str, list[ast.Return]] = {
+        node.name: [r for r in ast.walk(node) if isinstance(r, ast.Return)]
+        for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef)
+    }
 
     def bind(target: ast.expr, value: ast.expr) -> None:
         if isinstance(target, ast.Name):
@@ -73,6 +79,21 @@ def unbounded_series(source: str) -> list[int]:
             if any(s is None for s in sets):
                 return None
             return set.intersection(*sets)
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id not in seen
+            and node.func.id in builders
+        ):
+            # `series(links, staff)`: a payload built by a function of the battery carries only
+            # what EVERY one of its `return`s carries (appointments#283 builds its series so).
+            returned = [
+                keys(r.value, seen | {node.func.id}) if r.value is not None else None
+                for r in builders[node.func.id]
+            ]
+            if not returned or any(s is None for s in returned):
+                return None
+            return set.intersection(*returned)
         if isinstance(node, ast.DictComp):
             # `{k: v for k, v in payload.items() if …}`: at most what `payload` carries. Taken as
             # carrying all of it — a comprehension that drops a bound is the door's refusal test.
@@ -135,6 +156,20 @@ OPEN = {
         "for label, p in (('a', {'max_occurrences': 2}), ('b', {'start_date': day})):\n"
         f"    hub.command('{CREATE}', p)\n" + MATERIALIZE_OPEN
     ),
+    "a payload built by a local function with no end": (
+        "batch = {'customer_id': c}\n"
+        "def series(staff):\n"
+        "    return {'staff_id': staff, 'start_date': day}\n"
+        f"rid = hub.new_id('{CREATE}', series(s))\n" + MATERIALIZE_OPEN
+    ),
+    "a local function that returns an open payload on one path": (
+        "batch = {'customer_id': c}\n"
+        "def series(staff):\n"
+        "    if staff:\n"
+        "        return {'staff_id': staff, 'max_occurrences': 2}\n"
+        "    return {'start_date': day}\n"
+        f"rid = hub.new_id('{CREATE}', series(s))\n" + MATERIALIZE_OPEN
+    ),
     "a materialize whose payload cannot be followed": (
         f"rid = hub.new_id('{CREATE}', {{'start_date': day}})\n"
         f"hub.command('{MATERIALIZE}', build())\n"
@@ -163,6 +198,13 @@ CLOSED = {
         "base = {'max_occurrences': 2}\n"
         "for label, p in (('a', {**base, 'x': ''}), ('b', {k: v for k, v in base.items()})):\n"
         f"    hub.command('{CREATE}', p)\n" + MATERIALIZE_OPEN
+    ),
+    "a payload built by a local function that carries the bound": (
+        "batch = {'customer_id': c}\n"
+        "def series(staff, service=None):\n"
+        "    return {'staff_id': staff, 'service_id': service or x, 'max_occurrences': 2}\n"
+        f"rid = hub.new_id('{CREATE}', series(s))\n"
+        f"hub.command('{CREATE}', {{**series(s), 'staff_id': ''}})\n" + MATERIALIZE_OPEN
     ),
     "a materialize that closes its window with `to`": (
         f"rid = hub.new_id('{CREATE}', {{'start_date': day}})\n"

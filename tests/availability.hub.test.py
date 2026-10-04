@@ -496,6 +496,57 @@ def main() -> int:
         (True, weeks),
     )
 
+    # THE WINDOW the hub closes by itself (appointments#276): materialized with no `to`, a series
+    # stops at today + `max_advance_booking`. It was proven above by accident, with an open series
+    # whose last date sat on the edge on Thursdays. Now on purpose and on no edge: the series ends
+    # half a year out, so only the window can stop it, and the window ends THREE days after its
+    # sixth date — the seventh is outside, and no date is ever on the edge, whose verdict depends
+    # on the hour the battery runs.
+    ahead = (datetime.date.fromisoformat(day) - datetime.date.today()).days
+    set_booking_policy(
+        hub, allow_overlapping=False, max_advance_booking=ahead + 7 * 5 + 3
+    )
+    inside = [
+        (datetime.date.fromisoformat(day) + datetime.timedelta(weeks=n)).isoformat()
+        for n in range(6)
+    ]
+    windowed = hub.new_id(
+        "appointments.recurring.create",
+        {
+            "customer_id": hours.customer_id,
+            "customer_name": "Cliente",
+            "service_id": hours.service_id,
+            "service_name": hours.service_name,
+            "staff_id": hours.staff_id,
+            "staff_name": hours.staff_name,
+            "frequency": "weekly",
+            "day_of_week": datetime.date.fromisoformat(day).weekday(),
+            "time": "12:30",
+            "duration_minutes": DURATION,
+            "start_date": day,
+            "end_date": (
+                datetime.date.fromisoformat(day) + datetime.timedelta(days=180)
+            ).isoformat(),
+        },
+    )
+    report = hub.result(
+        "appointments.recurring.materialize", {**batch, "recurring_id": windowed}
+    )
+    hub.check(
+        "§7 a series with no `to` books up to the hub's own booking window, and no further",
+        (
+            sorted(
+                r["occurrence_date"]
+                for r in hub.query(
+                    "appointments.recurring.occurrences", {"recurring_id": windowed}
+                )
+            ),
+            report.get("skipped") or [],
+        ),
+        (inside, []),
+    )
+    set_booking_policy(hub, allow_overlapping=False)
+
     # ── 8 · THE COUNTER's LIST reaches inside the minimum notice (appointments#234) ────────
     #
     # `min_booking_notice` is the customer's window, and since #157 the counter books inside it —
