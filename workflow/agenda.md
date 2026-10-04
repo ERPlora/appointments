@@ -10,18 +10,19 @@ Actor: empleado
 Pantalla: Agenda
 Pasos:
 1. En la Agenda pulsa **Añadir cita**, o en «Por profesional» toca un hueco libre (rellena profesional y hora).
-2. Elige Cliente, Servicio y Profesional de sus listas (los tres son obligatorios). Con un servicio
-   elegido solo salen los profesionales que lo hacen; «Min.» se rellena con su duración propia o la del catálogo.
+2. Elige Cliente, Servicio y Profesional de sus listas (los tres son obligatorios). La lista de clientas trae las
+   500 primeras fichas por nombre y no deja crear una nueva (CUSTOMERS-F25). Con un servicio
+   elegido solo salen los profesionales Activos y Reservables que lo hacen; si no hay ninguno (nadie lo tiene
+   asignado, o quien lo tiene está inactivo o no reservable), salen todos los reservables (STAFF-F12). «Min.» se
+   rellena con su duración propia o la del catálogo.
 3. Escribe el Día y toca una de las **Horas libres** (o escribe otra hora; también vale pegar el día y la hora juntos, por ejemplo 26/09/2026 10:00).
 4. Pulsa **Añadir cita**. Si el solape está permitido y choca, responde a «Cita solapada».
 5. La cita aparece en la lista como **Pendiente** con su número `APT-AAAAMMDD-NNNN`.
 Entra: la clienta (Clientes), el servicio con precio y duración (Servicios), el profesional y su competencia (Personal).
 Sale: la cita pendiente con nombre, precio y duración congelados del catálogo, su línea «Reservada» en el historial y el aviso de cita creada (`appointments.appointment.created`).
 Si falla: el motivo sale dentro del panel y en un aviso (fuera de horario, el profesional no trabaja, franja bloqueada, ya tiene cita, demasiado lejos); lo tecleado se conserva para corregir. Desde el mostrador ni la antelación mínima ni una hora ya pasada rechazan: la hora pasada solo muestra un aviso antes de guardar.
-Implicados: pendiente
-Pendiente de enlazar: customers — elegir la clienta de la lista de fichas
+Implicados: CUSTOMERS-F11, CUSTOMERS-F25, STAFF-F02, STAFF-F05, STAFF-F06, STAFF-F09, STAFF-F10, STAFF-F12, STAFF-F13, STAFF-F14, STAFF-F15, STAFF-F16, STAFF-F18
 Pendiente de enlazar: services — el servicio reservable con su precio y duración
-Pendiente de enlazar: staff — profesionales reservables, su competencia y su duración propia
 Pendiente de enlazar: schedules — el horario del negocio que la reserva respeta
 QA: B-02, BD-06
 
@@ -40,9 +41,8 @@ Pasos:
 Entra: horario del negocio (Horarios), turno y ausencias (Personal), bloqueos, citas vivas y ajustes de antelación propios.
 Sale: la lista de horas; no guarda nada. El asistente y WhatsApp leen el mismo motor, pero sin las horas dentro de la antelación mínima.
 Si falla: «No se han podido cargar las horas libres» con **Reintentar**; se puede escribir una hora igualmente y la reserva se juzga al guardar. Sin horas: «No quedan horas libres ese día…».
-Implicados: WHATSAPP_INBOX-F19, WHATSAPP_INBOX-F21, WHATSAPP_INBOX-F22, REC_WA_CITA-F04
+Implicados: STAFF-F13, STAFF-F14, STAFF-F15, STAFF-F16, STAFF-F18, STAFF-F19, WHATSAPP_INBOX-F19, WHATSAPP_INBOX-F21, WHATSAPP_INBOX-F22, REC_WA_CITA-F04
 Pendiente de enlazar: schedules — la apertura del día con festivos, excepciones y descansos
-Pendiente de enlazar: staff — el turno y las ausencias aprobadas del profesional
 QA: B-02, BD-06, W-02
 
 ### APPOINTMENTS-F03 Confirmar una cita pendiente
@@ -72,8 +72,7 @@ Pasos:
 Entra: la cita (pendiente o confirmada) y, si cambia, el nuevo profesional y su competencia o el nuevo servicio con su precio.
 Sale: la cita movida (un servicio nuevo trae su nombre y precio; un profesional nuevo conserva el precio), su línea de historial y el aviso de cita movida (`appointments.appointment.rescheduled`).
 Si falla: el motivo sale en el panel y en un aviso; un bloque arrastrado vuelve a su sitio. Solo se mueven citas Pendiente o Confirmada: una en curso, completada, cancelada o no presentada no se mueve (**Editar** sale en gris).
-Implicados: pendiente
-Pendiente de enlazar: staff — profesional reservable, competencia y turno del nuevo profesional
+Implicados: STAFF-F05, STAFF-F06, STAFF-F11, STAFF-F12, STAFF-F16
 Pendiente de enlazar: services — nombre, precio y duración del nuevo servicio
 QA: B-02, B-04, B-08, BD-06
 
@@ -158,7 +157,7 @@ Implicados: ninguno
 QA: ninguno
 
 ### APPOINTMENTS-F17 Cobrar la cita en el TPV
-Estado: parcial — cobrar no deja la cita como Completada, Cobrar sigue activo en citas canceladas o no presentadas, y una cita cobrada sigue Pendiente o Confirmada y se puede mover, cancelar, marcar No-show y borrar (riesgo fiscal: la venta queda sin cita coherente)
+Estado: parcial — cobrar no deja la cita como Completada, Cobrar sigue activo en citas canceladas o no presentadas, una cita cobrada sigue Pendiente o Confirmada y se puede mover, cancelar, marcar No-show y borrar (riesgo fiscal: la venta queda sin cita coherente), y si la venta se anula la cita sigue marcada como cobrada con Cobrar en gris (SALES-F30)
 Actor: responsable
 Pantalla: Agenda
 Pasos:
@@ -167,10 +166,9 @@ Pasos:
 2. En el TPV añade productos o descuentos y cobra como cualquier venta.
 3. Al volver a la Agenda, **Cobrar** sale en gris en esa cita: ya está cobrada.
 Entra: la cita leída por el TPV.
-Sale: la venta es del TPV; aquí solo queda anotado que la cita se cobró (al recibir `sales.sale.created_from_appointment`). El estado no cambia.
-Si falla: si la venta no se cierra, la cita sigue sin marcar como cobrada y **Cobrar** sigue activo para repetir; lo que enseña el TPV es de ventas (sin confirmar desde aquí).
-Implicados: REC_WA_CITA-F10
-Pendiente de enlazar: sales — abrir el TPV con la cita y avisar a la agenda al cerrar la venta
+Sale: la venta es del TPV (SALES-F26); aquí solo queda anotado con qué venta se cobró la cita (al recibir `sales.sale.created_from_appointment`). El estado no cambia. Citas no escucha la anulación de la venta: anulada en Ventas, la cita sigue marcada como cobrada y Cobrar sigue en gris (SALES-F30).
+Si falla: si la venta no se cierra, la cita sigue sin marcar como cobrada y **Cobrar** sigue activo para repetir. Lo que pasa dentro del TPV está en SALES-F26: si no puede enlazar la cita lo avisa, y si el servicio de la cita no está en el catálogo que cargó el TPV la línea se cobra al 0 % de IVA sin aviso.
+Implicados: SALES-F26, SALES-F30, REC_WA_CITA-F10
 QA: B-05, B-06, BD-09
 
 ### APPOINTMENTS-F19 Ajustar las reglas de reserva
