@@ -13961,6 +13961,10 @@ mod tests {
         assert_eq!(out.events.len(), 1);
         assert_eq!(out.events[0].name, "appointments.recurring.created");
         assert_eq!(out.events[0].payload["recurring_id"], json!("rec-1"));
+        // The declarative door announced the series id as `new_id`; a listener or a flow written
+        // against that key must keep finding it in the handler's copy.
+        assert_eq!(out.events[0].payload["new_id"], json!("rec-1"));
+        assert_eq!(out.events[0].payload["staff_name"], json!("Bea Pro"));
     }
 
     /// The other links a single booking refuses are refused at the series door too.

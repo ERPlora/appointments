@@ -11,7 +11,8 @@ on 01/10: «Tinte» assigned to Eva and Carla only, `recurring.create` with Mart
 What this battery proves through the public API, with real rows of `staff` and `services`:
 
   §1 the series with a professional who does not perform the service is REFUSED at the door with
-     `appointments.staff_not_eligible`, and nothing is saved;
+     `appointments.staff_not_eligible`, the internal INSERT door behind it cannot be named from
+     the API (`internal_command`), and nothing is saved;
   §2 the same series with the professional who performs it is created AND booked — the door did
      not close for everyone, and `new_ids[0]` is the series `materialize` books;
   §3 a service nobody has been assigned to is performed by the whole team: the series is created.
@@ -26,24 +27,19 @@ import sys
 from hub_harness import Hub, next_weekday, seed_links, set_booking_policy
 
 
-def series(
-    links, staff_id: str, staff_name: str, service_id=None, service_name=None
-) -> dict:
-    return {
-        "customer_id": links.customer_id,
-        "customer_name": "Cliente",
-        "service_id": service_id or links.service_id,
-        "service_name": service_name or links.service_name,
-        "staff_id": staff_id,
-        "staff_name": staff_name,
-        "frequency": "weekly",
-        "time": "12:00",
-        "duration_minutes": 30,
-        # A Wednesday well inside the booking window: a weekend date would be refused by the
-        # opening hours and §2 would read that as «the series does not book».
-        "start_date": next_weekday(2),
-        "max_occurrences": 2,
-    }
+# The repetition rule every series of this battery shares. It is a dict LITERAL on purpose, and each
+# door below spreads it into a literal payload: a series created here is materialized with no `to`,
+# so it must visibly end by itself (`max_occurrences`) — two dates, nowhere near the edge of the
+# booking window, whatever the weekday the battery runs on (appointments#276).
+RULE = {
+    "frequency": "weekly",
+    "time": "12:00",
+    "duration_minutes": 30,
+    # A Wednesday well inside the booking window: a weekend date would be refused by the
+    # opening hours and §2 would read that as «the series does not book».
+    "start_date": next_weekday(2),
+    "max_occurrences": 2,
+}
 
 
 def series_of(hub: Hub, links) -> list:
@@ -78,8 +74,36 @@ def main() -> int:
     hub.refused(
         "§1 recurring.create with the professional outside the service",
         "appointments.recurring.create",
-        series(links, links.staff_id, links.staff_name),
+        {
+            **RULE,
+            "customer_id": links.customer_id,
+            "customer_name": "Cliente",
+            "service_id": links.service_id,
+            "service_name": links.service_name,
+            "staff_id": links.staff_id,
+            "staff_name": links.staff_name,
+        },
         "appointments.staff_not_eligible",
+    )
+    # The template INSERT the handler writes through is internal: named directly, with the very
+    # pair the door has just refused, the runtime answers `internal_command` before it looks at
+    # the payload. Otherwise the check above would be one API call away from being skipped.
+    hub.refused(
+        "§1 the internal INSERT door cannot be named from the API",
+        "appointments._recurring_insert",
+        {
+            **RULE,
+            "recurring_id": f"bypass-{links.service_id}",
+            "customer_id": links.customer_id,
+            "customer_name": "Cliente",
+            "service_id": links.service_id,
+            "service_name": links.service_name,
+            "staff_id": links.staff_id,
+            "staff_name": links.staff_name,
+            "day_of_week": None,
+            "end_date": None,
+        },
+        "internal_command",
     )
     hub.check(
         "§1 …and no series was saved for that customer",
@@ -92,7 +116,15 @@ def main() -> int:
     )
     recurring_id = hub.new_id(
         "appointments.recurring.create",
-        series(links, links.other_staff_id, links.other_staff_name),
+        {
+            **RULE,
+            "customer_id": links.customer_id,
+            "customer_name": "Cliente",
+            "service_id": links.service_id,
+            "service_name": links.service_name,
+            "staff_id": links.other_staff_id,
+            "staff_name": links.other_staff_name,
+        },
     )
     saved = series_of(hub, links)
     hub.check(
@@ -123,7 +155,15 @@ def main() -> int:
     open_links = seed_links(hub, "series283-open")
     hub.new_id(
         "appointments.recurring.create",
-        series(open_links, open_links.staff_id, open_links.staff_name),
+        {
+            **RULE,
+            "customer_id": open_links.customer_id,
+            "customer_name": "Cliente",
+            "service_id": open_links.service_id,
+            "service_name": open_links.service_name,
+            "staff_id": open_links.staff_id,
+            "staff_name": open_links.staff_name,
+        },
     )
     hub.check(
         "§3 the series was saved",
