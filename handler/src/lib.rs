@@ -564,6 +564,28 @@ fn host_ctx(input: &Value) -> Result<HostCtx, String> {
     })
 }
 
+/// appointments#267 — the series reads her agenda ONE PAGE at a time: her whole agenda ahead cost
+/// ~40 k WASM instructions a row just to read, and past ~4 300 bookings of hers that alone ran a
+/// series out of the kernel's budget before it judged a single date.
+const AGENDA_PAGE_READ: &str = "appointments.appointments.upcoming_for_staff_from";
+/// The rows of one page — the `LIMIT` of `appointments_upcoming_for_staff_from.sql`. A read that
+/// comes back this long may have stopped short of her agenda.
+const AGENDA_PAGE_ROWS: usize = 2000;
+
+/// Up to when a page of her agenda is authoritative: `None` when it is not full (it holds her whole
+/// agenda ahead), else the latest start it carries — the page is ordered by start, so every booking
+/// that starts before it is in, and nothing after it can be known.
+fn agenda_page_covers_until(input: &Value) -> Option<Secs> {
+    let rows = read_rows(input, AGENDA_PAGE_READ)?;
+    if rows.len() < AGENDA_PAGE_ROWS {
+        return None;
+    }
+    rows.iter()
+        .filter_map(|row| parse_dt(&text(row.get("start_datetime")?)))
+        .map(|start| Secs::of(&start))
+        .reduce(|latest, start| if start.cmp(latest) > 0 { start } else { latest })
+}
+
 /// Cita candidata a solape (lectura aportada por el caller en el payload).
 struct Candidate {
     /// The row's id, so a series edit can tell an occurrence's old slot from somebody else's
@@ -594,6 +616,7 @@ struct Candidate {
 /// `required` en el manifest; si aun así faltan, se cierra.
 fn candidates_from(input: &Value, staff_id: &str, exclude_id: &str) -> Option<Vec<Candidate>> {
     let rows = read_rows(input, "appointments.appointments.conflicting")
+        .or_else(|| read_rows(input, AGENDA_PAGE_READ))
         .or_else(|| read_rows(input, "appointments.appointments.upcoming_for_staff"))?;
     Some(
         rows.iter()
@@ -4341,6 +4364,10 @@ pub fn materialize_recurring_pure(input: Value) -> Result<Output, String> {
     };
     // appointments#265: her agenda read and indexed ONCE for the whole run, like the batch.
     let agenda = StaffAgenda::of(&input, &read);
+    // appointments#267: a full page of her agenda judges only what ends by its last start; the
+    // first occurrence past it is left to the next run, which starts there (`next_from`).
+    let covered_until = agenda_page_covers_until(&input);
+    let mut next_from: Option<String> = None;
     let mut candidates: Vec<Candidate> = Vec::new();
     let mut ops: Vec<Operation> = Vec::new();
     let mut events: Vec<erplora_guest_sdk::Event> = Vec::new();
@@ -4408,6 +4435,18 @@ pub fn materialize_recurring_pure(input: Value) -> Result<Output, String> {
             skipped.push(json!({ "occurrence_date": occurrence_date, "code": "appointments.invalid_start" }));
             continue;
         };
+        if let (Some(cut), Some(start)) = (covered_until, parse_dt(&start_iso)) {
+            let start = Secs::of(&start);
+            let end = Secs {
+                wall: start.wall + duration * 60,
+                epoch: start.epoch + duration * 60,
+                ..start
+            };
+            if end.cmp(cut) > 0 {
+                next_from = Some(occurrence_date);
+                break;
+            }
+        }
         let item = json!({
             "start_datetime": start_iso,
             "duration_minutes": duration,
@@ -4464,22 +4503,30 @@ pub fn materialize_recurring_pure(input: Value) -> Result<Output, String> {
     // idempotente que grita en el segundo intento es una que nadie se atreve a reintentar. Ni
     // cuando todo se rechazó con motivo (appointments#238): la serie existe y la respuesta dice
     // qué fechas no entraron y por qué, en vez de un fallo crudo del handler.
-    if created == 0 && skipped_as_booked == 0 && skipped.is_empty() {
+    if created == 0 && skipped_as_booked == 0 && skipped.is_empty() && next_from.is_none() {
         return Err(
             "no_occurrences: todas las ocurrencias de la ventana están en el pasado o solapadas"
                 .to_string(),
         );
+    }
+    let mut result = json!({
+        "booked": created,
+        "already_booked": skipped_as_booked,
+        "skipped": skipped,
+    });
+    // appointments#267: the page ended before the window did — the caller runs again from
+    // `next_from` to the same `to`, and the rest of the series is judged against the next page.
+    if let Some(day) = next_from {
+        let (y, mo, d) = civil_from_days(to_days);
+        result["next_from"] = json!(day);
+        result["to"] = json!(format!("{y:04}-{mo:02}-{d:02}"));
     }
     Ok(Output {
         operations: ops,
         events,
         ..Default::default()
     }
-    .with_result(json!({
-        "booked": created,
-        "already_booked": skipped_as_booked,
-        "skipped": skipped,
-    })))
+    .with_result(result))
 }
 
 /// Parsea `HH:MM` (o `HH:MM:SS`) → (hora, minuto).
@@ -13045,6 +13092,206 @@ mod tests {
         assert_eq!(
             series_result(&out),
             json!({ "booked": 2, "already_booked": 0, "skipped": [] })
+        );
+    }
+
+    // ── appointments#267 · a series against an agenda too big to read whole ─────────────────
+    //
+    // With ~4 300 bookings of hers ahead, reading her whole agenda alone (≈40 k WASM instructions a
+    // row) ran the series out of the kernel's 200 M budget: `code: wasm`, nothing booked. The
+    // series now reads her agenda one PAGE at a time (`upcoming_for_staff_from`, at most 2 000
+    // rows from `from`, ordered by start): a full page covers only up to its latest start, so the
+    // run books what that page can judge and says where the next one starts (`next_from`).
+
+    /// `n` one-minute bookings of hers as the page read answers them: 250 a night from 2026-08-03
+    /// between 00:00 and 04:10 UTC — nowhere near the series' 11:00 in Madrid (09:00Z).
+    fn agenda_page(n: usize) -> Value {
+        Value::Array(
+            (0..n)
+                .map(|k| {
+                    let (day, minute) = (3 + k / 250, k % 250);
+                    let at = |m: usize| format!("2026-08-{day:02}T{:02}:{:02}:00Z", m / 60, m % 60);
+                    json!({
+                        "id": format!("p{k}"),
+                        "appointment_number": format!("APT-{k}"),
+                        "staff_id": "s1",
+                        "status": "confirmed",
+                        "start_datetime": at(minute),
+                        "end_datetime": at(minute + 1),
+                    })
+                })
+                .collect(),
+        )
+    }
+
+    fn daily_series_to(to: &str, page: Value) -> Value {
+        let mut payload = series_payload();
+        payload["to"] = json!(to);
+        series_input(
+            payload,
+            json!([template(json!({ "frequency": "daily", "max_occurrences": null }))]),
+            Some(json!({ "appointments.appointments.upcoming_for_staff_from": page })),
+        )
+    }
+
+    fn booked_dates(out: &Output) -> Vec<String> {
+        insert_ops(out)
+            .iter()
+            .filter_map(|op| op.params.get("occurrence_date").and_then(|v| v.as_str()))
+            .map(str::to_string)
+            .collect()
+    }
+
+    /// A FULL page (2 000 rows) ends at its latest start, 2026-08-10 04:09Z: the occurrences that
+    /// end before it are judged and booked, the first one past it is not judged blind — the run
+    /// stops there and names the date the next one starts from, and the window it was booking.
+    #[test]
+    fn materialize_stops_where_a_full_page_of_her_agenda_ends_and_says_where_to_go_on() {
+        let out = materialize_recurring_pure(daily_series_to("2026-08-20", agenda_page(2000))).unwrap();
+        assert!(out.error.is_none(), "{:?}", out.error);
+        assert_eq!(
+            booked_dates(&out),
+            ["03", "04", "05", "06", "07", "08", "09"].map(|d| format!("2026-08-{d}")),
+            "booked past what the page could judge"
+        );
+        assert_eq!(
+            series_result(&out),
+            json!({
+                "booked": 7,
+                "already_booked": 0,
+                "skipped": [],
+                "next_from": "2026-08-10",
+                "to": "2026-08-20"
+            })
+        );
+    }
+
+    /// The page ends at 09:10Z of 2026-08-10, INSIDE that day's occurrence (09:00–09:30Z): a booking
+    /// of hers at 09:20Z would be on the next page, so the occurrence is not judged on this one —
+    /// not even refused against the 09:10 booking the page does hold.
+    #[test]
+    fn materialize_does_not_judge_an_occurrence_that_ends_past_the_page() {
+        let mut page = agenda_page(1999);
+        page.as_array_mut().unwrap().push(json!({
+            "id": "p-last", "appointment_number": "APT-LAST", "staff_id": "s1", "status": "confirmed",
+            "start_datetime": "2026-08-10T09:10:00Z", "end_datetime": "2026-08-10T09:11:00Z"
+        }));
+        let out = materialize_recurring_pure(daily_series_to("2026-08-20", page)).unwrap();
+        assert_eq!(booked_dates(&out).len(), 7, "{:?}", booked_dates(&out));
+        assert_eq!(series_result(&out)["skipped"], json!([]));
+        assert_eq!(series_result(&out)["next_from"], json!("2026-08-10"));
+    }
+
+    /// The page ends EXACTLY where that day's occurrence does (09:30Z). Whatever is missing from
+    /// the page starts at 09:30Z or later and cannot overlap it, so the occurrence is judged on
+    /// this page and booked; the run stops at the next day.
+    #[test]
+    fn materialize_judges_an_occurrence_that_ends_exactly_where_the_page_does() {
+        let mut page = agenda_page(1999);
+        page.as_array_mut().unwrap().push(json!({
+            "id": "p-last", "appointment_number": "APT-LAST", "staff_id": "s1", "status": "confirmed",
+            "start_datetime": "2026-08-10T09:30:00Z", "end_datetime": "2026-08-10T09:31:00Z"
+        }));
+        let out = materialize_recurring_pure(daily_series_to("2026-08-20", page)).unwrap();
+        assert_eq!(booked_dates(&out).last().map(String::as_str), Some("2026-08-10"));
+        assert_eq!(series_result(&out)["booked"], json!(8));
+        assert_eq!(series_result(&out)["next_from"], json!("2026-08-11"));
+    }
+
+    /// The control: one row short of a page is her WHOLE agenda, so the run is exactly today's —
+    /// every occurrence of the window judged and booked, and no `next_from`.
+    #[test]
+    fn materialize_with_an_agenda_short_of_a_page_books_the_whole_window_as_before() {
+        let out = materialize_recurring_pure(daily_series_to("2026-08-20", agenda_page(1999))).unwrap();
+        assert!(out.error.is_none(), "{:?}", out.error);
+        assert_eq!(booked_dates(&out).len(), 18, "{:?}", booked_dates(&out));
+        assert_eq!(
+            series_result(&out),
+            json!({ "booked": 18, "already_booked": 0, "skipped": [] })
+        );
+    }
+
+    /// The next run, from `next_from`, judges on with the page read from there: a booking of hers
+    /// on that day is still an overlap — the page did not stop being authoritative.
+    #[test]
+    fn materialize_from_next_from_judges_the_following_page() {
+        let mut page = agenda_page(10);
+        page.as_array_mut().unwrap().push(json!({
+            "id": "a-11", "appointment_number": "APT-11", "staff_id": "s1", "status": "confirmed",
+            "start_datetime": "2026-08-11T09:00:00Z", "end_datetime": "2026-08-11T09:30:00Z"
+        }));
+        let mut inp = daily_series_to("2026-08-12", page);
+        inp["payload"]["from"] = json!("2026-08-10");
+        let out = materialize_recurring_pure(inp).unwrap();
+        assert_eq!(booked_dates(&out), ["2026-08-10", "2026-08-12"]);
+        assert_eq!(
+            series_result(&out),
+            json!({
+                "booked": 2,
+                "already_booked": 0,
+                "skipped": [{ "occurrence_date": "2026-08-11", "code": "appointments.overlapping_appointment" }]
+            })
+        );
+    }
+
+    /// A page that ends before even the first occurrence does is not «nothing to book»: the run
+    /// answers with what to do next instead of failing.
+    #[test]
+    fn materialize_whose_page_ends_before_the_first_occurrence_says_where_to_go_on() {
+        let page: Vec<Value> = (0..2000)
+            .map(|k| {
+                let at = |s: usize| format!("2026-08-03T00:{:02}:{:02}Z", s / 60, s % 60);
+                json!({ "id": format!("p{k}"), "appointment_number": format!("APT-{k}"),
+                        "staff_id": "s1", "status": "confirmed",
+                        "start_datetime": at(k), "end_datetime": at(k + 1) })
+            })
+            .collect();
+        let out = materialize_recurring_pure(daily_series_to("2026-08-20", json!(page)))
+            .expect("not a `no_occurrences` failure");
+        assert!(out.error.is_none(), "{:?}", out.error);
+        assert!(booked_dates(&out).is_empty());
+        assert_eq!(
+            series_result(&out),
+            json!({
+                "booked": 0,
+                "already_booked": 0,
+                "skipped": [],
+                "next_from": "2026-08-03",
+                "to": "2026-08-20"
+            })
+        );
+    }
+
+    /// The series reads her agenda by PAGE, bound to the window's start — and the page the SQL
+    /// returns is the page the handler counts on: the same number of rows on both sides.
+    #[test]
+    fn the_series_reads_her_agenda_one_page_at_a_time_from_its_window() {
+        let manifest: Value = serde_json::from_str(MANIFEST).expect("module.json parses");
+        let reads = manifest["commands"]["appointments.recurring.materialize"]["reads"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default();
+        let page = reads
+            .iter()
+            .find(|r| r["query"] == "appointments.appointments.upcoming_for_staff_from")
+            .expect("materialize does not read her agenda by page");
+        assert_eq!(page["required"], json!(true));
+        assert_eq!(
+            page["params"],
+            json!({ "staff_id": "payload.staff_id", "from": "payload.from" })
+        );
+        assert!(
+            !reads.iter().any(|r| r["query"] == "appointments.appointments.upcoming_for_staff"),
+            "materialize still reads her whole agenda"
+        );
+        let sql = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../queries/appointments_upcoming_for_staff_from.sql"
+        ))
+        .expect("the page query is in the package");
+        assert!(
+            sql.contains("LIMIT 2000;"),
+            "the SQL page and the handler's page disagree"
         );
     }
 

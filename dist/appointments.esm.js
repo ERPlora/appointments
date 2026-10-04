@@ -7607,6 +7607,25 @@ function bookingReport(answer) {
     skipped: skippedDates(a3)
   };
 }
+var MAX_AGENDA_PAGES = 20;
+async function materializeWindow(selector) {
+  let total = null;
+  let page = {};
+  for (let run = 0; run < MAX_AGENDA_PAGES; run++) {
+    const answer = await erplora3().command("appointments.recurring.materialize", { ...selector, ...page });
+    const report = bookingReport(answer);
+    if (!report) return total;
+    total = total ? {
+      booked: total.booked + report.booked,
+      already_booked: total.already_booked + report.already_booked,
+      skipped: [...total.skipped, ...report.skipped]
+    } : report;
+    const nextFrom = String(handlerAnswer(answer)?.next_from ?? "");
+    if (!nextFrom || nextFrom <= String(page.from ?? "")) return total;
+    page = { from: nextFrom, to: String(handlerAnswer(answer)?.to ?? "") };
+  }
+  return total;
+}
 var MISSING_LINK_KEYS = [
   ["staff_id", "ui.seriesNoStaff"],
   ["customer_id", "ui.seriesNoCustomer"],
@@ -8055,14 +8074,12 @@ var ErpAppointmentsSeries = class extends i3 {
   async bookWindow(recurringId, tmpl) {
     const missing = MISSING_LINK_KEYS.find(([field]) => !tmpl[field]);
     if (missing) throw new Error(erplora3().t(CATALOG3, missing[1]));
-    return bookingReport(
-      await erplora3().command("appointments.recurring.materialize", {
-        recurring_id: recurringId,
-        customer_id: tmpl.customer_id,
-        service_id: tmpl.service_id,
-        staff_id: tmpl.staff_id
-      })
-    );
+    return materializeWindow({
+      recurring_id: recurringId,
+      customer_id: tmpl.customer_id,
+      service_id: tmpl.service_id,
+      staff_id: tmpl.staff_id
+    });
   }
   /** appointments#238 — keeps the report on screen when some date was left out; returns whether
    *  it did, so the caller only toasts «booked» when everything was. */
@@ -8754,14 +8771,12 @@ var ErpAppointmentsSeries = class extends i3 {
       let notBooked = false;
       let report = null;
       try {
-        report = bookingReport(
-          await erplora3().command("appointments.recurring.materialize", {
-            recurring_id: newId,
-            customer_id: customer.id,
-            service_id: service.id,
-            staff_id: staff.id
-          })
-        );
+        report = await materializeWindow({
+          recurring_id: newId,
+          customer_id: customer.id,
+          service_id: service.id,
+          staff_id: staff.id
+        });
       } catch {
         notBooked = true;
       }
