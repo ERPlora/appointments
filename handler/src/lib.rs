@@ -13166,6 +13166,22 @@ mod tests {
         );
     }
 
+    /// The page ends at 09:10Z of 2026-08-10, INSIDE that day's occurrence (09:00–09:30Z): a booking
+    /// of hers at 09:20Z would be on the next page, so the occurrence is not judged on this one —
+    /// not even refused against the 09:10 booking the page does hold.
+    #[test]
+    fn materialize_does_not_judge_an_occurrence_that_ends_past_the_page() {
+        let mut page = agenda_page(1999);
+        page.as_array_mut().unwrap().push(json!({
+            "id": "p-last", "appointment_number": "APT-LAST", "staff_id": "s1", "status": "confirmed",
+            "start_datetime": "2026-08-10T09:10:00Z", "end_datetime": "2026-08-10T09:11:00Z"
+        }));
+        let out = materialize_recurring_pure(daily_series_to("2026-08-20", page)).unwrap();
+        assert_eq!(booked_dates(&out).len(), 7, "{:?}", booked_dates(&out));
+        assert_eq!(series_result(&out)["skipped"], json!([]));
+        assert_eq!(series_result(&out)["next_from"], json!("2026-08-10"));
+    }
+
     /// The control: one row short of a page is her WHOLE agenda, so the run is exactly today's —
     /// every occurrence of the window judged and booked, and no `next_from`.
     #[test]

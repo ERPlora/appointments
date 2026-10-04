@@ -358,7 +358,7 @@ describe('a series against an agenda too long for one run is booked page by page
 
   it('«Book appointments» goes on from `next_from` to the same `to` and reports both pages', async () => {
     materializePages = [
-      FIRST_PAGE,
+      { ...FIRST_PAGE, already_booked: 2, skipped: [{ occurrence_date: '2099-11-03', code: 'appointments.blocked' }] },
       { booked: 3, already_booked: 0, skipped: [{ occurrence_date: '2099-11-17', code: 'appointments.blocked' }] },
     ];
     const el = await mount();
@@ -368,8 +368,10 @@ describe('a series against an agenda too long for one run is booked page by page
     expect(runs[0].payload.from).toBeUndefined();
     expect(runs[1].payload).toMatchObject({ recurring_id: 'r1', staff_id: 's1', from: '2099-11-10', to: '2100-01-05' });
     expect(byTestId(el, 'appointments-series-skipped')?.textContent?.replace(/\s+/g, ' ')).toContain(
-      translate({ es: esLocale } as never, 'ui.seriesBookedSkipped', { booked: 10, skipped: 1 }),
+      translate({ es: esLocale } as never, 'ui.seriesBookedSkipped', { booked: 12, skipped: 2 }),
     );
+    expect(byTestId(el, 'appointments-series-skipped-2099-11-03')).toBeTruthy();
+    expect(byTestId(el, 'appointments-series-skipped-2099-11-17')).toBeTruthy();
   });
 
   it('creating a series books every page before saying «created and booked»', async () => {

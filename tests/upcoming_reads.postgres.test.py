@@ -278,6 +278,15 @@ def check_page(sql_rel: str, base: dict) -> None:
     if got != ["a-today", "a-next-month", "a-unassigned"]:
         fail(f"{PAGE} with a `from` that is not a date returned {got}")
 
+    # A window that starts before now still reads nothing that has ended: a booking of hers that
+    # ended this morning would only eat a row of the page.
+    appointment(
+        "a-ended-this-morning", HUB, "s1", "2026-08-20T07:00:00+02:00", "2026-08-20T07:30:00+02:00"
+    )
+    got = ids({"from": "2026-08-01"})
+    if got != ["a-today", "a-next-month", "a-unassigned"]:
+        fail(f"{PAGE} from before now returned {got}")
+
     # The window starts 2026-09-15; a day of margin covers any offset the rows are written in.
     appointment(
         "a-two-days-before",
