@@ -435,6 +435,16 @@ def main() -> int:
     # booked; the same series at 12:00 books. Since appointments#247 a series with every
     # date refused answers `ok` + a report naming each date and why, not a bare
     # `no_occurrences` — so the proof is what got booked and what the report says.
+    #
+    # FOUR weeks, not an open series (appointments#276): with no end and no `to`, `materialize`
+    # runs to today + `max_advance_booking`, and on the weekdays that put the last date on that
+    # very edge it came back `too_far` instead of her shift — red on Thursdays only. Four dates
+    # from `day` end at most 34 days ahead, nowhere near the 90-day edge, whatever the day.
+    weeks = [
+        (datetime.date.fromisoformat(day) + datetime.timedelta(weeks=n)).isoformat()
+        for n in range(4)
+    ]
+
     def series(at: str) -> tuple[bool, list, dict]:
         recurring_id = hub.new_id(
             "appointments.recurring.create",
@@ -453,6 +463,7 @@ def main() -> int:
                 # past every afternoon, and the report said `invalid_start` for it instead of
                 # her shift. `day` is a week or more ahead and on the series' own weekday.
                 "start_date": day,
+                "max_occurrences": len(weeks),
             },
         )
         status, body = hub.command(
@@ -473,17 +484,16 @@ def main() -> int:
         (ok, [r["occurrence_date"] for r in rows], report.get("booked")),
         (True, [], 0),
     )
-    hub.check_true(
+    hub.check(
         "§7 …and the report names every date as outside her shift",
-        bool(skipped)
-        and {s.get("code") for s in skipped} == {"appointments.outside_staff_hours"},
-        f"skipped={skipped}",
+        [(s.get("occurrence_date"), s.get("code")) for s in skipped],
+        [(week, "appointments.outside_staff_hours") for week in weeks],
     )
     ok, rows, _ = series("12:00")
-    hub.check_true(
-        "§7 …and the same series at 12:00 books",
-        ok and bool(rows),
-        f"ok={ok} occurrences={[r['occurrence_date'] for r in rows]}",
+    hub.check(
+        "§7 …and the same series at 12:00 books every date",
+        (ok, sorted(r["occurrence_date"] for r in rows)),
+        (True, weeks),
     )
 
     # ── 8 · THE COUNTER's LIST reaches inside the minimum notice (appointments#234) ────────
