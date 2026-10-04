@@ -2,9 +2,6 @@
 
 Prefijo: APPOINTMENTS
 
-> Detalle de flujos del índice [`../WORKFLOW.md`](../WORKFLOW.md): las pantallas, los datos, las
-> reglas y las dudas viven allí. Reservar, confirmar, mover, atender, cancelar, cobrar y ajustar: lo que se hace desde la Agenda y los Ajustes de Citas.
-
 ## Flujos
 
 ### APPOINTMENTS-F01 Reservar una cita desde la agenda
@@ -21,7 +18,7 @@ Pasos:
 Entra: la clienta (Clientes), el servicio con precio y duración (Servicios), el profesional y su competencia (Personal).
 Sale: la cita pendiente con nombre, precio y duración congelados del catálogo, su línea «Reservada» en el historial y el aviso de cita creada (`appointments.appointment.created`).
 Si falla: el motivo sale dentro del panel y en un aviso (fuera de horario, el profesional no trabaja, franja bloqueada, ya tiene cita, demasiado pronto o lejos); lo tecleado se conserva para corregir.
-Implicados: ninguno
+Implicados: pendiente
 Pendiente de enlazar: customers — elegir la clienta de la lista de fichas
 Pendiente de enlazar: services — el servicio reservable con su precio y duración
 Pendiente de enlazar: staff — profesionales reservables, su competencia y su duración propia
@@ -30,7 +27,7 @@ QA: B-02, BD-06
 
 ### APPOINTMENTS-F02 Ver qué horas quedan libres
 Estado: hecho
-Actor: empleado, asistente, automatización de WhatsApp
+Actor: empleado, asistente, cliente
 Pantalla: Agenda
 Pasos:
 1. En el alta, con servicio, profesional y día elegidos, aparecen las **Horas libres** como botones.
@@ -41,7 +38,7 @@ Pasos:
 Entra: horario del negocio (Horarios), turno y ausencias (Personal), bloqueos, citas vivas y ajustes de antelación propios.
 Sale: la lista de horas; no guarda nada. Es la misma lista que leen el asistente y WhatsApp.
 Si falla: «No se han podido cargar las horas libres» con **Reintentar**; se puede escribir una hora igualmente y la reserva se juzga al guardar. Sin horas: «No quedan horas libres ese día…».
-Implicados: ninguno
+Implicados: pendiente
 Pendiente de enlazar: schedules — la apertura del día con festivos, excepciones y descansos
 Pendiente de enlazar: staff — el turno y las ausencias aprobadas del profesional
 Pendiente de enlazar: whatsapp_inbox — la oferta de huecos que la automatización enseña a la clienta
@@ -58,9 +55,9 @@ Pasos:
 Entra: una cita pendiente (del mostrador, de una serie o de la clienta con la confirmación automática apagada).
 Sale: la cita confirmada, su línea de historial y el aviso de cita confirmada (`appointments.appointment.confirmed`), que dispara el WhatsApp de confirmación a la clienta si está activado.
 Si falla: «Esta cita ya no se puede confirmar: ya no está pendiente.»; no se escribe nada ni se avisa dos veces.
-Implicados: ninguno
+Implicados: pendiente
 Pendiente de enlazar: whatsapp_inbox — mandar a la clienta el WhatsApp de cita confirmada
-QA: BD-07, W-03
+QA: BD-07, W-03 (discrepa)
 
 ### APPOINTMENTS-F04 Mover una cita o cambiarle el profesional o el servicio
 Estado: hecho
@@ -75,7 +72,7 @@ Pasos:
 Entra: la cita (pendiente o confirmada) y, si cambia, el nuevo profesional y su competencia o el nuevo servicio con su precio.
 Sale: la cita movida (un servicio nuevo trae su nombre y precio; un profesional nuevo conserva el precio), su línea de historial y el aviso de cita movida (`appointments.appointment.rescheduled`).
 Si falla: el motivo sale en el panel y en un aviso; un bloque arrastrado vuelve a su sitio. Una cita terminada, cancelada o no presentada no se mueve.
-Implicados: ninguno
+Implicados: pendiente
 Pendiente de enlazar: staff — profesional reservable, competencia y turno del nuevo profesional
 Pendiente de enlazar: services — nombre, precio y duración del nuevo servicio
 QA: B-02, B-04, B-08, BD-06
@@ -117,7 +114,7 @@ Entra: una cita confirmada o en curso.
 Sale: la cita completada, su línea de historial y el aviso de cita completada (`appointments.appointment.completed`).
 Si falla: «Esta cita no se puede completar…» si estaba pendiente, cancelada o ya completada.
 Implicados: ninguno
-QA: B-04
+QA: B-04 (discrepa)
 
 ### APPOINTMENTS-F09 Marcar que la clienta no se presentó
 Estado: parcial — no comprueba que la hora de la cita haya pasado (se puede marcar una cita futura) y no hay cargo por no presentarse
@@ -171,14 +168,14 @@ Pasos:
 Entra: la cita leída por el TPV.
 Sale: la venta es del TPV; aquí solo queda anotado que la cita se cobró (al recibir `sales.sale.created_from_appointment`). El estado no cambia.
 Si falla: si la venta no se cierra, la cita sigue sin marcar como cobrada y **Cobrar** sigue activo para repetir; lo que enseña el TPV es de ventas (sin confirmar desde aquí).
-Implicados: ninguno
+Implicados: pendiente
 Pendiente de enlazar: sales — abrir el TPV con la cita y avisar a la agenda al cerrar la venta
 QA: B-05, B-06, BD-09
 
 ### APPOINTMENTS-F19 Ajustar las reglas de reserva
 Estado: hecho
 Actor: administrador
-Pantalla: Ajustes de Citas
+Pantalla: Hub: Ajustes
 Pasos:
 1. Abre **Ajustes de Citas**.
 2. Cambia la duración por defecto, la antelación mínima y máxima, el solape, la cancelación por la

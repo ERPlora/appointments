@@ -2,9 +2,6 @@
 
 Prefijo: APPOINTMENTS
 
-> Detalle de flujos del índice [`../WORKFLOW.md`](../WORKFLOW.md): las pantallas, los datos, las
-> reglas y las dudas viven allí. Series que se repiten y varias citas de golpe para la misma clienta.
-
 ## Flujos
 
 ### APPOINTMENTS-F12 Crear una cita periódica
@@ -21,7 +18,7 @@ Pasos:
 Entra: clienta, servicio y profesional de sus fichas, igual que una cita suelta.
 Sale: la serie activa, sus citas pendientes y el aviso de serie creada (`appointments.recurring.created`).
 Si falla: el motivo sale dentro del panel; si la serie se creó pero no se reservó nada, se dice y se usa **Reservar citas** en su fila.
-Implicados: ninguno
+Implicados: pendiente
 Pendiente de enlazar: staff — competencia del profesional para el servicio de la serie
 QA: ninguno
 
@@ -55,7 +52,7 @@ Pasos:
 Entra: la serie, sus citas ya dadas y las comprobaciones de horario, turno, bloqueos y solape.
 Sale: la serie partida en dos (la vieja termina el día antes), las citas movidas o canceladas con su historial y el aviso de serie cambiada (`appointments.recurring.updated`).
 Si falla: el motivo sale en el panel y nada cambia; con la agenda del profesional muy llena puede no mover ninguna (appointments#297).
-Implicados: ninguno
+Implicados: pendiente
 Pendiente de enlazar: staff — profesional reservable y competencia del nuevo profesional de la serie
 QA: ninguno
 
@@ -75,8 +72,8 @@ QA: ninguno
 
 ### APPOINTMENTS-F21 Reservar varias citas de golpe (bono o curso)
 Estado: parcial — solo por el asistente o la API; no hay pantalla
-Actor: responsable
-Pantalla: ninguna
+Actor: responsable, asistente
+Pantalla: asistente
 Pasos:
 1. Pide al asistente varias citas para la misma clienta, servicio y profesional (hasta 50).
 2. Se reservan todas o ninguna: si una no cabe, no se reserva el lote y se dice por qué.

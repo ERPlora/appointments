@@ -2,14 +2,11 @@
 
 Prefijo: APPOINTMENTS
 
-> Detalle de flujos del índice [`../WORKFLOW.md`](../WORKFLOW.md): las pantallas, los datos, las
-> reglas y las dudas viven allí. La clienta por WhatsApp, el asistente y lo que Citas aporta o recibe de Clientes.
-
 ## Flujos
 
 ### APPOINTMENTS-F06 La clienta cancela o mueve su propia cita
 Estado: hecho
-Actor: clienta, a través de la automatización de WhatsApp
+Actor: cliente
 Pantalla: ninguna
 Pasos:
 1. La clienta escribe «no puedo ir» o «¿me la cambias al jueves?».
@@ -21,14 +18,14 @@ Pasos:
 Entra: la petición de la clienta identificada por su ficha.
 Sale: la cita cancelada o movida con el canal «clienta» y su aviso (`appointments.appointment.cancelled` o `.rescheduled`).
 Si falla: si la cita no es suya se rechaza siempre igual, sin revelar si existe; fuera de plazo o con la cancelación desactivada se le explica que contacte con el negocio.
-Implicados: ninguno
+Implicados: pendiente
 Pendiente de enlazar: whatsapp_inbox — la conversación que pide cancelar o mover y contesta a la clienta
 QA: W-04
 
 ### APPOINTMENTS-F16 Bloquear tiempo en la agenda
 Estado: parcial — no hay pantalla para crear, ver ni quitar bloqueos (solo el asistente o la API), y la repetición de un bloqueo se guarda pero no se aplica
-Actor: responsable
-Pantalla: ninguna
+Actor: responsable, asistente
+Pantalla: asistente
 Pasos:
 1. Pide al asistente un bloqueo con título, inicio y fin, tipo (festivo, vacaciones, descanso,
    mantenimiento u otro), si es de día entero y, si es solo de un profesional, cuál.
@@ -41,7 +38,7 @@ QA: ninguno
 
 ### APPOINTMENTS-F18 Cita que llega por WhatsApp
 Estado: hecho
-Actor: clienta, a través de la automatización de WhatsApp
+Actor: cliente
 Pantalla: Agenda
 Pasos:
 1. La clienta pide hora por WhatsApp; la automatización le ofrece horas libres reales (APPOINTMENTS-F02) y ella elige.
@@ -53,9 +50,9 @@ Pasos:
 Entra: la clienta reconocida por su teléfono, el servicio, el profesional (o cualquiera que lo haga) y la hora elegida.
 Sale: la cita con su historial («Reservada» y, si se confirma sola, «Confirmada») y los avisos de cita creada y confirmada.
 Si falla: la automatización le dice a la clienta que esa hora ya no está y le ofrece otra; nunca inventa una hora.
-Implicados: ninguno
+Implicados: pendiente
 Pendiente de enlazar: whatsapp_inbox — la conversación que reserva la cita y confirma a la clienta
-QA: W-02, W-03, W-07, BD-07, L-12
+QA: W-02, W-03 (discrepa), W-07, BD-07, L-12
 
 ### APPOINTMENTS-F20 Ver las citas de una clienta en su ficha
 Estado: hecho
@@ -67,14 +64,14 @@ Pasos:
 Entra: la clienta abierta en la ficha.
 Sale: nada; solo lectura. Si Citas no está instalada, la ficha no tiene el bloque.
 Si falla: «No se pudo cargar el historial de visitas.»
-Implicados: ninguno
+Implicados: pendiente
 Pendiente de enlazar: customers — la ficha de la clienta que aloja el bloque
 QA: B-03, L-10
 
 ### APPOINTMENTS-F22 Cambiar las notas o el contacto de una cita
 Estado: parcial — solo por el asistente, una automatización o la API; la agenda no tiene campo para las notas
-Actor: responsable
-Pantalla: ninguna
+Actor: responsable, asistente
+Pantalla: asistente
 Pasos:
 1. Pide al asistente que anote en la cita la nota de la visita (por ejemplo, la fórmula del color) o que corrija el teléfono o el email.
 2. Solo cambia lo que se pide; lo demás se queda como estaba. Las notas se pueden escribir en cualquier estado.
@@ -87,7 +84,7 @@ QA: L-12
 
 ### APPOINTMENTS-F23 Unir las citas al fusionar dos fichas de clienta
 Estado: hecho
-Actor: automático (lo provoca Clientes al fusionar)
+Actor: sistema
 Pantalla: ninguna
 Pasos:
 1. En **Clientes** se fusionan dos fichas duplicadas.
@@ -96,6 +93,6 @@ Pasos:
 Entra: la fusión de fichas (`customer.merged`).
 Sale: citas y series apuntando a la ficha que se queda.
 Si falla: no hay nada que ver en pantalla; repetir la fusión no cambia nada más.
-Implicados: ninguno
+Implicados: pendiente
 Pendiente de enlazar: customers — fusionar dos fichas de clienta
 QA: ninguno

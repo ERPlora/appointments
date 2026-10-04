@@ -73,8 +73,8 @@ cada fecha y su motivo. Vacía: «Todavía no hay citas periódicas.» · Error:
 las citas periódicas.»; un rechazo al guardar sale dentro del panel, encima del botón.
 
 ### Ajustes de Citas
-Formulario que pinta el hub desde los ajustes declarados del módulo (solo administrador). Cómo se
-llega desde el menú: sin confirmar. Campos: Duración por defecto, Antelación mínima para reservar,
+Formulario que pinta el hub en **Hub: Ajustes** desde los ajustes declarados del módulo (solo
+administrador). Cómo se llega desde el menú: sin confirmar. Campos: Duración por defecto, Antelación mínima para reservar,
 Reservar como máximo con esta antelación, Permitir citas solapadas, Enviar recordatorios (no envía
 nada todavía), Permitir que el cliente cancele su cita, Antelación mínima para cancelar, El calendario
 empieza/termina a las, Intervalo entre huecos, Confirmar automáticamente las citas que reserva el cliente.
@@ -116,29 +116,29 @@ misma gramática y el mismo prefijo. Antes de tocar código, lee el fichero del 
 | APPOINTMENTS-F23 | Unir las citas al fusionar dos fichas de clienta | hecho | [`workflow/canales.md`](workflow/canales.md) |
 
 ## Cobertura contra la referencia
-| Elemento de la referencia (Fresha, Vagaro, Mangomint, Square) | Estado |
-|---|---|
-| Agenda del día por profesional, arrastrar a otra hora o a otra columna | hecho (F04) |
-| Reserva ligada a clienta, servicio y profesional con horas libres reales | hecho (F01, F02) |
-| Profesionales filtrados por servicio y duración propia del profesional | hecho (F01) |
-| Aviso antes de reservar encima (solape permitido) | hecho (F01, F04) |
-| Estados reservada → confirmada → en curso → completada / cancelada / no presentada | hecho (F03, F07–F09) |
-| Historial de cada cita con quién y qué cambió | hecho (F10) |
-| Reserva de la clienta que se confirma sola salvo revisión | hecho (F18, F19) |
-| Política de cancelación de la clienta | hecho (F06) |
-| Citas periódicas, editar «esta y siguientes», saltos con motivo | hecho (F12–F15) |
-| Cita → cobro en el TPV sin re-teclear | parcial (F17: no completa la cita) |
-| Motivo al cancelar y confirmación al borrar | parcial (F05, F11) |
-| Bloqueos de agenda (festivo, vacaciones de un profesional) con pantalla | parcial (F16: sin pantalla) |
-| Bono o paquete de sesiones | parcial (F21: sin pantalla) |
-| Notas de la visita (fórmula) desde la agenda | no hecho (F22: solo asistente/API) |
-| Alta rápida de la clienta sin ficha (walk-in) desde el formulario | no hecho (hay que crearla en Clientes) |
-| Varios servicios encadenados en una cita (corte + color) | no hecho (una cita = un servicio; B-04 lo pide) |
-| Ocupación del día por profesional en la agenda | no hecho (B-01 lo pide) |
-| Recordatorios automáticos | no hecho (ajuste visible pero inerte; fuera del MVP según appointments#6) |
-| Llegada separada de «empezar» | fuera del MVP (Iniciar hace de llegada) |
-| Vista de semana o mes | fuera del MVP |
-| Reserva online pública, depósito o cargo por no presentarse, lista de espera, salas o equipos, reservas de grupo, calendario externo | fuera del MVP |
+| Elemento (Fresha, Vagaro, Mangomint, Square Appointments) | Estado | Flujo |
+|---|---|---|
+| Agenda del día por profesional, arrastrar a otra hora o a otra columna | hecho | APPOINTMENTS-F04 |
+| Reserva ligada a clienta, servicio y profesional con horas libres reales | hecho | APPOINTMENTS-F01, APPOINTMENTS-F02 |
+| Profesionales filtrados por servicio y duración propia del profesional | hecho | APPOINTMENTS-F01 |
+| Aviso antes de reservar encima (solape permitido) | hecho | APPOINTMENTS-F01, APPOINTMENTS-F04 |
+| Estados reservada → confirmada → en curso → completada / cancelada / no presentada | hecho | APPOINTMENTS-F03, APPOINTMENTS-F07, APPOINTMENTS-F08, APPOINTMENTS-F09 |
+| Historial de cada cita con quién y qué cambió | hecho | APPOINTMENTS-F10 |
+| Reserva de la clienta que se confirma sola salvo revisión | hecho | APPOINTMENTS-F18, APPOINTMENTS-F19 |
+| Política de cancelación de la clienta | hecho | APPOINTMENTS-F06 |
+| Citas periódicas, editar «esta y siguientes», saltos con motivo | hecho | APPOINTMENTS-F12, APPOINTMENTS-F13, APPOINTMENTS-F14, APPOINTMENTS-F15 |
+| Cita → cobro en el TPV sin re-teclear | parcial — no completa la cita | APPOINTMENTS-F17 |
+| Motivo al cancelar y confirmación al borrar | parcial | APPOINTMENTS-F05, APPOINTMENTS-F11 |
+| Bloqueos de agenda (festivo, vacaciones de un profesional) con pantalla | parcial — solo asistente o API | APPOINTMENTS-F16 |
+| Bono o paquete de sesiones | parcial — solo asistente o API | APPOINTMENTS-F21 |
+| Notas de la visita (fórmula) desde la agenda | parcial — solo asistente o API | APPOINTMENTS-F22 |
+| Alta rápida de la clienta sin ficha (walk-in) desde el formulario | no hecho — hay que crearla en Clientes | — |
+| Varios servicios encadenados en una cita (corte + color) | no hecho — una cita = un servicio; B-04 lo pide | — |
+| Ocupación del día por profesional en la agenda | no hecho — B-01 lo pide | — |
+| Recordatorios automáticos | no hecho — ajuste visible pero inerte; fuera del MVP según appointments#6 | — |
+| Llegada separada de «empezar» | fuera del MVP — Iniciar hace de llegada | — |
+| Vista de semana o mes | fuera del MVP | — |
+| Reserva online pública, depósito o cargo por no presentarse, lista de espera, salas o equipos, reservas de grupo, calendario externo | fuera del MVP | — |
 
 ## Datos: de quién es cada dato
 | Dato | Dueño | Cómo lo obtiene Citas |
@@ -193,3 +193,22 @@ notas ni el contacto de la agenda del día.
 - ¿Se debe poder cobrar una cita cancelada o no presentada? Hoy el botón está activo.
 - ¿«No-show» debe exigir que la hora de la cita haya pasado?
 - ¿Se oculta «Enviar recordatorios» mientras no envíe nada, o se deja con aviso?
+
+## Fuentes contrastadas
+Contra el código de `origin/main` (v1.1.140), una línea por discrepancia:
+- `docs/screens.md` y el mensaje del manifest dicen que Completar exige haber iniciado; el código también completa desde Confirmada (APPOINTMENTS-F08).
+- `docs/screens.md` dice que No-show es para una cita cuya hora ya pasó; el código no lo comprueba (APPOINTMENTS-F09).
+- `docs/limits.md` dice que una cita no presentada no se puede cancelar; el código la cancela, y también una en curso (APPOINTMENTS-F05).
+- `docs/screens.md` describe pasos de pantalla para crear bloqueos; no hay pantalla, solo asistente o API (APPOINTMENTS-F16).
+- `docs/screens.md` y `architecture/modules/appointments.md` dicen que Borrar pide confirmación; la agenda borra sin preguntar (APPOINTMENTS-F11).
+- `architecture/modules/appointments.md` y `docs/screens.md` dicen que se cancela con motivo; la agenda manda el motivo vacío (APPOINTMENTS-F05).
+- `architecture/modules/appointments.md` cita la lectura `appointments.schedules.active_timeslots` y el respaldo con el horario propio; ya no están en el manifest (migración 009).
+- `architecture/modules/appointments.md` dice que la pantalla pregunta la apertura del día para avisar de «cerrado hoy» y que hay vista de detalle; la interfaz no hace ninguna de las dos cosas.
+- `locales/es.json` (`ui.pastStartNotice`) dice «Se guardará como ya iniciada»; la cita se guarda Pendiente (APPOINTMENTS-F01).
+- `hand-book/modulos/appointments.md` llama «Repetitivas» y «No presentado» a lo que la pantalla llama «Periódicas» y «No-show».
+- `hand-book/modulos/appointments.md` pide indicar el motivo al cancelar; la agenda no lo pide (APPOINTMENTS-F05).
+- `hand-book/modulos/appointments.md` dice que a los bloqueos se llega desde la agenda y su paso 6 del vídeo crea uno; no se puede (APPOINTMENTS-F16).
+- `hand-book/modulos/appointments.md` dice que las acciones no permitidas «no aparecen»; aparecen y las rechaza el servidor.
+- W-03 (`qa-hub-beauty.md`) espera «Rechazar → nada en la agenda»; Citas no tiene rechazar, y cancelar deja la cita en la agenda como Cancelada (APPOINTMENTS-F03, APPOINTMENTS-F18).
+- B-04 (`qa-hub.md` §6) espera servicios encadenados (corte + color) en una cita; una cita lleva un solo servicio (APPOINTMENTS-F08).
+- B-01 (`qa-hub.md` §6) espera la ocupación del día por profesional en la agenda; no se muestra.
