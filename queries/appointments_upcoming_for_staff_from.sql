@@ -8,8 +8,9 @@
 -- dates — a `to` would not bound anything, callers pass the horizon:
 --
 --   * from the window's start (`payload.from`, YYYY-MM-DD) minus a day, so a booking written in
---     any offset that still overlaps that day comes back; without a date-shaped `from`, from
---     `:now` — exactly `upcoming_for_staff`;
+--     any offset that still overlaps that day comes back; without a `from` that IS a date, from
+--     `:now` — exactly `upcoming_for_staff`. «Is a date» is the handler's rule (`parse_dt`): the
+--     shape alone lets «2026-02-30» through, and casting that fails the whole command;
 --   * ordered by INSTANT, then id: start texts carry mixed offsets and do not sort as time, and a
 --     page has to end on the same row every time;
 --   * at most 2 000 rows (the handler's `AGENDA_PAGE_ROWS`). A full page holds every booking that
@@ -28,6 +29,7 @@ WHERE hub_id = :hub_id
   AND erp_dt(end_datetime) >= erp_dt(:now)
   AND erp_dt(end_datetime) >= CASE
         WHEN COALESCE(CAST(:from AS TEXT), '') ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
+             AND pg_input_is_valid(CAST(:from AS TEXT), 'date')
         THEN erp_dateadd(CAST(:from AS TEXT), -1, 'days')
         ELSE erp_dt(:now)
       END

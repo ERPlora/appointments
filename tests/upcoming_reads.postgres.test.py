@@ -277,11 +277,28 @@ def check_page(sql_rel: str, base: dict) -> None:
     got = ids({"from": "next week"})
     if got != ["a-today", "a-next-month", "a-unassigned"]:
         fail(f"{PAGE} with a `from` that is not a date returned {got}")
+    # Nor is a text shaped like a date that the calendar does not have: the handler's `parse_dt`
+    # refuses it and books from today, so the read must answer from `:now` too — not fail the
+    # whole command on a cast (an assistant asking for «February 30th» got a database error).
+    for not_a_day in ("2026-02-30", "2026-13-01", "2026-04-31"):
+        try:
+            got = ids({"from": not_a_day})
+        except RuntimeError as err:
+            fail(
+                f"{PAGE} with `from` = {not_a_day!r} failed instead of ignoring it: {err}"
+            )
+            continue
+        if got != ["a-today", "a-next-month", "a-unassigned"]:
+            fail(f"{PAGE} with `from` = {not_a_day!r} returned {got}")
 
     # A window that starts before now still reads nothing that has ended: a booking of hers that
     # ended this morning would only eat a row of the page.
     appointment(
-        "a-ended-this-morning", HUB, "s1", "2026-08-20T07:00:00+02:00", "2026-08-20T07:30:00+02:00"
+        "a-ended-this-morning",
+        HUB,
+        "s1",
+        "2026-08-20T07:00:00+02:00",
+        "2026-08-20T07:30:00+02:00",
     )
     got = ids({"from": "2026-08-01"})
     if got != ["a-today", "a-next-month", "a-unassigned"]:

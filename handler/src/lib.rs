@@ -13182,6 +13182,22 @@ mod tests {
         assert_eq!(series_result(&out)["next_from"], json!("2026-08-10"));
     }
 
+    /// The page ends EXACTLY where that day's occurrence does (09:30Z). Whatever is missing from
+    /// the page starts at 09:30Z or later and cannot overlap it, so the occurrence is judged on
+    /// this page and booked; the run stops at the next day.
+    #[test]
+    fn materialize_judges_an_occurrence_that_ends_exactly_where_the_page_does() {
+        let mut page = agenda_page(1999);
+        page.as_array_mut().unwrap().push(json!({
+            "id": "p-last", "appointment_number": "APT-LAST", "staff_id": "s1", "status": "confirmed",
+            "start_datetime": "2026-08-10T09:30:00Z", "end_datetime": "2026-08-10T09:31:00Z"
+        }));
+        let out = materialize_recurring_pure(daily_series_to("2026-08-20", page)).unwrap();
+        assert_eq!(booked_dates(&out).last().map(String::as_str), Some("2026-08-10"));
+        assert_eq!(series_result(&out)["booked"], json!(8));
+        assert_eq!(series_result(&out)["next_from"], json!("2026-08-11"));
+    }
+
     /// The control: one row short of a page is her WHOLE agenda, so the run is exactly today's —
     /// every occurrence of the window judged and booked, and no `next_from`.
     #[test]
