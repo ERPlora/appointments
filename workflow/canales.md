@@ -5,19 +5,19 @@ Prefijo: APPOINTMENTS
 ## Flujos
 
 ### APPOINTMENTS-F06 La clienta cancela o mueve su propia cita
-Estado: hecho
+Estado: parcial — la respuesta distingue una cita que no existe de una que es de otra persona, así que deja averiguar qué números de cita existen
 Actor: cliente
 Pantalla: ninguna
 Pasos:
-1. La clienta escribe «no puedo ir» o «¿me la cambias al jueves?».
+1. La clienta escribe por WhatsApp que no puede ir o que quiere cambiar la cita a otro día.
 2. La automatización busca sus citas próximas y, si hay dos, pregunta cuál.
 3. Para cancelar se aplica la política del negocio: si no se permite o no llega a la antelación
    mínima para cancelar, se le dice y la cita sigue en pie.
 4. Para mover, se le ofrecen horas libres y la cita se mueve respetando la antelación mínima.
 5. En el historial de la cita queda «Lo pidió la clienta» con el motivo.
 Entra: la petición de la clienta identificada por su ficha.
-Sale: la cita cancelada o movida con el canal «clienta» y su aviso (`appointments.appointment.cancelled` o `.rescheduled`).
-Si falla: si la cita no es suya se rechaza siempre igual, sin revelar si existe; fuera de plazo o con la cancelación desactivada se le explica que contacte con el negocio.
+Sale: la cita cancelada o movida, con «Lo pidió la clienta» en su historial, y su aviso (`appointments.appointment.cancelled` o `.rescheduled`).
+Si falla: una cita que no existe se rechaza diciendo que ya no se puede cancelar o mover en su estado actual; una que existe pero es de otra persona, diciendo que es de otro cliente (la automatización lo cuenta con sus palabras). Fuera de plazo o con la cancelación desactivada se le explica que contacte con el negocio.
 Implicados: WHATSAPP_INBOX-F14, WHATSAPP_INBOX-F22, REC_WA_CITA-F03, REC_WA_CITA-F08
 QA: W-04
 
@@ -28,7 +28,9 @@ Pantalla: asistente
 Pasos:
 1. Pide al asistente un bloqueo con título, inicio y fin, tipo (festivo, vacaciones, descanso,
    mantenimiento u otro), si es de día entero y, si es solo de un profesional, cuál.
-2. Desde ese momento nadie puede reservar en esa franja: sin profesional bloquea todo el negocio.
+2. Desde ese momento nadie puede reservar en esa franja: sin profesional bloquea todo el negocio. Un
+   bloqueo de día entero lo juzgan distinto la reserva (por sus horas de inicio y fin) y la lista de
+   horas libres (por sus fechas).
 Entra: el título, la franja y el profesional opcional.
 Sale: el bloqueo guardado y el aviso de bloqueo creado (`appointments.blocked_time.created`); la disponibilidad deja de ofrecer esa franja.
 Si falla: el asistente cuenta el rechazo; sin permiso se rechaza.

@@ -16,10 +16,10 @@ también reserva, mueve y cancela sola por WhatsApp a través de una automatizac
 - **Fresha** (fresha.com), **Vagaro** (vagaro.com), **Mangomint** (mangomint.com) y **Square
   Appointments** (squareup.com/appointments): agenda del día por profesional, arrastrar la cita a
   otra hora o a otra columna, reserva online que se confirma sola salvo que el negocio quiera
-  revisarla, política de cancelación que ata a la clienta y no al negocio, «no presentado» como
+  revisarla, política de cancelación que ata a la clienta y no al negocio, no presentado como
   acción aparte, solape que se confirma antes de reservar encima.
-- **Google Calendar / RFC 5545**: editar una serie como «solo esta» o «esta y las siguientes»
-  (nunca «todas»), y la serie conserva su hora de pared al cambiar de hora oficial.
+- **Google Calendar / RFC 5545**: editar una serie solo en esta cita o en esta y las siguientes
+  (nunca en todas), y la serie conserva su hora de pared al cambiar de hora oficial.
 - **Mindbody/Booker**: el mostrador puede apuntar una cita que ya ha empezado.
 - Decisiones registradas que mandan aquí: horario del negocio solo en Horarios (ADR-0392),
   cita→venta la inicia el TPV (ADR-0077), reloj del negocio (ADR-0384), series con corte (ADR-0385).
@@ -62,22 +62,27 @@ estado» y el conmutador **Lista · Por profesional · Periódicas** (en móvil 
 - La campana del hub muestra **Citas por confirmar** (reservas de la clienta pendientes) y lleva aquí.
 
 ### Periódicas
-Tercer segmento de la Agenda. Tabla: Cliente, Servicio, Profesional, Repetición («Cada semana ·
-Lunes · 11:00»), Empieza, Termina («Sin fin», «Tras N citas» o fecha), Estado (interruptor
+Tercer segmento de la Agenda. Tabla: Cliente, Servicio, Profesional, Repetición (por ejemplo, Cada
+semana · Lunes · 11:00), Empieza, Termina («Sin fin», «Tras {n} citas» o la fecha), Estado (interruptor
 **Activa**). Por fila: **Editar serie**, **Reservar citas**, **Borrar** (pide confirmación). El
 botón de añadir de la tabla abre «Nueva cita periódica» (Cliente, Servicio, Profesional,
 Repetición, Día de la semana, Día, Hora, Min., «Termina el (opcional)», «Número de citas
 (opcional)») con **Crear cita periódica**; editar abre «Editar cita periódica» con **Guardar de esta
-cita en adelante**. Tras reservar o guardar, un aviso «N reservadas · M no se han podido reservar» con
+cita en adelante**. Tras reservar o guardar, un aviso «{booked} citas reservadas · {skipped} no se han podido reservar:» con
 cada fecha y su motivo. Vacía: «Todavía no hay citas periódicas.» · Error: «No se han podido cargar
 las citas periódicas.»; un rechazo al guardar sale dentro del panel, encima del botón.
 
 ### Ajustes de Citas
-Formulario que pinta el hub en **Hub: Ajustes** desde los ajustes declarados del módulo (solo
-administrador). Cómo se llega desde el menú: sin confirmar. Campos: Duración por defecto, Antelación mínima para reservar,
-Reservar como máximo con esta antelación, Permitir citas solapadas, Enviar recordatorios (no envía
-nada todavía), Permitir que el cliente cancele su cita, Antelación mínima para cancelar, El calendario
-empieza/termina a las, Intervalo entre huecos, Confirmar automáticamente las citas que reserva el cliente.
+Menú → **Citas** → pestaña **Ajustes**, que el hub añade sola porque el módulo declara sus ajustes.
+La ve todo el que entra en Citas; quien no es administrador la ve en solo lectura con «Solo un
+administrador puede cambiar estos ajustes.». Campos: «Duración por defecto (minutos)», «Antelación
+mínima para reservar (minutos)», «Reservar como máximo con esta antelación (días)», «Permitir citas
+solapadas», «Enviar recordatorios» y «Enviar el recordatorio con estas horas de antelación» (los dos
+se guardan pero no envían nada), «Permitir que el cliente cancele su cita», «Antelación mínima para
+cancelar (horas)», «El calendario empieza a las (hora)» y «El calendario termina a las (hora)» (la
+ventana en la que se ofrecen horas), «Intervalo entre huecos (minutos)», «Confirmar automáticamente
+las citas que reserva el cliente»; botón **Guardar**. Cargando: «Cargando ajustes…» · Error: «No se
+pudieron cargar los ajustes.» o «No se pudieron guardar los ajustes.» · Guardado: «Ajustes guardados.»
 
 ### Historial de visitas
 Bloque dentro de la ficha de una clienta en **Clientes** (lo aporta Citas). Sus 10 últimas citas,
@@ -94,9 +99,9 @@ misma gramática y el mismo prefijo. Antes de tocar código, lee el fichero del 
 | APPOINTMENTS-F01 | Reservar una cita desde la agenda | hecho | [`workflow/agenda.md`](workflow/agenda.md) |
 | APPOINTMENTS-F02 | Ver qué horas quedan libres | hecho | [`workflow/agenda.md`](workflow/agenda.md) |
 | APPOINTMENTS-F03 | Confirmar una cita pendiente | hecho | [`workflow/agenda.md`](workflow/agenda.md) |
-| APPOINTMENTS-F04 | Mover una cita o cambiarle el profesional o el servicio | hecho | [`workflow/agenda.md`](workflow/agenda.md) |
+| APPOINTMENTS-F04 | Mover una cita o cambiarle el profesional o el servicio | parcial | [`workflow/agenda.md`](workflow/agenda.md) |
 | APPOINTMENTS-F05 | Cancelar una cita desde la agenda | parcial | [`workflow/agenda.md`](workflow/agenda.md) |
-| APPOINTMENTS-F06 | La clienta cancela o mueve su propia cita | hecho | [`workflow/canales.md`](workflow/canales.md) |
+| APPOINTMENTS-F06 | La clienta cancela o mueve su propia cita | parcial | [`workflow/canales.md`](workflow/canales.md) |
 | APPOINTMENTS-F07 | Marcar la llegada y empezar el servicio | hecho | [`workflow/agenda.md`](workflow/agenda.md) |
 | APPOINTMENTS-F08 | Completar la cita | hecho | [`workflow/agenda.md`](workflow/agenda.md) |
 | APPOINTMENTS-F09 | Marcar que la clienta no se presentó | parcial | [`workflow/agenda.md`](workflow/agenda.md) |
@@ -109,7 +114,7 @@ misma gramática y el mismo prefijo. Antes de tocar código, lee el fichero del 
 | APPOINTMENTS-F16 | Bloquear tiempo en la agenda | parcial | [`workflow/canales.md`](workflow/canales.md) |
 | APPOINTMENTS-F17 | Cobrar la cita en el TPV | parcial | [`workflow/agenda.md`](workflow/agenda.md) |
 | APPOINTMENTS-F18 | Cita que llega por WhatsApp | hecho | [`workflow/canales.md`](workflow/canales.md) |
-| APPOINTMENTS-F19 | Ajustar las reglas de reserva | hecho | [`workflow/agenda.md`](workflow/agenda.md) |
+| APPOINTMENTS-F19 | Ajustar las reglas de reserva | parcial | [`workflow/agenda.md`](workflow/agenda.md) |
 | APPOINTMENTS-F20 | Ver las citas de una clienta en su ficha | hecho | [`workflow/canales.md`](workflow/canales.md) |
 | APPOINTMENTS-F21 | Reservar varias citas de golpe (bono o curso) | parcial | [`workflow/periodicas.md`](workflow/periodicas.md) |
 | APPOINTMENTS-F22 | Cambiar las notas o el contacto de una cita | parcial | [`workflow/canales.md`](workflow/canales.md) |
@@ -127,7 +132,7 @@ misma gramática y el mismo prefijo. Antes de tocar código, lee el fichero del 
 | Reserva de la clienta que se confirma sola salvo revisión | hecho | APPOINTMENTS-F18, APPOINTMENTS-F19 |
 | Política de cancelación de la clienta | hecho | APPOINTMENTS-F06 |
 | Citas periódicas, editar «esta y siguientes», saltos con motivo | hecho | APPOINTMENTS-F12, APPOINTMENTS-F13, APPOINTMENTS-F14, APPOINTMENTS-F15 |
-| Cita → cobro en el TPV sin re-teclear | parcial — no completa la cita | APPOINTMENTS-F17 |
+| Cita → cobro en el TPV sin re-teclear | parcial — no completa la cita y la cita cobrada se puede mover, cancelar o borrar | APPOINTMENTS-F17 |
 | Motivo al cancelar y confirmación al borrar | parcial | APPOINTMENTS-F05, APPOINTMENTS-F11 |
 | Bloqueos de agenda (festivo, vacaciones de un profesional) con pantalla | parcial — solo asistente o API | APPOINTMENTS-F16 |
 | Bono o paquete de sesiones | parcial — solo asistente o API | APPOINTMENTS-F21 |
@@ -155,12 +160,24 @@ misma gramática y el mismo prefijo. Antes de tocar código, lee el fichero del 
 | Zona horaria del negocio | Hub | la entrega el hub; Citas no guarda copia |
 | Venta de la cita | TPV (sales) | solo se anota el número de la venta cobrada |
 
-**Datos personales (inventario RGPD):** la cita guarda nombre, teléfono y email de la clienta y dos
-notas libres (la interna puede llevar datos sensibles como alergias); la serie guarda el nombre; el
-historial guarda el nombre en la línea «Reservada» y el motivo que dé la clienta. Citas escucha la
-fusión de fichas pero **no** la anonimización ni el borrado de una ficha: esas copias se quedan
-(hueco de la familia RGPD). Las lecturas que ven el asistente o un canal externo no devuelven las
-notas ni el contacto de la agenda del día.
+**Datos personales (inventario RGPD, recorriendo las migraciones):**
+- **Cita:** nombre, teléfono y email de la clienta copiados de su ficha; nombre del profesional;
+  dos notas libres (la interna puede llevar datos sensibles, como alergias o la fórmula del color);
+  el motivo de cancelación, lo escriba la clienta o el personal.
+- **Serie:** nombre de la clienta y del profesional.
+- **Historial:** quién hizo cada cambio (usuario del hub), el nombre de la clienta en la línea
+  «Reservada», los nombres del profesional de antes y de después al cambiarlo, y el motivo de
+  cualquier cancelación.
+- **Bloqueos:** título, motivo y profesional.
+- **Auditoría** en todas las tablas: quién creó y quién cambió cada fila (usuarios del hub).
+- **Tablas retiradas que siguen en la base de datos con otro nombre:** la de retenciones de hueco
+  queda como `_deprecated_appointments_slot_hold`, con su etiqueta y la referencia de quien la
+  pidió; el horario propio retirado, también apartado con ese prefijo.
+- **Lo que sale hacia otros:** el aviso de cita creada lleva el nombre de la clienta y la nota
+  visible; la receta de WhatsApp «cita confirmada» lee la cita entera, con teléfono, email y las
+  dos notas. La agenda del día y el historial por clienta que ve el asistente no llevan contacto ni notas.
+- **Borrado:** Citas escucha la fusión de fichas pero **no** la anonimización ni el borrado de una
+  ficha: todas esas copias se quedan (hueco de la familia RGPD).
 
 ## Reglas que no se rompen
 - **Vínculos reales:** toda cita lleva clienta, servicio y profesional de sus fichas; nombre, precio
@@ -168,9 +185,15 @@ notas ni el contacto de la agenda del día.
 - **Sin solape por profesional:** dos profesionales distintos sí; el mismo, no, salvo el ajuste. La
   última palabra la tiene el servidor, aunque la pantalla avise antes.
 - **El reloj es el del negocio**, nunca el del dispositivo; una serie conserva su hora al cambiar la hora oficial.
-- **Transición fuera de orden = rechazo con motivo** y sin rastro: ni historial ni aviso duplicado.
-- **Lo cobrado no se toca:** una edición de serie no mueve una cita cobrada y Cobrar no se ofrece dos veces.
-- **La clienta solo toca lo suyo:** su identidad se comprueba antes que cualquier otra cosa.
+- **Transición fuera de orden = rechazo con motivo** y sin rastro: ni historial ni aviso duplicado
+  (confirmar, iniciar, completar, no presentado, cancelar y mover). Excepción: Borrar una cita en
+  curso o completada responde bien, no borra nada y avisa igualmente de cita borrada (APPOINTMENTS-F11).
+- **Lo cobrado no lo mueve una serie:** editar una serie nunca toca una cita ya cobrada, y Cobrar
+  no se ofrece dos veces. Una cita cobrada suelta, en cambio, se puede mover, cancelar, marcar No-show
+  y borrar (hueco, APPOINTMENTS-F17).
+- **La clienta solo cambia lo suyo:** cancelar o mover en su nombre exige que la cita sea suya, antes
+  que el estado o la política. La respuesta sí distingue una cita que no existe de la de otra
+  persona (hueco, APPOINTMENTS-F06).
 - **Pasado y antelación mínima** solo los salta una persona del equipo en el mostrador; nunca una
   automatización ni la reserva de la clienta.
 - **Lectura que falta = rechazo**, nunca reserva a ciegas.
@@ -182,7 +205,7 @@ notas ni el contacto de la agenda del día.
 - No guarda el horario del negocio (es de Horarios) ni el turno del profesional (es de Personal).
 - No cobra ni arma ventas: Cobrar abre el TPV; Citas solo anota que se cobró.
 - No envía mensajes ni recordatorios: eso es de WhatsApp y de las automatizaciones.
-- No ofrece «cambiar todas las citas de la serie»: solo «esta» o «esta y las siguientes».
+- No cambia todas las citas de una serie: solo **Solo esta cita** o **Esta y todas las siguientes**.
 - No retiene un hueco mientras alguien decide (retirado en appointments#184).
 - No sincroniza con calendarios externos (módulo aparte previsto, sin construir).
 
@@ -192,10 +215,10 @@ notas ni el contacto de la agenda del día.
 - ¿Cobrar debería dejar la cita **Completada**, como hace el cobro en Fresha y Square?
 - ¿Se debe poder cobrar una cita cancelada o no presentada? Hoy el botón está activo.
 - ¿«No-show» debe exigir que la hora de la cita haya pasado?
-- ¿Se oculta «Enviar recordatorios» mientras no envíe nada, o se deja con aviso?
+- ¿Se ocultan «Enviar recordatorios» y «Enviar el recordatorio con estas horas de antelación» mientras no envíen nada, o se dejan con aviso?
 
 ## Fuentes contrastadas
-Contra el código de `origin/main` (v1.1.140), una línea por discrepancia:
+Contra el código de `origin/main` (v1.1.141), una línea por discrepancia:
 - `docs/screens.md` y el mensaje del manifest dicen que Completar exige haber iniciado; el código también completa desde Confirmada (APPOINTMENTS-F08).
 - `docs/screens.md` dice que No-show es para una cita cuya hora ya pasó; el código no lo comprueba (APPOINTMENTS-F09).
 - `docs/limits.md` dice que una cita no presentada no se puede cancelar; el código la cancela, y también una en curso (APPOINTMENTS-F05).
@@ -213,3 +236,4 @@ Contra el código de `origin/main` (v1.1.140), una línea por discrepancia:
 - B-04 (`qa-hub.md` §6) espera servicios encadenados (corte + color) en una cita; una cita lleva un solo servicio (APPOINTMENTS-F08).
 - B-01 (`qa-hub.md` §6) espera la ocupación del día por profesional en la agenda; no se muestra.
 - `handler/src/lib.rs` nombra todavía «an approval from the inbox» entre las puertas de reserva; la bandeja de aprobación de WhatsApp está retirada y Citas no tiene ninguna orden de aprobar una petición (APPOINTMENTS-F18).
+- La lista de horas libres trata un bloqueo de día entero por sus fechas, y la reserva solo por sus instantes de inicio y fin: si las horas del bloqueo no cubren el día, la lista puede esconder horas que la reserva acepta (APPOINTMENTS-F16).

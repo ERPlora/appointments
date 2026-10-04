@@ -28,7 +28,8 @@ Actor: empleado
 Pantalla: Periódicas
 Pasos:
 1. Pulsa **Reservar citas** en la fila de la serie.
-2. Se reservan las fechas de la ventana (de hoy hasta la antelación máxima) que aún no estaban dadas.
+2. Se reservan las fechas de la ventana (de hoy hasta la antelación máxima; si la antelación máxima
+   está a 0, sin límite, la ventana es de 90 días) que aún no estaban dadas.
 3. Una fecha que no cabe (cerrado, el profesional no trabaja, bloqueo, otra cita, pasado) se salta y
    se lista con su motivo; las demás se reservan.
 Entra: la serie y las mismas comprobaciones que una cita suelta (APPOINTMENTS-F02).
@@ -48,9 +49,10 @@ Pasos:
 3. Pulsa **Guardar de esta cita en adelante**.
 4. Lo anterior a hoy, lo cancelado, lo en curso y lo cobrado no se toca. Las citas que siguen
    cayendo en la pauta se mueven; las que ya no caen se cancelan; las que no caben se quedan como
-   estaban y se listan; las fechas nuevas se reservan solas.
+   estaban y se listan; si cambió la pauta, las fechas nuevas se reservan solas. Al mover una serie
+   se aplica también la antelación mínima: no hay excepción de mostrador.
 Entra: la serie, sus citas ya dadas y las comprobaciones de horario, turno, bloqueos y solape.
-Sale: la serie partida en dos (la vieja termina el día antes), las citas movidas o canceladas con su historial y el aviso de serie cambiada (`appointments.recurring.updated`).
+Sale: la serie partida en dos (la vieja termina el día antes) o, si el cambio empieza en la primera cita de la serie o antes, la misma serie editada sin partir; las citas movidas o canceladas con su historial y el aviso de serie cambiada (`appointments.recurring.updated`).
 Si falla: el motivo sale en el panel y nada cambia; con la agenda del profesional muy llena puede no mover ninguna (appointments#297).
 Implicados: pendiente
 Pendiente de enlazar: staff — profesional reservable y competencia del nuevo profesional de la serie
@@ -71,7 +73,7 @@ Implicados: ninguno
 QA: ninguno
 
 ### APPOINTMENTS-F21 Reservar varias citas de golpe (bono o curso)
-Estado: parcial — solo por el asistente o la API; no hay pantalla
+Estado: parcial — solo por el asistente o la API, no hay pantalla; y con la agenda del profesional muy llena el lote falla entero (appointments#296)
 Actor: responsable, asistente
 Pantalla: asistente
 Pasos:
