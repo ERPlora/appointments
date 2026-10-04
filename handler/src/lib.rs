@@ -564,6 +564,28 @@ fn host_ctx(input: &Value) -> Result<HostCtx, String> {
     })
 }
 
+/// appointments#267 — the series reads her agenda ONE PAGE at a time: her whole agenda ahead cost
+/// ~40 k WASM instructions a row just to read, and past ~4 300 bookings of hers that alone ran a
+/// series out of the kernel's budget before it judged a single date.
+const AGENDA_PAGE_READ: &str = "appointments.appointments.upcoming_for_staff_from";
+/// The rows of one page — the `LIMIT` of `appointments_upcoming_for_staff_from.sql`. A read that
+/// comes back this long may have stopped short of her agenda.
+const AGENDA_PAGE_ROWS: usize = 2000;
+
+/// Up to when a page of her agenda is authoritative: `None` when it is not full (it holds her whole
+/// agenda ahead), else the latest start it carries — the page is ordered by start, so every booking
+/// that starts before it is in, and nothing after it can be known.
+fn agenda_page_covers_until(input: &Value) -> Option<Secs> {
+    let rows = read_rows(input, AGENDA_PAGE_READ)?;
+    if rows.len() < AGENDA_PAGE_ROWS {
+        return None;
+    }
+    rows.iter()
+        .filter_map(|row| parse_dt(&text(row.get("start_datetime")?)))
+        .map(|start| Secs::of(&start))
+        .reduce(|latest, start| if start.cmp(latest) > 0 { start } else { latest })
+}
+
 /// Cita candidata a solape (lectura aportada por el caller en el payload).
 struct Candidate {
     /// The row's id, so a series edit can tell an occurrence's old slot from somebody else's
@@ -594,6 +616,7 @@ struct Candidate {
 /// `required` en el manifest; si aun así faltan, se cierra.
 fn candidates_from(input: &Value, staff_id: &str, exclude_id: &str) -> Option<Vec<Candidate>> {
     let rows = read_rows(input, "appointments.appointments.conflicting")
+        .or_else(|| read_rows(input, AGENDA_PAGE_READ))
         .or_else(|| read_rows(input, "appointments.appointments.upcoming_for_staff"))?;
     Some(
         rows.iter()
@@ -4341,6 +4364,10 @@ pub fn materialize_recurring_pure(input: Value) -> Result<Output, String> {
     };
     // appointments#265: her agenda read and indexed ONCE for the whole run, like the batch.
     let agenda = StaffAgenda::of(&input, &read);
+    // appointments#267: a full page of her agenda judges only what ends by its last start; the
+    // first occurrence past it is left to the next run, which starts there (`next_from`).
+    let covered_until = agenda_page_covers_until(&input);
+    let mut next_from: Option<String> = None;
     let mut candidates: Vec<Candidate> = Vec::new();
     let mut ops: Vec<Operation> = Vec::new();
     let mut events: Vec<erplora_guest_sdk::Event> = Vec::new();
@@ -4408,6 +4435,18 @@ pub fn materialize_recurring_pure(input: Value) -> Result<Output, String> {
             skipped.push(json!({ "occurrence_date": occurrence_date, "code": "appointments.invalid_start" }));
             continue;
         };
+        if let (Some(cut), Some(start)) = (covered_until, parse_dt(&start_iso)) {
+            let start = Secs::of(&start);
+            let end = Secs {
+                wall: start.wall + duration * 60,
+                epoch: start.epoch + duration * 60,
+                ..start
+            };
+            if end.cmp(cut) > 0 {
+                next_from = Some(occurrence_date);
+                break;
+            }
+        }
         let item = json!({
             "start_datetime": start_iso,
             "duration_minutes": duration,
@@ -4464,22 +4503,30 @@ pub fn materialize_recurring_pure(input: Value) -> Result<Output, String> {
     // idempotente que grita en el segundo intento es una que nadie se atreve a reintentar. Ni
     // cuando todo se rechazó con motivo (appointments#238): la serie existe y la respuesta dice
     // qué fechas no entraron y por qué, en vez de un fallo crudo del handler.
-    if created == 0 && skipped_as_booked == 0 && skipped.is_empty() {
+    if created == 0 && skipped_as_booked == 0 && skipped.is_empty() && next_from.is_none() {
         return Err(
             "no_occurrences: todas las ocurrencias de la ventana están en el pasado o solapadas"
                 .to_string(),
         );
+    }
+    let mut result = json!({
+        "booked": created,
+        "already_booked": skipped_as_booked,
+        "skipped": skipped,
+    });
+    // appointments#267: the page ended before the window did — the caller runs again from
+    // `next_from` to the same `to`, and the rest of the series is judged against the next page.
+    if let Some(day) = next_from {
+        let (y, mo, d) = civil_from_days(to_days);
+        result["next_from"] = json!(day);
+        result["to"] = json!(format!("{y:04}-{mo:02}-{d:02}"));
     }
     Ok(Output {
         operations: ops,
         events,
         ..Default::default()
     }
-    .with_result(json!({
-        "booked": created,
-        "already_booked": skipped_as_booked,
-        "skipped": skipped,
-    })))
+    .with_result(result))
 }
 
 /// Parsea `HH:MM` (o `HH:MM:SS`) → (hora, minuto).
