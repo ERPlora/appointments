@@ -15,6 +15,13 @@ this hub is built for: a salon and a professional open every day, a weekly break
 the horizon). Measured against the handler of v1.1.129: the series already runs out at 1 500 of
 her bookings, the batch still fits at 2 000 and runs out at this size — so both doors are pinned.
 
+appointments#267: past ~4 300 bookings of hers the SERIES ran out again — not judging, just reading
+her whole agenda ahead (≈40 k instructions a row). The series now reads it one page at a time
+(`upcoming_for_staff_from`, 2 000 rows from `from`) and, when a page ends before its window does,
+says where the next run starts (`next_from`). §3 grows her agenda to 14 a day — 5 600 bookings
+ahead, past the size that failed on the handler of v1.1.140 — and follows `next_from` to the
+horizon.
+
 Usage: tests/busy_agenda_booking.hub.test.py   (exit 0 = green)
   Needs a live runtime with `taxes`+`customers`+`services`+`staff`+`appointments` installed:
   `erplora test <dir> --against-hub` (see tests/hub_harness.py). Without one it FAILS.
@@ -27,6 +34,11 @@ from hub_harness import Hub, business_instant, seed_links, set_booking_policy
 
 # The professional's OTHER live bookings ahead — a busy chair, eight a day.
 OTHER_BOOKINGS = 3200
+EIGHT_A_DAY = ("11:00", "12:00", "13:00", "15:00", "16:00", "17:00", "18:00", "19:00")
+# appointments#267: what the series is booked against — six more a day, 5 600 ahead in all. Clear
+# of 09:00 (the batch) and of 14:00 (the series, which a 13:30 booking only touches).
+SIX_MORE_A_DAY = ("08:00", "08:30", "10:00", "10:30", "11:30", "12:30")
+SERIES_AGENDA = OTHER_BOOKINGS + 400 * len(SIX_MORE_A_DAY)
 EVERY_DAY = range(0, 7)  # 0=Monday … 6=Sunday
 BATCH = 50  # the largest batch `bulk_create` takes
 
@@ -111,22 +123,25 @@ def run(hub: Hub) -> int:
         )
 
     print(f"§0 her agenda is full: {OTHER_BOOKINGS} other bookings ahead, eight a day")
-    made = 0
-    for day in horizon:
-        for hhmm in ("11:00", "12:00", "13:00", "15:00", "16:00", "17:00", "18:00", "19:00"):
-            if made == OTHER_BOOKINGS:
-                break
-            hub.run(
-                "appointments.appointments.create",
-                {
-                    "customer_id": other_customer,
-                    "service_id": links.service_id,
-                    "staff_id": links.staff_id,
-                    "start_datetime": business_instant(hub, day.isoformat(), hhmm),
-                },
-            )
-            made += 1
-    hub.check("§0 other bookings made", made, OTHER_BOOKINGS)
+    def book_her(hours: tuple[str, ...], up_to: int) -> int:
+        made = 0
+        for day in horizon:
+            for hhmm in hours:
+                if made == up_to:
+                    return made
+                hub.run(
+                    "appointments.appointments.create",
+                    {
+                        "customer_id": other_customer,
+                        "service_id": links.service_id,
+                        "staff_id": links.staff_id,
+                        "start_datetime": business_instant(hub, day.isoformat(), hhmm),
+                    },
+                )
+                made += 1
+        return made
+
+    hub.check("§0 other bookings made", book_her(EIGHT_A_DAY, OTHER_BOOKINGS), OTHER_BOOKINGS)
 
     def live_of_customer() -> list:
         return [
@@ -175,7 +190,9 @@ def run(hub: Hub) -> int:
     )
     hub.check("§2 every slot of the batch booked", len(live_of_customer()), BATCH)
 
-    print("§3 a daily series materializes to the horizon, 50 a run")
+    print(f"§3 with {SERIES_AGENDA} bookings of hers ahead, a daily series books to the horizon")
+    more = SERIES_AGENDA - OTHER_BOOKINGS
+    hub.check("§3 her agenda grew", book_her(SIX_MORE_A_DAY, more), more)
     recurring_id = hub.new_id(
         "appointments.recurring.create",
         {
@@ -200,21 +217,30 @@ def run(hub: Hub) -> int:
         "from": horizon[0].isoformat(),
         "to": horizon[-1].isoformat(),
     }
-    booked, skipped, runs, failures = 0, [], 0, []
-    for _ in range(12):
+    booked, skipped, failures, pages = 0, [], [], 0
+    # 50 a run, and a run also stops where its page of her agenda ends: 400 days take ~12 runs.
+    for _ in range(24):
         status, body = hub.command("appointments.recurring.materialize", materialize)
-        runs += 1
         if status != 200 or not (body or {}).get("ok"):
             failures.append((status, code_of(body)))
             break
         report = (body.get("data") or {}).get("result") or {}
         booked += report.get("booked") or 0
         skipped += [s for s in report.get("skipped") or [] if s not in skipped]
-        if not report.get("booked"):
+        if report.get("next_from"):
+            # The page ended before the window: go on from there, to the SAME window end.
+            pages += 1
+            hub.check("§3 a page goes on to the same window end", report.get("to"), materialize["to"])
+            if report["next_from"] <= materialize["from"]:
+                failures.append(("next_from does not move", report["next_from"]))
+                break
+            materialize["from"] = report["next_from"]
+        elif not report.get("booked"):
             break
     hub.check(
         "§3 every run fits in the kernel's budget (no `wasm` error)", failures, []
     )
+    hub.check("§3 her agenda took more than one page", pages > 0, True)
     # Her days are read 400 days ahead COUNTING today (`staff.availability.days_ahead`, days=400):
     # the last date of the window is past what can be judged, so it is left for a later run —
     # neither booked unjudged nor reported as refused.

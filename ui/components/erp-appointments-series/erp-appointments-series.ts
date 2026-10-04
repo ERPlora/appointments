@@ -131,6 +131,36 @@ function bookingReport(answer: unknown): SeriesBookingReport | null {
   };
 }
 
+/** appointments#267 — how many runs one booking follows at most: a page is 2 000 of her bookings and
+ *  the window is at most the hub's 400 days, so a real agenda never gets near it. */
+const MAX_AGENDA_PAGES = 20;
+
+/** appointments#267 — books the series window, following the handler page by page. A professional
+ *  with thousands of bookings ahead is read one page at a time: a run whose page ends before the
+ *  window does answers `next_from` and `to`, and the next run goes on from there. The reports add
+ *  up, so the screen tells the whole window, not its first page. */
+async function materializeWindow(selector: Record<string, unknown>): Promise<SeriesBookingReport | null> {
+  let total: SeriesBookingReport | null = null;
+  let page: Record<string, unknown> = {};
+  for (let run = 0; run < MAX_AGENDA_PAGES; run++) {
+    const answer = await erplora().command('appointments.recurring.materialize', { ...selector, ...page });
+    const report = bookingReport(answer);
+    if (!report) return total;
+    total = total
+      ? {
+          booked: total.booked + report.booked,
+          already_booked: total.already_booked + report.already_booked,
+          skipped: [...total.skipped, ...report.skipped],
+        }
+      : report;
+    const nextFrom = String(handlerAnswer(answer)?.next_from ?? '');
+    // A page that does not move the window on would ask the same page forever.
+    if (!nextFrom || nextFrom <= String(page.from ?? '')) return total;
+    page = { from: nextFrom, to: String(handlerAnswer(answer)?.to ?? '') };
+  }
+  return total;
+}
+
 /** appointments#236 — what `appointments.recurring.update` answers about the occurrences it moved
  *  and the ones it left on their own slot. */
 interface SeriesMoveReport {
@@ -790,14 +820,12 @@ export class ErpAppointmentsSeries extends LitElement {
     if (missing) throw new Error(erplora().t(CATALOG, missing[1]));
     // Los tres ids son SELECTOR, no fuente (appointments#54): el handler los contrasta con la
     // plantilla que carga el runtime y rechaza si no coinciden.
-    return bookingReport(
-      await erplora().command('appointments.recurring.materialize', {
-        recurring_id: recurringId,
-        customer_id: tmpl.customer_id,
-        service_id: tmpl.service_id,
-        staff_id: tmpl.staff_id,
-      }),
-    );
+    return materializeWindow({
+      recurring_id: recurringId,
+      customer_id: tmpl.customer_id,
+      service_id: tmpl.service_id,
+      staff_id: tmpl.staff_id,
+    });
   }
 
   /** appointments#238 — keeps the report on screen when some date was left out; returns whether
@@ -1590,14 +1618,12 @@ export class ErpAppointmentsSeries extends LitElement {
       let notBooked = false;
       let report: SeriesBookingReport | null = null;
       try {
-        report = bookingReport(
-          await erplora().command('appointments.recurring.materialize', {
-            recurring_id: newId,
-            customer_id: customer.id,
-            service_id: service.id,
-            staff_id: staff.id,
-          }),
-        );
+        report = await materializeWindow({
+          recurring_id: newId,
+          customer_id: customer.id,
+          service_id: service.id,
+          staff_id: staff.id,
+        });
       } catch {
         notBooked = true;
       }

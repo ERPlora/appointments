@@ -43,10 +43,15 @@ MANIFEST = json.loads((MODULE_DIR / "module.json").read_text())
 
 BLOCKS = "appointments.blocked_times.upcoming"
 BOOKED = "appointments.appointments.upcoming_for_staff"
-READERS = (
-    "appointments.appointments.bulk_create",
-    "appointments.recurring.materialize",
-)
+# appointments#267: a series reads her agenda one PAGE at a time — her whole agenda ahead ran the
+# WASM handler out of its instruction budget past ~4 300 bookings.
+PAGE = "appointments.appointments.upcoming_for_staff_from"
+PAGE_ROWS = 2000
+BATCH = "appointments.appointments.bulk_create"
+SERIES = "appointments.recurring.materialize"
+READERS = (BATCH, SERIES)
+# What each reader reads her bookings with.
+AGENDA_OF = {BATCH: BOOKED, SERIES: PAGE}
 
 CONTAINER = os.environ.get("ERPLORA_TEST_PG_CONTAINER", "erplora-test-pg-5433")
 DB = f"appointments_upcoming_reads_test_{os.getpid()}"
@@ -69,7 +74,7 @@ def fail(msg: str) -> None:
 
 def check_manifest() -> dict[str, dict] | None:
     out: dict[str, dict] = {}
-    for name in (BLOCKS, BOOKED):
+    for name in (BLOCKS, BOOKED, PAGE):
         q = MANIFEST.get("queries", {}).get(name)
         if not isinstance(q, dict):
             fail(f"{name}: not declared in module.json")
@@ -90,7 +95,8 @@ def check_manifest() -> dict[str, dict] | None:
             for r in (MANIFEST.get("commands", {}).get(command) or {}).get("reads", [])
             if isinstance(r, dict)
         }
-        for name in (BLOCKS, BOOKED):
+        agenda = AGENDA_OF[command]
+        for name in (BLOCKS, agenda):
             read = reads.get(name)
             if read is None:
                 fail(f"{command}.reads: missing {name!r} — the guard would never run")
@@ -99,17 +105,24 @@ def check_manifest() -> dict[str, dict] | None:
                     f"{command}.reads[{name}]: must be `required` — a guard whose input can go "
                     "missing is a guard that opens"
                 )
-        booked = reads.get(BOOKED) or {}
+        booked = reads.get(agenda) or {}
         if (booked.get("params") or {}).get("staff_id") != "payload.staff_id":
             fail(
-                f"{command}.reads[{BOOKED}].params.staff_id: must bind the payload's professional"
+                f"{command}.reads[{agenda}].params.staff_id: must bind the payload's professional"
             )
+        if agenda == PAGE:
+            if (booked.get("params") or {}).get("from") != "payload.from":
+                fail(
+                    f"{command}.reads[{PAGE}].params.from: must bind the window's start"
+                )
+            if BOOKED in reads:
+                fail(f"{command}.reads: still reads her WHOLE agenda ({BOOKED})")
         if (reads.get(BLOCKS) or {}).get("params"):
             fail(
                 f"{command}.reads[{BLOCKS}]: takes no params — it is the day-independent read"
             )
 
-    return out if len(out) == 2 and not failures else (out if len(out) == 2 else None)
+    return out if len(out) == 3 else None
 
 
 # ── Layer 2: real Postgres ───────────────────────────────────────────────────────────────
@@ -165,7 +178,34 @@ def bind(sql: str, params: dict) -> str:
 
 
 # Bridge functions (ADR-0007 §4a) — mirror of `hub/crates/db/src/lib.rs`.
+def shim_dateadd(sql: str) -> str:
+    """`erp_dateadd(x, n, unit)` → `((x)::timestamptz + ((n) || ' ' || unit)::interval)`, with
+    the arguments split on the top-level commas, as the hub's translator does."""
+    while (at := sql.find("erp_dateadd(")) >= 0:
+        i, depth, args, arg = at + len("erp_dateadd("), 1, [], ""
+        while depth:
+            ch = sql[i]
+            if ch == "(":
+                depth += 1
+            elif ch == ")":
+                depth -= 1
+            if depth == 1 and ch == ",":
+                args.append(arg.strip())
+                arg = ""
+            elif depth:
+                arg += ch
+            i += 1
+        x, n, unit = args + [arg.strip()]
+        sql = (
+            sql[:at]
+            + f"(({x})::timestamptz + (({n}) || ' ' || {unit})::interval)"
+            + sql[i:]
+        )
+    return sql
+
+
 def shim(sql: str) -> str:
+    sql = shim_dateadd(sql)
     sql = re.sub(r"\berp_dt\(([^()]*)\)", r"((\1)::timestamptz)", sql)
     sql = re.sub(r"\berp_date\(([^()]*)\)", r"((\1)::date)", sql)
     return sql
@@ -217,6 +257,135 @@ def appointment(
         ],
         db=DB,
     )
+
+
+def check_page(sql_rel: str, base: dict) -> None:
+    """appointments#267 — `upcoming_for_staff_from`: her agenda ahead from the window's start,
+    ordered by INSTANT and cut at one page. Runs on top of the rows `check_against_postgres`
+    planted for `upcoming_for_staff` (a-today, a-next-month, a-unassigned, a-other-hub, …)."""
+
+    def ids(params: dict) -> list[str]:
+        return [
+            r["id"] for r in run_query(sql_rel, {**base, "staff_id": "s1", **params})
+        ]
+
+    # Without a window start it is `upcoming_for_staff`, in start order.
+    got = ids({"from": None})
+    if got != ["a-today", "a-next-month", "a-unassigned"]:
+        fail(f"{PAGE} without `from` returned {got}")
+    # A `from` that is not a date is no window start either (the handler ignores it too).
+    got = ids({"from": "next week"})
+    if got != ["a-today", "a-next-month", "a-unassigned"]:
+        fail(f"{PAGE} with a `from` that is not a date returned {got}")
+    # Nor is a text shaped like a date that the calendar does not have: the handler's `parse_dt`
+    # refuses it and books from today, so the read must answer from `:now` too — not fail the
+    # whole command on a cast (an assistant asking for «February 30th» got a database error).
+    for not_a_day in ("2026-02-30", "2026-13-01", "2026-04-31"):
+        try:
+            got = ids({"from": not_a_day})
+        except RuntimeError as err:
+            fail(
+                f"{PAGE} with `from` = {not_a_day!r} failed instead of ignoring it: {err}"
+            )
+            continue
+        if got != ["a-today", "a-next-month", "a-unassigned"]:
+            fail(f"{PAGE} with `from` = {not_a_day!r} returned {got}")
+
+    # A window that starts before now still reads nothing that has ended: a booking of hers that
+    # ended this morning would only eat a row of the page.
+    appointment(
+        "a-ended-this-morning",
+        HUB,
+        "s1",
+        "2026-08-20T07:00:00+02:00",
+        "2026-08-20T07:30:00+02:00",
+    )
+    got = ids({"from": "2026-08-01"})
+    if got != ["a-today", "a-next-month", "a-unassigned"]:
+        fail(f"{PAGE} from before now returned {got}")
+
+    # The window starts 2026-09-15; a day of margin covers any offset the rows are written in.
+    appointment(
+        "a-two-days-before",
+        HUB,
+        "s1",
+        "2026-09-13T11:00:00+02:00",
+        "2026-09-13T11:30:00+02:00",
+    )
+    appointment(
+        "a-day-before",
+        HUB,
+        "s1",
+        "2026-09-14T10:00:00+02:00",
+        "2026-09-14T10:30:00+02:00",
+    )
+    # 08:00Z and 09:30Z: as TEXT «…T09:30:00Z» sorts before «…T10:00:00+02:00»; as instants the
+    # +02:00 one is first. A page cut in text order would drop the wrong row.
+    appointment(
+        "a-offset", HUB, "s1", "2026-09-15T10:00:00+02:00", "2026-09-15T10:30:00+02:00"
+    )
+    appointment("a-z", HUB, "s1", "2026-09-15T09:30:00Z", "2026-09-15T10:00:00Z")
+    # Same instant: the id breaks the tie, so a page always ends on the same row.
+    appointment(
+        "a-tie-b", HUB, "s1", "2026-09-20T10:00:00+02:00", "2026-09-20T10:30:00+02:00"
+    )
+    appointment(
+        "a-tie-a", HUB, None, "2026-09-20T10:00:00+02:00", "2026-09-20T10:30:00+02:00"
+    )
+    in_window = [
+        "a-day-before",
+        "a-offset",
+        "a-next-month",
+        "a-z",
+        "a-unassigned",
+        "a-tie-a",
+        "a-tie-b",
+    ]
+    got = ids({"from": "2026-09-15"})
+    if got != in_window:
+        fail(f"{PAGE} from 2026-09-15 returned {got}; want {in_window}")
+
+    # A professional with a clear diary: only the global-agenda rows.
+    got = ids({"from": "2026-09-15", "staff_id": "s-nobody"})
+    if got != ["a-unassigned", "a-tie-a"]:
+        fail(
+            f"{PAGE}: a clear diary must return only the global-agenda rows, got {got}"
+        )
+
+    # One page at most: 2 005 more bookings of hers, one an hour from 2026-10-01.
+    psql(
+        [
+            "-c",
+            "INSERT INTO appointments_appointment (id, hub_id, appointment_number, customer_id, "
+            "customer_name, customer_phone, customer_email, staff_id, staff_name, service_id, "
+            "service_name, service_price, start_datetime, end_datetime, duration_minutes, status, "
+            "notes, internal_notes, reminder_sent, booked_online, cancellation_reason, is_deleted, "
+            "created_at) "
+            f"SELECT 'bulk-' || lpad(g::text, 4, '0'), {literal(HUB)}, 'bulk-' || g, 'c1', 'Ada', "
+            "'', '', 's1', '', 's-corte', 'Corte', 2000, "
+            "to_char(timestamp '2026-10-01 00:00' + g * interval '1 hour', "
+            '\'YYYY-MM-DD"T"HH24:MI:SS"Z"\'), '
+            "to_char(timestamp '2026-10-01 00:30' + g * interval '1 hour', "
+            '\'YYYY-MM-DD"T"HH24:MI:SS"Z"\'), '
+            "30, 'confirmed', '', '', 0, 0, '', 0, '2026-08-01T00:00:00+02:00' "
+            "FROM generate_series(1, 2005) g",
+        ],
+        db=DB,
+    )
+    got = ids({"from": "2026-09-15"})
+    want = in_window + [
+        f"bulk-{g:04d}" for g in range(1, PAGE_ROWS - len(in_window) + 1)
+    ]
+    if got != want:
+        fail(
+            f"{PAGE}: one page must be the {PAGE_ROWS} earliest of her bookings; got {len(got)} "
+            f"rows ending {got[-3:]}, want {len(want)} ending {want[-3:]}"
+        )
+
+    # Tenancy: the neighbour's page holds its own row only, whatever this hub piles up.
+    got = ids({"from": "2026-09-15", "hub_id": OTHER_HUB})
+    if got != ["a-other-hub"]:
+        fail(f"{PAGE}: the neighbour hub must see only its own row, got {got}")
 
 
 def check_against_postgres(queries: dict[str, dict]) -> None:
@@ -394,13 +563,15 @@ def check_against_postgres(queries: dict[str, dict]) -> None:
             fail(
                 f"{BOOKED}: a clear diary must return only the global-agenda rows, got {sorted(got)}"
             )
+
+        check_page(queries[PAGE]["sql"], base)
     finally:
         psql(["-c", f'DROP DATABASE IF EXISTS "{DB}"'])
 
 
 def main() -> int:
     queries = check_manifest()
-    if queries and len(queries) == 2:
+    if queries and len(queries) == 3:
         check_against_postgres(queries)
     for note in notes:
         print(f"note: {note}")
@@ -408,7 +579,7 @@ def main() -> int:
         for f in failures:
             print(f"FAIL: {f}")
         return 1
-    print(f"ok: {BLOCKS} + {BOOKED} — manifest wiring + real Postgres")
+    print(f"ok: {BLOCKS} + {BOOKED} + {PAGE} — manifest wiring + real Postgres")
     return 0
 
 

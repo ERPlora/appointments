@@ -29,7 +29,7 @@
       "minLength": 1
     },
     "from": {
-      "description": "Start of the window to materialize (YYYY-MM-DD, default: today). Never earlier than today.",
+      "description": "Start of the window to materialize (YYYY-MM-DD, default: today). Never earlier than today. To go on after a run that answered `next_from`, send that date here (and its `to` as `to`): the professional's agenda is read one page at a time from this date.",
       "type": [
         "string",
         "null"
