@@ -214,6 +214,8 @@
     "seriesLockedInvoiced": "{invoiced} of the upcoming appointments are already charged and will not be touched.",
     "seriesScopeHint": "The change applies to this occurrence ({from}) and all the following ones. What is already past stays exactly as it is.",
     "seriesUpdateOutcome": "{moved} appointments moved · {cancelled} cancelled because they no longer fit the pattern · {locked} left alone because they are already charged",
+    "seriesHandedOutcome": "{moved} appointments handed to {staff} · {cancelled} cancelled because they no longer fit the pattern · {locked} left alone because they are already charged",
+    "seriesMovedAndHandedOutcome": "{moved} appointments moved and handed to {staff} · {cancelled} cancelled because they no longer fit the pattern · {locked} left alone because they are already charged",
     "colPattern": "Repeats",
     "colStarts": "Starts",
     "colEnds": "Ends",
