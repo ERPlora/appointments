@@ -29,10 +29,12 @@ también reserva, mueve y cancela sola por WhatsApp a través de una automatizac
 2. En **Servicios**, da de alta los servicios reservables con su precio y su duración.
 3. En **Personal**, da de alta a los profesionales, márcalos como reservables, asígnales los
    servicios que hacen (si un servicio no tiene a nadie asignado, o quien lo tiene no está Activo y
-   Reservable, lo hace todo el equipo reservable: STAFF-F12) y, si
+   Reservable, Citas deja reservarlo con todo el equipo reservable: la regla es de Citas, no de Personal
+   ni de Servicios; STAFF-F12, APPOINTMENTS-F01) y, si
    quieres que la agenda respete su turno, su horario y sus ausencias.
-4. En **Horarios**, pon el horario semanal, los festivos y las excepciones. Sin ninguna regla la
-   agenda deja reservar a cualquier hora.
+4. En **Horarios**, confirma o cambia el horario semanal (al instalarse ya trae uno, SCHEDULES-F12) y
+   pon los festivos y las excepciones. Sin ningún tramo semanal, y sin festivo ni excepción ese día, la
+   agenda deja reservar a cualquier hora (APPOINTMENTS-F02).
 5. Comprueba en los ajustes del hub que la zona horaria del negocio es la correcta: la agenda
    siempre pinta el reloj del negocio, nunca el del dispositivo.
 6. Revisa los **Ajustes de Citas** (antelaciones, solape, confirmación automática, cancelación).
@@ -241,3 +243,5 @@ Contra el código de `origin/main` (v1.1.141), una línea por discrepancia:
 - B-01 (`qa-hub.md` §6) espera la ocupación del día por profesional en la agenda; no se muestra.
 - `handler/src/lib.rs` nombra todavía «an approval from the inbox» entre las puertas de reserva; la bandeja de aprobación de WhatsApp está retirada y Citas no tiene ninguna orden de aprobar una petición (APPOINTMENTS-F18).
 - La lista de horas libres trata un bloqueo de día entero por sus fechas, y la reserva solo por sus instantes de inicio y fin: si las horas del bloqueo no cubren el día, la lista puede esconder horas que la reserva acepta (APPOINTMENTS-F16).
+- `locales/es.json` (`appointments.availability_unavailable`): el texto habla de «los bloqueos de la agenda», pero el mismo código sale cuando no llega una lista de Horarios (APPOINTMENTS-F01, SCHEDULES-F11).
+- Oleada 2 (Horarios y Servicios, 05/10/2026): este fichero decía que «sin ninguna regla» la agenda deja reservar a cualquier hora; es solo sin ningún tramo semanal y sin excepción ese día, y Horarios ya siembra una semana al instalarse. Citas y la pregunta «¿está abierto?» de Horarios no responden igual en tres casos (APPOINTMENTS-F02, SCHEDULES-F10, SCHEDULES-F11). Y la regla «un servicio sin nadie asignado lo hace todo el equipo reservable» es de Citas: Personal solo devuelve la lista vacía y Servicios no sabe quién hace qué (STAFF-F12, SERVICES-F10).
