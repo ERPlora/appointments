@@ -18,7 +18,7 @@ Pasos:
 Entra: clienta, servicio y profesional de sus fichas, igual que una cita suelta.
 Sale: la serie activa, sus citas pendientes y el aviso de serie creada (`appointments.recurring.created`).
 Si falla: el motivo sale dentro del panel; si la serie se creó pero no se reservó nada, se dice y se usa **Reservar citas** en su fila.
-Implicados: CUSTOMERS-F25, STAFF-F09, STAFF-F10, STAFF-F12
+Implicados: CUSTOMERS-F25, CUSTOMERS-F30, STAFF-F09, STAFF-F10, STAFF-F12
 QA: ninguno
 
 ### APPOINTMENTS-F13 Reservar las citas de una serie
@@ -34,7 +34,7 @@ Pasos:
 Entra: la serie y las mismas comprobaciones que una cita suelta (APPOINTMENTS-F02).
 Sale: una cita pendiente por fecha reservada, cada una con su aviso de cita creada; nunca duplica una fecha ya dada.
 Si falla: «No se han podido reservar las citas de esta serie.»; una serie desactivada pide activarla.
-Implicados: SCHEDULES-F11, STAFF-F12, STAFF-F16
+Implicados: CUSTOMERS-F30, SCHEDULES-F11, STAFF-F12, STAFF-F16
 QA: ninguno
 
 ### APPOINTMENTS-F14 Editar una serie de esta cita en adelante
@@ -80,5 +80,5 @@ Pasos:
 Entra: clienta, servicio y profesional de sus fichas y la lista de horas.
 Sale: una cita pendiente por hora, cada una con su aviso de cita creada.
 Si falla: el lote entero se rechaza con el motivo de la primera hora que no cabe.
-Implicados: SCHEDULES-F11, STAFF-F12, STAFF-F16
+Implicados: CUSTOMERS-F30, SCHEDULES-F11, STAFF-F12, STAFF-F16
 QA: B-08

@@ -62,7 +62,7 @@ Pasos:
 Entra: una cita pendiente (del mostrador, de una serie o de la clienta con la confirmación automática apagada).
 Sale: la cita confirmada, su línea de historial y el aviso de cita confirmada (`appointments.appointment.confirmed`), que dispara el WhatsApp de confirmación a la clienta si la tarjeta «Reservar citas» de WhatsApp está activa y su teléfono tiene conversación con el negocio (también si la cita era del mostrador).
 Si falla: «Esta cita ya no se puede confirmar: ya no está pendiente.»; no se escribe nada ni se avisa dos veces.
-Implicados: WHATSAPP_INBOX-F23, REC_PELUQUERIA-F05, REC_PELUQUERIA-F07, REC_WA_CITA-F06
+Implicados: WHATSAPP_INBOX-F23, REC_PELUQUERIA-F05, REC_PELUQUERIA-F07, REC_PELUQUERIA-F08, REC_WA_CITA-F06
 QA: BD-07, W-03 (discrepa)
 
 ### APPOINTMENTS-F04 Mover una cita o cambiarle el profesional o el servicio

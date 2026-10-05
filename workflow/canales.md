@@ -52,7 +52,7 @@ Pasos:
 Entra: la clienta reconocida por su teléfono, el servicio, el profesional (o cualquiera que lo haga) y la hora elegida.
 Sale: la cita con su historial («Reservada» y, si se confirma sola, «Confirmada») y los avisos de cita creada y confirmada.
 Si falla: la automatización le dice a la clienta que esa hora ya no está y le ofrece otra; nunca inventa una hora.
-Implicados: WHATSAPP_INBOX-F14, WHATSAPP_INBOX-F16, WHATSAPP_INBOX-F21, WHATSAPP_INBOX-F23, REC_WA_CITA-F03, REC_WA_CITA-F05, REC_WA_CITA-F06
+Implicados: WHATSAPP_INBOX-F14, WHATSAPP_INBOX-F16, WHATSAPP_INBOX-F21, WHATSAPP_INBOX-F23, REC_PELUQUERIA-F07, REC_WA_CITA-F03, REC_WA_CITA-F05, REC_WA_CITA-F06
 QA: W-02, W-03 (discrepa), W-07, BD-07, L-12
 
 ### APPOINTMENTS-F20 Ver las citas de una clienta en su ficha
