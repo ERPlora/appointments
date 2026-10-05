@@ -13,17 +13,16 @@ Pasos:
 2. Elige Cliente, Servicio y Profesional de sus listas (los tres son obligatorios). La lista de clientas trae las
    500 primeras fichas por nombre y no deja crear una nueva (CUSTOMERS-F25). Con un servicio
    elegido solo salen los profesionales Activos y Reservables que lo hacen; si no hay ninguno (nadie lo tiene
-   asignado, o quien lo tiene está inactivo o no reservable), salen todos los reservables (STAFF-F12). «Min.» se
+   asignado, o quien lo tiene está inactivo o no reservable), salen todos los reservables: esa regla es
+   de Citas, no de Personal ni de Servicios; Personal solo contesta con la lista vacía (STAFF-F12). «Min.» se
    rellena con su duración propia o la del catálogo.
 3. Escribe el Día y toca una de las **Horas libres** (o escribe otra hora; también vale pegar el día y la hora juntos, por ejemplo 26/09/2026 10:00).
 4. Pulsa **Añadir cita**. Si el solape está permitido y choca, responde a «Cita solapada».
 5. La cita aparece en la lista como **Pendiente** con su número `APT-AAAAMMDD-NNNN`.
-Entra: la clienta (Clientes), el servicio con precio y duración (Servicios), el profesional y su competencia (Personal).
+Entra: la clienta (Clientes), el servicio con precio y duración (Servicios), el profesional y su competencia (Personal). Las cuatro listas de Horarios (semana, días especiales, cambios temporales y sus tramos), con las que Citas decide la apertura como se cuenta en F02 (SCHEDULES-F11).
 Sale: la cita pendiente con nombre, precio y duración congelados del catálogo, su línea «Reservada» en el historial y el aviso de cita creada (`appointments.appointment.created`).
-Si falla: el motivo sale dentro del panel y en un aviso (fuera de horario, el profesional no trabaja, franja bloqueada, ya tiene cita, demasiado lejos); lo tecleado se conserva para corregir. Desde el mostrador ni la antelación mínima ni una hora ya pasada rechazan: la hora pasada solo muestra un aviso antes de guardar.
-Implicados: CUSTOMERS-F11, CUSTOMERS-F25, STAFF-F02, STAFF-F05, STAFF-F06, STAFF-F09, STAFF-F10, STAFF-F12, STAFF-F13, STAFF-F14, STAFF-F15, STAFF-F16, STAFF-F18
-Pendiente de enlazar: services — el servicio reservable con su precio y duración
-Pendiente de enlazar: schedules — el horario del negocio que la reserva respeta
+Si falla: el motivo sale dentro del panel y en un aviso (fuera de horario, el profesional no trabaja, franja bloqueada, ya tiene cita, demasiado lejos); lo tecleado se conserva para corregir. Desde el mostrador ni la antelación mínima ni una hora ya pasada rechazan: la hora pasada solo muestra un aviso antes de guardar. Si una lectura obligatoria no se puede leer (la ficha, el servicio, el equipo o una de las cuatro listas de Horarios), el hub corta la reserva antes de que Citas decida y no se reserva a ciegas; si una lista de Horarios no llega sin dar error, Citas rechaza con su código `appointments.availability_unavailable`, cuyo texto en español habla de «los bloqueos de la agenda» y no del horario (SCHEDULES-F11).
+Implicados: CUSTOMERS-F11, CUSTOMERS-F25, CUSTOMERS-F30, SCHEDULES-F02, SCHEDULES-F04, SCHEDULES-F05, SCHEDULES-F06, SCHEDULES-F07, SCHEDULES-F10, SCHEDULES-F11, SERVICES-F02, SERVICES-F04, SERVICES-F05, SERVICES-F10, STAFF-F02, STAFF-F05, STAFF-F06, STAFF-F09, STAFF-F10, STAFF-F12, STAFF-F13, STAFF-F14, STAFF-F15, STAFF-F16, STAFF-F18, REC_PELUQUERIA-F06
 QA: B-02, BD-06
 
 ### APPOINTMENTS-F02 Ver qué horas quedan libres
@@ -36,13 +35,20 @@ Pasos:
    marcan «El calendario empieza a las (hora)» y «El calendario termina a las (hora)». De ellas solo aparece la que cabe entera: dentro
    del horario del negocio (Horarios), dentro del turno del profesional y fuera de sus ausencias
    (Personal), sin bloqueo y sin otra cita suya; con el solape permitido, una hora ocupada también sale.
+   Del horario, Citas aplica el mismo orden que Horarios (día especial de la fecha, día especial anual,
+   cambio temporal, semana) y cuenta como abierta la madrugada de un tramo semanal que cruza la
+   medianoche aunque la víspera la cerrara un día especial o un cambio temporal; pero no contesta igual
+   que la pregunta «¿está abierto?» de Horarios (SCHEDULES-F10) en tres casos: sin ningún tramo semanal
+   y sin excepción ese día deja reservar a cualquier hora (Horarios diría «sin horario», cerrado); la
+   cita puede acabar justo a la hora de cierre; y puede cruzar la medianoche dentro de un tramo de día
+   especial o de cambio temporal que la cruza (SCHEDULES-F11). Horarios ya siembra una semana al
+   instalarse (SCHEDULES-F12), así que el primer caso solo se da si alguien la borra entera.
 3. Desde el mostrador salen también las horas dentro de la antelación mínima; a la clienta no.
 4. Si cambia el servicio, los minutos, el profesional o el día, la lista se vuelve a pedir.
 Entra: horario del negocio (Horarios), turno y ausencias (Personal), bloqueos, citas vivas y ajustes de antelación propios.
 Sale: la lista de horas; no guarda nada. El asistente y WhatsApp leen el mismo motor, pero sin las horas dentro de la antelación mínima.
 Si falla: «No se han podido cargar las horas libres» con **Reintentar**; se puede escribir una hora igualmente y la reserva se juzga al guardar. Sin horas: «No quedan horas libres ese día…».
-Implicados: STAFF-F13, STAFF-F14, STAFF-F15, STAFF-F16, STAFF-F18, STAFF-F19, WHATSAPP_INBOX-F19, WHATSAPP_INBOX-F21, WHATSAPP_INBOX-F22, REC_WA_CITA-F04
-Pendiente de enlazar: schedules — la apertura del día con festivos, excepciones y descansos
+Implicados: SCHEDULES-F02, SCHEDULES-F04, SCHEDULES-F05, SCHEDULES-F06, SCHEDULES-F07, SCHEDULES-F10, SCHEDULES-F11, STAFF-F13, STAFF-F14, STAFF-F15, STAFF-F16, STAFF-F18, STAFF-F19, WHATSAPP_INBOX-F19, WHATSAPP_INBOX-F21, WHATSAPP_INBOX-F22, REC_PELUQUERIA-F06, REC_WA_CITA-F04
 QA: B-02, BD-06, W-02
 
 ### APPOINTMENTS-F03 Confirmar una cita pendiente
@@ -56,7 +62,7 @@ Pasos:
 Entra: una cita pendiente (del mostrador, de una serie o de la clienta con la confirmación automática apagada).
 Sale: la cita confirmada, su línea de historial y el aviso de cita confirmada (`appointments.appointment.confirmed`), que dispara el WhatsApp de confirmación a la clienta si la tarjeta «Reservar citas» de WhatsApp está activa y su teléfono tiene conversación con el negocio (también si la cita era del mostrador).
 Si falla: «Esta cita ya no se puede confirmar: ya no está pendiente.»; no se escribe nada ni se avisa dos veces.
-Implicados: WHATSAPP_INBOX-F23, REC_WA_CITA-F06
+Implicados: WHATSAPP_INBOX-F23, REC_PELUQUERIA-F05, REC_PELUQUERIA-F07, REC_WA_CITA-F06
 QA: BD-07, W-03 (discrepa)
 
 ### APPOINTMENTS-F04 Mover una cita o cambiarle el profesional o el servicio
@@ -72,8 +78,7 @@ Pasos:
 Entra: la cita (pendiente o confirmada) y, si cambia, el nuevo profesional y su competencia o el nuevo servicio con su precio.
 Sale: la cita movida (un servicio nuevo trae su nombre y precio; un profesional nuevo conserva el precio), su línea de historial y el aviso de cita movida (`appointments.appointment.rescheduled`).
 Si falla: el motivo sale en el panel y en un aviso; un bloque arrastrado vuelve a su sitio. Solo se mueven citas Pendiente o Confirmada: una en curso, completada, cancelada o no presentada no se mueve (**Editar** sale en gris).
-Implicados: STAFF-F05, STAFF-F06, STAFF-F11, STAFF-F12, STAFF-F16
-Pendiente de enlazar: services — nombre, precio y duración del nuevo servicio
+Implicados: SCHEDULES-F11, SERVICES-F10, STAFF-F05, STAFF-F06, STAFF-F11, STAFF-F12, STAFF-F16, REC_PELUQUERIA-F08, REC_PELUQUERIA-F12
 QA: B-02, B-04, B-08, BD-06
 
 ### APPOINTMENTS-F05 Cancelar una cita desde la agenda
@@ -86,7 +91,7 @@ Pasos:
 Entra: la cita.
 Sale: la cita cancelada (el hueco queda libre), su línea de historial y el aviso de cita cancelada (`appointments.appointment.cancelled`).
 Si falla: «Esta cita ya no se puede cancelar en su estado actual.» si ya estaba cancelada o completada.
-Implicados: ninguno
+Implicados: REC_PELUQUERIA-F12
 QA: B-02, B-08
 
 ### APPOINTMENTS-F07 Marcar la llegada y empezar el servicio
@@ -99,7 +104,7 @@ Pasos:
 Entra: una cita confirmada.
 Sale: la cita en curso, su línea de historial y el aviso de servicio iniciado (`appointments.appointment.started`).
 Si falla: «Esta cita no se puede iniciar: no está confirmada.»
-Implicados: REC_WA_CITA-F10
+Implicados: REC_PELUQUERIA-F08, REC_WA_CITA-F10
 QA: B-03
 
 ### APPOINTMENTS-F08 Completar la cita
@@ -112,7 +117,7 @@ Pasos:
 Entra: una cita confirmada o en curso.
 Sale: la cita completada, su línea de historial y el aviso de cita completada (`appointments.appointment.completed`).
 Si falla: «Esta cita no se puede completar…» si estaba pendiente, cancelada o ya completada.
-Implicados: REC_WA_CITA-F10
+Implicados: REC_PELUQUERIA-F08, REC_WA_CITA-F10
 QA: B-04 (discrepa)
 
 ### APPOINTMENTS-F09 Marcar que la clienta no se presentó
@@ -125,7 +130,7 @@ Pasos:
 Entra: una cita pendiente o confirmada.
 Sale: la cita no presentada, su línea de historial y el aviso correspondiente (`appointments.appointment.no_show`).
 Si falla: «Esta cita no se puede marcar como no presentada en su estado actual.»
-Implicados: REC_WA_CITA-F10
+Implicados: FLOWS-F04, REC_PELUQUERIA-F12, REC_WA_CITA-F10
 QA: B-02, B-08
 
 ### APPOINTMENTS-F10 Ver el historial de una cita
@@ -168,7 +173,7 @@ Pasos:
 Entra: la cita leída por el TPV.
 Sale: la venta es del TPV (SALES-F26); aquí solo queda anotado con qué venta se cobró la cita (al recibir `sales.sale.created_from_appointment`). El estado no cambia. Citas no escucha la anulación de la venta: anulada en Ventas, la cita sigue marcada como cobrada y Cobrar sigue en gris (SALES-F30).
 Si falla: si la venta no se cierra, la cita sigue sin marcar como cobrada y **Cobrar** sigue activo para repetir. Lo que pasa dentro del TPV está en SALES-F26: si no puede enlazar la cita lo avisa, y si el servicio de la cita no está en el catálogo que cargó el TPV la línea se cobra al 0 % de IVA sin aviso.
-Implicados: SALES-F26, SALES-F30, REC_WA_CITA-F10
+Implicados: SALES-F26, SALES-F30, REC_PELUQUERIA-F09, REC_PELUQUERIA-F14, REC_WA_CITA-F10
 QA: B-05, B-06, BD-09
 
 ### APPOINTMENTS-F19 Ajustar las reglas de reserva
@@ -183,5 +188,5 @@ Pasos:
 Entra: nada de otros componentes.
 Sale: los ajustes del negocio y el aviso de ajustes cambiados (`appointments.settings.updated`). La confirmación automática es la misma que el interruptor de la tarjeta «Reservar citas» de WhatsApp (WHATSAPP_INBOX-F16) y solo vale para las citas que reserva la clienta: las del mostrador nacen siempre Pendiente.
 Si falla: «No se pudieron guardar los ajustes.» (o «No se pudieron cargar los ajustes.» al abrir) y los ajustes guardados no cambian; si un campo no vale, «Revisa los campos marcados y vuelve a guardar.».
-Implicados: WHATSAPP_INBOX-F16, REC_WA_CITA-F06
+Implicados: WHATSAPP_INBOX-F16, REC_PELUQUERIA-F07, REC_WA_CITA-F06
 QA: W-02, W-03
