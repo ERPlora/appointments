@@ -18,7 +18,7 @@ Pasos:
 Entra: la petición de la clienta identificada por su ficha.
 Sale: la cita cancelada o movida, con «Lo pidió la clienta» en su historial, y su aviso (`appointments.appointment.cancelled` o `.rescheduled`).
 Si falla: una cita que no existe se rechaza diciendo que ya no se puede cancelar o mover en su estado actual; una que existe pero es de otra persona, diciendo que es de otro cliente (la automatización lo cuenta con sus palabras). Fuera de plazo o con la cancelación desactivada se le explica que contacte con el negocio.
-Implicados: SCHEDULES-F11, WHATSAPP_INBOX-F14, WHATSAPP_INBOX-F22, REC_PELUQUERIA-F12, REC_WA_CITA-F03, REC_WA_CITA-F08
+Implicados: SCHEDULES-F11, WHATSAPP_INBOX-F14, WHATSAPP_INBOX-F22, REC_PELUQUERIA-F12, REC_WA_CITA-F03, REC_WA_CITA-F08, HUB_SHELL-F66
 QA: W-04
 
 ### APPOINTMENTS-F16 Bloquear tiempo en la agenda
@@ -52,7 +52,7 @@ Pasos:
 Entra: la clienta reconocida por su teléfono, el servicio, el profesional (o cualquiera que lo haga) y la hora elegida.
 Sale: la cita con su historial («Reservada» y, si se confirma sola, «Confirmada») y los avisos de cita creada y confirmada.
 Si falla: la automatización le dice a la clienta que esa hora ya no está y le ofrece otra; nunca inventa una hora.
-Implicados: WHATSAPP_INBOX-F14, WHATSAPP_INBOX-F16, WHATSAPP_INBOX-F21, WHATSAPP_INBOX-F23, REC_PELUQUERIA-F07, REC_WA_CITA-F03, REC_WA_CITA-F05, REC_WA_CITA-F06
+Implicados: WHATSAPP_INBOX-F14, WHATSAPP_INBOX-F16, WHATSAPP_INBOX-F21, WHATSAPP_INBOX-F23, REC_PELUQUERIA-F07, REC_WA_CITA-F03, REC_WA_CITA-F05, REC_WA_CITA-F06, HUB_SHELL-F61, HUB_SHELL-F66
 QA: W-02, W-03 (discrepa), W-07, BD-07, L-12
 
 ### APPOINTMENTS-F20 Ver las citas de una clienta en su ficha
