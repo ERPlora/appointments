@@ -93,5 +93,5 @@ Pasos:
 Entra: la fusión de fichas (`customer.merged`).
 Sale: citas y series apuntando a la ficha que se queda.
 Si falla: no hay nada que ver en pantalla; repetir la fusión no cambia nada más.
-Implicados: CUSTOMERS-F13
+Implicados: CUSTOMERS-F13, ONLINE_BOOKING-F09
 QA: ninguno
