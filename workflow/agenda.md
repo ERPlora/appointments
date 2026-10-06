@@ -172,7 +172,7 @@ Pasos:
 3. Al volver a la Agenda, **Cobrar** sale en gris en esa cita: ya está cobrada.
 Entra: la cita leída por el TPV.
 Sale: la venta es del TPV (SALES-F26); aquí solo queda anotado con qué venta se cobró la cita (al recibir `sales.sale.created_from_appointment`). El estado no cambia. Citas no escucha la anulación de la venta: anulada en Ventas, la cita sigue marcada como cobrada y Cobrar sigue en gris (SALES-F30).
-Si falla: si la venta no se cierra, la cita sigue sin marcar como cobrada y **Cobrar** sigue activo para repetir. Lo que pasa dentro del TPV está en SALES-F26: si no puede enlazar la cita lo avisa, y si el servicio de la cita no está en el catálogo que cargó el TPV la línea se cobra al 0 % de IVA sin aviso.
+Si falla: si la venta no se cierra, la cita sigue sin marcar como cobrada y **Cobrar** sigue activo para repetir. Lo que pasa dentro del TPV está en SALES-F26: si no puede enlazar la cita lo avisa, y el IVA del servicio lo pone Servicios aunque el TPV no lo haya cargado; si el servicio ya no existe, no tiene categoría fiscal o la cita no nombra ningún servicio, el cobro se rechaza con su aviso y no se cobra nada.
 Implicados: SALES-F26, SALES-F30, REC_PELUQUERIA-F09, REC_PELUQUERIA-F14, REC_WA_CITA-F10
 QA: B-05, B-06, BD-09
 
