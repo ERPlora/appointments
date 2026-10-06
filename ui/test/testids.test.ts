@@ -185,6 +185,7 @@ const COVERED: Record<
       'appointments-series-service',
       'appointments-series-service-hint',
       'appointments-series-skipped',
+      'appointments-series-pending',
       'appointments-series-not-moved',
       'appointments-series-split-from',
       'appointments-series-staff',
