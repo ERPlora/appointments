@@ -195,6 +195,8 @@
     "seriesCreated": "Repeating appointment created and its appointments booked.",
     "seriesCreatedNotBooked": "The repeating appointment was created, but its appointments could not be booked. Use «Book appointments» on its row to try again.",
     "seriesBookedSkipped": "{booked} appointments booked · {skipped} could not be booked:",
+    "seriesBookedSoFar": "{booked} appointments booked so far.",
+    "seriesPendingFrom": "The dates from {date} on are not booked yet: tap «Book appointments» on the series to book them.",
     "seriesSkipStaffHours": "the professional does not work at that time",
     "seriesSkipClosed": "the business is closed at that time",
     "seriesSkipBlocked": "that time is blocked in the agenda",

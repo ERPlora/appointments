@@ -2082,6 +2082,8 @@ var es_default = {
     seriesCreated: "Cita peri\xF3dica creada y sus citas reservadas.",
     seriesCreatedNotBooked: "La cita peri\xF3dica se ha creado, pero no se han podido reservar sus citas. Usa \xABReservar citas\xBB en su fila para volver a intentarlo.",
     seriesBookedSkipped: "{booked} citas reservadas \xB7 {skipped} no se han podido reservar:",
+    seriesBookedSoFar: "{booked} citas reservadas por ahora.",
+    seriesPendingFrom: "Las fechas desde el {date} a\xFAn no est\xE1n reservadas: pulsa \xABReservar citas\xBB en la serie para reservarlas.",
     seriesSkipStaffHours: "el profesional no trabaja a esa hora",
     seriesSkipClosed: "el negocio est\xE1 cerrado a esa hora",
     seriesSkipBlocked: "esa franja est\xE1 bloqueada en la agenda",
@@ -2367,6 +2369,8 @@ var en_default = {
     seriesCreated: "Repeating appointment created and its appointments booked.",
     seriesCreatedNotBooked: "The repeating appointment was created, but its appointments could not be booked. Use \xABBook appointments\xBB on its row to try again.",
     seriesBookedSkipped: "{booked} appointments booked \xB7 {skipped} could not be booked:",
+    seriesBookedSoFar: "{booked} appointments booked so far.",
+    seriesPendingFrom: "The dates from {date} on are not booked yet: tap \xABBook appointments\xBB on the series to book them.",
     seriesSkipStaffHours: "the professional does not work at that time",
     seriesSkipClosed: "the business is closed at that time",
     seriesSkipBlocked: "that time is blocked in the agenda",
@@ -7607,11 +7611,11 @@ function bookingReport(answer) {
     skipped: skippedDates(a3)
   };
 }
-var MAX_AGENDA_PAGES = 20;
+var MAX_RUNS = 20;
 async function materializeWindow(selector) {
   let total = null;
   let page = {};
-  for (let run = 0; run < MAX_AGENDA_PAGES; run++) {
+  for (let run = 0; run < MAX_RUNS; run++) {
     const answer = await erplora3().command("appointments.recurring.materialize", { ...selector, ...page });
     const report = bookingReport(answer);
     if (!report) return total;
@@ -7624,7 +7628,7 @@ async function materializeWindow(selector) {
     if (!nextFrom || nextFrom <= String(page.from ?? "")) return total;
     page = { from: nextFrom, to: String(handlerAnswer(answer)?.to ?? "") };
   }
-  return total;
+  return total && page.from ? { ...total, pending_from: String(page.from) } : total;
 }
 var MISSING_LINK_KEYS = [
   ["staff_id", "ui.seriesNoStaff"],
@@ -7711,6 +7715,7 @@ var ErpAppointmentsSeries = class extends i3 {
     .grid { display:grid; grid-template-columns:1fr; gap:.75rem; }
     @container (min-width: 540px) { .grid { grid-template-columns:1fr 1fr; } }
     .skipped { margin:.25rem 0 0; padding-left:1.25rem; }
+    .pending { margin:.25rem 0 0; }
     .ctx { margin:0; font-size:.9rem; color: var(--ion-color-medium, #8b897f); }
     .ctx strong { color: var(--ion-text-color, #1c1b18); }
     .loading, .empty { color: var(--ion-color-medium, #8b897f); font-size:.9rem; margin:.25rem 0; }
@@ -8084,7 +8089,7 @@ var ErpAppointmentsSeries = class extends i3 {
   /** appointments#238 — keeps the report on screen when some date was left out; returns whether
    *  it did, so the caller only toasts «booked» when everything was. */
   showSkipped(report) {
-    this.bookingReport = report && report.skipped.length > 0 ? report : null;
+    this.bookingReport = report && (report.skipped.length > 0 || report.pending_from) ? report : null;
     return this.bookingReport !== null;
   }
   /** Materializar la ventana desde la lista: la serie ya existe, lo que falta son sus citas. */
@@ -8275,18 +8280,21 @@ var ErpAppointmentsSeries = class extends i3 {
    *  as Fresha or Square say it when a repeating booking leaves dates out. */
   renderBookingReport(report, t5) {
     return b2`<ok-inline-feedback data-testid="appointments-series-skipped" tone="warning" icon="alert-circle-outline">
-      <strong>${t5("ui.seriesBookedSkipped", {
+      <strong>${report.skipped.length > 0 ? t5("ui.seriesBookedSkipped", {
       // What a previous run already booked is on the agenda too: a retry must not read «0 booked».
       booked: report.booked + report.already_booked,
       skipped: report.skipped.length
-    })}</strong>
-      <ul class="skipped">
-        ${report.skipped.map(
+    }) : t5("ui.seriesBookedSoFar", { booked: report.booked + report.already_booked })}</strong>
+      ${report.skipped.length > 0 ? b2`<ul class="skipped">
+            ${report.skipped.map(
       (s5) => b2`<li data-testid=${`appointments-series-skipped-${s5.occurrence_date}`}>
-            ${this.shownDate(s5.occurrence_date)} — ${t5(SKIP_REASON_KEYS[s5.code] ?? "ui.seriesSkipOther")}
-          </li>`
+                ${this.shownDate(s5.occurrence_date)} — ${t5(SKIP_REASON_KEYS[s5.code] ?? "ui.seriesSkipOther")}
+              </li>`
     )}
-      </ul>
+          </ul>` : A}
+      ${report.pending_from ? b2`<p class="pending" data-testid="appointments-series-pending">
+            ${t5("ui.seriesPendingFrom", { date: this.shownDate(report.pending_from) })}
+          </p>` : A}
     </ok-inline-feedback>`;
   }
   /** appointments#236 — «N moved · M could not be moved and keep their time:» and one line per date
