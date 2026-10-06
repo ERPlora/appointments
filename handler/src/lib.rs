@@ -1277,6 +1277,9 @@ const STAFF_DAY_READ: &str = "staff.availability.day_at";
 /// Her days from today onwards (appointments#229), for the doors that book across many days:
 /// `staff.availability.days_ahead` keyed by `payload.staff_id`, `day_at`'s rows day after day.
 const STAFF_DAYS_READ: &str = "staff.availability.days_ahead";
+/// appointments#299 — occurrences one run of `recurring.materialize` books at most; the rest of
+/// the window goes on in the next run, from the `next_from` the answer carries.
+const MATERIALIZE_PER_RUN: usize = 50;
 /// The whole team's day at the new hour (appointments#229), for `reschedule`, whose payload names
 /// the appointment and not its professional: `staff.availability.team_day_at` keyed by
 /// `payload.start_datetime`, `day_at`'s rows for every member, each carrying its `staff_id`.
@@ -4394,7 +4397,7 @@ pub fn materialize_recurring_pure(input: Value) -> Result<Output, String> {
     // list screen shows, and it can be stale.
     // appointments#229: her days are read up to a horizon (`days_ahead`'s last `day` row). An
     // occurrence past it is left for a later run — the series is materialized as its window
-    // advances, exactly like the 50-per-call cap — instead of being booked unjudged.
+    // advances — instead of being booked unjudged.
     let Some(horizon) = read_rows(&input, STAFF_DAYS_READ).and_then(|rows| {
         rows.iter()
             .filter(|row| row.get("kind").map(as_str).unwrap_or_default() == "day")
@@ -4410,9 +4413,6 @@ pub fn materialize_recurring_pure(input: Value) -> Result<Output, String> {
     // it is what left the customer off the agenda with the screen saying «series created».
     let mut skipped: Vec<Value> = Vec::new();
     for days in occurrence_days {
-        if created >= 50 {
-            break; // tope por invocación (mismo límite que bulk_create)
-        }
         let (y, mo, d) = civil_from_days(days);
         let occurrence_date = format!("{y:04}-{mo:02}-{d:02}");
         if booked.contains(&occurrence_date) {
@@ -4420,6 +4420,13 @@ pub fn materialize_recurring_pure(input: Value) -> Result<Output, String> {
             continue;
         }
         if occurrence_date > horizon {
+            break;
+        }
+        // appointments#299: at most 50 bookings a run (the same cap as `bulk_create`: each one is
+        // judged against her agenda within the run's instruction budget). The rest of the window
+        // is not dropped: the run says where the next one starts, like the end of a page.
+        if created >= MATERIALIZE_PER_RUN {
+            next_from = Some(occurrence_date);
             break;
         }
         // appointments#12 — THE SERIES KEEPS ITS WALL TIME across a DST change. The template
@@ -4453,6 +4460,8 @@ pub fn materialize_recurring_pure(input: Value) -> Result<Output, String> {
             "booked_online": false,
         });
         let Some(id) = ctx.new_ids.get(created) else {
+            // Out of the ids the host handed over: the rest goes on in the next run.
+            next_from = Some(occurrence_date);
             break;
         };
         let desc = format!("Cita materializada de la plantilla recurrente {recurring_id}");
@@ -4516,6 +4525,7 @@ pub fn materialize_recurring_pure(input: Value) -> Result<Output, String> {
     });
     // appointments#267: the page ended before the window did — the caller runs again from
     // `next_from` to the same `to`, and the rest of the series is judged against the next page.
+    // appointments#299: the same when the run reached its cap of bookings.
     if let Some(day) = next_from {
         let (y, mo, d) = civil_from_days(to_days);
         result["next_from"] = json!(day);
@@ -12762,8 +12772,8 @@ mod tests {
     }
 
     /// Her days are read up to a horizon. An occurrence past the last day the read answers is
-    /// left for a later run — the series is materialized as its window advances, exactly like
-    /// the 50-per-call cap — instead of being booked unjudged or failing the whole series.
+    /// left for a later run — the series is materialized as its window advances — instead of
+    /// being booked unjudged or failing the whole series.
     #[test]
     fn materialize_leaves_the_occurrences_past_the_read_for_a_later_run() {
         let out = series_with_days(staff_day("2026-08-03", &[("09:00:00", "18:00:00")], json!([])));
@@ -13260,6 +13270,91 @@ mod tests {
                 "to": "2026-08-20"
             })
         );
+    }
+
+    // ── appointments#299 · a series with more dates than one run books ───────────────────────
+    //
+    // A run books at most 50 occurrences (each one is judged against her whole agenda, and the run
+    // has a WASM instruction budget). The cap broke out of the loop WITHOUT `next_from`, so the
+    // screen — which follows `next_from` since appointments#267 — stopped after the first 50 and
+    // said «50 booked»: a daily series on the default 90-day window lost its last weeks, and the
+    // customer was missing from the agenda from then on. The cap now answers where the next run
+    // starts, exactly like the end of a page of her agenda.
+
+    /// The first date the run did NOT book is where the next one starts, to the same window end.
+    #[test]
+    fn materialize_stops_at_fifty_and_says_where_to_go_on() {
+        let out = materialize_recurring_pure(daily_series_to("2026-10-31", json!([]))).unwrap();
+        assert!(out.error.is_none(), "{:?}", out.error);
+        let dates = booked_dates(&out);
+        assert_eq!(dates.len(), 50);
+        assert_eq!(dates.first().map(String::as_str), Some("2026-08-03"));
+        assert_eq!(dates.last().map(String::as_str), Some("2026-09-21"));
+        assert_eq!(
+            series_result(&out),
+            json!({
+                "booked": 50,
+                "already_booked": 0,
+                "skipped": [],
+                "next_from": "2026-09-22",
+                "to": "2026-10-31"
+            })
+        );
+    }
+
+    /// The run that goes on from `next_from` books the rest of the window and says it is done.
+    #[test]
+    fn materialize_from_the_cap_next_from_books_the_rest_of_the_window() {
+        let mut inp = daily_series_to("2026-10-31", json!([]));
+        inp["payload"]["from"] = json!("2026-09-22");
+        let out = materialize_recurring_pure(inp).unwrap();
+        let dates = booked_dates(&out);
+        assert_eq!(dates.len(), 40, "{dates:?}");
+        assert_eq!(dates.first().map(String::as_str), Some("2026-09-22"));
+        assert_eq!(dates.last().map(String::as_str), Some("2026-10-31"));
+        assert_eq!(
+            series_result(&out),
+            json!({ "booked": 40, "already_booked": 0, "skipped": [] })
+        );
+    }
+
+    /// Exactly 50 dates in the window: the 50th is the last one, nothing is left — no `next_from`
+    /// (a run sent past the window would book nothing and fail).
+    #[test]
+    fn materialize_with_exactly_fifty_dates_books_them_all_and_has_no_next_run() {
+        let out = materialize_recurring_pure(daily_series_to("2026-09-21", json!([]))).unwrap();
+        assert_eq!(booked_dates(&out).len(), 50);
+        assert_eq!(
+            series_result(&out),
+            json!({ "booked": 50, "already_booked": 0, "skipped": [] })
+        );
+    }
+
+    /// The cap reached right where her read hours end (appointments#229): the dates past them are
+    /// left for when the window advances, not for a next run that could judge none of them.
+    #[test]
+    fn materialize_at_the_cap_with_the_rest_past_her_read_hours_has_no_next_run() {
+        let mut inp = daily_series_to("2026-10-31", json!([]));
+        // Her days are read from 2026-07-31 to 2026-09-21: the 50th occurrence is the last one.
+        inp["context"]["reads"]["staff.availability.days_ahead"] = ungoverned_days(2026, 7, 31, 53);
+        let out = materialize_recurring_pure(inp).unwrap();
+        assert_eq!(booked_dates(&out).len(), 50);
+        assert_eq!(
+            series_result(&out),
+            json!({ "booked": 50, "already_booked": 0, "skipped": [] })
+        );
+    }
+
+    /// The ids the host hands over ran out before the cap: the run stops there and says where to
+    /// go on, instead of dropping the rest of the window in silence.
+    #[test]
+    fn materialize_out_of_ids_says_where_to_go_on() {
+        let mut inp = daily_series_to("2026-08-20", json!([]));
+        inp["context"]["new_ids"] = json!(["apt-1", "apt-2", "apt-3"]);
+        let out = materialize_recurring_pure(inp).unwrap();
+        assert_eq!(booked_dates(&out), ["2026-08-03", "2026-08-04", "2026-08-05"]);
+        assert_eq!(series_result(&out)["next_from"], json!("2026-08-06"));
+        assert_eq!(series_result(&out)["to"], json!("2026-08-20"));
     }
 
     /// The series reads her agenda by PAGE, bound to the window's start — and the page the SQL

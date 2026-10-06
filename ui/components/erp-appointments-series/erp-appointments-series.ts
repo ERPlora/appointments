@@ -85,6 +85,9 @@ interface SeriesBookingReport {
   booked: number;
   already_booked: number;
   skipped: { occurrence_date: string; code: string }[];
+  /** appointments#299 — the window was not finished when the screen stopped following it: the
+   *  first date nothing is booked from yet. */
+  pending_from?: string;
 }
 
 /** The short reason painted next to each skipped date; any other code reads as «could not be booked». */
@@ -131,18 +134,20 @@ function bookingReport(answer: unknown): SeriesBookingReport | null {
   };
 }
 
-/** appointments#267 — how many runs one booking follows at most: a page is 2 000 of her bookings and
- *  the window is at most the hub's 400 days, so a real agenda never gets near it. */
-const MAX_AGENDA_PAGES = 20;
+/** appointments#267/#299 — how many runs one booking follows at most. A run stops at 50 bookings
+ *  or where a page of 2 000 of her bookings ends, and her hours are read 400 days ahead: a daily
+ *  series takes 8 runs plus one per page, so a real agenda never gets near it. */
+const MAX_RUNS = 20;
 
-/** appointments#267 — books the series window, following the handler page by page. A professional
- *  with thousands of bookings ahead is read one page at a time: a run whose page ends before the
- *  window does answers `next_from` and `to`, and the next run goes on from there. The reports add
- *  up, so the screen tells the whole window, not its first page. */
+/** appointments#267 — books the series window, following the handler run by run. A run that stops
+ *  before the window ends — a page of her agenda ended (appointments#267) or it booked its 50
+ *  (appointments#299) — answers `next_from` and `to`, and the next run goes on from there. The
+ *  reports add up, so the screen tells the whole window, not its first run; if the window is still
+ *  unfinished after the last run, the report says from which date (`pending_from`). */
 async function materializeWindow(selector: Record<string, unknown>): Promise<SeriesBookingReport | null> {
   let total: SeriesBookingReport | null = null;
   let page: Record<string, unknown> = {};
-  for (let run = 0; run < MAX_AGENDA_PAGES; run++) {
+  for (let run = 0; run < MAX_RUNS; run++) {
     const answer = await erplora().command('appointments.recurring.materialize', { ...selector, ...page });
     const report = bookingReport(answer);
     if (!report) return total;
@@ -158,7 +163,7 @@ async function materializeWindow(selector: Record<string, unknown>): Promise<Ser
     if (!nextFrom || nextFrom <= String(page.from ?? '')) return total;
     page = { from: nextFrom, to: String(handlerAnswer(answer)?.to ?? '') };
   }
-  return total;
+  return total && page.from ? { ...total, pending_from: String(page.from) } : total;
 }
 
 /** appointments#236 — what `appointments.recurring.update` answers about the occurrences it moved
@@ -270,6 +275,7 @@ export class ErpAppointmentsSeries extends LitElement {
     .grid { display:grid; grid-template-columns:1fr; gap:.75rem; }
     @container (min-width: 540px) { .grid { grid-template-columns:1fr 1fr; } }
     .skipped { margin:.25rem 0 0; padding-left:1.25rem; }
+    .pending { margin:.25rem 0 0; }
     .ctx { margin:0; font-size:.9rem; color: var(--ion-color-medium, #8b897f); }
     .ctx strong { color: var(--ion-text-color, #1c1b18); }
     .loading, .empty { color: var(--ion-color-medium, #8b897f); font-size:.9rem; margin:.25rem 0; }
@@ -831,7 +837,7 @@ export class ErpAppointmentsSeries extends LitElement {
   /** appointments#238 — keeps the report on screen when some date was left out; returns whether
    *  it did, so the caller only toasts «booked» when everything was. */
   private showSkipped(report: SeriesBookingReport | null): boolean {
-    this.bookingReport = report && report.skipped.length > 0 ? report : null;
+    this.bookingReport = report && (report.skipped.length > 0 || report.pending_from) ? report : null;
     return this.bookingReport !== null;
   }
 
@@ -1050,18 +1056,27 @@ export class ErpAppointmentsSeries extends LitElement {
    *  as Fresha or Square say it when a repeating booking leaves dates out. */
   private renderBookingReport(report: SeriesBookingReport, t: (k: string, p?: Record<string, unknown>) => string) {
     return html`<ok-inline-feedback data-testid="appointments-series-skipped" tone="warning" icon="alert-circle-outline">
-      <strong>${t('ui.seriesBookedSkipped', {
-        // What a previous run already booked is on the agenda too: a retry must not read «0 booked».
-        booked: report.booked + report.already_booked,
-        skipped: report.skipped.length,
-      })}</strong>
-      <ul class="skipped">
-        ${report.skipped.map(
-          (s) => html`<li data-testid=${`appointments-series-skipped-${s.occurrence_date}`}>
-            ${this.shownDate(s.occurrence_date)} — ${t(SKIP_REASON_KEYS[s.code] ?? 'ui.seriesSkipOther')}
-          </li>`,
-        )}
-      </ul>
+      <strong>${report.skipped.length > 0
+        ? t('ui.seriesBookedSkipped', {
+            // What a previous run already booked is on the agenda too: a retry must not read «0 booked».
+            booked: report.booked + report.already_booked,
+            skipped: report.skipped.length,
+          })
+        : t('ui.seriesBookedSoFar', { booked: report.booked + report.already_booked })}</strong>
+      ${report.skipped.length > 0
+        ? html`<ul class="skipped">
+            ${report.skipped.map(
+              (s) => html`<li data-testid=${`appointments-series-skipped-${s.occurrence_date}`}>
+                ${this.shownDate(s.occurrence_date)} — ${t(SKIP_REASON_KEYS[s.code] ?? 'ui.seriesSkipOther')}
+              </li>`,
+            )}
+          </ul>`
+        : nothing}
+      ${report.pending_from
+        ? html`<p class="pending" data-testid="appointments-series-pending">
+            ${t('ui.seriesPendingFrom', { date: this.shownDate(report.pending_from) })}
+          </p>`
+        : nothing}
     </ok-inline-feedback>`;
   }
 

@@ -405,6 +405,77 @@ describe('a series against an agenda too long for one run is booked page by page
   });
 });
 
+// appointments#299 — a run books at most 50 occurrences. The cap now answers `next_from` like the
+// end of a page, so a daily series is booked whole with one tap; and if the screen ever stops
+// following before the window ends, it SAYS from which date nothing is booked yet instead of
+// toasting «booked» over a series that stops halfway.
+describe('a series with more dates than one run books (appointments#299)', () => {
+  const CAPPED = { booked: 50, already_booked: 0, skipped: [], next_from: '2099-11-25', to: '2100-01-05' };
+  const materializeRuns = () => commands.filter((c) => c.name === 'appointments.recurring.materialize');
+  const endless = () =>
+    Array.from({ length: 30 }, (_, i) => ({
+      ...CAPPED,
+      next_from: `2100-0${1 + Math.floor(i / 28)}-${String((i % 28) + 1).padStart(2, '0')}`,
+    }));
+
+  it('creating a daily series books past the first 50 and only then says «created and booked»', async () => {
+    materializePages = [CAPPED, { booked: 14, already_booked: 0, skipped: [] }];
+    const el = await mount();
+    await createThroughTheForm(el);
+    const runs = materializeRuns();
+    expect(runs).toHaveLength(2);
+    expect(runs[1].payload).toMatchObject({ recurring_id: 'r1', from: '2099-11-25', to: '2100-01-05' });
+    expect(toasts.map((n) => n.message)).toContain(ES.seriesCreated);
+    expect(byTestId(el, 'appointments-series-pending')).toBeNull();
+  });
+
+  it('a window still unfinished after the last run says from which date nothing is booked yet', async () => {
+    materializePages = endless();
+    const el = await mount();
+    await tapBook(el);
+    expect(materializeRuns()).toHaveLength(20);
+    const pending = byTestId(el, 'appointments-series-pending');
+    expect(pending, 'the dates still to book are said').toBeTruthy();
+    expect(pending!.textContent?.replace(/\s+/g, ' ')).toContain(
+      translate({ es: esLocale } as never, 'ui.seriesPendingFrom', { date: '20/01/2100' }),
+    );
+    const report = byTestId(el, 'appointments-series-skipped');
+    expect(report?.getAttribute('tone')).toBe('warning');
+    expect(report?.textContent?.replace(/\s+/g, ' ')).toContain(
+      translate({ es: esLocale } as never, 'ui.seriesBookedSoFar', { booked: 1000 }),
+    );
+    expect(toasts.some((n) => n.message === ES.seriesMaterialized), 'no «booked» toast over a half-booked series').toBe(false);
+  });
+
+  it('a retry over an unfinished window counts what a previous tap already booked', async () => {
+    materializePages = endless();
+    materializePages[0] = { ...CAPPED, booked: 0, already_booked: 50 };
+    const el = await mount();
+    await tapBook(el);
+    expect(byTestId(el, 'appointments-series-skipped')?.textContent?.replace(/\s+/g, ' ')).toContain(
+      translate({ es: esLocale } as never, 'ui.seriesBookedSoFar', { booked: 1000 }),
+    );
+  });
+
+  it('an unfinished window with dates left out names both', async () => {
+    materializePages = endless();
+    materializePages[0] = { ...CAPPED, skipped: [{ occurrence_date: '2099-10-13', code: 'appointments.blocked' }] };
+    const el = await mount();
+    await createThroughTheForm(el);
+    expect(byTestId(el, 'appointments-series-skipped')?.textContent?.replace(/\s+/g, ' ')).toContain(
+      translate({ es: esLocale } as never, 'ui.seriesBookedSkipped', { booked: 1000, skipped: 1 }),
+    );
+    expect(byTestId(el, 'appointments-series-skipped-2099-10-13')).toBeTruthy();
+    expect(byTestId(el, 'appointments-series-pending')).toBeTruthy();
+    expect(toasts.some((n) => n.message === ES.seriesCreated)).toBe(false);
+  });
+
+  it.each(['seriesPendingFrom', 'seriesBookedSoFar'])('%s exists in en AND es', (key) => {
+    expect(EN[key], `en ${key}`).toBeTruthy();
+    expect(ES[key], `es ${key}`).toBeTruthy();
+  });
+});
+
 describe('a pattern change that books the new days reports the dates left out (appointments#238)', () => {
   it('lists them after saving', async () => {
     materializeResult = TWO_SKIPPED;

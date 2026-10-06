@@ -196,6 +196,8 @@
     "seriesCreated": "Cita periódica creada y sus citas reservadas.",
     "seriesCreatedNotBooked": "La cita periódica se ha creado, pero no se han podido reservar sus citas. Usa «Reservar citas» en su fila para volver a intentarlo.",
     "seriesBookedSkipped": "{booked} citas reservadas · {skipped} no se han podido reservar:",
+    "seriesBookedSoFar": "{booked} citas reservadas por ahora.",
+    "seriesPendingFrom": "Las fechas desde el {date} aún no están reservadas: pulsa «Reservar citas» en la serie para reservarlas.",
     "seriesSkipStaffHours": "el profesional no trabaja a esa hora",
     "seriesSkipClosed": "el negocio está cerrado a esa hora",
     "seriesSkipBlocked": "esa franja está bloqueada en la agenda",
