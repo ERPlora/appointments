@@ -447,6 +447,16 @@ describe('a series with more dates than one run books (appointments#299)', () =>
     expect(toasts.some((n) => n.message === ES.seriesMaterialized), 'no «booked» toast over a half-booked series').toBe(false);
   });
 
+  it('a retry over an unfinished window counts what a previous tap already booked', async () => {
+    materializePages = endless();
+    materializePages[0] = { ...CAPPED, booked: 0, already_booked: 50 };
+    const el = await mount();
+    await tapBook(el);
+    expect(byTestId(el, 'appointments-series-skipped')?.textContent?.replace(/\s+/g, ' ')).toContain(
+      translate({ es: esLocale } as never, 'ui.seriesBookedSoFar', { booked: 1000 }),
+    );
+  });
+
   it('an unfinished window with dates left out names both', async () => {
     materializePages = endless();
     materializePages[0] = { ...CAPPED, skipped: [{ occurrence_date: '2099-10-13', code: 'appointments.blocked' }] };
