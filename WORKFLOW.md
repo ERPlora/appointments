@@ -72,7 +72,8 @@ botón de añadir de la tabla abre «Nueva cita periódica» (Cliente, Servicio,
 Repetición, Día de la semana, Día, Hora, Min., «Termina el (opcional)», «Número de citas
 (opcional)») con **Crear cita periódica**; editar abre «Editar cita periódica» con **Guardar de esta
 cita en adelante**. Tras reservar o guardar, un aviso «{booked} citas reservadas · {skipped} no se han podido reservar:» con
-cada fecha y su motivo. Vacía: «Todavía no hay citas periódicas.» · Error: «No se han podido cargar
+cada fecha y su motivo; si quedan fechas sin reservar, «Las fechas desde el {date} aún no están
+reservadas: pulsa «Reservar citas» en la serie para reservarlas.». Vacía: «Todavía no hay citas periódicas.» · Error: «No se han podido cargar
 las citas periódicas.»; un rechazo al guardar sale dentro del panel, encima del botón.
 
 ### Ajustes de Citas

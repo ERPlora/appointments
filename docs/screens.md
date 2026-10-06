@@ -205,7 +205,9 @@ A template that says "this customer, this service, every week at this time".
 3. **Materialise** it to turn the template into real appointments in a date window.
 
 Materialising skips slots in the past and slots that clash, and creates at most **50** appointments
-per run. Creating a template needs `appointments.add_appointment`; deleting one needs
+per run; the answer then says where the next run starts (`next_from`) and **Book appointments**
+follows it by itself, so the whole window is booked in one tap (appointments#299). If it is still
+unfinished when the screen stops, the report says «The dates from … on are not booked yet». Creating a template needs `appointments.add_appointment`; deleting one needs
 `appointments.change_appointment`.
 
 ### The Repeating view (appointments#91)
