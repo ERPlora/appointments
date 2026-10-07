@@ -52,7 +52,7 @@ estado» y el conmutador **Lista · Por profesional · Periódicas** (en móvil 
 - **Por profesional**: una fila por profesional reservable y un carril «Sin asignar». Tocar un
   hueco abre el alta con ese profesional y esa hora; el bloque se arrastra a otra hora o a otra fila.
 - **Periódicas**: ver la pantalla [Periódicas](#periódicas).
-- Botón **Añadir cita** → panel de alta: Cliente, Servicio, Profesional, Día, Hora (con «Horas
+- Botón **Añadir cita** → panel de alta: Cliente (buscador «Busca por nombre o teléfono»; también encuentra por email), Servicio, Profesional, Día, Hora (con «Horas
   libres» como botones), Min.; avisos «Esta cita empieza en el pasado…», profesional que no hace
   el servicio, duración propia no leída.
 - **Editar** → panel «Editar la cita»: Día, Hora, Min., Servicio, Profesional, «Guardar cambios» y,
@@ -141,7 +141,8 @@ misma gramática y el mismo prefijo. Antes de tocar código, lee el fichero del 
 | Bloqueos de agenda (festivo, vacaciones de un profesional) con pantalla | parcial — solo asistente o API | APPOINTMENTS-F16 |
 | Bono o paquete de sesiones | parcial — solo asistente o API | APPOINTMENTS-F21 |
 | Notas de la visita (fórmula) desde la agenda | parcial — solo asistente o API | APPOINTMENTS-F22 |
-| Alta rápida de la clienta sin ficha (walk-in) desde el formulario | no hecho — hay que crearla en Clientes | CUSTOMERS-F25 |
+| Buscar a la clienta por nombre o teléfono al reservar, entre todas las fichas | hecho | APPOINTMENTS-F01, APPOINTMENTS-F12 |
+| Alta rápida de la clienta sin ficha (walk-in) desde el formulario | no hecho — hay que crearla en Clientes (appointments#318) | CUSTOMERS-F25 |
 | Varios servicios encadenados en una cita (corte + color) | no hecho — una cita = un servicio; B-04 lo pide | — |
 | Ocupación del día por profesional en la agenda | no hecho — B-01 lo pide | — |
 | Recordatorios automáticos | no hecho — ajuste visible pero inerte; fuera del MVP según appointments#6 | — |

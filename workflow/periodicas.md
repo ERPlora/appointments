@@ -10,7 +10,8 @@ Actor: empleado
 Pantalla: Periódicas
 Pasos:
 1. En **Periódicas**, pulsa añadir: se abre «Nueva cita periódica».
-2. Elige Cliente, Servicio y Profesional (solo los que hacen el servicio), la Repetición (cada día,
+2. Elige Cliente (se busca escribiendo nombre, teléfono o email, igual que en APPOINTMENTS-F01, entre
+   todas las fichas; appointments#306), Servicio y Profesional (solo los que hacen el servicio), la Repetición (cada día,
    semana, dos semanas o mes), el Día de la semana si aplica, el Día y la Hora de inicio, los Min. y,
    si quieres, «Termina el» o «Número de citas».
 3. Pulsa **Crear cita periódica**: se crea la serie y se reservan sus citas de la ventana (APPOINTMENTS-F13).
