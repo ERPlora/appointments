@@ -431,6 +431,15 @@
         "commands/customer_merge_recurring.sql"
       ]
     },
+    "appointments._on_customer_anonymized": {
+      "permission": "appointments.change_appointment",
+      "transaction": true,
+      "sql": [
+        "commands/customer_erase_appointments.sql",
+        "commands/customer_erase_recurring.sql",
+        "commands/customer_erase_history.sql"
+      ]
+    },
     "appointments._recurring_cancel_occurrence": {
       "permission": "appointments.change_appointment",
       "sql": [
@@ -1445,6 +1454,9 @@
   },
   "events": {
     "listen": {
+      "customer.anonymized": {
+        "command": "appointments._on_customer_anonymized"
+      },
       "customer.merged": {
         "command": "appointments._on_customer_merged"
       },

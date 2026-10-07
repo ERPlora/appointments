@@ -95,3 +95,27 @@ Sale: citas y series apuntando a la ficha que se queda.
 Si falla: no hay nada que ver en pantalla; repetir la fusión no cambia nada más.
 Implicados: CUSTOMERS-F13, ONLINE_BOOKING-F09
 QA: ninguno
+
+### APPOINTMENTS-F24 Vaciar los datos de una clienta al borrarla
+Estado: parcial — el nombre o teléfono que se guardó como etiqueta en los huecos apartados de la antigua bandeja de WhatsApp sigue en la base de datos (ERPlora/appointments#314)
+Actor: sistema
+Pantalla: Agenda
+Pasos:
+1. En **Clientes** el administrador borra los datos personales de una ficha.
+2. Todas las citas de esa clienta en este negocio, en cualquier estado y también las borradas, se
+   quedan sin su nombre, teléfono y email, sin las dos notas y sin el motivo de cancelación.
+3. Sus series periódicas se quedan sin su nombre; siguen activas o pausadas como estaban, pero ya no
+   reservan fechas nuevas porque su ficha ya no existe.
+4. En el historial de esas citas se borran el nombre de la línea «Reservada» y el motivo de cada
+   cancelación; el resto de la línea (qué pasó, cuándo y quién del equipo lo hizo) se queda.
+5. Donde estaba el nombre, la Agenda, la lista de Periódicas y sus avisos dicen «Cliente borrado».
+Entra: el aviso de borrado de la ficha (`customer.anonymized`) con su identificador.
+Sale: las citas, series e historial sin datos de la clienta. Se quedan la cita, su número, el
+servicio, el precio, el profesional, la hora, el estado y la venta: la agenda sigue diciendo qué
+hizo cada profesional y qué se cobró. Una cita futura no se cancela sola.
+Si falla: no hay nada que ver en pantalla; el hub reintenta el aviso hasta que entra, y repetirlo no
+cambia nada más. Una ficha de otro negocio con el mismo identificador no se toca.
+Implicados: pendiente
+Pendiente de enlazar: customers — CUSTOMERS-F16, borrar los datos personales de un cliente, que publica el aviso
+Pendiente de enlazar: hub — HUB-F248 y HUB-F250, el aviso único de borrado y lo que le toca a cada app (todavía dicen que Citas no lo escucha)
+QA: ninguno

@@ -61,6 +61,7 @@
     "colTime": "Time",
     "colNumber": "No.",
     "colCustomer": "Customer",
+    "erasedCustomer": "Deleted customer",
     "colService": "Service",
     "colStaff": "Staff",
     "colStatus": "Status",
