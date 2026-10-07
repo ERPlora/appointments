@@ -25,7 +25,13 @@ WHAT IS PROVEN HERE, against a REAL Postgres:
      arm of the guard has a row that only it catches.
   6. Rows of other customers, rows without a customer, and an event with an empty id are no-ops.
   7. TENANCY — rows of the hub next door carrying the same opaque customer id are NOT touched, in
-     the three tables.
+     the four tables.
+  8. The RETIRED slot holds (appointments#314): `_deprecated_appointments_slot_hold` kept, as the
+     `label` of every hold, the name or the phone of whoever asked for it — and no link to the
+     sheet, so hers cannot be told from anyone else's. Every label of THIS hub is blanked (the
+     holds expired 15 minutes after they were made; nothing reads them since appointments#184);
+     the rest of the row stays, an already blank label is not re-stamped, and the hub next door
+     keeps its own.
 
 Runs the SQL the way the runtime does (`:name` bound). Uses `erplora-test-pg-5433` (override:
 ERPLORA_TEST_PG_CONTAINER); scratch DB dropped at the end. Missing Docker = SKIPPED, never PASS.
@@ -59,7 +65,8 @@ SOMEONE = "cust-luis"
 CREATED = "2026-08-01T00:00:00+00:00"
 NOW = "2026-10-07T10:00:00+00:00"
 LATER = "2026-10-07T11:00:00+00:00"
-TABLES = ("appointments_appointment", "appointments_recurring", "appointments_history")
+HOLDS = "_deprecated_appointments_slot_hold"  # set aside by migration 011 (appointments#187)
+TABLES = ("appointments_appointment", "appointments_recurring", "appointments_history", HOLDS)
 
 # The columns of an appointment that name or describe the customer, and the value each one takes
 # when she is fully booked in the seed.
@@ -199,6 +206,19 @@ def history(db, hid, hub, appointment_id, action, new_value, old_value=None):
     )
 
 
+def hold(db, hid, hub, label, status="expired"):
+    """A slot hold as the retired WhatsApp tray left it: the label is what the agenda painted on
+    the held slot — the customer's name, or her phone when the request had no name."""
+    psql(
+        db,
+        f"INSERT INTO {HOLDS} (id, hub_id, staff_id, source, source_ref, start_datetime, end_datetime, "
+        f"expires_at, label, status, created_at) VALUES ({literal(hid)}, {literal(hub)}, 'staff-1', "
+        f"'whatsapp_inbox.request', {literal('req-' + hid)}, '2026-09-01T10:00:00+02:00', "
+        "'2026-09-01T10:30:00+02:00', '2026-08-31T18:15:00+00:00', "
+        f"{literal(label)}, {literal(status)}, '{CREATED}')",
+    )
+
+
 def row(db, table, rid, cols="*") -> dict:
     out = psql(
         db,
@@ -236,7 +256,7 @@ def manifest_half():
         "it is internal (leading `_`)", True, LISTENER.rsplit(".", 1)[1].startswith("_")
     )
     check("it is transactional", True, cmd.get("transaction"))
-    check("it carries one SQL file per table", 3, len(cmd.get("sql") or []))
+    check("it carries one SQL file per table", len(TABLES), len(cmd.get("sql") or []))
     for rel in cmd.get("sql") or []:
         statements = [
             x
@@ -365,10 +385,16 @@ def main() -> int:
         history(db, "h-on-their-id", HUB, "n-erased", "created", created)
         # A walk-in's line (no sheet): only the blank-id event could reach it.
         history(db, "h-blank-id", HUB, "a-blank-id", "created", created)
+        # The retired slot holds: hers by name and by phone, someone else's, one already blank.
+        hold(db, "s-name", HUB, "Ana García")
+        hold(db, "s-phone", HUB, "+34600000000", status="consumed")
+        hold(db, "s-someone", HUB, "Luis Pérez", status="released")
+        hold(db, "s-blank", HUB, "")
+        hold(db, "ns-name", OTHER_HUB, "Ana García")
         neighbour_before = fingerprint(db, OTHER_HUB)
         check(
-            "the neighbour really holds personal rows on the erased id in the three tables (control armed)",
-            ("2", "1", "2"),
+            "the neighbour really holds personal rows on the erased id in the four tables (control armed)",
+            ("2", "1", "2", "1"),
             (
                 psql(
                     db,
@@ -384,6 +410,10 @@ def main() -> int:
                     db,
                     f"SELECT count(*) FROM appointments_history WHERE hub_id = '{OTHER_HUB}' "
                     "AND new_value LIKE '%Ana%';",
+                ).strip(),
+                psql(
+                    db,
+                    f"SELECT count(*) FROM {HOLDS} WHERE hub_id = '{OTHER_HUB}' AND label <> '';",
                 ).strip(),
             ),
         )
@@ -432,7 +462,11 @@ def main() -> int:
             ("appointments_recurring", "r-blank-id"): row(
                 db, "appointments_recurring", "r-blank-id"
             ),
+            (HOLDS, "s-blank"): row(db, HOLDS, "s-blank"),
         }
+        # What a hold keeps once its label is gone: everything but the label and its stamp.
+        hold_kept = "id, hub_id, staff_id, source, source_ref, start_datetime, end_datetime, expires_at, status, is_deleted, deleted_at, created_by, created_at"
+        holds_before = {s: row(db, HOLDS, s, hold_kept) for s in ("s-name", "s-phone", "s-someone")}
 
         print("\n== an event with an empty id erases nothing ==")
         before_blank = fingerprint(db, HUB)
@@ -543,6 +577,22 @@ def main() -> int:
         h = row(db, "appointments_history", "h-unreadable")
         check("a value that is not a JSON object is dropped", None, h.get("new_value"))
         check("h-unreadable stamped", NOW, h.get("updated_at"))
+        print("\n== the retired slot holds forget every label of this hub ==")
+        for sid, old in holds_before.items():
+            r = row(db, HOLDS, sid)
+            check(f"{sid}: the label is empty", "", r.get("label"))
+            check(
+                f"{sid}: stamped",
+                (NOW, "user-eraser"),
+                (r.get("updated_at"), r.get("updated_by")),
+            )
+            check(f"{sid}: the rest of the hold is untouched", old, row(db, HOLDS, sid, hold_kept))
+        check(
+            "no label is left in this hub's retired slot holds",
+            "0",
+            psql(db, f"SELECT count(*) FROM {HOLDS} WHERE hub_id = '{HUB}' AND label <> '';").strip(),
+        )
+
         for (table, rid), old in untouched_before.items():
             check(f"{table}/{rid} is untouched", old, row(db, table, rid))
 
@@ -573,7 +623,7 @@ def main() -> int:
             print(f"  - {f}")
         return 1
     print(
-        "PASS — an erased customer leaves no name, contact, note or reason in the agenda (pm#637)"
+        "PASS — an erased customer leaves no name, contact, note or reason in the agenda (pm#637, appointments#314)"
     )
     return 0
 
