@@ -1948,6 +1948,7 @@ var es_default = {
     colTime: "Hora",
     colNumber: "N\xBA",
     colCustomer: "Cliente",
+    erasedCustomer: "Cliente borrado",
     colService: "Servicio",
     colStaff: "Personal",
     colStatus: "Estado",
@@ -2235,6 +2236,7 @@ var en_default = {
     colTime: "Time",
     colNumber: "No.",
     colCustomer: "Customer",
+    erasedCustomer: "Deleted customer",
     colService: "Service",
     colStaff: "Staff",
     colStatus: "Status",
@@ -7565,6 +7567,14 @@ function offeredStaff(team, ids) {
   return ids ? team.filter((m4) => ids.includes(m4.id)) : team;
 }
 
+// ui/lib/customer-label.ts
+function customerLabel(row, erasedLabel, fallback = "\u2014") {
+  const name = typeof row.customer_name === "string" ? row.customer_name.trim() : "";
+  if (name) return name;
+  const id = typeof row.customer_id === "string" ? row.customer_id.trim() : "";
+  return id ? erasedLabel : fallback;
+}
+
 // ui/components/erp-appointments-series/erp-appointments-series.ts
 var CATALOG3 = { es: es_default, en: en_default };
 function erplora3() {
@@ -8121,7 +8131,7 @@ var ErpAppointmentsSeries = class extends i3 {
     if (!id) return;
     const t5 = (k2, p4) => erplora3().t(CATALOG3, k2, p4);
     const alert = document.createElement("ion-alert");
-    alert.header = t5("ui.seriesDeleteTitle", { name: String(row.customer_name ?? "") });
+    alert.header = t5("ui.seriesDeleteTitle", { name: customerLabel(row, t5("ui.erasedCustomer")) });
     alert.message = t5("ui.seriesDeleteMessage");
     alert.buttons = [
       { text: t5("ui.cancelReschedule"), role: "cancel" },
@@ -8196,7 +8206,8 @@ var ErpAppointmentsSeries = class extends i3 {
   get columns() {
     const t5 = (k2) => erplora3().t(CATALOG3, k2);
     return [
-      { key: "customer_name", header: t5("ui.colCustomer") },
+      // pm#637: an erased customer's name is blank (APPOINTMENTS-F24); the cell says so.
+      { key: "customer_name", header: t5("ui.colCustomer"), format: (r6) => customerLabel(r6, t5("ui.erasedCustomer")) },
       { key: "service_name", header: t5("ui.colService") },
       { key: "staff_name", header: t5("ui.colStaff"), format: (r6) => r6.staff_name || "\u2014" },
       { key: "frequency", header: t5("ui.colPattern"), format: (r6) => this.patternLabel(r6) },
@@ -8262,7 +8273,7 @@ var ErpAppointmentsSeries = class extends i3 {
         .fill=${true}
         .views=${true}
         .addable=${true}
-        .cardTitle=${(row) => String(row.customer_name ?? "")}
+        .cardTitle=${(row) => customerLabel(row, t5("ui.erasedCustomer"))}
         .columns=${this.columns}
         .rows=${this.series}
         .searchKeys=${["customer_name", "service_name", "staff_name"]}
@@ -8322,7 +8333,7 @@ var ErpAppointmentsSeries = class extends i3 {
     const serviceChange = this.serviceChange;
     return b2`<form slot="create" data-testid="appointments-series-form" data-mode="series-edit" class="form" @submit=${(e5) => this.submitEdit(e5)}>
       <p class="ctx" data-role="series-context">
-        <strong>${tmpl.customer_name}</strong> · ${tmpl.service_name} · ${tmpl.staff_name || "\u2014"}
+        <strong>${customerLabel(tmpl, t5("ui.erasedCustomer"))}</strong> · ${tmpl.service_name} · ${tmpl.staff_name || "\u2014"}
       </p>
       <!-- Una serie PARTIDA son dos mitades encadenadas, y decirlo es la mitad de poder entenderla:
            sin esto, la mitad nueva parece una serie que apareció de la nada. -->
@@ -9339,7 +9350,8 @@ var ErpAppointmentsList = class extends i3 {
     return [
       { key: "start_datetime", header: t5("ui.colTime"), format: (r6) => fmtTime(r6.start_datetime) },
       { key: "appointment_number", header: t5("ui.colNumber") },
-      { key: "customer_name", header: t5("ui.colCustomer") },
+      // pm#637: an erased customer's name is blank (APPOINTMENTS-F24); the cell says so.
+      { key: "customer_name", header: t5("ui.colCustomer"), format: (r6) => customerLabel(r6, t5("ui.erasedCustomer")) },
       { key: "service_name", header: t5("ui.colService") },
       { key: "staff_name", header: t5("ui.colStaff"), format: (r6) => r6.staff_name || "\u2014" },
       {
@@ -9431,12 +9443,13 @@ var ErpAppointmentsList = class extends i3 {
     ];
   }
   get schedulerEvents() {
+    const erased = erplora4().t(CATALOG4, "ui.erasedCustomer");
     return this.items.map((a3) => ({
       id: a3.id,
       resourceId: a3.staff_id || UNASSIGNED,
       start: wallClock(a3.start_datetime),
       end: wallClock(a3.end_datetime),
-      title: [a3.customer_name, a3.service_name].filter(Boolean).join(" \xB7 "),
+      title: [customerLabel(a3, erased, ""), a3.service_name].filter(Boolean).join(" \xB7 "),
       color: STATUS_COLORS[a3.status]
     }));
   }
@@ -9768,7 +9781,7 @@ var ErpAppointmentsList = class extends i3 {
   /** Pinta el aviso y espera. La promesa la resuelven los botones del `ion-alert`. */
   askOverlap(conflicts) {
     const t5 = (k2, p4) => erplora4().t(CATALOG4, k2, p4);
-    const list = conflicts.map((a3) => `${a3.customer_name || t5("ui.colCustomer")} \xB7 ${fmtTime(a3.start_datetime)}`).join(", ");
+    const list = conflicts.map((a3) => `${customerLabel(a3, t5("ui.erasedCustomer"), t5("ui.colCustomer"))} \xB7 ${fmtTime(a3.start_datetime)}`).join(", ");
     return new Promise((resolve) => {
       this.overlapPrompt = t5("ui.overlapMessage", { conflicts: list });
       this.overlapDecision = resolve;
