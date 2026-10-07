@@ -100,7 +100,7 @@ misma gramática y el mismo prefijo. Antes de tocar código, lee el fichero del 
 
 | ID | Flujo | Estado | Detalle |
 |---|---|---|---|
-| APPOINTMENTS-F01 | Reservar una cita desde la agenda | hecho | [`workflow/agenda.md`](workflow/agenda.md) |
+| APPOINTMENTS-F01 | Reservar una cita desde la agenda | parcial — sin alta de clienta en el formulario (appointments#318) | [`workflow/agenda.md`](workflow/agenda.md) |
 | APPOINTMENTS-F02 | Ver qué horas quedan libres | hecho | [`workflow/agenda.md`](workflow/agenda.md) |
 | APPOINTMENTS-F03 | Confirmar una cita pendiente | hecho | [`workflow/agenda.md`](workflow/agenda.md) |
 | APPOINTMENTS-F04 | Mover una cita o cambiarle el profesional o el servicio | parcial | [`workflow/agenda.md`](workflow/agenda.md) |
@@ -111,7 +111,7 @@ misma gramática y el mismo prefijo. Antes de tocar código, lee el fichero del 
 | APPOINTMENTS-F09 | Marcar que la clienta no se presentó | parcial | [`workflow/agenda.md`](workflow/agenda.md) |
 | APPOINTMENTS-F10 | Ver el historial de una cita | hecho | [`workflow/agenda.md`](workflow/agenda.md) |
 | APPOINTMENTS-F11 | Borrar una cita | parcial | [`workflow/agenda.md`](workflow/agenda.md) |
-| APPOINTMENTS-F12 | Crear una cita periódica | hecho | [`workflow/periodicas.md`](workflow/periodicas.md) |
+| APPOINTMENTS-F12 | Crear una cita periódica | parcial — sin alta de clienta en el formulario (appointments#318) | [`workflow/periodicas.md`](workflow/periodicas.md) |
 | APPOINTMENTS-F13 | Reservar las citas de una serie | parcial | [`workflow/periodicas.md`](workflow/periodicas.md) |
 | APPOINTMENTS-F14 | Editar una serie de esta cita en adelante | hecho | [`workflow/periodicas.md`](workflow/periodicas.md) |
 | APPOINTMENTS-F15 | Pausar, reactivar o borrar una serie | hecho | [`workflow/periodicas.md`](workflow/periodicas.md) |

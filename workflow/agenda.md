@@ -5,7 +5,7 @@ Prefijo: APPOINTMENTS
 ## Flujos
 
 ### APPOINTMENTS-F01 Reservar una cita desde la agenda
-Estado: hecho
+Estado: parcial — no deja crear una clienta nueva desde el formulario (appointments#318)
 Actor: empleado
 Pantalla: Agenda
 Pasos:

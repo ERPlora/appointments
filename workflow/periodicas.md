@@ -5,7 +5,7 @@ Prefijo: APPOINTMENTS
 ## Flujos
 
 ### APPOINTMENTS-F12 Crear una cita periódica
-Estado: hecho
+Estado: parcial — no deja crear una clienta nueva desde el formulario (appointments#318)
 Actor: empleado
 Pantalla: Periódicas
 Pasos:
