@@ -98,7 +98,7 @@ Implicados: CUSTOMERS-F13, ONLINE_BOOKING-F09
 QA: ninguno
 
 ### APPOINTMENTS-F24 Vaciar los datos de una clienta al borrarla
-Estado: hecho
+Estado: parcial — el paso 5 necesita un hub posterior a v1.1.30; un hub más viejo rechaza esta versión de Citas con un error de «tabla ajena» en vez de pedir que se actualice el hub (ERPlora/appointments#328)
 Actor: sistema
 Pantalla: Agenda
 Pasos:

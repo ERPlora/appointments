@@ -128,7 +128,7 @@ misma gramática y el mismo prefijo. Antes de tocar código, lee el fichero del 
 | APPOINTMENTS-F21 | Reservar varias citas de golpe (bono o curso) | parcial | [`workflow/periodicas.md`](workflow/periodicas.md) |
 | APPOINTMENTS-F22 | Cambiar las notas o el contacto de una cita | parcial | [`workflow/canales.md`](workflow/canales.md) |
 | APPOINTMENTS-F23 | Unir las citas al fusionar dos fichas de clienta | hecho | [`workflow/canales.md`](workflow/canales.md) |
-| APPOINTMENTS-F24 | Vaciar los datos de una clienta al borrarla | hecho | [`workflow/canales.md`](workflow/canales.md) |
+| APPOINTMENTS-F24 | Vaciar los datos de una clienta al borrarla | parcial | [`workflow/canales.md`](workflow/canales.md) |
 
 ## Cobertura contra la referencia
 | Elemento (Fresha, Vagaro, Mangomint, Square Appointments) | Estado | Flujo |
