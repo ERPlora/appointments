@@ -244,7 +244,18 @@ describe('the «Repeating» view can create a series (appointments#209)', () => 
     await tapAdd(el);
     const opts = (testid: string) =>
       [...(field(el, testid)?.querySelectorAll('ion-select-option') ?? [])].map((o) => (o as HTMLElement & { value?: unknown }).value);
-    expect(opts('appointments-series-create-customer')).toEqual(['c1', 'c2']);
+    // appointments#306: the customer is searched on the server — opening the field shows the
+    // first page `customers.list` answers, as records (one option per customer id).
+    const picker = field(el, 'appointments-series-create-customer') as (HTMLElement & { updateComplete: Promise<unknown> }) | null;
+    expect(picker?.tagName.toLowerCase()).toBe('erp-appointments-customer-picker');
+    picker!.shadowRoot!.querySelector('[data-testid="appointments-customer-picker-input"]')!
+      .dispatchEvent(new CustomEvent('ionFocus', { bubbles: true, composed: true }));
+    await new Promise((r) => setTimeout(r, 0));
+    await picker!.updateComplete;
+    const offered = [...picker!.shadowRoot!.querySelectorAll('[data-testid^="appointments-customer-picker-option-"]')].map((o) =>
+      o.getAttribute('data-testid')!.replace('appointments-customer-picker-option-', ''),
+    );
+    expect(offered).toEqual(['c1', 'c2']);
     expect(opts('appointments-series-create-service')).toEqual(['sv1', 'sv2']);
     expect(opts('appointments-series-create-staff')).toEqual(['s1']);
   });

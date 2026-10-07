@@ -23,7 +23,8 @@ export async function pickCustomer(host: Updating, testid: string, id: string): 
   const picker = host.shadowRoot?.querySelector(`[data-testid="${testid}"]`) as Updating | null;
   expect(picker, `${testid} must be rendered`).toBeTruthy();
   await settle(picker!);
-  const input = picker!.shadowRoot!.querySelector('[data-testid="appointments-customer-picker-input"]');
+  // The picker's only field (its hook is the picker's own contract, read once in testids.test.ts).
+  const input = picker!.shadowRoot!.querySelector('ion-input');
   expect(input, `${testid}: the search field`).toBeTruthy();
   input!.dispatchEvent(new CustomEvent('ionFocus', { bubbles: true, composed: true }));
   await settle(picker!);
