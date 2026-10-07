@@ -2085,6 +2085,7 @@ var es_default = {
     seriesBookedSkipped: "{booked} citas reservadas \xB7 {skipped} no se han podido reservar:",
     seriesBookedSoFar: "{booked} citas reservadas por ahora.",
     seriesPendingFrom: "Las fechas desde el {date} a\xFAn no est\xE1n reservadas: pulsa \xABReservar citas\xBB en la serie para reservarlas.",
+    seriesUpcomingFrom: "A\xFAn no hay nada que reservar: la pr\xF3xima fecha de esta serie, el {date}, queda m\xE1s lejos que la antelaci\xF3n m\xE1xima. Pulsa \xABReservar citas\xBB en la serie cuando se acerque.",
     seriesSkipStaffHours: "el profesional no trabaja a esa hora",
     seriesSkipClosed: "el negocio est\xE1 cerrado a esa hora",
     seriesSkipBlocked: "esa franja est\xE1 bloqueada en la agenda",
@@ -2163,6 +2164,7 @@ var es_default = {
     "appointments.recurring_unavailable": "No se pudo leer la cita recurrente; no se ha reservado nada.",
     "appointments.recurring_not_found": "Esa cita recurrente no existe en este negocio.",
     "appointments.recurring_inactive": "Esa cita recurrente est\xE1 desactivada; act\xEDvala para reservar sus ocurrencias.",
+    "appointments.recurring_ended": "Esta cita peri\xF3dica ya no tiene fechas que reservar: su fecha de fin ha pasado o ya se han dado todas sus citas.",
     "appointments.recurring_mismatch": "La cita recurrente no coincide con el cliente, el servicio o el profesional enviados; no se ha reservado nada.",
     "appointments.cannot_reschedule": "Esta cita ya no se puede mover en su estado actual.",
     "appointments.outside_schedule": "Esa hora est\xE1 fuera del horario de apertura del negocio.",
@@ -2388,6 +2390,7 @@ var en_default = {
     seriesBookedSkipped: "{booked} appointments booked \xB7 {skipped} could not be booked:",
     seriesBookedSoFar: "{booked} appointments booked so far.",
     seriesPendingFrom: "The dates from {date} on are not booked yet: tap \xABBook appointments\xBB on the series to book them.",
+    seriesUpcomingFrom: "Nothing to book yet: the next date of this series, {date}, is further ahead than the maximum advance booking. Tap \xABBook appointments\xBB on the series when it gets closer.",
     seriesSkipStaffHours: "the professional does not work at that time",
     seriesSkipClosed: "the business is closed at that time",
     seriesSkipBlocked: "that time is blocked in the agenda",
@@ -2466,6 +2469,7 @@ var en_default = {
     "appointments.recurring_unavailable": "The recurring appointment could not be read; nothing was booked.",
     "appointments.recurring_not_found": "That recurring appointment does not exist in this business.",
     "appointments.recurring_inactive": "That recurring appointment is switched off; reactivate it to book its occurrences.",
+    "appointments.recurring_ended": "This repeating appointment has no dates left to book: its end date has passed or all its appointments are booked.",
     "appointments.recurring_mismatch": "The recurring appointment does not match the customer, service or professional sent; nothing was booked.",
     "appointments.cannot_reschedule": "This appointment can no longer be moved in its current state.",
     "appointments.outside_schedule": "That time is outside the business opening hours.",
@@ -7818,10 +7822,12 @@ function skippedDates(a3) {
 function bookingReport(answer) {
   const a3 = handlerAnswer(answer);
   if (!a3 || !Array.isArray(a3.skipped)) return null;
+  const upcoming = typeof a3.upcoming_from === "string" ? a3.upcoming_from : "";
   return {
     booked: Number(a3.booked ?? 0),
     already_booked: Number(a3.already_booked ?? 0),
-    skipped: skippedDates(a3)
+    skipped: skippedDates(a3),
+    ...upcoming ? { upcoming_from: upcoming } : {}
   };
 }
 var MAX_RUNS = 20;
@@ -8359,7 +8365,7 @@ var ErpAppointmentsSeries = class extends i3 {
   /** appointments#238 — keeps the report on screen when some date was left out; returns whether
    *  it did, so the caller only toasts «booked» when everything was. */
   showSkipped(report) {
-    this.bookingReport = report && (report.skipped.length > 0 || report.pending_from) ? report : null;
+    this.bookingReport = report && (report.skipped.length > 0 || report.pending_from || report.upcoming_from) ? report : null;
     return this.bookingReport !== null;
   }
   /** Materializar la ventana desde la lista: la serie ya existe, lo que falta son sus citas. */
@@ -8550,6 +8556,11 @@ var ErpAppointmentsSeries = class extends i3 {
   /** appointments#238 — «N booked · M could not be booked:» and one line per date with its reason,
    *  as Fresha or Square say it when a repeating booking leaves dates out. */
   renderBookingReport(report, t5) {
+    if (report.upcoming_from) {
+      return b2`<ok-inline-feedback data-testid="appointments-series-upcoming" tone="info" icon="information-circle-outline">
+        ${t5("ui.seriesUpcomingFrom", { date: this.shownDate(report.upcoming_from) })}
+      </ok-inline-feedback>`;
+    }
     return b2`<ok-inline-feedback data-testid="appointments-series-skipped" tone="warning" icon="alert-circle-outline">
       <strong>${report.skipped.length > 0 ? t5("ui.seriesBookedSkipped", {
       // What a previous run already booked is on the agenda too: a retry must not read «0 booked».

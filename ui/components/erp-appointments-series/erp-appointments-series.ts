@@ -92,6 +92,8 @@ interface SeriesBookingReport {
   /** appointments#299 — the window was not finished when the screen stopped following it: the
    *  first date nothing is booked from yet. */
   pending_from?: string;
+  /** appointments#316 — nothing to book YET: the next date of the series lies past the window. */
+  upcoming_from?: string;
 }
 
 /** The short reason painted next to each skipped date; any other code reads as «could not be booked». */
@@ -131,10 +133,12 @@ export function skippedDates(a: Record<string, unknown>): { occurrence_date: str
 function bookingReport(answer: unknown): SeriesBookingReport | null {
   const a = handlerAnswer(answer);
   if (!a || !Array.isArray(a.skipped)) return null;
+  const upcoming = typeof a.upcoming_from === 'string' ? a.upcoming_from : '';
   return {
     booked: Number(a.booked ?? 0),
     already_booked: Number(a.already_booked ?? 0),
     skipped: skippedDates(a),
+    ...(upcoming ? { upcoming_from: upcoming } : {}),
   };
 }
 
@@ -906,7 +910,7 @@ export class ErpAppointmentsSeries extends LitElement {
   /** appointments#238 — keeps the report on screen when some date was left out; returns whether
    *  it did, so the caller only toasts «booked» when everything was. */
   private showSkipped(report: SeriesBookingReport | null): boolean {
-    this.bookingReport = report && (report.skipped.length > 0 || report.pending_from) ? report : null;
+    this.bookingReport = report && (report.skipped.length > 0 || report.pending_from || report.upcoming_from) ? report : null;
     return this.bookingReport !== null;
   }
 
@@ -1125,6 +1129,12 @@ export class ErpAppointmentsSeries extends LitElement {
   /** appointments#238 — «N booked · M could not be booked:» and one line per date with its reason,
    *  as Fresha or Square say it when a repeating booking leaves dates out. */
   private renderBookingReport(report: SeriesBookingReport, t: (k: string, p?: Record<string, unknown>) => string) {
+    // appointments#316 — no date inside the window yet is not a failure: say when the next one is.
+    if (report.upcoming_from) {
+      return html`<ok-inline-feedback data-testid="appointments-series-upcoming" tone="info" icon="information-circle-outline">
+        ${t('ui.seriesUpcomingFrom', { date: this.shownDate(report.upcoming_from) })}
+      </ok-inline-feedback>`;
+    }
     return html`<ok-inline-feedback data-testid="appointments-series-skipped" tone="warning" icon="alert-circle-outline">
       <strong>${report.skipped.length > 0
         ? t('ui.seriesBookedSkipped', {

@@ -130,6 +130,12 @@ is left for a later run, not refused (appointments#289). A single run creates at
 if the window is still unfinished when it stops, the panel says from which date nothing is booked
 yet — tap «Book appointments» on the series again (appointments#299).
 
+**"I created a repeating appointment and nothing was booked."** Its first date (or, for a series
+already under way, its next one) is further ahead than your maximum advance booking. Nothing failed:
+the panel says «Nothing to book yet: the next date of this series, … is further ahead than the
+maximum advance booking». Tap «Book appointments» on the series when that date gets closer
+(appointments#316).
+
 **"«Book appointments» on a series says it has no professional."** The series was saved without one
 (before appointments#246 the assistant and the API could create it that way; the screen never
 could), and a series is booked for a customer, a service and a professional from your records.

@@ -117,7 +117,7 @@ misma gramática y el mismo prefijo. Antes de tocar código, lee el fichero del 
 | APPOINTMENTS-F10 | Ver el historial de una cita | hecho | [`workflow/agenda.md`](workflow/agenda.md) |
 | APPOINTMENTS-F11 | Borrar una cita | parcial | [`workflow/agenda.md`](workflow/agenda.md) |
 | APPOINTMENTS-F12 | Crear una cita periódica | parcial — sin alta de clienta en el formulario (appointments#318); solo los 500 primeros servicios y profesionales, sin decirlo (appointments#324) | [`workflow/periodicas.md`](workflow/periodicas.md) |
-| APPOINTMENTS-F13 | Reservar las citas de una serie | parcial | [`workflow/periodicas.md`](workflow/periodicas.md) |
+| APPOINTMENTS-F13 | Reservar las citas de una serie | parcial — con una antelación máxima de más de unos 400 días, una próxima fecha tan lejana da error en vez de avisar (appointments#331) | [`workflow/periodicas.md`](workflow/periodicas.md) |
 | APPOINTMENTS-F14 | Editar una serie de esta cita en adelante | hecho | [`workflow/periodicas.md`](workflow/periodicas.md) |
 | APPOINTMENTS-F15 | Pausar, reactivar o borrar una serie | hecho | [`workflow/periodicas.md`](workflow/periodicas.md) |
 | APPOINTMENTS-F16 | Bloquear tiempo en la agenda | parcial | [`workflow/canales.md`](workflow/canales.md) |

@@ -17,7 +17,9 @@ Pasos:
    han podido cargar…» con **Reintentar** o «Todavía no hay… reservables» igual que en
    APPOINTMENTS-F01 (appointments#319).
 3. Pulsa **Crear cita periódica**: se crea la serie y se reservan sus citas de la ventana (APPOINTMENTS-F13).
-4. Sale «Cita periódica creada y sus citas reservadas» o la lista de fechas que no se pudieron reservar.
+4. Sale «Cita periódica creada y sus citas reservadas», la lista de fechas que no se pudieron reservar
+   o, si la serie aún no tiene ninguna fecha dentro de la antelación máxima, el aviso con la fecha de
+   su primera cita (APPOINTMENTS-F13, appointments#316).
 Entra: clienta, servicio y profesional de sus fichas, igual que una cita suelta.
 Sale: la serie activa, sus citas pendientes y el aviso de serie creada (`appointments.recurring.created`).
 Si falla: el motivo sale dentro del panel; si la serie se creó pero no se reservó nada, se dice y se usa **Reservar citas** en su fila.
@@ -25,7 +27,7 @@ Implicados: CUSTOMERS-F25, CUSTOMERS-F30, STAFF-F09, STAFF-F10, STAFF-F12
 QA: ninguno
 
 ### APPOINTMENTS-F13 Reservar las citas de una serie
-Estado: parcial — una serie que aún no tiene ninguna fecha dentro de la antelación máxima dice «no se han podido reservar» sin haber fallado nada (appointments#316)
+Estado: parcial — con una antelación máxima de más de unos 400 días, si la próxima fecha queda más allá de lo que se lee del horario de la profesional sale el error genérico en vez del aviso (appointments#331)
 Actor: empleado
 Pantalla: Periódicas
 Pasos:
@@ -37,9 +39,15 @@ Pasos:
    como mucho 50 y la pantalla sigue sola con la siguiente (appointments#299).
 3. Una fecha que no cabe (cerrado, el profesional no trabaja, bloqueo, otra cita, pasado) se salta y
    se lista con su motivo; las demás se reservan.
+4. Si la serie aún no tiene ninguna fecha dentro de la ventana (empieza más lejos que la antelación
+   máxima, o su próxima fecha lo está), no se reserva nada y no es un fallo: el aviso dice «Aún no hay
+   nada que reservar: la próxima fecha de esta serie, el {fecha}, queda más lejos que la antelación
+   máxima» y se vuelve a pulsar **Reservar citas** cuando se acerque (appointments#316).
 Entra: la serie y las mismas comprobaciones que una cita suelta (APPOINTMENTS-F02).
 Sale: una cita pendiente por fecha reservada, cada una con su aviso de cita creada; nunca duplica una fecha ya dada.
 Si falla: «No se han podido reservar las citas de esta serie.»; una serie desactivada pide activarla;
+una serie que ya no tiene fechas (pasó su fecha de fin o se dieron todas sus citas) dice «Esta cita
+periódica ya no tiene fechas que reservar»;
 si la ventana no se termina de reservar, el aviso dice «Las fechas desde el {fecha} aún no están
 reservadas» y se vuelve a pulsar **Reservar citas**.
 Implicados: CUSTOMERS-F30, SCHEDULES-F11, STAFF-F12, STAFF-F16

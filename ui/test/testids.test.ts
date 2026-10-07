@@ -218,6 +218,7 @@ const COVERED: Record<
       'appointments-series-services-retry',
       'appointments-series-skipped',
       'appointments-series-pending',
+      'appointments-series-upcoming',
       'appointments-series-not-moved',
       'appointments-series-split-from',
       'appointments-series-staff',

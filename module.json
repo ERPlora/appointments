@@ -25,6 +25,7 @@
     "appointments.outside_staff_hours": {},
     "appointments.overlapping_appointment": {},
     "appointments.phone_invalid": {},
+    "appointments.recurring_ended": {},
     "appointments.recurring_inactive": {},
     "appointments.recurring_mismatch": {},
     "appointments.recurring_not_found": {},
