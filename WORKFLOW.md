@@ -183,16 +183,18 @@ misma gramática y el mismo prefijo. Antes de tocar código, lee el fichero del 
 - **Bloqueos:** título, motivo y profesional.
 - **Auditoría** en todas las tablas: quién creó y quién cambió cada fila (usuarios del hub).
 - **Tablas retiradas que siguen en la base de datos con otro nombre:** la de retenciones de hueco
-  queda como `_deprecated_appointments_slot_hold`, con su etiqueta y la referencia de quien la
-  pidió; el horario propio retirado, también apartado con ese prefijo.
+  queda como `_deprecated_appointments_slot_hold`, con su etiqueta (el nombre o el teléfono de quien
+  la pidió) y la referencia opaca a la solicitud; el horario propio retirado, también apartado con
+  ese prefijo.
 - **Lo que sale hacia otros:** el aviso de cita creada lleva el nombre de la clienta y la nota
   visible; la receta de WhatsApp «cita confirmada» lee la cita entera, con teléfono, email y las
   dos notas. La agenda del día y el historial por clienta que ve el asistente no llevan contacto ni notas.
 - **Borrado:** al borrar los datos personales de una ficha en Clientes, Citas vacía el nombre, el
   contacto, las notas y el motivo de cancelación de sus citas, el nombre de sus series y el nombre y
   los motivos de su historial (APPOINTMENTS-F24). Eliminar la ficha sin borrar sus datos no toca
-  nada. La etiqueta de la tabla apartada de retenciones de hueco no lleva la ficha y no se puede
-  vaciar por clienta (appointments#314).
+  nada. La tabla apartada de retenciones de hueco no lleva la ficha, así que no se puede saber qué
+  etiqueta era suya: al borrar los datos de cualquier clienta se vacían todas las etiquetas de ese
+  negocio (appointments#314).
 
 ## Reglas que no se rompen
 - **Vínculos reales:** toda cita lleva clienta, servicio y profesional de sus fichas; nombre, precio

@@ -98,7 +98,7 @@ Implicados: CUSTOMERS-F13, ONLINE_BOOKING-F09
 QA: ninguno
 
 ### APPOINTMENTS-F24 Vaciar los datos de una clienta al borrarla
-Estado: parcial — el nombre o teléfono que se guardó como etiqueta en los huecos apartados de la antigua bandeja de WhatsApp sigue en la base de datos (ERPlora/appointments#314)
+Estado: parcial — el paso 5 necesita un hub posterior a v1.1.30; un hub más viejo rechaza esta versión de Citas con un error de «tabla ajena» en vez de pedir que se actualice el hub (ERPlora/appointments#328)
 Actor: sistema
 Pantalla: Agenda
 Pasos:
@@ -109,9 +109,13 @@ Pasos:
    reservan fechas nuevas porque su ficha ya no existe.
 4. En el historial de esas citas se borran el nombre de la línea «Reservada» y el motivo de cada
    cancelación; el resto de la línea (qué pasó, cuándo y quién del equipo lo hizo) se queda.
-5. Donde estaba el nombre, la Agenda, la lista de Periódicas y sus avisos dicen «Cliente borrado».
+5. Los huecos que apartaba la antigua bandeja de WhatsApp (retirada, ya no se ven en ninguna
+   pantalla) guardaban como etiqueta el nombre o el teléfono de quien los pidió, sin saber de qué
+   ficha: se vacían las etiquetas de todos los huecos de este negocio, y el hueco se queda.
+6. Donde estaba el nombre, la Agenda, la lista de Periódicas y sus avisos dicen «Cliente borrado».
 Entra: el aviso de borrado de la ficha (`customer.anonymized`) con su identificador.
-Sale: las citas, series e historial sin datos de la clienta. Se quedan la cita, su número, el
+Sale: las citas, series e historial sin datos de la clienta, y los huecos apartados retirados sin
+etiqueta. Se quedan la cita, su número, el
 servicio, el precio, el profesional, la hora, el estado y la venta: la agenda sigue diciendo qué
 hizo cada profesional y qué se cobró. Una cita futura no se cancela sola.
 Si falla: no hay nada que ver en pantalla; el hub reintenta el aviso hasta que entra, y repetirlo no

@@ -443,7 +443,8 @@
       "sql": [
         "commands/customer_erase_appointments.sql",
         "commands/customer_erase_recurring.sql",
-        "commands/customer_erase_history.sql"
+        "commands/customer_erase_history.sql",
+        "commands/customer_erase_slot_hold_labels.sql"
       ]
     },
     "appointments._recurring_cancel_occurrence": {
