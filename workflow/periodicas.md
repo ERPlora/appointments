@@ -5,7 +5,7 @@ Prefijo: APPOINTMENTS
 ## Flujos
 
 ### APPOINTMENTS-F12 Crear una cita periódica
-Estado: parcial — no deja crear una clienta nueva desde el formulario (appointments#318); si servicios o profesionales no cargan, el desplegable sale vacío sin aviso (appointments#319)
+Estado: parcial — no deja crear una clienta nueva desde el formulario (appointments#318); Servicio y Profesional ofrecen como mucho los 500 primeros, sin decirlo (appointments#324)
 Actor: empleado
 Pantalla: Periódicas
 Pasos:
@@ -13,7 +13,9 @@ Pasos:
 2. Elige Cliente (se busca escribiendo nombre, teléfono o email, igual que en APPOINTMENTS-F01, entre
    todas las fichas; appointments#306), Servicio y Profesional (solo los que hacen el servicio), la Repetición (cada día,
    semana, dos semanas o mes), el Día de la semana si aplica, el Día y la Hora de inicio, los Min. y,
-   si quieres, «Termina el» o «Número de citas».
+   si quieres, «Termina el» o «Número de citas». Servicio y Profesional dicen «Cargando…», «No se
+   han podido cargar…» con **Reintentar** o «Todavía no hay… reservables» igual que en
+   APPOINTMENTS-F01 (appointments#319).
 3. Pulsa **Crear cita periódica**: se crea la serie y se reservan sus citas de la ventana (APPOINTMENTS-F13).
 4. Sale «Cita periódica creada y sus citas reservadas» o la lista de fechas que no se pudieron reservar.
 Entra: clienta, servicio y profesional de sus fichas, igual que una cita suelta.

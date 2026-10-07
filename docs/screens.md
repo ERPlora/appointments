@@ -57,6 +57,12 @@ Requires `appointments.view_appointment`.
    clears her and says so; tapping a gap of a professional who does not do the chosen service
    keeps her and clears the service instead. If the list cannot be checked, the whole team is
    shown, the form says so and the booking is checked when you save (appointments#279).
+   While the services and the professionals are being read, each field says so underneath
+   (*Loading services…*, *Loading professionals…*). If a list cannot be read (Services or Staff not
+   answering, a network cut), the form says *The services could not be loaded.* (or *the
+   professionals*) with **Retry**, which reads that list again; with none bookable it says so and
+   points to Services or Staff. A field with nothing to pick is disabled — never an empty list that
+   looks like "this business has no services" (appointments#319).
 2. The **service decides the duration** by default; you can override it for this one booking. When
    the chosen professional has her **own length** for that service (set in Staff), that is the one
    proposed, and changing the professional proposes hers (or the catalogue's when she has none).
@@ -238,7 +244,8 @@ Monday · 11:00"), when it starts and when it ends. Each row offers three action
 
 **Add** (the table's own button, appointments#209) opens the **New repeating appointment** panel:
 customer (searched as you type, like in a new appointment), service and professional picked from
-their modules (only bookable services and professionals), the frequency, the weekday (weekly and every-two-weeks patterns only), the start as
+their modules (only bookable services and professionals; loading, a list that cannot be read —
+with **Retry** — and none bookable are said like in a new appointment, appointments#319), the frequency, the weekday (weekly and every-two-weeks patterns only), the start as
 **Day + Time** — the same two fields as a new appointment, so it can be typed in one go or pasted —,
 the minutes (pre-filled from the service) and, optionally, an end date or a number of appointments.
 Once a service is chosen, the professional list only offers **who performs it**, exactly as when

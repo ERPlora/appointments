@@ -54,7 +54,11 @@ estado» y el conmutador **Lista · Por profesional · Periódicas** (en móvil 
 - **Periódicas**: ver la pantalla [Periódicas](#periódicas).
 - Botón **Añadir cita** → panel de alta: Cliente (buscador «Busca por nombre o teléfono»; también encuentra por email), Servicio, Profesional, Día, Hora (con «Horas
   libres» como botones), Min.; avisos «Esta cita empieza en el pasado…», profesional que no hace
-  el servicio, duración propia no leída.
+  el servicio, duración propia no leída. Bajo Servicio y bajo Profesional, mientras se leen,
+  «Cargando servicios…» / «Cargando profesionales…»; si no se pueden leer, «No se han podido cargar
+  los servicios.» / «…los profesionales.» con **Reintentar**; si no hay ninguno reservable, «Todavía
+  no hay servicios reservables. Dalos de alta en Servicios.» / «…profesionales… en Personal.» (el
+  desplegable sin nada que elegir sale desactivado; appointments#319).
 - **Editar** → panel «Editar la cita»: Día, Hora, Min., Servicio, Profesional, «Guardar cambios» y,
   debajo, el historial. **Historial** → panel «Historial de la cita».
 - Diálogos: «Cita solapada» (**Reservar igual** / **Elegir otra hora**) y «Editar cita periódica»
@@ -70,7 +74,8 @@ semana · Lunes · 11:00), Empieza, Termina («Sin fin», «Tras {n} citas» o l
 **Activa**). Por fila: **Editar serie**, **Reservar citas**, **Borrar** (pide confirmación). El
 botón de añadir de la tabla abre «Nueva cita periódica» (Cliente, Servicio, Profesional,
 Repetición, Día de la semana, Día, Hora, Min., «Termina el (opcional)», «Número de citas
-(opcional)») con **Crear cita periódica**; editar abre «Editar cita periódica» con **Guardar de esta
+(opcional)») con **Crear cita periódica**; Servicio y Profesional dicen «Cargando…», «No se han podido
+cargar…» con **Reintentar** o «Todavía no hay… reservables» igual que el alta de una cita; editar abre «Editar cita periódica» con **Guardar de esta
 cita en adelante**. Tras reservar o guardar, un aviso «{booked} citas reservadas · {skipped} no se han podido reservar:» con
 cada fecha y su motivo; si quedan fechas sin reservar, «Las fechas desde el {date} aún no están
 reservadas: pulsa «Reservar citas» en la serie para reservarlas.». Vacía: «Todavía no hay citas periódicas.» · Error: «No se han podido cargar
@@ -100,7 +105,7 @@ misma gramática y el mismo prefijo. Antes de tocar código, lee el fichero del 
 
 | ID | Flujo | Estado | Detalle |
 |---|---|---|---|
-| APPOINTMENTS-F01 | Reservar una cita desde la agenda | parcial — sin alta de clienta en el formulario (appointments#318); fallo silencioso de servicios/profesionales (appointments#319) | [`workflow/agenda.md`](workflow/agenda.md) |
+| APPOINTMENTS-F01 | Reservar una cita desde la agenda | parcial — sin alta de clienta en el formulario (appointments#318); solo los 500 primeros servicios y profesionales, sin decirlo (appointments#324) | [`workflow/agenda.md`](workflow/agenda.md) |
 | APPOINTMENTS-F02 | Ver qué horas quedan libres | hecho | [`workflow/agenda.md`](workflow/agenda.md) |
 | APPOINTMENTS-F03 | Confirmar una cita pendiente | hecho | [`workflow/agenda.md`](workflow/agenda.md) |
 | APPOINTMENTS-F04 | Mover una cita o cambiarle el profesional o el servicio | parcial | [`workflow/agenda.md`](workflow/agenda.md) |
@@ -111,7 +116,7 @@ misma gramática y el mismo prefijo. Antes de tocar código, lee el fichero del 
 | APPOINTMENTS-F09 | Marcar que la clienta no se presentó | parcial | [`workflow/agenda.md`](workflow/agenda.md) |
 | APPOINTMENTS-F10 | Ver el historial de una cita | hecho | [`workflow/agenda.md`](workflow/agenda.md) |
 | APPOINTMENTS-F11 | Borrar una cita | parcial | [`workflow/agenda.md`](workflow/agenda.md) |
-| APPOINTMENTS-F12 | Crear una cita periódica | parcial — sin alta de clienta en el formulario (appointments#318); fallo silencioso de servicios/profesionales (appointments#319) | [`workflow/periodicas.md`](workflow/periodicas.md) |
+| APPOINTMENTS-F12 | Crear una cita periódica | parcial — sin alta de clienta en el formulario (appointments#318); solo los 500 primeros servicios y profesionales, sin decirlo (appointments#324) | [`workflow/periodicas.md`](workflow/periodicas.md) |
 | APPOINTMENTS-F13 | Reservar las citas de una serie | parcial | [`workflow/periodicas.md`](workflow/periodicas.md) |
 | APPOINTMENTS-F14 | Editar una serie de esta cita en adelante | hecho | [`workflow/periodicas.md`](workflow/periodicas.md) |
 | APPOINTMENTS-F15 | Pausar, reactivar o borrar una serie | hecho | [`workflow/periodicas.md`](workflow/periodicas.md) |

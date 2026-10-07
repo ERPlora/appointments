@@ -246,7 +246,14 @@
     "customerNone": "There are no customers yet. Add them in Customers.",
     "customerMore": "Showing the first 20. Keep typing to narrow it down.",
     "errLoadCustomers": "Could not load the customers.",
-    "customerRetry": "Retry"
+    "customerRetry": "Retry",
+    "servicesLoading": "Loading services…",
+    "staffLoading": "Loading professionals…",
+    "errLoadServices": "The services could not be loaded.",
+    "errLoadStaff": "The professionals could not be loaded.",
+    "servicesNone": "There are no bookable services yet. Add them in Services.",
+    "staffNone": "There are no bookable professionals yet. Add them in Staff.",
+    "catalogRetry": "Retry"
   },
   "errors": {
     "appointments.cannot_cancel": "This appointment can no longer be cancelled in its current state.",
