@@ -97,7 +97,7 @@ Implicados: CUSTOMERS-F13, ONLINE_BOOKING-F09
 QA: ninguno
 
 ### APPOINTMENTS-F24 Vaciar los datos de una clienta al borrarla
-Estado: hecho
+Estado: parcial — el nombre o teléfono que se guardó como etiqueta en los huecos apartados de la antigua bandeja de WhatsApp sigue en la base de datos (ERPlora/appointments#314)
 Actor: sistema
 Pantalla: Agenda
 Pasos:
