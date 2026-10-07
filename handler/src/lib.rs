@@ -38,6 +38,7 @@
 //! (`:new_id` fresco por operación).
 
 use erplora_guest_sdk::money;
+use erplora_guest_sdk::phone;
 use erplora_guest_sdk::{DomainError, Operation, Output};
 use serde_json::{json, Map, Value};
 use std::collections::{BTreeMap, BTreeSet};
@@ -131,6 +132,12 @@ pub fn reschedule_appointment(input: Json<erplora_guest_sdk::Input>) -> FnResult
 #[plugin_fn]
 pub fn update_appointment(input: Json<erplora_guest_sdk::Input>) -> FnResult<Json<Output>> {
     guest_result(update_appointment_pure(input.into_inner().into_value()))
+}
+
+#[cfg(feature = "guest")]
+#[plugin_fn]
+pub fn phones_to_e164(input: Json<erplora_guest_sdk::Input>) -> FnResult<Json<Output>> {
+    guest_result(phones_to_e164_pure(input.into_inner().into_value()))
 }
 
 // ───────────────────────────── helpers JSON ─────────────────────────────
@@ -362,6 +369,23 @@ fn business_tz(input: &Value) -> chrono_tz::Tz {
         .map(as_str)
         .and_then(|name| name.parse::<chrono_tz::Tz>().ok())
         .unwrap_or(chrono_tz::UTC)
+}
+
+/// The business's country (`context.country_code`, ISO 3166 alpha-2), which reads a phone typed
+/// without prefix (appointments#313). Empty when the hub has none: [`phone::to_e164`] then reads
+/// it as Spain, like Customers does.
+fn business_country(input: &Value) -> String {
+    input
+        .get("context")
+        .and_then(|c| c.get("country_code"))
+        .map(as_str)
+        .unwrap_or_default()
+}
+
+/// A phone already saved (on a card, on an appointment) in E.164 when it can be read; as it was
+/// when it cannot — a text nobody is typing now never refuses a booking or an edit.
+fn saved_phone_e164(saved: &str, country: &str) -> String {
+    phone::to_e164(saved, country).unwrap_or_else(|_| saved.to_string())
 }
 
 /// The first instant whose local time has reached `naive`, when `naive` itself never happens.
@@ -1951,7 +1975,7 @@ fn resolve_booking(
     Ok(Ok(ResolvedBooking {
         customer_id,
         customer_name: str_or(customer, "name", ""),
-        customer_phone: str_or(customer, "phone", ""),
+        customer_phone: saved_phone_e164(&str_or(customer, "phone", ""), &business_country(input)),
         customer_email: str_or(customer, "email", ""),
         service_id,
         service_name: str_or(service, "name", ""),
@@ -2929,6 +2953,11 @@ pub fn update_appointment_pure(input: Value) -> Result<Output, String> {
     // appointments#274: a field the caller does not send keeps what the appointment has — the
     // assistant edits by sending what changes, and blanking the rest wiped the customer's phone,
     // email and notes. One sent empty is a deliberate clear and is written as such.
+    // appointments#313: the phone is written in E.164, the form the «appointment confirmed»
+    // WhatsApp looks the conversation up by; one sent that is not a number is refused before
+    // anything is judged, and the row's own (an appointment booked before E.164) is rewritten
+    // when it can be read.
+    let country = business_country(&input);
     let mut details = Map::new();
     details.insert("appointment_id".into(), json!(appointment_id));
     for key in [
@@ -2939,9 +2968,19 @@ pub fn update_appointment_pure(input: Value) -> Result<Output, String> {
         "internal_notes",
     ] {
         // The schema types these as strings, so a `null` never reaches the handler.
-        let value = match payload.get(key) {
-            Some(sent) => as_str(sent),
-            None => text_at(&row, key).into_owned(),
+        let value = match (key, payload.get(key)) {
+            ("customer_phone", Some(sent)) => match phone::to_e164(&as_str(sent), &country) {
+                Ok(e164) => e164,
+                Err(_) => {
+                    return Ok(refuse(
+                        "appointments.phone_invalid",
+                        "That phone is not a valid number for the business's country.",
+                    ))
+                }
+            },
+            ("customer_phone", None) => saved_phone_e164(&text_at(&row, key), &country),
+            (_, Some(sent)) => as_str(sent),
+            (_, None) => text_at(&row, key).into_owned(),
         };
         details.insert(key.into(), json!(value));
     }
@@ -3008,6 +3047,45 @@ pub fn update_appointment_pure(input: Value) -> Result<Output, String> {
     let last = out.operations.len().saturating_sub(1);
     out.operations.insert(last, details);
     Ok(out)
+}
+
+/// The read of the `phones_to_e164` sweep (appointments#313).
+pub const PHONES_TO_E164_READ: &str = "appointments.appointments.phones_to_e164";
+
+/// `appointments._phones_to_e164` — the scheduled sweep (appointments#313).
+///
+/// Every write of a phone goes through [`phone::to_e164`] now, but the appointments booked or
+/// edited before kept the phone as typed, and the «appointment confirmed» WhatsApp, which finds
+/// the conversation by the exact international number, reached nobody for them. The task
+/// `phones_to_e164` runs this per hub: the read hands over the upcoming appointments whose phone is
+/// not E.164 yet, with the hub's country (the scheduler's context carries none), and each one that
+/// can be read is rewritten; one that cannot is left as typed. Each write is guarded by the old
+/// text, so a phone edited between the read and the write is not overwritten. No notice: the
+/// number is the same, only its form changes. The read is bounded, so a hub with more pending
+/// waits for the next tick; once they are done, every tick reads nothing.
+pub fn phones_to_e164_pure(input: Value) -> Result<Output, String> {
+    let operations = read_rows(&input, PHONES_TO_E164_READ)
+        .map(Vec::as_slice)
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|row| {
+            let id = str_or(row, "id", "");
+            let old = str_or(row, "customer_phone", "");
+            let e164 = phone::to_e164(&old, &str_or(row, "country_code", "")).ok()?;
+            if id.is_empty() || e164 == old {
+                return None;
+            }
+            let mut p = Map::new();
+            p.insert("appointment_id".into(), json!(id));
+            p.insert("customer_phone".into(), json!(e164));
+            p.insert("old_phone".into(), json!(old));
+            Some(Operation::sql("appointments._set_phone", p))
+        })
+        .collect();
+    Ok(Output {
+        operations,
+        ..Default::default()
+    })
 }
 
 /// `appointments.appointments.create` — WASM-TODO pieza 1.
@@ -14498,5 +14576,217 @@ mod tests {
             assert_eq!(domain_code(&out).as_deref(), Some("appointments.catalog_unavailable"), "{read}");
             assert!(out.operations.is_empty(), "{read}: something was written");
         }
+    }
+
+    // ── appointments#313: the appointment's phone is the customer's number in E.164 ─────────────
+    //
+    // The «appointment confirmed» WhatsApp finds the conversation by the appointment's phone, by the
+    // exact international number (WHATSAPP_INBOX-F23). An edit wrote the phone as typed («600 111
+    // 222») and the appointments booked before Customers saved cards in E.164 kept the old text, so
+    // the notice reached nobody. Every phone the handler writes goes through the hub's one reading
+    // (`erplora_guest_sdk::phone`, HUB-F36), and a sweep rewrites the ones already saved.
+
+    fn in_country(mut inp: Value, iso: &str) -> Value {
+        inp["context"]["country_code"] = json!(iso);
+        inp
+    }
+
+    fn phone_edit(phone: Option<&str>, row: Value, iso: &str) -> Output {
+        let mut p = json!({ "appointment_id": "apt-old", "notes": "fringe" });
+        if let Some(phone) = phone {
+            p["customer_phone"] = json!(phone);
+        }
+        update_appointment_pure(in_country(reschedule_input(p, row, None), iso))
+            .expect("an edit answers with an Output")
+    }
+
+    /// 🔴 THE SYMPTOM: the phone corrected by hand is written in E.164, not as typed.
+    #[test]
+    fn update_writes_a_phone_typed_by_hand_in_international_format() {
+        let out = phone_edit(Some("600 111 222"), beas_cut_with_details(), "ES");
+        assert!(out.error.is_none(), "{:?}", out.error);
+        let d = op_params(&out, "_update_details");
+        assert_eq!(d.get("customer_phone"), Some(&json!("+34600111222")));
+    }
+
+    /// A number without prefix is one of the BUSINESS's country, the one the hub hands over.
+    #[test]
+    fn update_reads_a_phone_without_prefix_in_the_business_country() {
+        let out = phone_edit(Some("07700 900123"), beas_cut_with_details(), "GB");
+        assert!(out.error.is_none(), "{:?}", out.error);
+        let d = op_params(&out, "_update_details");
+        assert_eq!(d.get("customer_phone"), Some(&json!("+447700900123")));
+    }
+
+    /// A text that is not a phone of its country is refused with a code, and nothing is written —
+    /// not even the notes that came with it.
+    #[test]
+    fn update_refuses_a_phone_that_is_not_a_number_and_writes_nothing() {
+        for typed in ["600111", "call after 5", "600 111 222 / 611 222 333"] {
+            let out = phone_edit(Some(typed), beas_cut_with_details(), "ES");
+            assert_eq!(domain_code(&out).as_deref(), Some("appointments.phone_invalid"), "{typed}");
+            assert!(out.operations.is_empty(), "{typed}: something was written");
+        }
+    }
+
+    /// The refusal comes before the move is judged: a wrong phone never moves the appointment.
+    #[test]
+    fn update_that_moves_with_a_wrong_phone_moves_nothing() {
+        let p = json!({
+            "appointment_id": "apt-old",
+            "start_datetime": "2026-07-31T15:00:00Z",
+            "customer_phone": "600111"
+        });
+        let out = update_appointment_pure(in_country(
+            reschedule_input(p, beas_cut_with_details(), None),
+            "ES",
+        ))
+        .unwrap();
+        assert_eq!(domain_code(&out).as_deref(), Some("appointments.phone_invalid"));
+        assert!(out.operations.is_empty(), "{:?}", op_commands(&out));
+    }
+
+    /// Clearing the phone stays possible: the phone is not required on an appointment.
+    #[test]
+    fn update_that_sends_the_phone_empty_still_clears_it() {
+        let out = phone_edit(Some(""), beas_cut_with_details(), "ES");
+        assert!(out.error.is_none(), "{:?}", out.error);
+        assert_eq!(op_params(&out, "_update_details").get("customer_phone"), Some(&json!("")));
+    }
+
+    /// An appointment booked before E.164 carries «600 111 222»: any edit of it, even one that does
+    /// not name the phone, writes it back in E.164.
+    #[test]
+    fn update_without_the_phone_rewrites_an_old_typed_phone() {
+        let mut row = beas_cut_with_details();
+        row["customer_phone"] = json!("0034 600 111 222");
+        let out = phone_edit(None, row, "ES");
+        assert!(out.error.is_none(), "{:?}", out.error);
+        let d = op_params(&out, "_update_details");
+        assert_eq!(d.get("customer_phone"), Some(&json!("+34600111222")));
+        assert_eq!(d.get("notes"), Some(&json!("fringe")));
+    }
+
+    /// …and an old phone that cannot be read is kept as it was: an edit of the notes is never
+    /// refused, nor the phone wiped, because of a text nobody sent in this edit.
+    #[test]
+    fn update_without_the_phone_keeps_an_old_phone_it_cannot_read() {
+        let mut row = beas_cut_with_details();
+        row["customer_phone"] = json!("ask at reception");
+        let out = phone_edit(None, row, "ES");
+        assert!(out.error.is_none(), "{:?}", out.error);
+        let d = op_params(&out, "_update_details");
+        assert_eq!(d.get("customer_phone"), Some(&json!("ask at reception")));
+    }
+
+    /// A booking copies the card's phone: a card typed before Customers saved E.164 is copied in
+    /// E.164; one that cannot be read is copied as it is (the booking is never refused for it).
+    #[test]
+    fn create_copies_the_card_phone_in_international_format() {
+        for (card, copied) in [
+            ("600 000 001", "+34600000001"),
+            ("+34600000001", "+34600000001"),
+            ("ask at reception", "ask at reception"),
+        ] {
+            let reads = json!({
+                "customers.get": [{ "id": "c1", "name": "Ada Lovelace", "phone": card,
+                                     "email": "ada@example.com" }]
+            });
+            let out = create_appointment_pure(in_country(
+                input(item("2026-07-31T11:00:00Z", 30, "s1"), Some(reads)),
+                "ES",
+            ))
+            .unwrap();
+            assert!(out.error.is_none(), "{card}: {:?}", out.error);
+            assert_eq!(insert_op(&out).params.get("customer_phone"), Some(&json!(copied)), "{card}");
+        }
+    }
+
+    /// The error the edit answers with is declared, with its text in both languages.
+    #[test]
+    fn phone_invalid_is_declared_and_translated() {
+        let manifest: Value = serde_json::from_str(include_str!("../../module.json")).unwrap();
+        assert!(manifest["errors"].get("appointments.phone_invalid").is_some());
+        for lang in [include_str!("../../locales/en.json"), include_str!("../../locales/es.json")] {
+            let l: Value = serde_json::from_str(lang).unwrap();
+            let text = l
+                .pointer("/errors/appointments.phone_invalid")
+                .or_else(|| l.get("appointments.phone_invalid"))
+                .and_then(Value::as_str);
+            assert!(text.is_some_and(|t| !t.is_empty()), "phone_invalid has no text");
+        }
+    }
+
+    // The sweep of the phones already saved (the scheduled task `phones_to_e164`).
+
+    fn sweep_input(rows: Value) -> Value {
+        json!({
+            "payload": {},
+            "context": {
+                "now": "2026-07-31T10:00:00Z",
+                "reads": { PHONES_TO_E164_READ: rows }
+            }
+        })
+    }
+
+    fn set_phone_ops(out: &Output) -> Vec<(String, String, String)> {
+        out.operations
+            .iter()
+            .map(|op| {
+                assert_eq!(op.command, "appointments._set_phone");
+                let p = |k: &str| as_str(op.params.get(k).unwrap_or(&Value::Null));
+                (p("appointment_id"), p("customer_phone"), p("old_phone"))
+            })
+            .collect()
+    }
+
+    /// Each readable phone is rewritten in E.164 in the hub's country (the scheduler's context has
+    /// no country, so the read carries it); the guard is the old text, so a phone somebody edited
+    /// meanwhile is not overwritten.
+    #[test]
+    fn sweep_rewrites_each_readable_phone_in_international_format() {
+        let out = phones_to_e164_pure(sweep_input(json!([
+            { "id": "a1", "customer_phone": "600 111 222", "country_code": "ES" },
+            { "id": "a2", "customer_phone": "07700 900123", "country_code": "GB" },
+            { "id": "a3", "customer_phone": "ask at reception", "country_code": "ES" },
+            { "id": "a4", "customer_phone": "+34600111222", "country_code": "ES" }
+        ])))
+        .unwrap();
+        assert!(out.error.is_none(), "{:?}", out.error);
+        assert_eq!(
+            set_phone_ops(&out),
+            vec![
+                ("a1".into(), "+34600111222".into(), "600 111 222".into()),
+                ("a2".into(), "+447700900123".into(), "07700 900123".into()),
+            ]
+        );
+        assert!(out.events.is_empty(), "a sweep is not an edit: no notice");
+    }
+
+    /// Nothing left to rewrite → nothing written (every later tick).
+    #[test]
+    fn sweep_with_nothing_to_rewrite_writes_nothing() {
+        let out = phones_to_e164_pure(sweep_input(json!([]))).unwrap();
+        assert!(out.operations.is_empty());
+        let out = phones_to_e164_pure(json!({ "payload": {}, "context": { "now": "2026-07-31T10:00:00Z" } }))
+            .unwrap();
+        assert!(out.operations.is_empty());
+    }
+
+    /// The task is declared: internal command with its handler and read, the cron, and the read
+    /// and the write it uses.
+    #[test]
+    fn sweep_is_declared_as_a_scheduled_task() {
+        let manifest: Value = serde_json::from_str(include_str!("../../module.json")).unwrap();
+        let task = manifest["scheduled_tasks"]
+            .as_array()
+            .and_then(|t| t.iter().find(|t| t["name"] == json!("phones_to_e164")))
+            .expect("the phones_to_e164 task is declared");
+        assert_eq!(task["command"], json!("appointments._phones_to_e164"));
+        let cmd = &manifest["commands"]["appointments._phones_to_e164"];
+        assert_eq!(cmd["handler"]["function"], json!("phones_to_e164"));
+        assert_eq!(cmd["reads"][0]["query"], json!(PHONES_TO_E164_READ));
+        assert!(manifest["queries"].get(PHONES_TO_E164_READ).is_some());
+        assert!(manifest["commands"].get("appointments._set_phone").is_some());
     }
 }
