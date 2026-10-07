@@ -75,11 +75,12 @@ Pantalla: asistente
 Pasos:
 1. Pide al asistente que anote en la cita la nota de la visita (por ejemplo, la fórmula del color) o que corrija el teléfono o el email.
 2. Solo cambia lo que se pide; lo demás se queda como estaba. Las notas se pueden escribir en cualquier estado.
-3. Si además se cambia hora, profesional o servicio, se juzga como APPOINTMENTS-F04.
+3. El teléfono se guarda en formato internacional (`+34600111222`), leído como número del país del negocio si llega sin prefijo, que es como el WhatsApp de cita confirmada encuentra la conversación de la clienta. Cualquier edición reescribe también así el teléfono antiguo que la cita guardaba tal como se tecleó; si no se puede leer como número, se queda como estaba.
+4. Si además se cambia hora, profesional o servicio, se juzga como APPOINTMENTS-F04.
 Entra: la cita y lo que cambia.
-Sale: la cita actualizada y el aviso de cita editada (`appointments.appointment.updated`); solo un cambio de hora, profesional o servicio deja línea de historial.
-Si falla: el asistente cuenta el motivo (la pareja profesional y servicio incompleta, la hora de fin no cuadra, la cita no existe).
-Implicados: SCHEDULES-F11
+Sale: la cita actualizada y el aviso de cita editada (`appointments.appointment.updated`); solo un cambio de hora, profesional o servicio deja línea de historial. Aparte, cada 15 minutos la tarea `phones_to_e164` pasa a formato internacional el teléfono de las citas pendientes o confirmadas que aún no han pasado y lo guardan tal como se tecleó (reservadas antes de este cambio), sin historial ni aviso: el número es el mismo.
+Si falla: el asistente cuenta el motivo (la pareja profesional y servicio incompleta, la hora de fin no cuadra, la cita no existe, o el teléfono no es un número válido del país del negocio: `appointments.phone_invalid`, y no se guarda nada de la edición).
+Implicados: SCHEDULES-F11, HUB-F36
 QA: L-12
 
 ### APPOINTMENTS-F23 Unir las citas al fusionar dos fichas de clienta

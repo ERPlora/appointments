@@ -2170,7 +2170,8 @@ var es_default = {
     "appointments.cannot_update_settings": "No se han podido cambiar los ajustes de reserva: este negocio no tiene ajustes en uso ahora mismo.",
     "appointments.appointment_not_found": "Esa cita no existe en este negocio.",
     "appointments.invalid_end": "La hora de fin no coincide con la de inicio m\xE1s la duraci\xF3n.",
-    "appointments.handover_incomplete": "Para cambiar la profesional o el servicio hay que enviar la profesional y el servicio a la vez, incluido el que no cambia."
+    "appointments.handover_incomplete": "Para cambiar la profesional o el servicio hay que enviar la profesional y el servicio a la vez, incluido el que no cambia.",
+    "appointments.phone_invalid": "Ese tel\xE9fono no es un n\xFAmero v\xE1lido del pa\xEDs del negocio. Rev\xEDsalo o escr\xEDbelo con su prefijo internacional (por ejemplo, +44\u2026)."
   },
   bell: {
     "appointments.to_confirm": {
@@ -2465,7 +2466,8 @@ var en_default = {
     "appointments.cannot_update_settings": "The booking settings could not be changed: this business has no settings in use right now.",
     "appointments.appointment_not_found": "That appointment does not exist in this business.",
     "appointments.invalid_end": "The end does not match the start plus the duration.",
-    "appointments.handover_incomplete": "To change the professional or the service, send both the professional and the service, the one that stays included."
+    "appointments.handover_incomplete": "To change the professional or the service, send both the professional and the service, the one that stays included.",
+    "appointments.phone_invalid": "That phone is not a valid number for the business's country. Check it, or type it with its international prefix (for example +44\u2026)."
   },
   bell: {
     "appointments.to_confirm": {
