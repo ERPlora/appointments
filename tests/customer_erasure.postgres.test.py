@@ -309,6 +309,7 @@ def main() -> int:
         recurring(db, "r-deleted", HUB, ERASED, deleted=1)
         recurring(db, "r-already", HUB, ERASED, name="")
         recurring(db, "r-someone", HUB, SOMEONE)
+        recurring(db, "r-blank-id", HUB, "")
         created = json.dumps(
             {
                 "customer_name": "Ana García",
@@ -354,10 +355,16 @@ def main() -> int:
         appointment(db, "n-erased-deleted", OTHER_HUB, ERASED, deleted=1)
         recurring(db, "nr-erased", OTHER_HUB, ERASED)
         history(db, "nh-created", OTHER_HUB, "n-erased", "created", created)
+        # Lines that point at an appointment id the OTHER hub wrote: an id is only trusted in the
+        # hub that wrote it, on both sides of the history's subselect.
+        history(db, "nh-on-our-id", OTHER_HUB, "a-next", "created", created)
+        history(db, "h-on-their-id", HUB, "n-erased", "created", created)
+        # A walk-in's line (no sheet): only the blank-id event could reach it.
+        history(db, "h-blank-id", HUB, "a-blank-id", "created", created)
         neighbour_before = fingerprint(db, OTHER_HUB)
         check(
             "the neighbour really holds personal rows on the erased id in the three tables (control armed)",
-            ("2", "1", "1"),
+            ("2", "1", "2"),
             (
                 psql(
                     db,
@@ -411,6 +418,15 @@ def main() -> int:
             ),
             ("appointments_history", "h-someone"): row(
                 db, "appointments_history", "h-someone"
+            ),
+            ("appointments_history", "h-on-their-id"): row(
+                db, "appointments_history", "h-on-their-id"
+            ),
+            ("appointments_history", "h-blank-id"): row(
+                db, "appointments_history", "h-blank-id"
+            ),
+            ("appointments_recurring", "r-blank-id"): row(
+                db, "appointments_recurring", "r-blank-id"
             ),
         }
 

@@ -27,6 +27,10 @@ describe('customerLabel', () => {
     expect(customerLabel({}, ERASED)).toBe('—');
   });
 
+  it('a link made of blanks is no link', () => {
+    expect(customerLabel({ customer_id: '  ', customer_name: '' }, ERASED)).toBe('—');
+  });
+
   it('a name made of blanks is no name', () => {
     expect(customerLabel({ customer_id: 'c1', customer_name: '   ' }, ERASED)).toBe(ERASED);
   });
