@@ -80,6 +80,11 @@ describe('appointments#319 — services and professionals that do not load are s
     const select = kind === 'services' ? 'appointments-series-create-service' : 'appointments-series-create-staff';
     const id = kind === 'services' ? SERVICE.id : MEMBER.id;
     const errorKey = kind === 'services' ? 'ui.errLoadServices' : 'ui.errLoadStaff';
+    const loadingKey = kind === 'services' ? 'ui.servicesLoading' : 'ui.staffLoading';
+    const noneKey = kind === 'services' ? 'ui.servicesNone' : 'ui.staffNone';
+    const other = kind === 'services' ? 'staff' : 'services';
+    const otherSelect = kind === 'services' ? 'appointments-series-create-staff' : 'appointments-series-create-service';
+    const otherId = kind === 'services' ? MEMBER.id : SERVICE.id;
 
     it(`a failed ${kind} read shows the error and Try again — not an empty list`, async () => {
       answer(fail);
@@ -95,6 +100,7 @@ describe('appointments#319 — services and professionals that do not load are s
 
       answer(ok([kind === 'services' ? SERVICE : MEMBER]));
       const before = reads.filter((r) => r === query).length;
+      expect(hook(el, `appointments-series-${kind}-retry`)!.textContent, 'the button says Retry').toContain('ui.catalogRetry');
       hook(el, `appointments-series-${kind}-retry`)!.click();
       await settle(el);
 
@@ -129,6 +135,7 @@ describe('appointments#319 — services and professionals that do not load are s
       const loading = hook(el, `appointments-series-${kind}-loading`);
       expect(loading, 'a list on its way is not an empty list').toBeTruthy();
       expect(loading!.getAttribute('role')).toBe('status');
+      expect(loading!.textContent, 'each list says which one is loading').toContain(loadingKey);
       expect(hook(el, `appointments-series-${kind}-empty`)).toBeNull();
       expect(hook(el, `appointments-series-${kind}-error`)).toBeNull();
 
@@ -145,8 +152,23 @@ describe('appointments#319 — services and professionals that do not load are s
       const empty = hook(el, `appointments-series-${kind}-empty`);
       expect(empty, '«there are none» is said').toBeTruthy();
       expect(empty!.getAttribute('tone')).toBe('info');
+      expect(empty!.textContent, 'each list says which one is missing').toContain(noneKey);
       expect(hook(el, `appointments-series-${kind}-error`)).toBeNull();
       expect(hook(el, select)!.disabled).toBe(true);
+    });
+
+    it(`a failed ${kind} read that arrives last does not mark the ${other} as failed`, async () => {
+      let failNow: () => void = () => {};
+      answer(() => new Promise((_, reject) => (failNow = () => reject(new Error('module did not answer')))));
+      const el = await mount();
+      expect(options(el, otherSelect), 'the other list has already arrived').toContain(otherId);
+
+      failNow();
+      await settle(el);
+      expect(hook(el, `appointments-series-${kind}-error`)).toBeTruthy();
+      expect(hook(el, `appointments-series-${other}-error`), 'only the list that failed says so').toBeNull();
+      expect(options(el, otherSelect)).toContain(otherId);
+      expect(hook(el, otherSelect)!.disabled).toBe(false);
     });
   }
 

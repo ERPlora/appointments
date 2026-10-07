@@ -23,12 +23,16 @@ const fail: Answer = async () => {
 
 let servicesAnswer: Answer;
 let staffAnswer: Answer;
+let settingsAnswer: Answer;
 const reads: string[] = [];
+const subscribed: string[] = [];
 
 beforeEach(() => {
   servicesAnswer = ok([SERVICE]);
   staffAnswer = ok([MEMBER]);
+  settingsAnswer = async () => [{ calendar_start_hour: 9, calendar_end_hour: 19, default_duration: 30 }];
   reads.length = 0;
+  subscribed.length = 0;
   document.body.innerHTML = '';
   (globalThis as Record<string, unknown>).erplora = {
     timezone: 'Europe/Madrid',
@@ -40,13 +44,16 @@ beforeEach(() => {
         case 'staff.members.list':
           return staffAnswer();
         case 'appointments.settings.get':
-          return [{ calendar_start_hour: 9, calendar_end_hour: 19, default_duration: 30 }];
+          return settingsAnswer();
         default:
           return [];
       }
     },
     command: async () => ({ ok: true }),
-    on: () => () => {},
+    on: (name: string) => {
+      subscribed.push(name);
+      return () => {};
+    },
     notify: () => {},
     locale: 'es',
     t: (_catalog: unknown, key: string) => key,
@@ -81,6 +88,11 @@ describe('appointments#319 — services and professionals that do not load are s
     const select = kind === 'services' ? 'appointments-list-service' : 'appointments-list-staff';
     const id = kind === 'services' ? SERVICE.id : MEMBER.id;
     const errorKey = kind === 'services' ? 'ui.errLoadServices' : 'ui.errLoadStaff';
+    const loadingKey = kind === 'services' ? 'ui.servicesLoading' : 'ui.staffLoading';
+    const noneKey = kind === 'services' ? 'ui.servicesNone' : 'ui.staffNone';
+    const other = kind === 'services' ? 'staff' : 'services';
+    const otherSelect = kind === 'services' ? 'appointments-list-staff' : 'appointments-list-service';
+    const otherId = kind === 'services' ? MEMBER.id : SERVICE.id;
 
     it(`a failed ${kind} read shows the error and Try again — not an empty list`, async () => {
       answer(fail);
@@ -96,6 +108,7 @@ describe('appointments#319 — services and professionals that do not load are s
 
       answer(ok([kind === 'services' ? SERVICE : MEMBER]));
       const before = reads.filter((r) => r === query).length;
+      expect(hook(el, `appointments-list-${kind}-retry`)!.textContent, 'the button says Retry').toContain('ui.catalogRetry');
       hook(el, `appointments-list-${kind}-retry`)!.click();
       await settle(el);
 
@@ -130,6 +143,7 @@ describe('appointments#319 — services and professionals that do not load are s
       const loading = hook(el, `appointments-list-${kind}-loading`);
       expect(loading, 'a list on its way is not an empty list').toBeTruthy();
       expect(loading!.getAttribute('role')).toBe('status');
+      expect(loading!.textContent, 'each list says which one is loading').toContain(loadingKey);
       expect(hook(el, `appointments-list-${kind}-empty`)).toBeNull();
       expect(hook(el, `appointments-list-${kind}-error`)).toBeNull();
 
@@ -146,8 +160,23 @@ describe('appointments#319 — services and professionals that do not load are s
       const empty = hook(el, `appointments-list-${kind}-empty`);
       expect(empty, '«there are none» is said').toBeTruthy();
       expect(empty!.getAttribute('tone')).toBe('info');
+      expect(empty!.textContent, 'each list says which one is missing').toContain(noneKey);
       expect(hook(el, `appointments-list-${kind}-error`)).toBeNull();
       expect(hook(el, select)!.disabled).toBe(true);
+    });
+
+    it(`a failed ${kind} read that arrives last does not mark the ${other} as failed`, async () => {
+      let failNow: () => void = () => {};
+      answer(() => new Promise((_, reject) => (failNow = () => reject(new Error('module did not answer')))));
+      const el = await mount();
+      expect(options(el, otherSelect), 'the other list has already arrived').toContain(otherId);
+
+      failNow();
+      await settle(el);
+      expect(hook(el, `appointments-list-${kind}-error`)).toBeTruthy();
+      expect(hook(el, `appointments-list-${other}-error`), 'only the list that failed says so').toBeNull();
+      expect(options(el, otherSelect)).toContain(otherId);
+      expect(hook(el, otherSelect)!.disabled).toBe(false);
     });
   }
 
@@ -157,6 +186,19 @@ describe('appointments#319 — services and professionals that do not load are s
     expect(hook(el, 'appointments-list-services-error')).toBeTruthy();
     expect(hook(el, 'appointments-list-staff-error')).toBeNull();
     expect(options(el, 'appointments-list-staff')).toContain(MEMBER.id);
+  });
+
+  it('settings that cannot be read leave the services and the professionals offered', async () => {
+    // Splitting the catalog read in three must not let the settings' failure escape: the agenda
+    // keeps its default day, still books and still follows the appointments' events (they are
+    // subscribed after the catalogs, so an escaped failure would leave the agenda stale).
+    settingsAnswer = fail;
+    const el = await mount();
+    expect(options(el, 'appointments-list-service')).toContain(SERVICE.id);
+    expect(options(el, 'appointments-list-staff')).toContain(MEMBER.id);
+    expect(hook(el, 'appointments-list-services-error')).toBeNull();
+    expect(hook(el, 'appointments-list-staff-error')).toBeNull();
+    expect(subscribed, 'the agenda keeps following new bookings').toContain('appointments.appointment.created');
   });
 
   it('every new sentence has its en and its es', () => {
