@@ -224,6 +224,21 @@ def main() -> int:
         listed,
         [{"customer_id": customer_id, "customer_name": ""}],
     )
+    # The overlap question reads the same-day list (`appointments.appointments.conflicting`): it
+    # must hand the link over too, or the question would call her just «Customer».
+    same_day = [
+        {k: r.get(k) for k in ("customer_id", "customer_name")}
+        for r in hub.query(
+            "appointments.appointments.conflicting",
+            {"start_datetime": instant(day, "10:00"), "staff_id": links.staff_id},
+        )
+        if r.get("id") == kept
+    ]
+    hub.check(
+        "§2 the same-day list behind the overlap question hands over the link and the blank name",
+        same_day,
+        [{"customer_id": customer_id, "customer_name": ""}],
+    )
     created = [new_value(r) for r in trail(hub, kept) if r.get("action") == "created"]
     hub.check(
         "§2 the «created» line no longer names her",

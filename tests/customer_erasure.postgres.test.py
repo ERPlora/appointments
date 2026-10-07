@@ -151,9 +151,13 @@ def erase(db, hub=HUB, customer=ERASED, now=NOW):
     psql(db, "\n".join(script))
 
 
+ERP_DATE = re.compile(r"\berp_date\(([^()]*)\)")  # bridge function (ADR-0007 §4a), Postgres form
+
+
 def query_rows(db, rel, params) -> list:
     """Run one of the module's read queries with its binds the way the runtime fills them."""
     sql = strip_comments((MODULE_DIR / rel).read_text()).strip().rstrip(";")
+    sql = ERP_DATE.sub(r"((\1)::date)", sql)
     sql = PARAM.sub(lambda m: literal(params.get(m.group(1))), sql)
     out = psql(db, f"SELECT COALESCE(json_agg(q), '[]') FROM ({sql}) q;")
     return json.loads(out.strip())
@@ -494,6 +498,27 @@ def main() -> int:
             (
                 listed.get("r-active", {}).get("customer_id"),
                 listed.get("r-active", {}).get("customer_name"),
+            ),
+        )
+
+        # The overlap question of the agenda reads the same-day list
+        # (`appointments.appointments.conflicting`): the same rule applies — «Deleted customer» needs
+        # the link — so that query hands `customer_id` over too, or the question would call her
+        # just «Customer».
+        same_day = {
+            r["id"]: r
+            for r in query_rows(
+                db,
+                "queries/appointments_conflicting.sql",
+                {"hub_id": HUB, "staff_id": "", "start_datetime": "2026-10-01T10:00:00+02:00"},
+            )
+        }
+        check(
+            "the same-day list behind the overlap question hands over the link and the blank name",
+            (ERASED, ""),
+            (
+                same_day.get("a-next", {}).get("customer_id"),
+                same_day.get("a-next", {}).get("customer_name"),
             ),
         )
 
