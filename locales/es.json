@@ -277,7 +277,8 @@
     "appointments.cannot_update_settings": "No se han podido cambiar los ajustes de reserva: este negocio no tiene ajustes en uso ahora mismo.",
     "appointments.appointment_not_found": "Esa cita no existe en este negocio.",
     "appointments.invalid_end": "La hora de fin no coincide con la de inicio más la duración.",
-    "appointments.handover_incomplete": "Para cambiar la profesional o el servicio hay que enviar la profesional y el servicio a la vez, incluido el que no cambia."
+    "appointments.handover_incomplete": "Para cambiar la profesional o el servicio hay que enviar la profesional y el servicio a la vez, incluido el que no cambia.",
+    "appointments.phone_invalid": "Ese teléfono no es un número válido del país del negocio. Revísalo o escríbelo con su prefijo internacional (por ejemplo, +44…)."
   },
   "bell": {
     "appointments.to_confirm": {
