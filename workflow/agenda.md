@@ -5,7 +5,7 @@ Prefijo: APPOINTMENTS
 ## Flujos
 
 ### APPOINTMENTS-F01 Reservar una cita desde la agenda
-Estado: parcial — no deja crear una clienta nueva desde el formulario (appointments#318); si servicios o profesionales no cargan, el desplegable sale vacío sin aviso (appointments#319)
+Estado: parcial — no deja crear una clienta nueva desde el formulario (appointments#318); Servicio y Profesional ofrecen como mucho los 500 primeros, sin decirlo (appointments#324)
 Actor: empleado
 Pantalla: Agenda
 Pasos:
@@ -20,7 +20,12 @@ Pasos:
    elegido solo salen los profesionales Activos y Reservables que lo hacen; si no hay ninguno (nadie lo tiene
    asignado, o quien lo tiene está inactivo o no reservable), salen todos los reservables: esa regla es
    de Citas, no de Personal ni de Servicios; Personal solo contesta con la lista vacía (STAFF-F12). «Min.» se
-   rellena con su duración propia o la del catálogo.
+   rellena con su duración propia o la del catálogo. Mientras Servicios o Personal contestan, bajo
+   su desplegable sale «Cargando servicios…» / «Cargando profesionales…»; si la lista no se puede
+   leer, «No se han podido cargar los servicios.» / «…los profesionales.» con **Reintentar** (vuelve a
+   leer solo esa lista); si no hay ninguno reservable, «Todavía no hay servicios reservables. Dalos
+   de alta en Servicios.» / «Todavía no hay profesionales reservables. Dalos de alta en Personal.». Un
+   desplegable sin nada que elegir sale desactivado: nunca vacío sin explicación (appointments#319).
 3. Escribe el Día y toca una de las **Horas libres** (o escribe otra hora; también vale pegar el día y la hora juntos, por ejemplo 26/09/2026 10:00).
 4. Pulsa **Añadir cita**. Si el solape está permitido y choca, responde a «Cita solapada».
 5. La cita aparece en la lista como **Pendiente** con su número `APT-AAAAMMDD-NNNN`.
