@@ -27,7 +27,7 @@ Implicados: CUSTOMERS-F25, CUSTOMERS-F30, STAFF-F09, STAFF-F10, STAFF-F12
 QA: ninguno
 
 ### APPOINTMENTS-F13 Reservar las citas de una serie
-Estado: hecho
+Estado: parcial — con una antelación máxima de más de unos 400 días, si la próxima fecha queda más allá de lo que se lee del horario de la profesional sale el error genérico en vez del aviso (appointments#331)
 Actor: empleado
 Pantalla: Periódicas
 Pasos:
