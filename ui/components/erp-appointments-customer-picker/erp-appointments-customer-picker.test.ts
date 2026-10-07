@@ -190,4 +190,55 @@ describe('appointments#306 — the customer picker searches the server, not a cu
     expect(hook(el, 'appointments-customer-picker-empty')).toBeTruthy();
     expect(hook(el, 'appointments-customer-picker-error')).toBeNull();
   });
+
+  // Review of appointments#320: the closing paths and the in-flight state had no test.
+  it('Escape closes the list and stops there: the booking panel around it stays open', async () => {
+    const el = await mount();
+    const reachedPanel: string[] = [];
+    document.body.addEventListener('keydown', (e) => reachedPanel.push((e as KeyboardEvent).key));
+    await type(el, 'zamora');
+    expect(optionIds(el)).toEqual(['c-zoe']);
+    hook(el, 'appointments-customer-picker-input')!.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, composed: true, cancelable: true }),
+    );
+    await settle(el);
+    expect(optionIds(el), 'Escape closes the list').toEqual([]);
+    expect(reachedPanel, 'an Escape that reached the panel would close it and lose the draft').toEqual([]);
+  });
+
+  it('a tap outside the field closes the list', async () => {
+    const el = await mount();
+    const outside = document.createElement('button');
+    document.body.appendChild(outside);
+    await type(el, 'zamora');
+    expect(optionIds(el)).toEqual(['c-zoe']);
+    outside.click();
+    await settle(el);
+    expect(optionIds(el)).toEqual([]);
+  });
+
+  it('while the first answer is on its way the list says it is searching, not that nobody matches', async () => {
+    let release: () => void = () => {};
+    answer = (params) =>
+      new Promise((resolve) => {
+        release = () => resolve(listEngine(params));
+      });
+    const el = await mount();
+    await type(el, 'zamora');
+    expect(hook(el, 'appointments-customer-picker-searching')).toBeTruthy();
+    expect(hook(el, 'appointments-customer-picker-empty')).toBeNull();
+    release();
+    await settle(el);
+    expect(hook(el, 'appointments-customer-picker-searching')).toBeNull();
+    expect(optionIds(el)).toEqual(['c-zoe']);
+  });
+
+  it('a failure that brings no message is still said, in the module\'s own words', async () => {
+    const el = await mount();
+    answer = async () => {
+      throw new Error('');
+    };
+    await type(el, 'zamora');
+    expect(hook(el, 'appointments-customer-picker-error')?.textContent?.trim()).toBe('ui.errLoadCustomers');
+  });
 });
