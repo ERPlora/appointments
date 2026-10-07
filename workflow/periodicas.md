@@ -5,7 +5,7 @@ Prefijo: APPOINTMENTS
 ## Flujos
 
 ### APPOINTMENTS-F12 Crear una cita periódica
-Estado: parcial — no deja crear una clienta nueva desde el formulario (appointments#318)
+Estado: parcial — no deja crear una clienta nueva desde el formulario (appointments#318); si servicios o profesionales no cargan, el desplegable sale vacío sin aviso (appointments#319)
 Actor: empleado
 Pantalla: Periódicas
 Pasos:
