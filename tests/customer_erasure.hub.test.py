@@ -209,6 +209,21 @@ def main() -> int:
         series(hub, recurring_id).get("customer_name"),
         "",
     )
+    # What the «Repeating» list reads: it paints «Deleted customer» only for a row that still
+    # links a sheet and has no name, so the list must hand over the link, not just the blank
+    # name (without it the cell fell back to a dash, as if the series never had a customer).
+    listed = [
+        {k: r.get(k) for k in ("customer_id", "customer_name")}
+        for r in hub.query(
+            "appointments.recurring.list", {"search": links.service_name}
+        )
+        if r.get("id") == recurring_id
+    ]
+    hub.check(
+        "§2 the series list hands over the link and the blank name",
+        listed,
+        [{"customer_id": customer_id, "customer_name": ""}],
+    )
     created = [new_value(r) for r in trail(hub, kept) if r.get("action") == "created"]
     hub.check(
         "§2 the «created» line no longer names her",
