@@ -158,11 +158,12 @@ misma gramática y el mismo prefijo. Antes de tocar código, lee el fichero del 
 | Serie periódica y su pauta | Citas | propio |
 | Bloqueos de agenda | Citas | propio |
 | Ajustes de reserva | Citas | propio |
-| Ficha de la clienta | Clientes | lectura pública de su ficha al reservar; copia nombre, teléfono y email en la cita |
+| Ficha de la clienta | Clientes | lectura pública de su ficha al reservar; copia nombre, teléfono (en formato internacional, APPOINTMENTS-F22) y email en la cita |
 | Servicio, precio y duración | Servicios | lectura pública al reservar; se congela en la cita |
 | Profesional, competencia, duración y precio propios, turno y ausencias | Personal | lecturas públicas al reservar y al mover |
 | Horario del negocio, festivos y excepciones | Horarios | lecturas públicas; Citas no lo guarda |
 | Zona horaria del negocio | Hub | la entrega el hub; Citas no guarda copia |
+| País del negocio (para leer un teléfono sin prefijo) | Hub | lo entrega el hub en cada orden; la tarea `phones_to_e164` lo lee de los ajustes del hub; Citas no guarda copia |
 | Venta de la cita | TPV (sales) | solo se anota el número de la venta cobrada |
 
 **Datos personales (inventario RGPD, recorriendo las migraciones):**

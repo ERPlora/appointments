@@ -34,7 +34,15 @@ are needed to book: a booking without a customer, a service and a professional i
 | `staff` | The professional — only those marked bookable |
 
 It reads them through their **public queries** and stores their ids plus a denormalised copy of the
-name, phone and price. There are no cross-module foreign keys.
+name, phone and price. There are no cross-module foreign keys. The phone is copied in international
+form (`+34600111222`, read in the business's country), the form the «appointment confirmed» WhatsApp
+looks the conversation up by.
+
+**Scheduled task** — `phones_to_e164`, every 15 minutes (appointments#313): the upcoming pending or
+confirmed appointments whose phone is still saved as typed («600 111 222», booked before phones were
+saved in international form) get it rewritten in international form, read in the business's country.
+A phone that cannot be read as a number is left as it is; a phone edited meanwhile is not overwritten.
+It writes no history line and sends no notice: the number is the same, only its form changes.
 
 **Events it emits** — one per thing that happens:
 

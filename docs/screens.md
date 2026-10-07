@@ -170,6 +170,13 @@ another professional, with nothing about the customer or the notes keeps the cus
 and email and both notes exactly as they were. To clear the phone, the email or a note, send it
 empty on purpose; the name can be changed but never emptied.
 
+The phone is saved in international form (`+34600111222`), the one the «appointment confirmed»
+WhatsApp finds the customer's conversation by (appointments#313). A number typed without its prefix
+is read as one of the business's country (the hub's country setting; Spain when it has none), and a
+text that is not a valid number there is refused with `appointments.phone_invalid` — nothing of the
+edit is written. Any edit also rewrites, in international form, an older phone the appointment
+still carries as it was typed; one that cannot be read as a number is left as it is.
+
 ### Delete
 
 Destructive, with confirmation, and **admin only** (`appointments.delete_appointment`). Prefer
