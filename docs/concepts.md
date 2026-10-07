@@ -185,6 +185,10 @@ materialising:
   it is booked by a later run, once it is within your maximum advance; appointments#289);
 - **skips** occurrences in the past and occurrences that would clash;
 - respects the template's end date and maximum number of occurrences;
+- with no date of the series inside the window yet (it starts further ahead than your maximum
+  advance booking, or its next date is), books nothing and answers when the next date is
+  (`upcoming_from`) — not a failure; a series with no date left at all (its end date passed, its
+  number of occurrences used up) is refused as `appointments.recurring_ended` (appointments#316);
 - creates at most **50** appointments per run.
 
 Monthly recurrence keeps the same day of the month, clamping when the month is shorter.

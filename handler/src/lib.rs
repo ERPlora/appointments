@@ -4359,6 +4359,8 @@ pub fn materialize_recurring_pure(input: Value) -> Result<Output, String> {
     // Enumeración de ocurrencias desde start_date (n cuenta TODAS las ocurrencias,
     // también las anteriores a la ventana, para respetar max_occurrences).
     let mut occurrence_days: Vec<i64> = Vec::new();
+    // appointments#316: the first date of the series past the window, when it has one.
+    let mut upcoming: Option<i64> = None;
     let mut n: i64 = 0;
     let mut guard = 0usize;
     match frequency.as_str() {
@@ -4399,6 +4401,7 @@ pub fn materialize_recurring_pure(input: Value) -> Result<Output, String> {
                     }
                 }
                 if d > to_days {
+                    upcoming = Some(d);
                     break;
                 }
                 if d >= from_days {
@@ -4429,6 +4432,7 @@ pub fn materialize_recurring_pure(input: Value) -> Result<Output, String> {
                     }
                 }
                 if d > to_days {
+                    upcoming = Some(d);
                     break;
                 }
                 if d >= from_days {
@@ -4443,8 +4447,23 @@ pub fn materialize_recurring_pure(input: Value) -> Result<Output, String> {
         }
     }
 
+    // appointments#316: no date inside the window is not a fault. A series whose next date lies
+    // past it has nothing to book YET, and the answer says when that date is; a series with no
+    // date left (its end date passed, its number of appointments used up) is refused as ended.
     if occurrence_days.is_empty() {
-        return Err("no_occurrences: la plantilla no genera ocurrencias en la ventana".to_string());
+        let Some(days) = upcoming else {
+            return Ok(refuse(
+                "appointments.recurring_ended",
+                "This recurring appointment has no dates left to book.",
+            ));
+        };
+        let (y, mo, d) = civil_from_days(days);
+        return Ok(Output::new().with_result(json!({
+            "booked": 0,
+            "already_booked": 0,
+            "skipped": [],
+            "upcoming_from": format!("{y:04}-{mo:02}-{d:02}"),
+        })));
     }
 
     let Some(read) = candidates_from(&input, &resolved.staff_id, "") else {
@@ -4493,7 +4512,9 @@ pub fn materialize_recurring_pure(input: Value) -> Result<Output, String> {
     };
 
     let mut skipped_as_booked = 0usize;
-    let mut past_the_advance = false;
+    // appointments#289/#316: the date left for a later run because it is past the gate (only the
+    // window's last day can be).
+    let mut past_the_advance: Option<String> = None;
     // appointments#238: every occurrence refused is REPORTED with its date and code — skipping it
     // stays right (a year-long series does not fall because of one holiday), keeping quiet about
     // it is what left the customer off the agenda with the screen saying «series created».
@@ -4536,7 +4557,7 @@ pub fn materialize_recurring_pure(input: Value) -> Result<Output, String> {
         let past_gate = parse_dt(&start_iso)
             .and_then(|start| past_max_advance(&settings, &start, &ctx.now));
         if past_gate.is_some_and(|max_days| days <= today_days + max_days) {
-            past_the_advance = true;
+            past_the_advance = Some(occurrence_date.clone());
             continue;
         }
         if let (Some(cut), Some(start)) = (covered_until, parse_dt(&start_iso)) {
@@ -4611,12 +4632,9 @@ pub fn materialize_recurring_pure(input: Value) -> Result<Output, String> {
     // qué fechas no entraron y por qué, en vez de un fallo crudo del handler.
     // Nor when what is left of the window is past the maximum advance (appointments#289): nothing
     // to book YET is an answer, not a fault.
-    if created == 0
-        && skipped_as_booked == 0
-        && skipped.is_empty()
-        && next_from.is_none()
-        && !past_the_advance
-    {
+    let nothing_done =
+        created == 0 && skipped_as_booked == 0 && skipped.is_empty() && next_from.is_none();
+    if nothing_done && past_the_advance.is_none() {
         return Err(
             "no_occurrences: todas las ocurrencias de la ventana están en el pasado o solapadas"
                 .to_string(),
@@ -4627,6 +4645,11 @@ pub fn materialize_recurring_pure(input: Value) -> Result<Output, String> {
         "already_booked": skipped_as_booked,
         "skipped": skipped,
     });
+    // appointments#316: with nothing booked at all, the answer says when the next date is — a bare
+    // «0 booked» reads on screen as «booked».
+    if let (true, Some(day)) = (nothing_done, past_the_advance) {
+        result["upcoming_from"] = json!(day);
+    }
     // appointments#267: the page ended before the window did — the caller runs again from
     // `next_from` to the same `to`, and the rest of the series is judged against the next page.
     // appointments#299: the same when the run reached its cap of bookings.
@@ -13558,7 +13581,8 @@ mod tests {
     }
 
     /// The only date of the window past the gate: nothing to book YET is an answer, not a failure
-    /// — the screen would otherwise say «created but not booked» for a series that is fine.
+    /// — the screen would otherwise say «created but not booked» for a series that is fine. And it
+    /// says WHEN (appointments#316): with nothing booked, a bare «0 booked» read as «booked».
     #[test]
     fn materialize_whose_only_date_is_past_the_gate_answers_nothing_booked_yet() {
         let mut inp = weekly_series_to_the_advance_limit("11:30", None);
@@ -13568,8 +13592,103 @@ mod tests {
         assert!(booked_dates(&out).is_empty());
         assert_eq!(
             series_result(&out),
-            json!({ "booked": 0, "already_booked": 0, "skipped": [] })
+            json!({ "booked": 0, "already_booked": 0, "skipped": [], "upcoming_from": "2026-10-29" })
         );
+    }
+
+    // ── appointments#316 · a series with no date inside the window yet ───────────────────────
+    //
+    // A series whose next date lies past the window (it starts in four months, or it is monthly
+    // and its next date is further than the maximum advance) failed with a raw `no_occurrences`:
+    // the screen said «created, but its appointments could not be booked» for a series that is
+    // fine, and «Book appointments» failed again the same way. Nothing to book YET is an answer
+    // that says when the next date is; a series that has no date left at all is refused with its
+    // own code.
+
+    /// A series as `appointments.recurring.get` returns it, judged with a maximum advance of
+    /// `advance` days (`now` is 2026-07-31 10:00Z).
+    fn series_with_advance(extra: Value, advance: i64) -> Value {
+        series_input(
+            series_payload(),
+            json!([template(extra)]),
+            Some(json!({
+                "appointments.settings.get": [
+                    { "allow_overlapping": 0, "default_duration": 60,
+                      "min_booking_notice": 0, "max_advance_booking": advance }
+                ]
+            })),
+        )
+    }
+
+    /// 🔴 THE SYMPTOM: a series that starts in four months, with a 90-day advance — monthly, and
+    /// weekly (the two ways the dates are counted).
+    #[test]
+    fn materialize_of_a_series_that_starts_past_the_window_answers_when_its_first_date_is() {
+        for (frequency, start) in [("monthly", "2026-12-01"), ("weekly", "2026-12-07")] {
+            let out = materialize_recurring_pure(series_with_advance(
+                json!({ "frequency": frequency, "start_date": start, "max_occurrences": null }),
+                90,
+            ))
+            .expect("not a `no_occurrences` failure");
+            assert!(out.error.is_none(), "{frequency}: {:?}", out.error);
+            assert!(out.operations.is_empty());
+            assert_eq!(
+                series_result(&out),
+                json!({ "booked": 0, "already_booked": 0, "skipped": [], "upcoming_from": start }),
+                "{frequency}"
+            );
+        }
+    }
+
+    /// A series already under way whose next date is past the window (monthly, 10-day advance):
+    /// pressing «Book appointments» between two dates is the same answer, with the NEXT date.
+    #[test]
+    fn materialize_between_two_dates_of_a_series_answers_its_next_date() {
+        let out = materialize_recurring_pure(series_with_advance(
+            json!({ "frequency": "monthly", "start_date": "2026-06-15", "max_occurrences": null }),
+            10,
+        ))
+        .expect("not a `no_occurrences` failure");
+        assert!(out.error.is_none(), "{:?}", out.error);
+        assert_eq!(
+            series_result(&out),
+            json!({ "booked": 0, "already_booked": 0, "skipped": [], "upcoming_from": "2026-08-15" })
+        );
+    }
+
+    /// The window's last day is still inside it: a date ON it is booked, never «upcoming».
+    #[test]
+    fn materialize_books_a_first_date_on_the_windows_last_day() {
+        let out = materialize_recurring_pure(series_with_advance(
+            json!({ "frequency": "monthly", "start_date": "2026-08-10", "time": "09:00",
+                    "max_occurrences": null }),
+            10,
+        ))
+        .unwrap();
+        assert_eq!(booked_dates(&out), ["2026-08-10"]);
+        assert_eq!(
+            series_result(&out),
+            json!({ "booked": 1, "already_booked": 0, "skipped": [] })
+        );
+    }
+
+    /// A series whose dates are all behind (its end date passed, or its number of appointments
+    /// was used up) has nothing to book ever again: refused with its own code, not a raw fault.
+    #[test]
+    fn materialize_of_a_series_that_has_ended_is_refused_as_ended() {
+        for extra in [
+            json!({ "start_date": "2026-06-01", "end_date": "2026-07-15", "max_occurrences": null }),
+            json!({ "start_date": "2026-06-01", "max_occurrences": 3 }),
+        ] {
+            let out = materialize_recurring_pure(series_with_advance(extra.clone(), 90))
+                .expect("not a raw `no_occurrences` failure");
+            assert_eq!(
+                domain_code(&out).as_deref(),
+                Some("appointments.recurring_ended"),
+                "{extra}"
+            );
+            assert!(out.operations.is_empty());
+        }
     }
 
     /// No maximum advance (0): the window is 90 days and the gate refuses nothing, so the last day

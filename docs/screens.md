@@ -255,7 +255,10 @@ list cannot be checked the whole team is shown, the form says so and the hub che
 (appointments#281).
 **Create repeating appointment** creates the series and books its window straight away, so it lands
 on the agenda; if the booking fails the series is still created and listed, and the screen says to
-use **Book appointments** on its row. Tapping **Add** while a series is being edited (or still
+use **Book appointments** on its row. When no date of the series falls inside the maximum advance
+booking yet (it starts months ahead), nothing is booked and nothing failed: the screen says so, with
+the date of its next appointment, and **Book appointments** says the same until that date gets
+closer (appointments#316). Tapping **Add** while a series is being edited (or still
 loading) drops that edit: the panel shows a clean new-series form and never updates the other series.
 
 Dates and times in this view follow the **hub's language**, like the agenda's (appointments#217):

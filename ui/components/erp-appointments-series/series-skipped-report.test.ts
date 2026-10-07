@@ -635,3 +635,59 @@ describe('every new visible string of appointments#236 exists in en AND es', () 
     expect(ES[key], `es ${key}`).toBeTruthy();
   });
 });
+
+// appointments#316 — a series whose next date lies past the maximum advance has nothing to book YET.
+// The handler failed with a raw `no_occurrences`, so creating a series that starts in four months
+// said «created, but its appointments could not be booked», and «Book appointments» failed the same
+// way. It now answers `{ booked: 0, already_booked: 0, skipped: [], upcoming_from }` and the screen
+// says when the next date is, not that something failed.
+describe('a series with no date inside the window yet (appointments#316)', () => {
+  const UPCOMING = { booked: 0, already_booked: 0, skipped: [], upcoming_from: '2099-12-01' };
+
+  function expectUpcoming(el: Wc) {
+    const note = byTestId(el, 'appointments-series-upcoming');
+    expect(note, 'the screen says when the next date is').toBeTruthy();
+    expect(note!.getAttribute('tone')).toBe('info');
+    expect(note!.textContent?.replace(/\s+/g, ' ')).toContain(
+      translate({ es: esLocale } as never, 'ui.seriesUpcomingFrom', { date: '01/12/2099' }),
+    );
+    expect(el.error).toBe('');
+    expect(byTestId(el, 'appointments-series-skipped')).toBeNull();
+  }
+
+  it('creating it says nothing is booked yet and when its first date is, not that booking failed', async () => {
+    materializeResult = UPCOMING;
+    const el = await mount();
+    await createThroughTheForm(el);
+    expectUpcoming(el);
+    expect(toasts.some((n) => n.message === ES.seriesCreated), 'no «booked» toast with nothing booked').toBe(false);
+  });
+
+  it('«Book appointments» on it says the same instead of «appointments booked»', async () => {
+    materializeResult = UPCOMING;
+    const el = await mount();
+    await tapBook(el);
+    expectUpcoming(el);
+    expect(toasts.some((n) => n.message === ES.seriesMaterialized)).toBe(false);
+  });
+
+  it('the next action clears the note', async () => {
+    materializeResult = UPCOMING;
+    const el = await mount();
+    await tapBook(el);
+    expect(byTestId(el, 'appointments-series-upcoming')).toBeTruthy();
+    materializeResult = NONE_SKIPPED;
+    await tapBook(el);
+    expect(byTestId(el, 'appointments-series-upcoming')).toBeNull();
+    expect(toasts.map((n) => n.message)).toContain(ES.seriesMaterialized);
+  });
+
+  it('the note and the ended refusal are translated in English and Spanish', () => {
+    expect(EN.seriesUpcomingFrom).toContain('{date}');
+    expect(ES.seriesUpcomingFrom).toContain('{date}');
+    const errors = (l: unknown) => (l as { errors: Record<string, string> }).errors['appointments.recurring_ended'];
+    expect(errors(enLocale)).toBeTruthy();
+    expect(errors(esLocale)).toBeTruthy();
+    expect(errors(esLocale)).not.toBe(errors(enLocale));
+  });
+});
