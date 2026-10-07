@@ -185,7 +185,7 @@ misma gramática y el mismo prefijo. Antes de tocar código, lee el fichero del 
   contacto, las notas y el motivo de cancelación de sus citas, el nombre de sus series y el nombre y
   los motivos de su historial (APPOINTMENTS-F24). Eliminar la ficha sin borrar sus datos no toca
   nada. La etiqueta de la tabla apartada de retenciones de hueco no lleva la ficha y no se puede
-  vaciar por clienta.
+  vaciar por clienta (appointments#314).
 
 ## Reglas que no se rompen
 - **Vínculos reales:** toda cita lleva clienta, servicio y profesional de sus fichas; nombre, precio
