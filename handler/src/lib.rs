@@ -14742,14 +14742,15 @@ mod tests {
 
     /// Each readable phone is rewritten in E.164 in the hub's country (the scheduler's context has
     /// no country, so the read carries it); the guard is the old text, so a phone somebody edited
-    /// meanwhile is not overwritten.
+    /// meanwhile is not overwritten. A row without its id is never written.
     #[test]
     fn sweep_rewrites_each_readable_phone_in_international_format() {
         let out = phones_to_e164_pure(sweep_input(json!([
             { "id": "a1", "customer_phone": "600 111 222", "country_code": "ES" },
             { "id": "a2", "customer_phone": "07700 900123", "country_code": "GB" },
             { "id": "a3", "customer_phone": "ask at reception", "country_code": "ES" },
-            { "id": "a4", "customer_phone": "+34600111222", "country_code": "ES" }
+            { "id": "a4", "customer_phone": "+34600111222", "country_code": "ES" },
+            { "customer_phone": "600 111 333", "country_code": "ES" }
         ])))
         .unwrap();
         assert!(out.error.is_none(), "{:?}", out.error);
