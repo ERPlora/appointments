@@ -4453,9 +4453,13 @@ pub fn materialize_recurring_pure(input: Value) -> Result<Output, String> {
         // appointments#289: the window ends where the gate stops taking bookings — the INSTANT
         // `now + max_advance_booking`, not its civil day. A later hour on that last day is not
         // refused, it is not bookable YET: left for a later run, like the dates past her hours.
-        if parse_dt(&start_iso).is_some_and(|start| past_max_advance(&settings, &start, &ctx.now).is_some()) {
+        // A day after it (a `to` the caller chose further out) is as far as any booking: it goes
+        // on to the gate and is reported as too far.
+        let past_gate = parse_dt(&start_iso)
+            .and_then(|start| past_max_advance(&settings, &start, &ctx.now));
+        if past_gate.is_some_and(|max_days| days <= today_days + max_days) {
             past_the_advance = true;
-            break;
+            continue;
         }
         if let (Some(cut), Some(start)) = (covered_until, parse_dt(&start_iso)) {
             let start = Secs::of(&start);
@@ -13438,6 +13442,27 @@ mod tests {
         assert_eq!(
             series_result(&out),
             json!({ "booked": 1, "already_booked": 0, "skipped": [] })
+        );
+    }
+
+    /// A `to` the caller chose past the gate's last day is not the series' own window: the days
+    /// after it are as far as any booking and stay REPORTED as too far, like a single booking —
+    /// only the gate's own last day is left for later. Otherwise an assistant asking for a longer
+    /// window would hear «booked 1, nothing skipped, no next_from» and say the window is booked.
+    #[test]
+    fn materialize_with_a_to_past_the_gates_last_day_still_reports_the_later_days_as_too_far() {
+        let out = materialize_recurring_pure(weekly_series_to_the_advance_limit(
+            "11:30",
+            Some("2026-11-12"),
+        ))
+        .unwrap();
+        assert_eq!(booked_dates(&out), ["2026-10-22"]);
+        assert_eq!(
+            series_result(&out)["skipped"],
+            json!([
+                { "occurrence_date": "2026-11-05", "code": "appointments.too_far" },
+                { "occurrence_date": "2026-11-12", "code": "appointments.too_far" }
+            ])
         );
     }
 

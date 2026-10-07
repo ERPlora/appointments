@@ -22,7 +22,7 @@ Implicados: CUSTOMERS-F25, CUSTOMERS-F30, STAFF-F09, STAFF-F10, STAFF-F12
 QA: ninguno
 
 ### APPOINTMENTS-F13 Reservar las citas de una serie
-Estado: hecho
+Estado: parcial — una serie que aún no tiene ninguna fecha dentro de la antelación máxima dice «no se han podido reservar» sin haber fallado nada (appointments#316)
 Actor: empleado
 Pantalla: Periódicas
 Pasos:
