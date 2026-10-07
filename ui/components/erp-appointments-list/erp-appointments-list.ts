@@ -49,6 +49,7 @@ import {
 import { parseTypedStart, formatTypedDate, formatTypedTime, type TypedStart } from '../../lib/typed-start';
 // appointments#281 — who performs a service: one rule shared with the series view.
 import { eligibleIds, eligibleReader, offeredStaff, type EligibleProfessional } from '../../lib/eligible-staff';
+import { customerLabel } from '../../lib/customer-label';
 const CATALOG: Record<string, unknown> = { es: esLocale, en: enLocale };
 
 interface ErploraClientLike {
@@ -763,7 +764,8 @@ export class ErpAppointmentsList extends LitElement {
     return [
       { key: 'start_datetime', header: t('ui.colTime'), format: (r) => fmtTime(r.start_datetime as string) },
       { key: 'appointment_number', header: t('ui.colNumber') },
-      { key: 'customer_name', header: t('ui.colCustomer') },
+      // pm#637: an erased customer's name is blank (APPOINTMENTS-F24); the cell says so.
+      { key: 'customer_name', header: t('ui.colCustomer'), format: (r) => customerLabel(r, t('ui.erasedCustomer')) },
       { key: 'service_name', header: t('ui.colService') },
       { key: 'staff_name', header: t('ui.colStaff'), format: (r) => (r.staff_name as string) || '—' },
       {
@@ -837,12 +839,13 @@ export class ErpAppointmentsList extends LitElement {
   }
 
   private get schedulerEvents() {
+    const erased = erplora().t(CATALOG, 'ui.erasedCustomer');
     return this.items.map((a) => ({
       id: a.id,
       resourceId: a.staff_id || UNASSIGNED,
       start: wallClock(a.start_datetime),
       end: wallClock(a.end_datetime),
-      title: [a.customer_name, a.service_name].filter(Boolean).join(' · '),
+      title: [customerLabel(a, erased, ''), a.service_name].filter(Boolean).join(' · '),
       color: STATUS_COLORS[a.status],
     }));
   }
@@ -1232,7 +1235,7 @@ export class ErpAppointmentsList extends LitElement {
   private askOverlap(conflicts: Appointment[]): Promise<boolean> {
     const t = (k: string, p?: Record<string, unknown>): string => erplora().t(CATALOG, k, p);
     const list = conflicts
-      .map((a) => `${a.customer_name || t('ui.colCustomer')} · ${fmtTime(a.start_datetime)}`)
+      .map((a) => `${customerLabel(a, t('ui.erasedCustomer'), t('ui.colCustomer'))} · ${fmtTime(a.start_datetime)}`)
       .join(', ');
     return new Promise<boolean>((resolve) => {
       this.overlapPrompt = t('ui.overlapMessage', { conflicts: list });

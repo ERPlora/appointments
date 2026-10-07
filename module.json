@@ -1,7 +1,7 @@
 {
   "id": "appointments",
   "name": "Appointments",
-  "version": "1.1.143",
+  "version": "1.1.144",
   "errors": {
     "appointments.appointment_not_found": {},
     "appointments.availability_unavailable": {},
@@ -429,6 +429,15 @@
       "sql": [
         "commands/customer_merge_appointments.sql",
         "commands/customer_merge_recurring.sql"
+      ]
+    },
+    "appointments._on_customer_anonymized": {
+      "permission": "appointments.change_appointment",
+      "transaction": true,
+      "sql": [
+        "commands/customer_erase_appointments.sql",
+        "commands/customer_erase_recurring.sql",
+        "commands/customer_erase_history.sql"
       ]
     },
     "appointments._recurring_cancel_occurrence": {
@@ -1445,6 +1454,9 @@
   },
   "events": {
     "listen": {
+      "customer.anonymized": {
+        "command": "appointments._on_customer_anonymized"
+      },
       "customer.merged": {
         "command": "appointments._on_customer_merged"
       },

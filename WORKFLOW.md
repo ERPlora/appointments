@@ -123,6 +123,7 @@ misma gramática y el mismo prefijo. Antes de tocar código, lee el fichero del 
 | APPOINTMENTS-F21 | Reservar varias citas de golpe (bono o curso) | parcial | [`workflow/periodicas.md`](workflow/periodicas.md) |
 | APPOINTMENTS-F22 | Cambiar las notas o el contacto de una cita | parcial | [`workflow/canales.md`](workflow/canales.md) |
 | APPOINTMENTS-F23 | Unir las citas al fusionar dos fichas de clienta | hecho | [`workflow/canales.md`](workflow/canales.md) |
+| APPOINTMENTS-F24 | Vaciar los datos de una clienta al borrarla | parcial | [`workflow/canales.md`](workflow/canales.md) |
 
 ## Cobertura contra la referencia
 | Elemento (Fresha, Vagaro, Mangomint, Square Appointments) | Estado | Flujo |
@@ -181,8 +182,11 @@ misma gramática y el mismo prefijo. Antes de tocar código, lee el fichero del 
 - **Lo que sale hacia otros:** el aviso de cita creada lleva el nombre de la clienta y la nota
   visible; la receta de WhatsApp «cita confirmada» lee la cita entera, con teléfono, email y las
   dos notas. La agenda del día y el historial por clienta que ve el asistente no llevan contacto ni notas.
-- **Borrado:** Citas escucha la fusión de fichas pero **no** la anonimización ni el borrado de una
-  ficha: todas esas copias se quedan (hueco de la familia RGPD).
+- **Borrado:** al borrar los datos personales de una ficha en Clientes, Citas vacía el nombre, el
+  contacto, las notas y el motivo de cancelación de sus citas, el nombre de sus series y el nombre y
+  los motivos de su historial (APPOINTMENTS-F24). Eliminar la ficha sin borrar sus datos no toca
+  nada. La etiqueta de la tabla apartada de retenciones de hueco no lleva la ficha y no se puede
+  vaciar por clienta (appointments#314).
 
 ## Reglas que no se rompen
 - **Vínculos reales:** toda cita lleva clienta, servicio y profesional de sus fichas; nombre, precio

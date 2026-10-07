@@ -22,6 +22,7 @@ import { eligibleIds, eligibleReader, offeredStaff } from '../../lib/eligible-st
 // appointments#306 — the customer is SEARCHED on the server, never chosen from a cut list.
 import '../erp-appointments-customer-picker/erp-appointments-customer-picker';
 import type { PickedCustomer } from '../erp-appointments-customer-picker/erp-appointments-customer-picker';
+import { customerLabel } from '../../lib/customer-label';
 
 const CATALOG: Record<string, unknown> = { es: esLocale, en: enLocale };
 
@@ -868,7 +869,7 @@ export class ErpAppointmentsSeries extends LitElement {
     if (!id) return;
     const t = (k: string, p?: Record<string, unknown>): string => erplora().t(CATALOG, k, p);
     const alert = document.createElement('ion-alert') as IonicAlertElement;
-    alert.header = t('ui.seriesDeleteTitle', { name: String(row.customer_name ?? '') });
+    alert.header = t('ui.seriesDeleteTitle', { name: customerLabel(row, t('ui.erasedCustomer')) });
     alert.message = t('ui.seriesDeleteMessage');
     alert.buttons = [
       { text: t('ui.cancelReschedule'), role: 'cancel' },
@@ -961,7 +962,8 @@ export class ErpAppointmentsSeries extends LitElement {
   private get columns(): DataTableColumn[] {
     const t = (k: string): string => erplora().t(CATALOG, k);
     return [
-      { key: 'customer_name', header: t('ui.colCustomer') },
+      // pm#637: an erased customer's name is blank (APPOINTMENTS-F24); the cell says so.
+      { key: 'customer_name', header: t('ui.colCustomer'), format: (r) => customerLabel(r, t('ui.erasedCustomer')) },
       { key: 'service_name', header: t('ui.colService') },
       { key: 'staff_name', header: t('ui.colStaff'), format: (r) => (r.staff_name as string) || '—' },
       { key: 'frequency', header: t('ui.colPattern'), format: (r) => this.patternLabel(r as unknown as Series) },
@@ -1034,7 +1036,7 @@ export class ErpAppointmentsSeries extends LitElement {
         .fill=${true}
         .views=${true}
         .addable=${true}
-        .cardTitle=${(row: Record<string, unknown>) => String(row.customer_name ?? '')}
+        .cardTitle=${(row: Record<string, unknown>) => customerLabel(row, t('ui.erasedCustomer'))}
         .columns=${this.columns}
         .rows=${this.series as unknown as Record<string, unknown>[]}
         .searchKeys=${['customer_name', 'service_name', 'staff_name']}
@@ -1105,7 +1107,7 @@ export class ErpAppointmentsSeries extends LitElement {
     const serviceChange = this.serviceChange;
     return html`<form slot="create" data-testid="appointments-series-form" data-mode="series-edit" class="form" @submit=${(e: Event) => this.submitEdit(e)}>
       <p class="ctx" data-role="series-context">
-        <strong>${tmpl.customer_name}</strong> · ${tmpl.service_name} · ${tmpl.staff_name || '—'}
+        <strong>${customerLabel(tmpl, t('ui.erasedCustomer'))}</strong> · ${tmpl.service_name} · ${tmpl.staff_name || '—'}
       </p>
       <!-- Una serie PARTIDA son dos mitades encadenadas, y decirlo es la mitad de poder entenderla:
            sin esto, la mitad nueva parece una serie que apareció de la nada. -->

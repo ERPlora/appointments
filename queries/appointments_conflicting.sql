@@ -12,7 +12,9 @@
 -- `customer_name` viaja desde appointments#86: el aviso de solape de la agenda tiene que decir CON
 -- QUIÉN choca («Ana López · 11:00»), no un genérico. Es aditivo — el handler WASM lee por nombre de
 -- campo (`candidates_from`), así que una columna de más no le cambia nada.
-SELECT id, appointment_number, customer_name, staff_id, start_datetime, end_datetime, status
+-- `customer_id` travels too (pm#637): the overlap question says «Deleted customer» for a blank
+-- name only when the row still links a sheet.
+SELECT id, appointment_number, customer_id, customer_name, staff_id, start_datetime, end_datetime, status
 FROM appointments_appointment
 WHERE hub_id = :hub_id
   AND is_deleted = 0
