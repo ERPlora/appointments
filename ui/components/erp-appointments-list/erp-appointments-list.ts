@@ -118,6 +118,10 @@ interface StaffMember {
 
 type DurationForm = 'new' | 'reschedule';
 
+/** appointments#319 — where each linked list stands: «on its way», «read» or «could not be read».
+ *  An empty list and an unreadable one are different answers and the panel paints them apart. */
+type CatalogStatus = 'loading' | 'ready' | 'error';
+
 interface AppointmentSettings {
   calendar_start_hour?: number;
   calendar_end_hour?: number;
@@ -387,6 +391,8 @@ export class ErpAppointmentsList extends LitElement {
   @state() services: Service[] = [];
 
   @state() staffMembers: StaffMember[] = [];
+
+  @state() private catalogStatus: { services: CatalogStatus; staff: CatalogStatus } = { services: 'loading', staff: 'loading' };
 
   @state() settings: AppointmentSettings = {};
 
@@ -891,19 +897,37 @@ export class ErpAppointmentsList extends LitElement {
    *  their PUBLIC queries — never their tables. Customers are not here: the picker searches them on
    *  the server as the receptionist types (appointments#306). */
   private async loadCatalogs() {
+    await Promise.all([this.loadServices(), this.loadStaff(), this.loadSettings()]);
+  }
+
+  /** appointments#319 — a read that fails is SAID (with «Retry»), never turned into an empty list:
+   *  an empty picker reads as «this business has no services». */
+  private async loadServices(): Promise<void> {
+    this.catalogStatus = { ...this.catalogStatus, services: 'loading' };
     try {
-      const [services, staffMembers, settings] = await Promise.all([
-        erplora().query('services.services.list', { limit: 500 }).catch(() => []),
-        erplora().query('staff.members.list', { limit: 500 }).catch(() => []),
-        erplora().query('appointments.settings.get').catch(() => []),
-      ]);
-      // Un servicio no reservable (p. ej. interno) no puede recibir una cita.
+      const services = await erplora().query('services.services.list', { limit: 500 });
+      // A non-bookable service (e.g. internal) cannot receive an appointment.
       this.services = rows<Service>(services).filter((s) => s.is_bookable === undefined || Number(s.is_bookable) === 1);
-      this.staffMembers = rows<StaffMember>(staffMembers);
-      this.settings = rows<AppointmentSettings>(settings)[0] ?? {};
-    } catch (e) {
-      this.error = e instanceof Error ? e.message : erplora().t(CATALOG, 'ui.errLoadCatalogs');
+      this.catalogStatus = { ...this.catalogStatus, services: 'ready' };
+    } catch {
+      this.catalogStatus = { ...this.catalogStatus, services: 'error' };
     }
+  }
+
+  private async loadStaff(): Promise<void> {
+    this.catalogStatus = { ...this.catalogStatus, staff: 'loading' };
+    try {
+      this.staffMembers = rows<StaffMember>(await erplora().query('staff.members.list', { limit: 500 }));
+      this.catalogStatus = { ...this.catalogStatus, staff: 'ready' };
+    } catch {
+      this.catalogStatus = { ...this.catalogStatus, staff: 'error' };
+    }
+  }
+
+  /** Without its settings the agenda keeps its defaults (its day from 08:00 to 20:00): it still books. */
+  private async loadSettings(): Promise<void> {
+    const settings = await erplora().query('appointments.settings.get').catch(() => []);
+    this.settings = rows<AppointmentSettings>(settings)[0] ?? {};
   }
 
   /** Un día atrás o adelante (appointments#93). Aritmética de CALENDARIO: el día del salón dura
@@ -1945,6 +1969,46 @@ export class ErpAppointmentsList extends LitElement {
     return html`<ok-inline-feedback data-testid="appointments-list-staff-duration-unavailable" tone="warning" icon="alert-circle-outline">${t('ui.staffDurationUnavailable')}</ok-inline-feedback>`;
   }
 
+  /** appointments#319 — the services list under its picker, painted like the free times: a spinner
+   *  while it is on its way, the reason plus «Retry» when it could not be read, a note when there
+   *  are none. Nothing once there is something to pick. */
+  private renderServicesState(t: (k: string) => string) {
+    switch (this.catalogStatus.services) {
+      case 'loading':
+        return html`<div class="slots-hint" data-testid="appointments-list-services-loading" role="status">
+          <ion-spinner name="dots"></ion-spinner><span>${t('ui.servicesLoading')}</span>
+        </div>`;
+      case 'error':
+        return html`<div class="slots-state">
+          <ok-inline-feedback data-testid="appointments-list-services-error" tone="danger" icon="alert-circle-outline">${t('ui.errLoadServices')}</ok-inline-feedback>
+          <ion-button data-testid="appointments-list-services-retry" type="button" size="small" fill="clear" @click=${() => void this.loadServices()}>${t('ui.catalogRetry')}</ion-button>
+        </div>`;
+      default:
+        return this.services.length === 0
+          ? html`<ok-inline-feedback data-testid="appointments-list-services-empty" tone="info" icon="information-circle-outline">${t('ui.servicesNone')}</ok-inline-feedback>`
+          : nothing;
+    }
+  }
+
+  /** appointments#319 — the same three states for the professionals; «none» counts the bookable ones. */
+  private renderStaffState(t: (k: string) => string) {
+    switch (this.catalogStatus.staff) {
+      case 'loading':
+        return html`<div class="slots-hint" data-testid="appointments-list-staff-loading" role="status">
+          <ion-spinner name="dots"></ion-spinner><span>${t('ui.staffLoading')}</span>
+        </div>`;
+      case 'error':
+        return html`<div class="slots-state">
+          <ok-inline-feedback data-testid="appointments-list-staff-error" tone="danger" icon="alert-circle-outline">${t('ui.errLoadStaff')}</ok-inline-feedback>
+          <ion-button data-testid="appointments-list-staff-retry" type="button" size="small" fill="clear" @click=${() => void this.loadStaff()}>${t('ui.catalogRetry')}</ion-button>
+        </div>`;
+      default:
+        return this.bookableStaff.length === 0
+          ? html`<ok-inline-feedback data-testid="appointments-list-staff-empty" tone="info" icon="information-circle-outline">${t('ui.staffNone')}</ok-inline-feedback>`
+          : nothing;
+    }
+  }
+
   private renderFreeSlots(t: (k: string) => string) {
     switch (this.freeSlotsState) {
       case 'idle':
@@ -1989,12 +2053,14 @@ export class ErpAppointmentsList extends LitElement {
   private renderCreateForm(t: (k: string) => string) {
     return html`<form slot="create" data-testid="appointments-list-form" data-mode="create" class="form" @submit=${(e: Event) => this.createAppointment(e)}>
             <erp-appointments-customer-picker data-testid="appointments-list-customer" data-role="customer" label=${t('ui.fieldCustomer')} .customer=${this.newCustomer} @customer-change=${(e: CustomEvent<{ customer: Customer }>) => (this.newCustomer = e.detail.customer)}></erp-appointments-customer-picker>
-            <ion-select data-testid="appointments-list-service" data-role="service" fill="outline" mode="md" label-placement="floating" label=${t('ui.fieldService')} placeholder=${t('ui.pickService')} .value=${this.newServiceId} @ionChange=${(e: any) => this.onServiceChange(e.target.value)}>
+            <ion-select data-testid="appointments-list-service" data-role="service" fill="outline" mode="md" label-placement="floating" label=${t('ui.fieldService')} placeholder=${t('ui.pickService')} .disabled=${this.catalogStatus.services !== 'ready' || this.services.length === 0} .value=${this.newServiceId} @ionChange=${(e: any) => this.onServiceChange(e.target.value)}>
               ${this.services.map((s) => html`<ion-select-option .value=${s.id}>${s.name}</ion-select-option>`)}
             </ion-select>
-            <ion-select data-testid="appointments-list-staff" data-role="staff" fill="outline" mode="md" label-placement="floating" label=${t('ui.fieldStaff')} placeholder=${t('ui.pickStaff')} .value=${this.newStaffId} @ionChange=${(e: any) => this.onStaffChange(e.target.value ?? '')}>
+            ${this.renderServicesState(t)}
+            <ion-select data-testid="appointments-list-staff" data-role="staff" fill="outline" mode="md" label-placement="floating" label=${t('ui.fieldStaff')} placeholder=${t('ui.pickStaff')} .disabled=${this.catalogStatus.staff !== 'ready' || this.bookableStaff.length === 0} .value=${this.newStaffId} @ionChange=${(e: any) => this.onStaffChange(e.target.value ?? '')}>
               ${this.staffOptions('new').map((m) => html`<ion-select-option .value=${m.id}>${m.full_name}</ion-select-option>`)}
             </ion-select>
+            ${this.renderStaffState(t)}
             ${this.renderPairNotices('new', t)}
             <!-- appointments#204: date + time, not datetime-local — its year segment takes 6 digits and never hands the caret to the hour, so a typed start never landed. -->
             <!-- appointments#205: text, painted in the hub's language, with an inline calendar. -->

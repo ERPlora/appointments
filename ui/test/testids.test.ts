@@ -131,6 +131,12 @@ const COVERED: Record<
       'appointments-list-reschedule-submit',
       'appointments-list-series-scope',
       'appointments-list-service',
+      // appointments#319 — the services and professionals lists of the create panel: loading, could
+      // not be read (with Retry) and none bookable, painted apart instead of an empty picker.
+      'appointments-list-services-empty',
+      'appointments-list-services-error',
+      'appointments-list-services-loading',
+      'appointments-list-services-retry',
       // appointments#279 — a slot tapped for a professional who does not perform the chosen service.
       'appointments-list-service-not-for-staff',
       // appointments#232 — the free times of the day under the time field: the group, one button
@@ -142,6 +148,10 @@ const COVERED: Record<
       'appointments-list-slots-loading',
       'appointments-list-slots-retry',
       'appointments-list-staff',
+      'appointments-list-staff-empty',
+      'appointments-list-staff-error',
+      'appointments-list-staff-loading',
+      'appointments-list-staff-retry',
       // appointments#272 — the professional's own length could not be read: the catalogue's stands in.
       'appointments-list-staff-duration-unavailable',
       // appointments#279 — the chosen professional does not perform the new service: she is cleared.
@@ -200,12 +210,22 @@ const COVERED: Record<
       'appointments-series-scope-hint',
       'appointments-series-service',
       'appointments-series-service-hint',
+      // appointments#319 — the same lists in «New recurring appointment»: loading, could not be read
+      // (with Retry) and none bookable.
+      'appointments-series-services-empty',
+      'appointments-series-services-error',
+      'appointments-series-services-loading',
+      'appointments-series-services-retry',
       'appointments-series-skipped',
       'appointments-series-pending',
       'appointments-series-not-moved',
       'appointments-series-split-from',
       'appointments-series-staff',
       'appointments-series-staff-hint',
+      'appointments-series-staff-empty',
+      'appointments-series-staff-error',
+      'appointments-series-staff-loading',
+      'appointments-series-staff-retry',
       // appointments#281 — the professional picker narrowed by service, in both forms: why a
       // picked professional was cleared, and a list that could not be narrowed.
       'appointments-series-staff-not-for-service',

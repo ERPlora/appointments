@@ -247,7 +247,14 @@
     "customerNone": "Todavía no hay clientes. Dalos de alta en Clientes.",
     "customerMore": "Se muestran los 20 primeros. Sigue escribiendo para afinar.",
     "errLoadCustomers": "No se han podido cargar los clientes.",
-    "customerRetry": "Reintentar"
+    "customerRetry": "Reintentar",
+    "servicesLoading": "Cargando servicios…",
+    "staffLoading": "Cargando profesionales…",
+    "errLoadServices": "No se han podido cargar los servicios.",
+    "errLoadStaff": "No se han podido cargar los profesionales.",
+    "servicesNone": "Todavía no hay servicios reservables. Dalos de alta en Servicios.",
+    "staffNone": "Todavía no hay profesionales reservables. Dalos de alta en Personal.",
+    "catalogRetry": "Reintentar"
   },
   "errors": {
     "appointments.cannot_cancel": "Esta cita ya no se puede cancelar en su estado actual.",

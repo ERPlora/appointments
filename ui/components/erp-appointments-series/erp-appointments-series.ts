@@ -262,6 +262,10 @@ const ALIGNS_TO_WEEKDAY = ['weekly', 'biweekly'];
 /** appointments#281 — the two forms with a professional picker: the new series and the edit panel. */
 type PickerForm = 'new' | 'edit';
 
+/** appointments#319 — where each linked list stands: «on its way», «read» or «could not be read».
+ *  An empty list and an unreadable one are different answers and the panel paints them apart. */
+type CatalogStatus = 'loading' | 'ready' | 'error';
+
 export class ErpAppointmentsSeries extends LitElement {
   static styles = css`
     :host { display:flex; flex-direction:column; min-height:0; flex:1 1 auto;
@@ -283,6 +287,10 @@ export class ErpAppointmentsSeries extends LitElement {
     .field-calendar { grid-column: 1 / -1; display:flex; justify-content:flex-start; }
     /* appointments#223 — the compact date picker of OutfitKit: never wider than its 20rem. */
     ok-calendar { flex: 1 1 auto; max-width: 20rem; }
+    /* appointments#319 — a list's loading / error / none line spans the whole form, under its picker. */
+    .catalog-hint { grid-column: 1 / -1; display:flex; align-items:center; gap:.4rem; margin:0; font-size:.85rem; color: var(--ion-color-medium, #8b897f); }
+    .catalog-state { grid-column: 1 / -1; display:flex; flex-direction:column; align-items:flex-start; gap:.35rem; }
+    .catalog-state ok-inline-feedback { align-self:stretch; }
   `;
 
   @state() series: Series[] = [];
@@ -321,6 +329,7 @@ export class ErpAppointmentsSeries extends LitElement {
   // Linked catalogs: a series is booked against real records, same as erp-appointments-list.
   @state() services: Service[] = [];
   @state() staffMembers: StaffMember[] = [];
+  @state() private catalogStatus: { services: CatalogStatus; staff: CatalogStatus } = { services: 'loading', staff: 'loading' };
 
   /** The customer picked in the new-series form (appointments#306: searched, not preloaded). */
   @state() newCustomer: Customer | null = null;
@@ -396,13 +405,75 @@ export class ErpAppointmentsSeries extends LitElement {
    *  (never another module's tables), exactly like the create panel of `erp-appointments-list`.
    *  Customers are not here: the picker searches them on the server (appointments#306). */
   private async loadCatalogs(): Promise<void> {
-    const [services, staffMembers] = await Promise.all([
-      erplora().query('services.services.list', { limit: 500 }).catch(() => []),
-      erplora().query('staff.members.list', { limit: 500 }).catch(() => []),
-    ]);
-    // A non-bookable service (e.g. internal) cannot receive an appointment.
-    this.services = rows<Service>(services).filter((s) => s.is_bookable === undefined || Number(s.is_bookable) === 1);
-    this.staffMembers = rows<StaffMember>(staffMembers);
+    await Promise.all([this.loadServices(), this.loadStaff()]);
+  }
+
+  /** appointments#319 — a read that fails is SAID (with «Retry»), never turned into an empty list:
+   *  an empty picker reads as «this business has no services». */
+  private async loadServices(): Promise<void> {
+    this.catalogStatus = { ...this.catalogStatus, services: 'loading' };
+    try {
+      const services = await erplora().query('services.services.list', { limit: 500 });
+      // A non-bookable service (e.g. internal) cannot receive an appointment.
+      this.services = rows<Service>(services).filter((s) => s.is_bookable === undefined || Number(s.is_bookable) === 1);
+      this.catalogStatus = { ...this.catalogStatus, services: 'ready' };
+    } catch {
+      this.catalogStatus = { ...this.catalogStatus, services: 'error' };
+    }
+  }
+
+  private async loadStaff(): Promise<void> {
+    this.catalogStatus = { ...this.catalogStatus, staff: 'loading' };
+    try {
+      this.staffMembers = rows<StaffMember>(await erplora().query('staff.members.list', { limit: 500 }));
+      this.catalogStatus = { ...this.catalogStatus, staff: 'ready' };
+    } catch {
+      this.catalogStatus = { ...this.catalogStatus, staff: 'error' };
+    }
+  }
+
+  /** appointments#319 — the services list under its picker, painted like the free times of the
+   *  single appointment's panel: a spinner while it is on its way, the reason plus «Retry» when it
+   *  could not be read, a note when there are none. Nothing once there is something to pick. */
+  private renderServicesState(t: (k: string) => string) {
+    switch (this.catalogStatus.services) {
+      case 'loading':
+        return html`<div class="catalog-hint" data-testid="appointments-series-services-loading" role="status">
+          <ion-spinner name="dots"></ion-spinner><span>${t('ui.servicesLoading')}</span>
+        </div>`;
+      case 'error':
+        return html`<div class="catalog-state">
+          <ok-inline-feedback data-testid="appointments-series-services-error" tone="danger" icon="alert-circle-outline">${t('ui.errLoadServices')}</ok-inline-feedback>
+          <ion-button data-testid="appointments-series-services-retry" type="button" size="small" fill="clear" @click=${() => void this.loadServices()}>${t('ui.catalogRetry')}</ion-button>
+        </div>`;
+      default:
+        return this.services.length === 0
+          ? html`<div class="catalog-state">
+              <ok-inline-feedback data-testid="appointments-series-services-empty" tone="info" icon="information-circle-outline">${t('ui.servicesNone')}</ok-inline-feedback>
+            </div>`
+          : nothing;
+    }
+  }
+
+  /** appointments#319 — the same three states for the professionals; «none» counts the bookable ones. */
+  private renderStaffState(t: (k: string) => string) {
+    switch (this.catalogStatus.staff) {
+      case 'loading':
+        return html`<div class="catalog-hint" data-testid="appointments-series-staff-loading" role="status">
+          <ion-spinner name="dots"></ion-spinner><span>${t('ui.staffLoading')}</span>
+        </div>`;
+      case 'error':
+        return html`<div class="catalog-state">
+          <ok-inline-feedback data-testid="appointments-series-staff-error" tone="danger" icon="alert-circle-outline">${t('ui.errLoadStaff')}</ok-inline-feedback>
+          <ion-button data-testid="appointments-series-staff-retry" type="button" size="small" fill="clear" @click=${() => void this.loadStaff()}>${t('ui.catalogRetry')}</ion-button>
+        </div>`;
+      default:
+        return this.bookableStaff.length === 0
+          ? html`<div class="catalog-state">
+              <ok-inline-feedback data-testid="appointments-series-staff-empty" tone="info" icon="information-circle-outline">${t('ui.staffNone')}</ok-inline-feedback>
+            </div>`
+          : nothing;
+    }
   }
 
   /** Professionals that can receive appointments: the ones the `staff` module marks bookable. */
@@ -1406,11 +1477,13 @@ export class ErpAppointmentsSeries extends LitElement {
           label=${t('ui.fieldService')}
           placeholder=${t('ui.pickService')}
           label-placement="floating"
+          .disabled=${this.catalogStatus.services !== 'ready' || this.services.length === 0}
           .value=${this.newServiceId}
           @ionChange=${(e: any) => this.onCreateServiceChange(e.target.value ?? '')}
         >
           ${this.services.map((s) => html`<ion-select-option .value=${s.id}>${s.name}</ion-select-option>`)}
         </ion-select>
+        ${this.renderServicesState(t)}
         <ion-select
           data-testid="appointments-series-create-staff"
           data-role="series-create-staff"
@@ -1419,11 +1492,13 @@ export class ErpAppointmentsSeries extends LitElement {
           label=${t('ui.fieldStaff')}
           placeholder=${t('ui.pickStaff')}
           label-placement="floating"
+          .disabled=${this.catalogStatus.staff !== 'ready' || this.bookableStaff.length === 0}
           .value=${this.newStaffId}
           @ionChange=${(e: any) => this.onCreateStaffChange(e.target.value ?? '')}
         >
           ${offeredStaff(this.bookableStaff, this.eligibleStaffIds.new).map((m) => html`<ion-select-option .value=${m.id}>${m.full_name}</ion-select-option>`)}
         </ion-select>
+        ${this.renderStaffState(t)}
         ${this.renderStaffNotices('new', t)}
         <ion-select
           data-testid="appointments-series-create-frequency"
