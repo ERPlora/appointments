@@ -10,6 +10,7 @@
 // `staff_id`/`limit`), no una lista paginada del motor. El día es el que decide QUÉ se carga (la
 // tabla no tiene ni columna de fecha), así que es un control de la vista, no un filtro de columna.
 import { beforeEach, describe, expect, it } from 'vitest';
+import { pickCustomer } from '../../test/pick-customer';
 
 // appointments#12 — the clock of these fixtures is PINNED, it is not the machine's.
 // Until now these tests built their instants with `new Date(y, m, d, h, mi)` and compared them
@@ -179,14 +180,13 @@ describe('el alta sigue funcionando desde el panel', () => {
     const el = await montar();
     tabla(el)?.open('create');
     const wc = el as unknown as {
-      newCustomerId: string;
       newServiceId: string;
       newStaffId: string;
       newStart: string;
       newDuration: string;
       createAppointment: (ev: Event) => Promise<void>;
     };
-    wc.newCustomerId = 'c1';
+    await pickCustomer(el, 'appointments-list-customer', 'c1');
     wc.newServiceId = 'sv1';
     wc.newStaffId = 's1';
     wc.newStart = '2026-07-13T10:00';
@@ -239,7 +239,6 @@ describe('al elegir servicio, «Min.» muestra la duración del catálogo (appoi
     tabla(el)?.open('create');
     await elegirServicio(el as never, 'sv1');
     const wc = el as unknown as {
-      newCustomerId: string;
       newStaffId: string;
       newStart: string;
       createAppointment: (ev: Event) => Promise<void>;
@@ -248,7 +247,7 @@ describe('al elegir servicio, «Min.» muestra la duración del catálogo (appoi
     minutes.value = '45';
     minutes.dispatchEvent(new Event('ionInput'));
     await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
-    wc.newCustomerId = 'c1';
+    await pickCustomer(el, 'appointments-list-customer', 'c1');
     wc.newStaffId = 's1';
     wc.newStart = '2026-07-13T10:00';
     await wc.createAppointment(new Event('submit'));
@@ -302,14 +301,13 @@ describe('el rechazo del alta se ve DENTRO del formulario (appointments#155)', (
 
   const rellenarYEnviar = async (el: HTMLElement & { shadowRoot: ShadowRoot }, start = '2026-07-13T10:00') => {
     const wc = el as unknown as {
-      newCustomerId: string;
       newServiceId: string;
       newStaffId: string;
       newStart: string;
       updateComplete: Promise<unknown>;
       createAppointment: (ev: Event) => Promise<void>;
     };
-    wc.newCustomerId = 'c1';
+    await pickCustomer(el, 'appointments-list-customer', 'c1');
     wc.newServiceId = 'sv1';
     wc.newStaffId = 's1';
     wc.newStart = start;

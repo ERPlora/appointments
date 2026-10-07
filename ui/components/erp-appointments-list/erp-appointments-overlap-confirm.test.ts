@@ -17,6 +17,7 @@
 process.env.TZ = 'Europe/Madrid';
 
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
+import { pickCustomer } from '../../test/pick-customer';
 import esLocale from '../../../locales/es.json';
 import enLocale from '../../../locales/en.json';
 
@@ -134,7 +135,6 @@ type Wc = HTMLElement & {
   shadowRoot: ShadowRoot;
   day: string;
   refresh: () => Promise<void>;
-  newCustomerId: string;
   newServiceId: string;
   newStaffId: string;
   newStart: string;
@@ -166,8 +166,8 @@ const mount = async (): Promise<Wc> => {
 
 /** Fills the create panel with a booking for Eva at `wall` and presses save WITHOUT awaiting:
  *  the prompt has to be answered before the promise settles. */
-function startCreate(el: Wc, wall: string): Promise<void> {
-  el.newCustomerId = 'c2';
+async function startCreate(el: Wc, wall: string): Promise<void> {
+  await pickCustomer(el, 'appointments-list-customer', 'c2');
   el.newServiceId = 'sv1';
   el.newStaffId = 's1';
   el.newStart = wall;

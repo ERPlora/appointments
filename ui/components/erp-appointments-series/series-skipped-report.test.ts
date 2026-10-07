@@ -10,6 +10,7 @@
 process.env.TZ = 'Europe/Madrid';
 
 import { beforeEach, afterAll, describe, expect, it } from 'vitest';
+import { pickCustomer } from '../../test/pick-customer';
 import esLocale from '../../../locales/es.json';
 import enLocale from '../../../locales/en.json';
 
@@ -162,7 +163,7 @@ async function createThroughTheForm(el: Wc) {
     f.dispatchEvent(new CustomEvent(event, { detail: { value }, bubbles: true, composed: true }));
     await el.updateComplete;
   };
-  await set('appointments-series-create-customer', 'c1', 'ionChange');
+  await pickCustomer(el, 'appointments-series-create-customer', 'c1');
   await set('appointments-series-create-service', 'sv1', 'ionChange');
   await set('appointments-series-create-staff', 's1', 'ionChange');
   await set('appointments-series-create-frequency', 'weekly', 'ionChange');

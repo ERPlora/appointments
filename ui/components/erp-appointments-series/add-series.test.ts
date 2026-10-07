@@ -9,6 +9,7 @@
 process.env.TZ = 'Europe/Madrid';
 
 import { beforeEach, afterAll, describe, expect, it } from 'vitest';
+import { pickCustomer } from '../../test/pick-customer';
 import esLocale from '../../../locales/es.json';
 import enLocale from '../../../locales/en.json';
 import { dataTableLabels } from '@erplora/module-sdk';
@@ -203,7 +204,7 @@ async function submit(el: Wc) {
 
 /** Bea every two weeks on Friday at 17:30, six times, from 1 Oct 2099. */
 async function fillBea(el: Wc) {
-  await choose(el, 'appointments-series-create-customer', 'c2');
+  await pickCustomer(el, 'appointments-series-create-customer', 'c2');
   await choose(el, 'appointments-series-create-service', 'sv2');
   await choose(el, 'appointments-series-create-staff', 's1');
   await choose(el, 'appointments-series-create-frequency', 'biweekly');
@@ -279,7 +280,7 @@ describe('the «Repeating» view can create a series (appointments#209)', () => 
     const el = await mount();
     await tapAdd(el);
     expect(submitButton(el).hasAttribute('disabled')).toBe(true);
-    await choose(el, 'appointments-series-create-customer', 'c2');
+    await pickCustomer(el, 'appointments-series-create-customer', 'c2');
     await choose(el, 'appointments-series-create-service', 'sv2');
     expect(field(el, 'appointments-series-create-duration')?.value).toBe('90');
     await choose(el, 'appointments-series-create-staff', 's1');
@@ -457,7 +458,7 @@ describe('«Add» and an edit in progress (appointments#209, pm#459)', () => {
   it('«Add» with no edit in progress keeps the draft being typed', async () => {
     const el = await mount();
     await tapAdd(el);
-    await choose(el, 'appointments-series-create-customer', 'c2');
+    await pickCustomer(el, 'appointments-series-create-customer', 'c2');
     await tapAdd(el); // closes the panel (ok-data-table toggles it)
     await tapAdd(el); // and opens it again
     expect(field(el, 'appointments-series-create-customer')?.value).toBe('c2');

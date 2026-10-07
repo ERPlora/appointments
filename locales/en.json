@@ -238,7 +238,14 @@
     "dayFriday": "Friday",
     "daySaturday": "Saturday",
     "daySunday": "Sunday",
-    "reasonSeriesPatternChanged": "The repeating appointment changed its pattern"
+    "reasonSeriesPatternChanged": "The repeating appointment changed its pattern",
+    "customerSearchPlaceholder": "Search by name or phone",
+    "customerSearching": "Searching…",
+    "customerNoMatch": "No customer matches what you typed.",
+    "customerNone": "There are no customers yet. Add them in Customers.",
+    "customerMore": "Showing the first 20. Keep typing to narrow it down.",
+    "errLoadCustomers": "Could not load the customers.",
+    "customerRetry": "Retry"
   },
   "errors": {
     "appointments.cannot_cancel": "This appointment can no longer be cancelled in its current state.",

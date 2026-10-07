@@ -8,6 +8,7 @@
 //      positioned by time; legacy rows without staff fall into an "unassigned" lane.
 //   3. NO-SHOW — the API always had it; the receptionist needs it as a row action.
 import { beforeEach, describe, expect, it } from 'vitest';
+import { pickCustomer } from '../../test/pick-customer';
 import { todayISO as localDay } from '../../lib/business-time';
 
 // appointments#12 — the clock of these fixtures is PINNED, it is not the machine's.
@@ -122,7 +123,6 @@ async function mount() {
 type Wc = HTMLElement & {
   shadowRoot: ShadowRoot;
   view: string;
-  newCustomerId: string;
   newServiceId: string;
   newStaffId: string;
   newStart: string;
@@ -183,7 +183,7 @@ describe('linked booking: the create panel books against real records', () => {
       el.shadowRoot.querySelector('form[slot="create"] ion-button[type="submit"]') as HTMLElement;
     expect(submit().hasAttribute('disabled'), 'empty form must not be submittable').toBe(true);
 
-    wc.newCustomerId = 'c1';
+    await pickCustomer(el, 'appointments-list-customer', 'c1');
     wc.newServiceId = 'sv1';
     wc.newStaffId = 's1';
     wc.newStart = '2026-08-07T10:00';
@@ -194,7 +194,7 @@ describe('linked booking: the create panel books against real records', () => {
   it('create sends the LINKS (ids) plus the denormalized names/price/duration from the records', async () => {
     const el = await mount();
     const wc = el as Wc;
-    wc.newCustomerId = 'c1';
+    await pickCustomer(el, 'appointments-list-customer', 'c1');
     wc.newServiceId = 'sv1';
     wc.newStaffId = 's1';
     wc.newStart = '2026-08-07T10:00';
@@ -222,7 +222,7 @@ describe('linked booking: the create panel books against real records', () => {
   it('a typed duration overrides the service default', async () => {
     const el = await mount();
     const wc = el as Wc;
-    wc.newCustomerId = 'c1';
+    await pickCustomer(el, 'appointments-list-customer', 'c1');
     wc.newServiceId = 'sv1';
     wc.newStaffId = 's1';
     wc.newStart = '2026-08-07T10:00';

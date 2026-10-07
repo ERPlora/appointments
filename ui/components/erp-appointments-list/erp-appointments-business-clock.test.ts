@@ -11,6 +11,7 @@
 process.env.TZ = 'Pacific/Auckland';
 
 import { beforeEach, afterAll, describe, expect, it } from 'vitest';
+import { pickCustomer } from '../../test/pick-customer';
 
 const commands: { name: string; payload: Record<string, unknown> }[] = [];
 const queries: { name: string; params: Record<string, unknown> }[] = [];
@@ -76,7 +77,6 @@ type Wc = HTMLElement & {
   shadowRoot: ShadowRoot;
   day: string;
   view: string;
-  newCustomerId: string;
   newServiceId: string;
   newStaffId: string;
   newStart: string;
@@ -138,7 +138,7 @@ describe('the agenda READS the salon clock', () => {
 describe('the agenda WRITES the salon clock', () => {
   it('booking 11:00 sends 11:00 with the salon offset, not the tablet one', async () => {
     const el = await mount();
-    el.newCustomerId = 'c1';
+    await pickCustomer(el, 'appointments-list-customer', 'c1');
     el.newServiceId = 'sv1';
     el.newStaffId = 's1';
     el.newStart = '2026-08-22T11:00';
@@ -156,7 +156,7 @@ describe('the agenda WRITES the salon clock', () => {
   it('🔴 a time the salon clock never shows is REFUSED, and the appointment is not sent', async () => {
     // 2026-03-29 02:30 does not exist in Madrid. Every naive path stores 01:30 or 03:30 instead.
     const el = await mount();
-    el.newCustomerId = 'c1';
+    await pickCustomer(el, 'appointments-list-customer', 'c1');
     el.newServiceId = 'sv1';
     el.newStaffId = 's1';
     el.newStart = '2026-03-29T02:30';
