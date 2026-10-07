@@ -17,6 +17,7 @@
 process.env.TZ = 'Europe/Madrid';
 
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
+import { pickCustomer } from '../../test/pick-customer';
 import esLocale from '../../../locales/es.json';
 import enLocale from '../../../locales/en.json';
 
@@ -134,7 +135,6 @@ type Wc = HTMLElement & {
   shadowRoot: ShadowRoot;
   day: string;
   refresh: () => Promise<void>;
-  newCustomerId: string;
   newServiceId: string;
   newStaffId: string;
   newStart: string;
@@ -164,10 +164,17 @@ const mount = async (): Promise<Wc> => {
   return el;
 };
 
-/** Fills the create panel with a booking for Eva at `wall` and presses save WITHOUT awaiting:
- *  the prompt has to be answered before the promise settles. */
+/** The agenda with Berta already chosen in the create panel's customer search (appointments#306):
+ *  picking her is awaited HERE, so `startCreate` stays synchronous up to the save. */
+const mountForCreate = async (): Promise<Wc> => {
+  const el = await mount();
+  await pickCustomer(el, 'appointments-list-customer', 'c2');
+  return el;
+};
+
+/** Fills the rest of the create panel with a booking for Eva at `wall` and presses save WITHOUT
+ *  awaiting: the prompt has to be answered before the promise settles. */
 function startCreate(el: Wc, wall: string): Promise<void> {
-  el.newCustomerId = 'c2';
   el.newServiceId = 'sv1';
   el.newStaffId = 's1';
   el.newStart = wall;
@@ -187,7 +194,7 @@ const createsSent = (): number =>
 
 describe('appointments#86 · creating an overlapping appointment asks first', () => {
   it('with allow_overlapping ON the prompt names WHO and WHEN, and writes nothing yet', async () => {
-    const el = await mount();
+    const el = await mountForCreate();
     const pending = startCreate(el, '2026-08-17T11:15');
     await settle(el);
 
@@ -203,7 +210,7 @@ describe('appointments#86 · creating an overlapping appointment asks first', ()
   });
 
   it('cancelling writes nothing and keeps what was typed', async () => {
-    const el = await mount();
+    const el = await mountForCreate();
     const pending = startCreate(el, '2026-08-17T11:15');
     await settle(el);
     el.cancelOverlap();
@@ -216,7 +223,7 @@ describe('appointments#86 · creating an overlapping appointment asks first', ()
 
   it('with allow_overlapping OFF nothing changes: no prompt, the SERVER refuses', async () => {
     allowOverlapping = false;
-    const el = await mount();
+    const el = await mountForCreate();
     await startCreate(el, '2026-08-17T11:15');
     await settle(el);
 
@@ -225,7 +232,7 @@ describe('appointments#86 · creating an overlapping appointment asks first', ()
   });
 
   it('a slot with no conflict is booked without asking', async () => {
-    const el = await mount();
+    const el = await mountForCreate();
     await startCreate(el, '2026-08-17T13:00');
     await settle(el);
 
@@ -234,7 +241,7 @@ describe('appointments#86 · creating an overlapping appointment asks first', ()
   });
 
   it('the conflict is read for the chosen professional and start (never the visible day)', async () => {
-    const el = await mount();
+    const el = await mountForCreate();
     const pending = startCreate(el, '2026-08-17T11:15');
     await settle(el);
     const read = queries.filter((q) => q.name === 'appointments.appointments.conflicting').at(-1);

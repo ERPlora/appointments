@@ -9,6 +9,7 @@
 process.env.TZ = 'Europe/Madrid';
 
 import { beforeEach, afterAll, describe, expect, it } from 'vitest';
+import { pickCustomer } from '../../test/pick-customer';
 import esLocale from '../../../locales/es.json';
 import enLocale from '../../../locales/en.json';
 import { dataTableLabels } from '@erplora/module-sdk';
@@ -203,7 +204,7 @@ async function submit(el: Wc) {
 
 /** Bea every two weeks on Friday at 17:30, six times, from 1 Oct 2099. */
 async function fillBea(el: Wc) {
-  await choose(el, 'appointments-series-create-customer', 'c2');
+  await pickCustomer(el, 'appointments-series-create-customer', 'c2');
   await choose(el, 'appointments-series-create-service', 'sv2');
   await choose(el, 'appointments-series-create-staff', 's1');
   await choose(el, 'appointments-series-create-frequency', 'biweekly');
@@ -243,7 +244,18 @@ describe('the «Repeating» view can create a series (appointments#209)', () => 
     await tapAdd(el);
     const opts = (testid: string) =>
       [...(field(el, testid)?.querySelectorAll('ion-select-option') ?? [])].map((o) => (o as HTMLElement & { value?: unknown }).value);
-    expect(opts('appointments-series-create-customer')).toEqual(['c1', 'c2']);
+    // appointments#306: the customer is searched on the server — opening the field shows the
+    // first page `customers.list` answers, as records (one option per customer id).
+    const picker = field(el, 'appointments-series-create-customer') as (HTMLElement & { updateComplete: Promise<unknown> }) | null;
+    expect(picker?.tagName.toLowerCase()).toBe('erp-appointments-customer-picker');
+    picker!.shadowRoot!.querySelector('[data-testid="appointments-customer-picker-input"]')!
+      .dispatchEvent(new CustomEvent('ionFocus', { bubbles: true, composed: true }));
+    await new Promise((r) => setTimeout(r, 0));
+    await picker!.updateComplete;
+    const offered = [...picker!.shadowRoot!.querySelectorAll('[data-testid^="appointments-customer-picker-option-"]')].map((o) =>
+      o.getAttribute('data-testid')!.replace('appointments-customer-picker-option-', ''),
+    );
+    expect(offered).toEqual(['c1', 'c2']);
     expect(opts('appointments-series-create-service')).toEqual(['sv1', 'sv2']);
     expect(opts('appointments-series-create-staff')).toEqual(['s1']);
   });
@@ -279,7 +291,7 @@ describe('the «Repeating» view can create a series (appointments#209)', () => 
     const el = await mount();
     await tapAdd(el);
     expect(submitButton(el).hasAttribute('disabled')).toBe(true);
-    await choose(el, 'appointments-series-create-customer', 'c2');
+    await pickCustomer(el, 'appointments-series-create-customer', 'c2');
     await choose(el, 'appointments-series-create-service', 'sv2');
     expect(field(el, 'appointments-series-create-duration')?.value).toBe('90');
     await choose(el, 'appointments-series-create-staff', 's1');
@@ -457,7 +469,7 @@ describe('«Add» and an edit in progress (appointments#209, pm#459)', () => {
   it('«Add» with no edit in progress keeps the draft being typed', async () => {
     const el = await mount();
     await tapAdd(el);
-    await choose(el, 'appointments-series-create-customer', 'c2');
+    await pickCustomer(el, 'appointments-series-create-customer', 'c2');
     await tapAdd(el); // closes the panel (ok-data-table toggles it)
     await tapAdd(el); // and opens it again
     expect(field(el, 'appointments-series-create-customer')?.value).toBe('c2');

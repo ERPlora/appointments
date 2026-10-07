@@ -19,6 +19,9 @@ import { todayISO } from '../../lib/business-time';
 import { parseTypedStart, formatTypedDate, formatTypedTime, type TypedStart } from '../../lib/typed-start';
 // appointments#281 — who performs a service: the rule the agenda's pickers use (#279).
 import { eligibleIds, eligibleReader, offeredStaff } from '../../lib/eligible-staff';
+// appointments#306 — the customer is SEARCHED on the server, never chosen from a cut list.
+import '../erp-appointments-customer-picker/erp-appointments-customer-picker';
+import type { PickedCustomer } from '../erp-appointments-customer-picker/erp-appointments-customer-picker';
 import { customerLabel } from '../../lib/customer-label';
 
 const CATALOG: Record<string, unknown> = { es: esLocale, en: enLocale };
@@ -209,12 +212,7 @@ interface Occurrence {
 
 /** appointments#209 — the catalogs the NEW-series form books against, the same shapes
  *  `erp-appointments-list` reads from their public queries. */
-interface Customer {
-  id: string;
-  name: string;
-  phone?: string;
-  email?: string;
-}
+type Customer = PickedCustomer;
 
 /** A bookable service (`services.services.list`): brings the duration to prefill. */
 interface Service {
@@ -321,11 +319,11 @@ export class ErpAppointmentsSeries extends LitElement {
 
   // ── appointments#209 — the NEW-series form ──────────────────────────────────────────────────
   // Linked catalogs: a series is booked against real records, same as erp-appointments-list.
-  @state() customers: Customer[] = [];
   @state() services: Service[] = [];
   @state() staffMembers: StaffMember[] = [];
 
-  @state() newCustomerId = '';
+  /** The customer picked in the new-series form (appointments#306: searched, not preloaded). */
+  @state() newCustomer: Customer | null = null;
   @state() newServiceId = '';
   @state() newStaffId = '';
   @state() newFrequency = 'weekly';
@@ -395,14 +393,13 @@ export class ErpAppointmentsSeries extends LitElement {
   }
 
   /** appointments#209 — the links a NEW series books against, read from their public queries
-   *  (never another module's tables), exactly like the create panel of `erp-appointments-list`. */
+   *  (never another module's tables), exactly like the create panel of `erp-appointments-list`.
+   *  Customers are not here: the picker searches them on the server (appointments#306). */
   private async loadCatalogs(): Promise<void> {
-    const [customers, services, staffMembers] = await Promise.all([
-      erplora().query('customers.list', { limit: 500, sort: 'name', dir: 'asc' }).catch(() => []),
+    const [services, staffMembers] = await Promise.all([
       erplora().query('services.services.list', { limit: 500 }).catch(() => []),
       erplora().query('staff.members.list', { limit: 500 }).catch(() => []),
     ]);
-    this.customers = rows<Customer>(customers);
     // A non-bookable service (e.g. internal) cannot receive an appointment.
     this.services = rows<Service>(services).filter((s) => s.is_bookable === undefined || Number(s.is_bookable) === 1);
     this.staffMembers = rows<StaffMember>(staffMembers);
@@ -1360,7 +1357,7 @@ export class ErpAppointmentsSeries extends LitElement {
 
   /** Everything the NEW-series draft holds, back to a blank form (appointments#209). */
   private resetCreateDraft(): void {
-    this.newCustomerId = '';
+    this.newCustomer = null;
     this.newServiceId = '';
     this.newStaffId = '';
     this.newFrequency = 'weekly';
@@ -1378,7 +1375,7 @@ export class ErpAppointmentsSeries extends LitElement {
   }
 
   private renderCreateForm(t: (k: string, p?: Record<string, unknown>) => string) {
-    const customer = this.customers.find((c) => c.id === this.newCustomerId);
+    const customer = this.newCustomer;
     const service = this.services.find((s) => s.id === this.newServiceId);
     const staff = this.bookableStaff.find((m) => m.id === this.newStaffId);
     const duration = Math.trunc(Number(this.newDuration));
@@ -1394,19 +1391,13 @@ export class ErpAppointmentsSeries extends LitElement {
       duration >= 1;
     return html`<form slot="create" data-testid="appointments-series-create-form" data-mode="series-create" class="form" @submit=${(e: Event) => this.createSeries(e)}>
       <div class="grid">
-        <ion-select
+        <erp-appointments-customer-picker
           data-testid="appointments-series-create-customer"
           data-role="series-create-customer"
-          fill="outline"
-          mode="md"
           label=${t('ui.fieldCustomer')}
-          placeholder=${t('ui.pickCustomer')}
-          label-placement="floating"
-          .value=${this.newCustomerId}
-          @ionChange=${(e: any) => (this.newCustomerId = e.target.value ?? '')}
-        >
-          ${this.customers.map((c) => html`<ion-select-option .value=${c.id}>${c.name}</ion-select-option>`)}
-        </ion-select>
+          .customer=${this.newCustomer}
+          @customer-change=${(e: CustomEvent<{ customer: Customer }>) => (this.newCustomer = e.detail.customer)}
+        ></erp-appointments-customer-picker>
         <ion-select
           data-testid="appointments-series-create-service"
           data-role="series-create-service"
@@ -1583,7 +1574,7 @@ export class ErpAppointmentsSeries extends LitElement {
   async createSeries(ev: Event): Promise<void> {
     ev.preventDefault?.();
     if (this.saving) return;
-    const customer = this.customers.find((c) => c.id === this.newCustomerId);
+    const customer = this.newCustomer;
     const service = this.services.find((s) => s.id === this.newServiceId);
     const staff = this.bookableStaff.find((m) => m.id === this.newStaffId);
     const duration = Math.trunc(Number(this.newDuration));

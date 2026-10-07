@@ -16,6 +16,7 @@
 // browser's locale, so a Spanish hub showed «mm/dd/yyyy»). It is a text field that shows and reads
 // the date in the hub's language — «07/08/2026» in Spanish — and ISO typed in still lands.
 import { beforeEach, describe, expect, it } from 'vitest';
+import { pickCustomer } from '../../test/pick-customer';
 
 process.env.TZ = 'Europe/Madrid';
 
@@ -71,7 +72,6 @@ beforeEach(() => {
 
 type Wc = HTMLElement & {
   shadowRoot: ShadowRoot;
-  newCustomerId: string;
   newServiceId: string;
   newStaffId: string;
   newStart: string;
@@ -117,7 +117,7 @@ describe('appointments#204 — new appointment: Start is a date field + a time f
 
   it('typing the date and then the time enables «Add appointment» and books that wall clock', async () => {
     const el = await mount();
-    el.newCustomerId = 'c1';
+    await pickCustomer(el, 'appointments-list-customer', 'c1');
     el.newServiceId = 'sv1';
     el.newStaffId = 's1';
     await el.updateComplete;

@@ -240,7 +240,14 @@
     "dayFriday": "Viernes",
     "daySaturday": "Sábado",
     "daySunday": "Domingo",
-    "reasonSeriesPatternChanged": "La cita periódica cambió de pauta"
+    "reasonSeriesPatternChanged": "La cita periódica cambió de pauta",
+    "customerSearchPlaceholder": "Busca por nombre o teléfono",
+    "customerSearching": "Buscando…",
+    "customerNoMatch": "Ningún cliente coincide con lo que has escrito.",
+    "customerNone": "Todavía no hay clientes. Dalos de alta en Clientes.",
+    "customerMore": "Se muestran los 20 primeros. Sigue escribiendo para afinar.",
+    "errLoadCustomers": "No se han podido cargar los clientes.",
+    "customerRetry": "Reintentar"
   },
   "errors": {
     "appointments.cannot_cancel": "Esta cita ya no se puede cancelar en su estado actual.",

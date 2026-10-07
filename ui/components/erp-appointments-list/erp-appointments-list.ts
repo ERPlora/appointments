@@ -21,7 +21,10 @@ import {
 } from '../erp-appointments-series/erp-appointments-series';
 // appointments#194 — the sheet of an appointment carries its history.
 import '../erp-appointments-history/erp-appointments-history';
+// appointments#306 — the customer is SEARCHED on the server, never chosen from a cut list.
+import '../erp-appointments-customer-picker/erp-appointments-customer-picker';
 import type { DataTableColumn } from '@erplora/outfitkit';
+import type { PickedCustomer } from '../erp-appointments-customer-picker/erp-appointments-customer-picker';
 // i18n (ADR-0055): catálogo `ui` inlineado por esbuild; los textos internos se resuelven
 // con `erplora.t(CATALOG, 'ui.clave')` (idioma activo, fallback locale→en→clave).
 import esLocale from '../../../locales/es.json';
@@ -92,13 +95,8 @@ interface Appointment {
   occurrence_date: string | null;
 }
 
-/** Ficha mínima de cliente que necesita el alta (de `customers.list`). */
-interface Customer {
-  id: string;
-  name: string;
-  phone?: string;
-  email?: string;
-}
+/** The minimal customer record the booking needs (from `customers.list`, via the picker). */
+type Customer = PickedCustomer;
 
 /** Servicio reservable (de `services.services.list`): aporta duración y precio. */
 interface Service {
@@ -385,16 +383,15 @@ export class ErpAppointmentsList extends LitElement {
   /** `list` = tabla del día · `staff` = timeline por profesional (appointments#21). */
   @state() view: 'list' | 'staff' | 'series' = 'list';
 
-  // Catálogos ligados: la cita se reserva contra registros reales, no contra texto libre.
-  @state() customers: Customer[] = [];
-
+  // Linked catalogs: the appointment is booked against real records, not free text.
   @state() services: Service[] = [];
 
   @state() staffMembers: StaffMember[] = [];
 
   @state() settings: AppointmentSettings = {};
 
-  @state() newCustomerId = '';
+  /** The customer picked in the create panel (appointments#306: searched, not preloaded). */
+  @state() newCustomer: Customer | null = null;
 
   @state() newServiceId = '';
 
@@ -890,17 +887,16 @@ export class ErpAppointmentsList extends LitElement {
     this.settleOverlap(false);
   }
 
-  /** Catálogos ligados + ajustes. Se cargan una vez: el alta reserva contra registros reales
-   *  (`customers` / `services` / `staff`) vía sus queries PÚBLICAS — nunca sus tablas. */
+  /** Linked catalogs + settings, loaded once: the booking is made against real records through
+   *  their PUBLIC queries — never their tables. Customers are not here: the picker searches them on
+   *  the server as the receptionist types (appointments#306). */
   private async loadCatalogs() {
     try {
-      const [customers, services, staffMembers, settings] = await Promise.all([
-        erplora().query('customers.list', { limit: 500, sort: 'name', dir: 'asc' }).catch(() => []),
+      const [services, staffMembers, settings] = await Promise.all([
         erplora().query('services.services.list', { limit: 500 }).catch(() => []),
         erplora().query('staff.members.list', { limit: 500 }).catch(() => []),
         erplora().query('appointments.settings.get').catch(() => []),
       ]);
-      this.customers = rows<Customer>(customers);
       // Un servicio no reservable (p. ej. interno) no puede recibir una cita.
       this.services = rows<Service>(services).filter((s) => s.is_bookable === undefined || Number(s.is_bookable) === 1);
       this.staffMembers = rows<StaffMember>(staffMembers);
@@ -1125,7 +1121,7 @@ export class ErpAppointmentsList extends LitElement {
 
   private async createAppointment(ev: Event) {
     ev.preventDefault();
-    const customer = this.customers.find((c) => c.id === this.newCustomerId);
+    const customer = this.newCustomer;
     const service = this.selectedService;
     const staff = this.bookableStaff.find((m) => m.id === this.newStaffId);
     // El alta exige los tres vínculos (appointments#21): sin ellos la cita no se puede
@@ -1167,7 +1163,7 @@ export class ErpAppointmentsList extends LitElement {
         // Only the minimum steps aside; the maximum advance, the hours and the overlap still judge.
         allow_short_notice: true,
       });
-      this.newCustomerId = '';
+      this.newCustomer = null;
       this.newServiceId = '';
       this.newStaffId = '';
       this.newStart = '';
@@ -1992,9 +1988,7 @@ export class ErpAppointmentsList extends LitElement {
    *  disponibilidad, ni pasar a la venta sin re-teclear. */
   private renderCreateForm(t: (k: string) => string) {
     return html`<form slot="create" data-testid="appointments-list-form" data-mode="create" class="form" @submit=${(e: Event) => this.createAppointment(e)}>
-            <ion-select data-testid="appointments-list-customer" data-role="customer" fill="outline" mode="md" label-placement="floating" label=${t('ui.fieldCustomer')} placeholder=${t('ui.pickCustomer')} .value=${this.newCustomerId} @ionChange=${(e: any) => (this.newCustomerId = e.target.value)}>
-              ${this.customers.map((c) => html`<ion-select-option .value=${c.id}>${c.name}</ion-select-option>`)}
-            </ion-select>
+            <erp-appointments-customer-picker data-testid="appointments-list-customer" data-role="customer" label=${t('ui.fieldCustomer')} .customer=${this.newCustomer} @customer-change=${(e: CustomEvent<{ customer: Customer }>) => (this.newCustomer = e.detail.customer)}></erp-appointments-customer-picker>
             <ion-select data-testid="appointments-list-service" data-role="service" fill="outline" mode="md" label-placement="floating" label=${t('ui.fieldService')} placeholder=${t('ui.pickService')} .value=${this.newServiceId} @ionChange=${(e: any) => this.onServiceChange(e.target.value)}>
               ${this.services.map((s) => html`<ion-select-option .value=${s.id}>${s.name}</ion-select-option>`)}
             </ion-select>
@@ -2041,7 +2035,7 @@ export class ErpAppointmentsList extends LitElement {
             ${this.formError
               ? html`<ok-inline-feedback data-testid="appointments-list-form-error" tone="danger" icon="alert-circle-outline">${this.formError}</ok-inline-feedback>`
               : nothing}
-            <ion-button data-testid="appointments-list-submit" type="submit" size="small" ?disabled=${this.saving || !this.newCustomerId || !this.newServiceId || !this.newStaffId || !this.newStart}>${this.saving ? t('ui.saving') : t('ui.addAppointment')}</ion-button>
+            <ion-button data-testid="appointments-list-submit" type="submit" size="small" ?disabled=${this.saving || !this.newCustomer || !this.newServiceId || !this.newStaffId || !this.newStart}>${this.saving ? t('ui.saving') : t('ui.addAppointment')}</ion-button>
           </form>`;
   }
 }

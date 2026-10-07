@@ -8,6 +8,7 @@
 //      positioned by time; legacy rows without staff fall into an "unassigned" lane.
 //   3. NO-SHOW — the API always had it; the receptionist needs it as a row action.
 import { beforeEach, describe, expect, it } from 'vitest';
+import { pickCustomer } from '../../test/pick-customer';
 import { todayISO as localDay } from '../../lib/business-time';
 
 // appointments#12 — the clock of these fixtures is PINNED, it is not the machine's.
@@ -122,7 +123,6 @@ async function mount() {
 type Wc = HTMLElement & {
   shadowRoot: ShadowRoot;
   view: string;
-  newCustomerId: string;
   newServiceId: string;
   newStaffId: string;
   newStart: string;
@@ -140,13 +140,18 @@ describe('linked booking: the create panel books against real records', () => {
     expect(names).toContain('staff.members.list');
   });
 
-  it('the create form offers customer/service/professional SELECTS, no free-text service field', async () => {
+  it('the create form links customer/service/professional to records, no free-text service field', async () => {
     const el = await mount();
     const form = el.shadowRoot.querySelector('form[slot="create"]')!;
     expect(form, 'create form must live in the table create panel').toBeTruthy();
-    const selects = [...form.querySelectorAll('ion-select')];
-    // customer + service + professional (status filter select lives outside the form)
-    expect(selects.length, 'customer/service/professional must be ion-selects').toBeGreaterThanOrEqual(3);
+    // appointments#306: the customer is no longer an ion-select of the first 500 — it is a search
+    // on the server that still only yields real customer records (the picker emits the record).
+    expect(
+      form.querySelector('erp-appointments-customer-picker[data-role="customer"]'),
+      'the customer must be picked from Customers records, by a server search',
+    ).toBeTruthy();
+    const roles = [...form.querySelectorAll('ion-select')].map((n) => n.getAttribute('data-role'));
+    expect(roles, 'service and professional must be ion-selects').toEqual(expect.arrayContaining(['service', 'staff']));
     // Free text remains only for what IS free text (no service/customer name inputs).
     // appointments#205: the Day is `type="text"` on purpose now (a native `date` input paints the
     // BROWSER locale, not the hub's) — it is a structured, parsed date, not a free-text field, so
@@ -183,7 +188,7 @@ describe('linked booking: the create panel books against real records', () => {
       el.shadowRoot.querySelector('form[slot="create"] ion-button[type="submit"]') as HTMLElement;
     expect(submit().hasAttribute('disabled'), 'empty form must not be submittable').toBe(true);
 
-    wc.newCustomerId = 'c1';
+    await pickCustomer(el, 'appointments-list-customer', 'c1');
     wc.newServiceId = 'sv1';
     wc.newStaffId = 's1';
     wc.newStart = '2026-08-07T10:00';
@@ -194,7 +199,7 @@ describe('linked booking: the create panel books against real records', () => {
   it('create sends the LINKS (ids) plus the denormalized names/price/duration from the records', async () => {
     const el = await mount();
     const wc = el as Wc;
-    wc.newCustomerId = 'c1';
+    await pickCustomer(el, 'appointments-list-customer', 'c1');
     wc.newServiceId = 'sv1';
     wc.newStaffId = 's1';
     wc.newStart = '2026-08-07T10:00';
@@ -222,7 +227,7 @@ describe('linked booking: the create panel books against real records', () => {
   it('a typed duration overrides the service default', async () => {
     const el = await mount();
     const wc = el as Wc;
-    wc.newCustomerId = 'c1';
+    await pickCustomer(el, 'appointments-list-customer', 'c1');
     wc.newServiceId = 'sv1';
     wc.newStaffId = 's1';
     wc.newStart = '2026-08-07T10:00';

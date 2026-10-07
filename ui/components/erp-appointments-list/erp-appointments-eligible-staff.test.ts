@@ -18,6 +18,7 @@
 //   7. a late answer for a service picked BEFORE never narrows the list of the one picked now;
 //   8. the sheet keeps showing the professional the appointment has, even if no longer eligible.
 import { beforeEach, describe, expect, it } from 'vitest';
+import { pickCustomer } from '../../test/pick-customer';
 
 process.env.TZ = 'Europe/Madrid';
 
@@ -102,7 +103,6 @@ beforeEach(() => {
 
 type Wc = HTMLElement & {
   shadowRoot: ShadowRoot;
-  newCustomerId: string;
   newServiceId: string;
   newStaffId: string;
   newStart: string;
@@ -250,7 +250,7 @@ describe('the create form only offers who performs the service (appointments#279
 
   it('a booking saved leaves a clean form: no notice, the whole team', async () => {
     const el = await mount();
-    el.newCustomerId = 'c1';
+    await pickCustomer(el, 'appointments-list-customer', 'c1');
     el.newStart = '2026-08-07T10:00';
     await pick(el, createForm(el), 'staff', 's2');
     await pick(el, createForm(el), 'service', 'sv2');
@@ -267,7 +267,7 @@ describe('the create form only offers who performs the service (appointments#279
 
   it('the notice of a booking saved does not survive into the next one', async () => {
     const el = await mount();
-    el.newCustomerId = 'c1';
+    await pickCustomer(el, 'appointments-list-customer', 'c1');
     el.newStart = '2026-08-07T10:00';
     await pick(el, createForm(el), 'staff', 's2');
     await pick(el, createForm(el), 'service', 'sv2');
@@ -317,7 +317,7 @@ describe('the create form only offers who performs the service (appointments#279
   it('a booking saved after a failed check does not carry the warning into the next one', async () => {
     eligibleFails = true;
     const el = await mount();
-    el.newCustomerId = 'c1';
+    await pickCustomer(el, 'appointments-list-customer', 'c1');
     el.newStart = '2026-08-07T10:00';
     await pick(el, createForm(el), 'staff', 's2');
     await pick(el, createForm(el), 'service', 'sv2');
@@ -330,7 +330,7 @@ describe('the create form only offers who performs the service (appointments#279
 
   it('an answer that arrives after the booking was saved never narrows the clean form', async () => {
     const el = await mount();
-    el.newCustomerId = 'c1';
+    await pickCustomer(el, 'appointments-list-customer', 'c1');
     el.newStart = '2026-08-07T10:00';
     await pick(el, createForm(el), 'staff', 's1');
     let release!: () => void;

@@ -19,6 +19,7 @@
 process.env.TZ = 'Europe/Madrid';
 
 import { beforeEach, afterAll, describe, expect, it, vi } from 'vitest';
+import { pickCustomer } from '../../test/pick-customer';
 // The real catalog: assertions compare against the KEY the screen paints, never prose (ADR-0055).
 import esLocale from '../../../locales/es.json';
 
@@ -103,7 +104,6 @@ type Wc = HTMLElement & {
   error: string;
   editingId: string;
   editDuration: string;
-  newCustomerId: string;
   newServiceId: string;
   newStaffId: string;
   newStartDate: string;
@@ -298,7 +298,7 @@ describe('a refused NEW series is seen inside its form (pm#513)', () => {
   it('paints the refusal inside the create form and scrolls it into view', async () => {
     refusals['appointments.recurring.create'] = new Error('appointments.series_create_refused');
     const el = await mount();
-    el.newCustomerId = 'c1';
+    await pickCustomer(el, 'appointments-series-create-customer', 'c1');
     el.newServiceId = 'sv1';
     el.newStaffId = 's1';
     el.newStartDate = '2099-01-05';
