@@ -165,6 +165,9 @@ export class ErpAppointmentsCustomerPicker extends LitElement {
   private renderResults(t: (k: string) => string) {
     if (!this.open) return nothing;
     const empty = !this.searching && !this.error && this.results.length === 0;
+    // A failure with nothing to list is said by the error alone: an empty bordered box under it
+    // reads as a broken field.
+    if (this.error && this.results.length === 0) return nothing;
     return html`<div class="results" role="listbox">
       <ion-list lines="none">
         ${this.results.map(

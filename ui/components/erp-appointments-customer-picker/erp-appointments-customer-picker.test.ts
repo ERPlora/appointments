@@ -172,6 +172,17 @@ describe('appointments#306 — the customer picker searches the server, not a cu
     expect(asked.at(-1)!.search, 'the retry repeats the same search').toBe('zamora');
   });
 
+  it('a failure with nothing to list paints no empty results box under the error', async () => {
+    const el = await mount();
+    await type(el, 'nobody-like-this');
+    answer = async () => {
+      throw new Error('boom');
+    };
+    await type(el, 'nobody-like-this-either');
+    expect(hook(el, 'appointments-customer-picker-error')).toBeTruthy();
+    expect(el.shadowRoot.querySelector('.results'), 'an empty bordered box reads as a broken field').toBeNull();
+  });
+
   it('nobody matching is an empty state, not an error', async () => {
     const el = await mount();
     await type(el, 'nobody-like-this');

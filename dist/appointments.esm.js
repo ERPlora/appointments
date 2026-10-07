@@ -2899,6 +2899,7 @@ var ErpAppointmentsCustomerPicker = class extends i3 {
   renderResults(t5) {
     if (!this.open) return A;
     const empty = !this.searching && !this.error && this.results.length === 0;
+    if (this.error && this.results.length === 0) return A;
     return b2`<div class="results" role="listbox">
       <ion-list lines="none">
         ${this.results.map(
