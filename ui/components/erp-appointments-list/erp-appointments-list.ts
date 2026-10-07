@@ -2053,11 +2053,11 @@ export class ErpAppointmentsList extends LitElement {
   private renderCreateForm(t: (k: string) => string) {
     return html`<form slot="create" data-testid="appointments-list-form" data-mode="create" class="form" @submit=${(e: Event) => this.createAppointment(e)}>
             <erp-appointments-customer-picker data-testid="appointments-list-customer" data-role="customer" label=${t('ui.fieldCustomer')} .customer=${this.newCustomer} @customer-change=${(e: CustomEvent<{ customer: Customer }>) => (this.newCustomer = e.detail.customer)}></erp-appointments-customer-picker>
-            <ion-select data-testid="appointments-list-service" data-role="service" fill="outline" mode="md" label-placement="floating" label=${t('ui.fieldService')} placeholder=${t('ui.pickService')} .disabled=${this.catalogStatus.services !== 'ready' || this.services.length === 0} .value=${this.newServiceId} @ionChange=${(e: any) => this.onServiceChange(e.target.value)}>
+            <ion-select data-testid="appointments-list-service" data-role="service" fill="outline" mode="md" label-placement="floating" label=${t('ui.fieldService')} placeholder=${t('ui.pickService')} .disabled=${this.services.length === 0} .value=${this.newServiceId} @ionChange=${(e: any) => this.onServiceChange(e.target.value)}>
               ${this.services.map((s) => html`<ion-select-option .value=${s.id}>${s.name}</ion-select-option>`)}
             </ion-select>
             ${this.renderServicesState(t)}
-            <ion-select data-testid="appointments-list-staff" data-role="staff" fill="outline" mode="md" label-placement="floating" label=${t('ui.fieldStaff')} placeholder=${t('ui.pickStaff')} .disabled=${this.catalogStatus.staff !== 'ready' || this.bookableStaff.length === 0} .value=${this.newStaffId} @ionChange=${(e: any) => this.onStaffChange(e.target.value ?? '')}>
+            <ion-select data-testid="appointments-list-staff" data-role="staff" fill="outline" mode="md" label-placement="floating" label=${t('ui.fieldStaff')} placeholder=${t('ui.pickStaff')} .disabled=${this.bookableStaff.length === 0} .value=${this.newStaffId} @ionChange=${(e: any) => this.onStaffChange(e.target.value ?? '')}>
               ${this.staffOptions('new').map((m) => html`<ion-select-option .value=${m.id}>${m.full_name}</ion-select-option>`)}
             </ion-select>
             ${this.renderStaffState(t)}

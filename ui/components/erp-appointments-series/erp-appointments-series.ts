@@ -1477,7 +1477,7 @@ export class ErpAppointmentsSeries extends LitElement {
           label=${t('ui.fieldService')}
           placeholder=${t('ui.pickService')}
           label-placement="floating"
-          .disabled=${this.catalogStatus.services !== 'ready' || this.services.length === 0}
+          .disabled=${this.services.length === 0}
           .value=${this.newServiceId}
           @ionChange=${(e: any) => this.onCreateServiceChange(e.target.value ?? '')}
         >
@@ -1492,7 +1492,7 @@ export class ErpAppointmentsSeries extends LitElement {
           label=${t('ui.fieldStaff')}
           placeholder=${t('ui.pickStaff')}
           label-placement="floating"
-          .disabled=${this.catalogStatus.staff !== 'ready' || this.bookableStaff.length === 0}
+          .disabled=${this.bookableStaff.length === 0}
           .value=${this.newStaffId}
           @ionChange=${(e: any) => this.onCreateStaffChange(e.target.value ?? '')}
         >

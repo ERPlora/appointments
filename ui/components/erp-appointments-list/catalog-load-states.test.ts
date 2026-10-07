@@ -105,6 +105,23 @@ describe('appointments#319 — services and professionals that do not load are s
       expect(hook(el, select)!.disabled).toBe(false);
     });
 
+    it(`Try again on the ${kind} says it is reading again until the list arrives`, async () => {
+      answer(fail);
+      const el = await mount();
+      let release: () => void = () => {};
+      answer(() => new Promise((resolve) => (release = () => resolve({ rows: [kind === 'services' ? SERVICE : MEMBER], total: 1 }))));
+      hook(el, `appointments-list-${kind}-retry`)!.click();
+      await settle(el);
+
+      expect(hook(el, `appointments-list-${kind}-loading`), 'the retry is visibly on its way').toBeTruthy();
+      expect(hook(el, `appointments-list-${kind}-error`), 'the old failure is not left on screen meanwhile').toBeNull();
+
+      release();
+      await settle(el);
+      expect(hook(el, `appointments-list-${kind}-loading`)).toBeNull();
+      expect(options(el, select)).toContain(id);
+    });
+
     it(`while the ${kind} are being read, the panel says it is loading`, async () => {
       let release: () => void = () => {};
       answer(() => new Promise((resolve) => (release = () => resolve({ rows: [kind === 'services' ? SERVICE : MEMBER], total: 1 }))));
