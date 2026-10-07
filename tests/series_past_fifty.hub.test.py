@@ -13,6 +13,10 @@ This battery is the screen's tap, run against the real runtime: the first run ca
 followed with it and the `to` it answered. A daily series of 80 dates must end with its 80
 appointments on the agenda, and a second tap must find them all there and book none twice.
 
+§3 is the window's LAST day (appointments#289): the hub closes the window at the instant
+`now + max_advance_booking`, so a later hour on that day is left for a later run — it used to come
+back in the report as refused (`too_far`), a date the series had picked itself.
+
 Usage: tests/series_past_fifty.hub.test.py   (exit 0 = green)
   Needs a live runtime with `taxes`+`customers`+`services`+`staff`+`appointments` installed:
   `erplora test <dir> --against-hub` (see tests/hub_harness.py). Without one it FAILS.
@@ -180,7 +184,102 @@ def run(hub: Hub) -> int:
     )
     hub.check("§2 the agenda is unchanged", on_the_agenda(), dates)
 
+    last_day_of_the_window(hub)
+
     return hub.finish("a series with more dates than one run books is booked whole")
+
+
+# The window's last day is the gate's: a time past `now + 90 days` waits for a later run.
+LATE = "23:40"
+
+
+def last_day_of_the_window(hub: Hub) -> None:
+    """§3 — appointments#289. With no `to`, the run books up to today + `max_advance_booking`
+    (90 here), last day included, but the gate judges the INSTANT `now + 90 days`: on that last
+    day, an hour later than the runtime's clock was listed as refused («too far»), a date the
+    series had picked itself. The last date must be booked if its instant is within the gate and
+    left for a later run otherwise — never reported as skipped.
+
+    The hour is chosen against the clock so the battery proves the symptom at any hour it runs:
+    23:40 on the last day lies past the gate unless the battery runs within 10 minutes of 23:40 on
+    the business clock; then it books 12:00, which lies within it. Open 24 h and a professional
+    with no shift, so nothing but the gate can refuse."""
+    print(
+        "§3 the window's last day books what the gate takes and reports nothing as too far"
+    )
+    for dow in EVERY_DAY:
+        hub.run(
+            "schedules.business_hours.set",
+            {
+                "day_of_week": dow,
+                "intervals": [{"open_time": "00:00", "close_time": "00:00"}],
+            },
+        )
+    zone = zoneinfo.ZoneInfo(hub.timezone)
+    links = seed_links(hub, "series289", duration_minutes=15)
+    # In UTC: the gate adds 90 × 24 h to an instant, and Python adds and compares two datetimes of
+    # the SAME zone on the wall clock — an hour off when the clocks change in between.
+    utc = datetime.timezone.utc
+    gate = datetime.datetime.now(utc) + datetime.timedelta(days=90)
+    last = datetime.datetime.now(zone).date() + datetime.timedelta(days=90)
+    dates = [last - datetime.timedelta(days=k) for k in (2, 1, 0)]
+
+    def at(day: datetime.date, hhmm: str) -> datetime.datetime:
+        hour, minute = (int(part) for part in hhmm.split(":"))
+        return datetime.datetime.combine(
+            day, datetime.time(hour, minute), zone
+        ).astimezone(utc)
+
+    margin = datetime.timedelta(minutes=10)
+    time = LATE if at(last, LATE) > gate + margin else "12:00"
+    expected = [d.isoformat() for d in dates if at(d, time) <= gate]
+
+    recurring_id = hub.new_id(
+        "appointments.recurring.create",
+        {
+            "customer_id": links.customer_id,
+            "customer_name": "Cliente",
+            "service_id": links.service_id,
+            "service_name": links.service_name,
+            "staff_id": links.staff_id,
+            "staff_name": links.staff_name,
+            "frequency": "daily",
+            "time": time,
+            "duration_minutes": 15,
+            "start_date": dates[0].isoformat(),
+            "max_occurrences": len(dates),
+        },
+    )
+    reports, failures = book_like_the_screen(
+        hub,
+        {
+            "recurring_id": recurring_id,
+            "customer_id": links.customer_id,
+            "service_id": links.service_id,
+            "staff_id": links.staff_id,
+        },
+    )
+    hub.check("§3 the run answered", failures, [])
+    hub.check(
+        f"§3 a {time} series books the window's dates within the gate",
+        [(r.get("booked"), r.get("next_from")) for r in reports],
+        [(len(expected), None)],
+    )
+    hub.check(
+        "§3 and lists none of its own dates as refused (no `too_far`)",
+        [s for r in reports for s in r.get("skipped") or []],
+        [],
+    )
+    hub.check(
+        "§3 the agenda holds exactly those dates",
+        sorted(
+            row["occurrence_date"]
+            for row in hub.query(
+                "appointments.recurring.occurrences", {"recurring_id": recurring_id}
+            )
+        ),
+        expected,
+    )
 
 
 if __name__ == "__main__":

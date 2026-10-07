@@ -791,11 +791,7 @@ fn lead_time_refusal(
         ));
     }
 
-    let max_days = settings
-        .get("max_advance_booking")
-        .map(|v| as_i64(v, 0))
-        .unwrap_or(0);
-    if max_days > 0 && ahead > max_days * 86_400 {
+    if let Some(max_days) = past_max_advance(settings, start, now) {
         return Some(DomainError::new(
             "appointments.too_far",
             &format!("This appointment cannot be booked more than {max_days} days in advance."),
@@ -803,6 +799,17 @@ fn lead_time_refusal(
     }
 
     None
+}
+
+/// The maximum advance, in days, when `start` lies past it — the one place that judges it, for
+/// the gate ([`lead_time_refusal`]) and for the end of a series' window (appointments#289).
+/// `0` (or no setting) is no limit.
+fn past_max_advance(settings: &Value, start: &Dt, now: &Dt) -> Option<i64> {
+    let max_days = settings
+        .get("max_advance_booking")
+        .map(|v| as_i64(v, 0))
+        .unwrap_or(0);
+    (max_days > 0 && cmp_secs(start, now) > max_days * 86_400).then_some(max_days)
 }
 
 /// Blocked time: holidays, closures, a professional's training slot.
@@ -4408,6 +4415,7 @@ pub fn materialize_recurring_pure(input: Value) -> Result<Output, String> {
     };
 
     let mut skipped_as_booked = 0usize;
+    let mut past_the_advance = false;
     // appointments#238: every occurrence refused is REPORTED with its date and code — skipping it
     // stays right (a year-long series does not fall because of one holiday), keeping quiet about
     // it is what left the customer off the agenda with the screen saying «series created».
@@ -4442,6 +4450,13 @@ pub fn materialize_recurring_pure(input: Value) -> Result<Output, String> {
             skipped.push(json!({ "occurrence_date": occurrence_date, "code": "appointments.invalid_start" }));
             continue;
         };
+        // appointments#289: the window ends where the gate stops taking bookings — the INSTANT
+        // `now + max_advance_booking`, not its civil day. A later hour on that last day is not
+        // refused, it is not bookable YET: left for a later run, like the dates past her hours.
+        if parse_dt(&start_iso).is_some_and(|start| past_max_advance(&settings, &start, &ctx.now).is_some()) {
+            past_the_advance = true;
+            break;
+        }
         if let (Some(cut), Some(start)) = (covered_until, parse_dt(&start_iso)) {
             let start = Secs::of(&start);
             let end = Secs {
@@ -4512,7 +4527,14 @@ pub fn materialize_recurring_pure(input: Value) -> Result<Output, String> {
     // idempotente que grita en el segundo intento es una que nadie se atreve a reintentar. Ni
     // cuando todo se rechazó con motivo (appointments#238): la serie existe y la respuesta dice
     // qué fechas no entraron y por qué, en vez de un fallo crudo del handler.
-    if created == 0 && skipped_as_booked == 0 && skipped.is_empty() && next_from.is_none() {
+    // Nor when what is left of the window is past the maximum advance (appointments#289): nothing
+    // to book YET is an answer, not a fault.
+    if created == 0
+        && skipped_as_booked == 0
+        && skipped.is_empty()
+        && next_from.is_none()
+        && !past_the_advance
+    {
         return Err(
             "no_occurrences: todas las ocurrencias de la ventana están en el pasado o solapadas"
                 .to_string(),
@@ -13355,6 +13377,106 @@ mod tests {
         assert_eq!(booked_dates(&out), ["2026-08-03", "2026-08-04", "2026-08-05"]);
         assert_eq!(series_result(&out)["next_from"], json!("2026-08-06"));
         assert_eq!(series_result(&out)["to"], json!("2026-08-20"));
+    }
+
+    // ── appointments#289 · the window the series picks ends where the advance gate does ─────
+    //
+    // With no `to`, the run books up to `today + max_advance_booking` as a CIVIL day, last day
+    // included — but the gate judges the INSTANT: `start <= now + max_advance_booking`. On the
+    // last day, an occurrence later in the day than `now` is past the gate, so the series listed
+    // a date it had picked itself as «too far», and the front desk saw a refusal nobody caused.
+    // Now the window ends at the gate's instant: what lies past it is left for a later run, like
+    // the dates past her read hours (appointments#229), and is never reported as refused.
+
+    /// A Thursday series that reaches the last day of a 90-day advance. `now` is 2026-07-31 10:00Z,
+    /// so the gate closes at 2026-10-29 10:00Z — 11:00 in Madrid, already on winter time (CET).
+    fn weekly_series_to_the_advance_limit(time: &str, to: Option<&str>) -> Value {
+        let mut payload = series_payload();
+        if let Some(to) = to {
+            payload["to"] = json!(to);
+        }
+        series_input(
+            payload,
+            json!([template(json!({
+                "time": time,
+                "start_date": "2026-10-22",
+                "max_occurrences": null
+            }))]),
+            Some(json!({
+                "appointments.settings.get": [
+                    { "allow_overlapping": 0, "default_duration": 60,
+                      "min_booking_notice": 0, "max_advance_booking": 90 }
+                ]
+            })),
+        )
+    }
+
+    /// 🔴 THE SYMPTOM: 2026-10-29 at 11:30 is half an hour past the gate. It is not booked yet,
+    /// and it is not listed as refused either: it enters when the window gets there.
+    #[test]
+    fn materialize_leaves_the_last_day_past_the_advance_gate_for_later_instead_of_refusing_it() {
+        let out =
+            materialize_recurring_pure(weekly_series_to_the_advance_limit("11:30", None)).unwrap();
+        assert!(out.error.is_none(), "{:?}", out.error);
+        assert_eq!(booked_dates(&out), ["2026-10-22"]);
+        assert_eq!(
+            series_result(&out),
+            json!({ "booked": 1, "already_booked": 0, "skipped": [] })
+        );
+    }
+
+    /// The run the screen chains after a capped one sends the window's `to` (appointments#299):
+    /// the last day is judged the same way there — the caller asked for the series' own window.
+    #[test]
+    fn materialize_with_the_windows_to_leaves_the_day_past_the_gate_for_later_too() {
+        let out = materialize_recurring_pure(weekly_series_to_the_advance_limit(
+            "11:30",
+            Some("2026-10-29"),
+        ))
+        .unwrap();
+        assert_eq!(booked_dates(&out), ["2026-10-22"]);
+        assert_eq!(
+            series_result(&out),
+            json!({ "booked": 1, "already_booked": 0, "skipped": [] })
+        );
+    }
+
+    /// The gate is inclusive: exactly `now + 90 days` (11:00 in Madrid) is bookable, so the last
+    /// day is booked — the cut is the gate's instant, not the day before.
+    #[test]
+    fn materialize_books_the_last_day_at_exactly_the_advance_limit() {
+        let out =
+            materialize_recurring_pure(weekly_series_to_the_advance_limit("11:00", None)).unwrap();
+        assert_eq!(booked_dates(&out), ["2026-10-22", "2026-10-29"]);
+        assert_eq!(
+            series_result(&out),
+            json!({ "booked": 2, "already_booked": 0, "skipped": [] })
+        );
+    }
+
+    /// The only date of the window past the gate: nothing to book YET is an answer, not a failure
+    /// — the screen would otherwise say «created but not booked» for a series that is fine.
+    #[test]
+    fn materialize_whose_only_date_is_past_the_gate_answers_nothing_booked_yet() {
+        let mut inp = weekly_series_to_the_advance_limit("11:30", None);
+        inp["context"]["reads"]["appointments.recurring.get"][0]["start_date"] = json!("2026-10-29");
+        let out = materialize_recurring_pure(inp).unwrap();
+        assert!(out.error.is_none(), "{:?}", out.error);
+        assert!(booked_dates(&out).is_empty());
+        assert_eq!(
+            series_result(&out),
+            json!({ "booked": 0, "already_booked": 0, "skipped": [] })
+        );
+    }
+
+    /// No maximum advance (0): the window is 90 days and the gate refuses nothing, so the last day
+    /// is booked whatever its time.
+    #[test]
+    fn materialize_without_an_advance_limit_books_the_last_day_of_the_default_window() {
+        let mut inp = weekly_series_to_the_advance_limit("11:30", None);
+        inp["context"]["reads"]["appointments.settings.get"][0]["max_advance_booking"] = json!(0);
+        let out = materialize_recurring_pure(inp).unwrap();
+        assert_eq!(booked_dates(&out), ["2026-10-22", "2026-10-29"]);
     }
 
     /// The series reads her agenda by PAGE, bound to the window's start — and the page the SQL

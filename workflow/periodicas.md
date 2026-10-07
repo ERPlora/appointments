@@ -22,14 +22,16 @@ Implicados: CUSTOMERS-F25, CUSTOMERS-F30, STAFF-F09, STAFF-F10, STAFF-F12
 QA: ninguno
 
 ### APPOINTMENTS-F13 Reservar las citas de una serie
-Estado: parcial — en una serie sin fin la última fecha puede salir «demasiado lejos» (appointments#289)
+Estado: hecho
 Actor: empleado
 Pantalla: Periódicas
 Pasos:
 1. Pulsa **Reservar citas** en la fila de la serie.
-2. Se reservan las fechas de la ventana (de hoy hasta la antelación máxima; si la antelación máxima
-   está a 0, sin límite, la ventana es de 90 días) que aún no estaban dadas, todas de un toque: cada
-   vuelta reserva como mucho 50 y la pantalla sigue sola con la siguiente (appointments#299).
+2. Se reservan las fechas de la ventana (de ahora hasta la antelación máxima, contada a la hora: el
+   último día, una cita más tarde que la hora en que se reserva no se rechaza, entra la próxima vez
+   que se reserven las citas de la serie, appointments#289; si la antelación máxima está a 0, sin
+   límite, la ventana es de 90 días) que aún no estaban dadas, todas de un toque: cada vuelta reserva
+   como mucho 50 y la pantalla sigue sola con la siguiente (appointments#299).
 3. Una fecha que no cabe (cerrado, el profesional no trabaja, bloqueo, otra cita, pasado) se salta y
    se lista con su motivo; las demás se reservan.
 Entra: la serie y las mismas comprobaciones que una cita suelta (APPOINTMENTS-F02).
