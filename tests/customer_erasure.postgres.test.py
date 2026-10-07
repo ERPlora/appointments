@@ -151,6 +151,14 @@ def erase(db, hub=HUB, customer=ERASED, now=NOW):
     psql(db, "\n".join(script))
 
 
+def query_rows(db, rel, params) -> list:
+    """Run one of the module's read queries with its binds the way the runtime fills them."""
+    sql = strip_comments((MODULE_DIR / rel).read_text()).strip().rstrip(";")
+    sql = PARAM.sub(lambda m: literal(params.get(m.group(1))), sql)
+    out = psql(db, f"SELECT COALESCE(json_agg(q), '[]') FROM ({sql}) q;")
+    return json.loads(out.strip())
+
+
 def appointment(db, aid, hub, customer, status="confirmed", deleted=0, **personal):
     values = {k: personal.get(k, v) for k, v in PERSONAL.items()}
     psql(
@@ -457,6 +465,20 @@ def main() -> int:
                 for k, v in after.items()
                 if k not in ("customer_name", "updated_by", "updated_at")
             },
+        )
+        # The Periódicas screen paints «Deleted customer» for a blank name WITH a link: the list
+        # query must hand the link over, or the series reads «—» like one with no customer.
+        listed = {
+            r["id"]: r
+            for r in query_rows(db, "queries/recurring_list.sql", {"hub_id": HUB})
+        }
+        check(
+            "the series list hands over the link and the blank name",
+            (ERASED, ""),
+            (
+                listed.get("r-active", {}).get("customer_id"),
+                listed.get("r-active", {}).get("customer_name"),
+            ),
         )
 
         print("\n== the history forgets her name and her reasons ==")
