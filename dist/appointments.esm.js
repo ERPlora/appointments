@@ -2133,7 +2133,14 @@ var es_default = {
     customerNone: "Todav\xEDa no hay clientes. Dalos de alta en Clientes.",
     customerMore: "Se muestran los 20 primeros. Sigue escribiendo para afinar.",
     errLoadCustomers: "No se han podido cargar los clientes.",
-    customerRetry: "Reintentar"
+    customerRetry: "Reintentar",
+    servicesLoading: "Cargando servicios\u2026",
+    staffLoading: "Cargando profesionales\u2026",
+    errLoadServices: "No se han podido cargar los servicios.",
+    errLoadStaff: "No se han podido cargar los profesionales.",
+    servicesNone: "Todav\xEDa no hay servicios reservables. Dalos de alta en Servicios.",
+    staffNone: "Todav\xEDa no hay profesionales reservables. Dalos de alta en Personal.",
+    catalogRetry: "Reintentar"
   },
   errors: {
     "appointments.cannot_cancel": "Esta cita ya no se puede cancelar en su estado actual.",
@@ -2429,7 +2436,14 @@ var en_default = {
     customerNone: "There are no customers yet. Add them in Customers.",
     customerMore: "Showing the first 20. Keep typing to narrow it down.",
     errLoadCustomers: "Could not load the customers.",
-    customerRetry: "Retry"
+    customerRetry: "Retry",
+    servicesLoading: "Loading services\u2026",
+    staffLoading: "Loading professionals\u2026",
+    errLoadServices: "The services could not be loaded.",
+    errLoadStaff: "The professionals could not be loaded.",
+    servicesNone: "There are no bookable services yet. Add them in Services.",
+    staffNone: "There are no bookable professionals yet. Add them in Staff.",
+    catalogRetry: "Retry"
   },
   errors: {
     "appointments.cannot_cancel": "This appointment can no longer be cancelled in its current state.",
@@ -7875,6 +7889,7 @@ var ErpAppointmentsSeries = class extends i3 {
     this.editServiceId = "";
     this.services = [];
     this.staffMembers = [];
+    this.catalogStatus = { services: "loading", staff: "loading" };
     this.newCustomer = null;
     this.newServiceId = "";
     this.newStaffId = "";
@@ -7922,6 +7937,10 @@ var ErpAppointmentsSeries = class extends i3 {
     .field-calendar { grid-column: 1 / -1; display:flex; justify-content:flex-start; }
     /* appointments#223 — the compact date picker of OutfitKit: never wider than its 20rem. */
     ok-calendar { flex: 1 1 auto; max-width: 20rem; }
+    /* appointments#319 — a list's loading / error / none line spans the whole form, under its picker. */
+    .catalog-hint { grid-column: 1 / -1; display:flex; align-items:center; gap:.4rem; margin:0; font-size:.85rem; color: var(--ion-color-medium, #8b897f); }
+    .catalog-state { grid-column: 1 / -1; display:flex; flex-direction:column; align-items:flex-start; gap:.35rem; }
+    .catalog-state ok-inline-feedback { align-self:stretch; }
   `;
   }
   async connectedCallback() {
@@ -7938,12 +7957,66 @@ var ErpAppointmentsSeries = class extends i3 {
    *  (never another module's tables), exactly like the create panel of `erp-appointments-list`.
    *  Customers are not here: the picker searches them on the server (appointments#306). */
   async loadCatalogs() {
-    const [services, staffMembers] = await Promise.all([
-      erplora4().query("services.services.list", { limit: 500 }).catch(() => []),
-      erplora4().query("staff.members.list", { limit: 500 }).catch(() => [])
-    ]);
-    this.services = rows5(services).filter((s5) => s5.is_bookable === void 0 || Number(s5.is_bookable) === 1);
-    this.staffMembers = rows5(staffMembers);
+    await Promise.all([this.loadServices(), this.loadStaff()]);
+  }
+  /** appointments#319 — a read that fails is SAID (with «Retry»), never turned into an empty list:
+   *  an empty picker reads as «this business has no services». */
+  async loadServices() {
+    this.catalogStatus = { ...this.catalogStatus, services: "loading" };
+    try {
+      const services = await erplora4().query("services.services.list", { limit: 500 });
+      this.services = rows5(services).filter((s5) => s5.is_bookable === void 0 || Number(s5.is_bookable) === 1);
+      this.catalogStatus = { ...this.catalogStatus, services: "ready" };
+    } catch {
+      this.catalogStatus = { ...this.catalogStatus, services: "error" };
+    }
+  }
+  async loadStaff() {
+    this.catalogStatus = { ...this.catalogStatus, staff: "loading" };
+    try {
+      this.staffMembers = rows5(await erplora4().query("staff.members.list", { limit: 500 }));
+      this.catalogStatus = { ...this.catalogStatus, staff: "ready" };
+    } catch {
+      this.catalogStatus = { ...this.catalogStatus, staff: "error" };
+    }
+  }
+  /** appointments#319 — the services list under its picker, painted like the free times of the
+   *  single appointment's panel: a spinner while it is on its way, the reason plus «Retry» when it
+   *  could not be read, a note when there are none. Nothing once there is something to pick. */
+  renderServicesState(t5) {
+    switch (this.catalogStatus.services) {
+      case "loading":
+        return b2`<div class="catalog-hint" data-testid="appointments-series-services-loading" role="status">
+          <ion-spinner name="dots"></ion-spinner><span>${t5("ui.servicesLoading")}</span>
+        </div>`;
+      case "error":
+        return b2`<div class="catalog-state">
+          <ok-inline-feedback data-testid="appointments-series-services-error" tone="danger" icon="alert-circle-outline">${t5("ui.errLoadServices")}</ok-inline-feedback>
+          <ion-button data-testid="appointments-series-services-retry" type="button" size="small" fill="clear" @click=${() => void this.loadServices()}>${t5("ui.catalogRetry")}</ion-button>
+        </div>`;
+      default:
+        return this.services.length === 0 ? b2`<div class="catalog-state">
+              <ok-inline-feedback data-testid="appointments-series-services-empty" tone="info" icon="information-circle-outline">${t5("ui.servicesNone")}</ok-inline-feedback>
+            </div>` : A;
+    }
+  }
+  /** appointments#319 — the same three states for the professionals; «none» counts the bookable ones. */
+  renderStaffState(t5) {
+    switch (this.catalogStatus.staff) {
+      case "loading":
+        return b2`<div class="catalog-hint" data-testid="appointments-series-staff-loading" role="status">
+          <ion-spinner name="dots"></ion-spinner><span>${t5("ui.staffLoading")}</span>
+        </div>`;
+      case "error":
+        return b2`<div class="catalog-state">
+          <ok-inline-feedback data-testid="appointments-series-staff-error" tone="danger" icon="alert-circle-outline">${t5("ui.errLoadStaff")}</ok-inline-feedback>
+          <ion-button data-testid="appointments-series-staff-retry" type="button" size="small" fill="clear" @click=${() => void this.loadStaff()}>${t5("ui.catalogRetry")}</ion-button>
+        </div>`;
+      default:
+        return this.bookableStaff.length === 0 ? b2`<div class="catalog-state">
+              <ok-inline-feedback data-testid="appointments-series-staff-empty" tone="info" icon="information-circle-outline">${t5("ui.staffNone")}</ok-inline-feedback>
+            </div>` : A;
+    }
   }
   /** Professionals that can receive appointments: the ones the `staff` module marks bookable. */
   get bookableStaff() {
@@ -8778,11 +8851,13 @@ var ErpAppointmentsSeries = class extends i3 {
           label=${t5("ui.fieldService")}
           placeholder=${t5("ui.pickService")}
           label-placement="floating"
+          .disabled=${this.services.length === 0}
           .value=${this.newServiceId}
           @ionChange=${(e5) => this.onCreateServiceChange(e5.target.value ?? "")}
         >
           ${this.services.map((s5) => b2`<ion-select-option .value=${s5.id}>${s5.name}</ion-select-option>`)}
         </ion-select>
+        ${this.renderServicesState(t5)}
         <ion-select
           data-testid="appointments-series-create-staff"
           data-role="series-create-staff"
@@ -8791,11 +8866,13 @@ var ErpAppointmentsSeries = class extends i3 {
           label=${t5("ui.fieldStaff")}
           placeholder=${t5("ui.pickStaff")}
           label-placement="floating"
+          .disabled=${this.bookableStaff.length === 0}
           .value=${this.newStaffId}
           @ionChange=${(e5) => this.onCreateStaffChange(e5.target.value ?? "")}
         >
           ${offeredStaff(this.bookableStaff, this.eligibleStaffIds.new).map((m4) => b2`<ion-select-option .value=${m4.id}>${m4.full_name}</ion-select-option>`)}
         </ion-select>
+        ${this.renderStaffState(t5)}
         ${this.renderStaffNotices("new", t5)}
         <ion-select
           data-testid="appointments-series-create-frequency"
@@ -9052,6 +9129,9 @@ __decorateClass([
 ], ErpAppointmentsSeries.prototype, "staffMembers", 2);
 __decorateClass([
   r5()
+], ErpAppointmentsSeries.prototype, "catalogStatus", 2);
+__decorateClass([
+  r5()
 ], ErpAppointmentsSeries.prototype, "newCustomer", 2);
 __decorateClass([
   r5()
@@ -9196,6 +9276,7 @@ var ErpAppointmentsList = class extends i3 {
     this.view = "list";
     this.services = [];
     this.staffMembers = [];
+    this.catalogStatus = { services: "loading", staff: "loading" };
     this.settings = {};
     this.newCustomer = null;
     this.newServiceId = "";
@@ -9664,18 +9745,33 @@ var ErpAppointmentsList = class extends i3 {
    *  their PUBLIC queries — never their tables. Customers are not here: the picker searches them on
    *  the server as the receptionist types (appointments#306). */
   async loadCatalogs() {
+    await Promise.all([this.loadServices(), this.loadStaff(), this.loadSettings()]);
+  }
+  /** appointments#319 — a read that fails is SAID (with «Retry»), never turned into an empty list:
+   *  an empty picker reads as «this business has no services». */
+  async loadServices() {
+    this.catalogStatus = { ...this.catalogStatus, services: "loading" };
     try {
-      const [services, staffMembers, settings] = await Promise.all([
-        erplora5().query("services.services.list", { limit: 500 }).catch(() => []),
-        erplora5().query("staff.members.list", { limit: 500 }).catch(() => []),
-        erplora5().query("appointments.settings.get").catch(() => [])
-      ]);
+      const services = await erplora5().query("services.services.list", { limit: 500 });
       this.services = rows6(services).filter((s5) => s5.is_bookable === void 0 || Number(s5.is_bookable) === 1);
-      this.staffMembers = rows6(staffMembers);
-      this.settings = rows6(settings)[0] ?? {};
-    } catch (e5) {
-      this.error = e5 instanceof Error ? e5.message : erplora5().t(CATALOG5, "ui.errLoadCatalogs");
+      this.catalogStatus = { ...this.catalogStatus, services: "ready" };
+    } catch {
+      this.catalogStatus = { ...this.catalogStatus, services: "error" };
     }
+  }
+  async loadStaff() {
+    this.catalogStatus = { ...this.catalogStatus, staff: "loading" };
+    try {
+      this.staffMembers = rows6(await erplora5().query("staff.members.list", { limit: 500 }));
+      this.catalogStatus = { ...this.catalogStatus, staff: "ready" };
+    } catch {
+      this.catalogStatus = { ...this.catalogStatus, staff: "error" };
+    }
+  }
+  /** Without its settings the agenda keeps its defaults (its day from 08:00 to 20:00): it still books. */
+  async loadSettings() {
+    const settings = await erplora5().query("appointments.settings.get").catch(() => []);
+    this.settings = rows6(settings)[0] ?? {};
   }
   /** Un día atrás o adelante (appointments#93). Aritmética de CALENDARIO: el día del salón dura
    *  23, 24 o 25 horas, así que «mañana» es la fecha siguiente, nunca `+24 h`. */
@@ -10570,6 +10666,40 @@ var ErpAppointmentsList = class extends i3 {
     if (!this.staffDurationUnavailable[form]) return A;
     return b2`<ok-inline-feedback data-testid="appointments-list-staff-duration-unavailable" tone="warning" icon="alert-circle-outline">${t5("ui.staffDurationUnavailable")}</ok-inline-feedback>`;
   }
+  /** appointments#319 — the services list under its picker, painted like the free times: a spinner
+   *  while it is on its way, the reason plus «Retry» when it could not be read, a note when there
+   *  are none. Nothing once there is something to pick. */
+  renderServicesState(t5) {
+    switch (this.catalogStatus.services) {
+      case "loading":
+        return b2`<div class="slots-hint" data-testid="appointments-list-services-loading" role="status">
+          <ion-spinner name="dots"></ion-spinner><span>${t5("ui.servicesLoading")}</span>
+        </div>`;
+      case "error":
+        return b2`<div class="slots-state">
+          <ok-inline-feedback data-testid="appointments-list-services-error" tone="danger" icon="alert-circle-outline">${t5("ui.errLoadServices")}</ok-inline-feedback>
+          <ion-button data-testid="appointments-list-services-retry" type="button" size="small" fill="clear" @click=${() => void this.loadServices()}>${t5("ui.catalogRetry")}</ion-button>
+        </div>`;
+      default:
+        return this.services.length === 0 ? b2`<ok-inline-feedback data-testid="appointments-list-services-empty" tone="info" icon="information-circle-outline">${t5("ui.servicesNone")}</ok-inline-feedback>` : A;
+    }
+  }
+  /** appointments#319 — the same three states for the professionals; «none» counts the bookable ones. */
+  renderStaffState(t5) {
+    switch (this.catalogStatus.staff) {
+      case "loading":
+        return b2`<div class="slots-hint" data-testid="appointments-list-staff-loading" role="status">
+          <ion-spinner name="dots"></ion-spinner><span>${t5("ui.staffLoading")}</span>
+        </div>`;
+      case "error":
+        return b2`<div class="slots-state">
+          <ok-inline-feedback data-testid="appointments-list-staff-error" tone="danger" icon="alert-circle-outline">${t5("ui.errLoadStaff")}</ok-inline-feedback>
+          <ion-button data-testid="appointments-list-staff-retry" type="button" size="small" fill="clear" @click=${() => void this.loadStaff()}>${t5("ui.catalogRetry")}</ion-button>
+        </div>`;
+      default:
+        return this.bookableStaff.length === 0 ? b2`<ok-inline-feedback data-testid="appointments-list-staff-empty" tone="info" icon="information-circle-outline">${t5("ui.staffNone")}</ok-inline-feedback>` : A;
+    }
+  }
   renderFreeSlots(t5) {
     switch (this.freeSlotsState) {
       case "idle":
@@ -10613,12 +10743,14 @@ var ErpAppointmentsList = class extends i3 {
   renderCreateForm(t5) {
     return b2`<form slot="create" data-testid="appointments-list-form" data-mode="create" class="form" @submit=${(e5) => this.createAppointment(e5)}>
             <erp-appointments-customer-picker data-testid="appointments-list-customer" data-role="customer" label=${t5("ui.fieldCustomer")} .customer=${this.newCustomer} @customer-change=${(e5) => this.newCustomer = e5.detail.customer}></erp-appointments-customer-picker>
-            <ion-select data-testid="appointments-list-service" data-role="service" fill="outline" mode="md" label-placement="floating" label=${t5("ui.fieldService")} placeholder=${t5("ui.pickService")} .value=${this.newServiceId} @ionChange=${(e5) => this.onServiceChange(e5.target.value)}>
+            <ion-select data-testid="appointments-list-service" data-role="service" fill="outline" mode="md" label-placement="floating" label=${t5("ui.fieldService")} placeholder=${t5("ui.pickService")} .disabled=${this.services.length === 0} .value=${this.newServiceId} @ionChange=${(e5) => this.onServiceChange(e5.target.value)}>
               ${this.services.map((s5) => b2`<ion-select-option .value=${s5.id}>${s5.name}</ion-select-option>`)}
             </ion-select>
-            <ion-select data-testid="appointments-list-staff" data-role="staff" fill="outline" mode="md" label-placement="floating" label=${t5("ui.fieldStaff")} placeholder=${t5("ui.pickStaff")} .value=${this.newStaffId} @ionChange=${(e5) => this.onStaffChange(e5.target.value ?? "")}>
+            ${this.renderServicesState(t5)}
+            <ion-select data-testid="appointments-list-staff" data-role="staff" fill="outline" mode="md" label-placement="floating" label=${t5("ui.fieldStaff")} placeholder=${t5("ui.pickStaff")} .disabled=${this.bookableStaff.length === 0} .value=${this.newStaffId} @ionChange=${(e5) => this.onStaffChange(e5.target.value ?? "")}>
               ${this.staffOptions("new").map((m4) => b2`<ion-select-option .value=${m4.id}>${m4.full_name}</ion-select-option>`)}
             </ion-select>
+            ${this.renderStaffState(t5)}
             ${this.renderPairNotices("new", t5)}
             <!-- appointments#204: date + time, not datetime-local — its year segment takes 6 digits and never hands the caret to the hour, so a typed start never landed. -->
             <!-- appointments#205: text, painted in the hub's language, with an inline calendar. -->
@@ -10696,6 +10828,9 @@ __decorateClass([
 __decorateClass([
   r5()
 ], ErpAppointmentsList.prototype, "staffMembers", 2);
+__decorateClass([
+  r5()
+], ErpAppointmentsList.prototype, "catalogStatus", 2);
 __decorateClass([
   r5()
 ], ErpAppointmentsList.prototype, "settings", 2);
