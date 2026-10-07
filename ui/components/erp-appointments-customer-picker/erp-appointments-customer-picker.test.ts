@@ -120,6 +120,18 @@ describe('appointments#306 — the customer picker searches the server, not a cu
     expect(optionIds(el), 'the list closes once she is chosen').toEqual([]);
   });
 
+  it('Enter picks the first result instead of submitting the booking half-filled', async () => {
+    const el = await mount();
+    const picked: unknown[] = [];
+    el.addEventListener('customer-change', (e) => picked.push((e as CustomEvent).detail.customer));
+    await type(el, 'zamora');
+    const enter = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, composed: true, cancelable: true });
+    hook(el, 'appointments-customer-picker-input')!.dispatchEvent(enter);
+    await settle(el);
+    expect(enter.defaultPrevented, 'Enter must not reach the form').toBe(true);
+    expect(picked).toEqual([{ id: 'c-zoe', name: 'Zoe Zamora', phone: '699000123', email: 'zoe@example.com' }]);
+  });
+
   it('shows the chosen customer in the field', async () => {
     const el = await mount();
     el.customer = { id: 'c-zoe', name: 'Zoe Zamora', phone: '699000123', email: '' };
