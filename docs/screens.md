@@ -47,7 +47,11 @@ Requires `appointments.view_appointment`.
 ### Book an appointment
 
 1. Press to create. **Customer, service and professional are all required** — you pick them from
-   real lists, not by typing a name. Once a service is chosen, the professional list only offers
+   real records, not by typing a free name. The **customer** is searched as you type — by name,
+   phone or email, ignoring case and accents — over the whole customer book, however many there
+   are (appointments#306); tap her result to choose her. A failed search says so with **Retry**;
+   when more than 20 match, keep typing to narrow it down. Creating a new customer from here is not
+   possible yet: create her in Customers first (appointments#318). Once a service is chosen, the professional list only offers
    **who performs it** (the competencies set in Staff); a service nobody has been assigned to yet
    offers the whole bookable team. Switching to a service the chosen professional does not do
    clears her and says so; tapping a gap of a professional who does not do the chosen service
@@ -233,8 +237,8 @@ Monday · 11:00"), when it starts and when it ends. Each row offers three action
 - **Delete** — destructive, as before.
 
 **Add** (the table's own button, appointments#209) opens the **New repeating appointment** panel:
-customer, service and professional picked from their modules (only bookable services and
-professionals), the frequency, the weekday (weekly and every-two-weeks patterns only), the start as
+customer (searched as you type, like in a new appointment), service and professional picked from
+their modules (only bookable services and professionals), the frequency, the weekday (weekly and every-two-weeks patterns only), the start as
 **Day + Time** — the same two fields as a new appointment, so it can be typed in one go or pasted —,
 the minutes (pre-filled from the service) and, optionally, an end date or a number of appointments.
 Once a service is chosen, the professional list only offers **who performs it**, exactly as when

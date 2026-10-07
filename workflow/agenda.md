@@ -5,13 +5,18 @@ Prefijo: APPOINTMENTS
 ## Flujos
 
 ### APPOINTMENTS-F01 Reservar una cita desde la agenda
-Estado: hecho
+Estado: parcial — no deja crear una clienta nueva desde el formulario (appointments#318); si servicios o profesionales no cargan, el desplegable sale vacío sin aviso (appointments#319)
 Actor: empleado
 Pantalla: Agenda
 Pasos:
 1. En la Agenda pulsa **Añadir cita**, o en «Por profesional» toca un hueco libre (rellena profesional y hora).
-2. Elige Cliente, Servicio y Profesional de sus listas (los tres son obligatorios). La lista de clientas trae las
-   500 primeras fichas por nombre y no deja crear una nueva (CUSTOMERS-F25). Con un servicio
+2. Elige Cliente, Servicio y Profesional (los tres son obligatorios). La clienta se busca escribiendo su nombre,
+   teléfono o email: cada tecla pregunta a Clientes y salen las 20 primeras que coinciden, sin
+   importar mayúsculas ni acentos, entre todas las fichas del negocio, sean las que sean
+   (appointments#306); con más de 20, «Se muestran los 20 primeros. Sigue escribiendo para afinar.». Si
+   la búsqueda falla lo dice con **Reintentar**; sin coincidencias, «Ningún cliente coincide con lo que
+   has escrito.». Aún no deja crear
+   una clienta nueva desde aquí (CUSTOMERS-F25, appointments#318). Con un servicio
    elegido solo salen los profesionales Activos y Reservables que lo hacen; si no hay ninguno (nadie lo tiene
    asignado, o quien lo tiene está inactivo o no reservable), salen todos los reservables: esa regla es
    de Citas, no de Personal ni de Servicios; Personal solo contesta con la lista vacía (STAFF-F12). «Min.» se

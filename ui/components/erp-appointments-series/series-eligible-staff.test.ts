@@ -21,6 +21,7 @@
 process.env.TZ = 'Europe/Madrid';
 
 import { beforeEach, afterAll, describe, expect, it } from 'vitest';
+import { pickCustomer } from '../../test/pick-customer';
 import esLocale from '../../../locales/es.json';
 import enLocale from '../../../locales/en.json';
 
@@ -314,7 +315,7 @@ describe('the new-series form only offers who performs the service (appointments
 
   it('a series saved leaves a clean form, and an answer still on its way never narrows it', async () => {
     const el = await mount();
-    await pick(el, 'appointments-series-create-customer', 'c1');
+    await pickCustomer(el, 'appointments-series-create-customer', 'c1');
     await pick(el, CREATE_STAFF, 's2');
     await pick(el, CREATE_SERVICE, 'sv2'); // Luis cleared, notice on screen
     expect(notice(el, 'staff-not-for-service')).toBeTruthy();
@@ -337,7 +338,7 @@ describe('the new-series form only offers who performs the service (appointments
 
   it('a series saved with a narrowed service leaves the whole team for the next one', async () => {
     const el = await mount();
-    await pick(el, 'appointments-series-create-customer', 'c1');
+    await pickCustomer(el, 'appointments-series-create-customer', 'c1');
     await pick(el, CREATE_SERVICE, 'sv2');
     await pick(el, CREATE_STAFF, 's1');
     await type(el, 'appointments-series-create-start', '2099-10-01');
@@ -351,7 +352,7 @@ describe('the new-series form only offers who performs the service (appointments
   it('a series saved after a failed check does not carry the warning into the next one', async () => {
     eligibleFails = true;
     const el = await mount();
-    await pick(el, 'appointments-series-create-customer', 'c1');
+    await pickCustomer(el, 'appointments-series-create-customer', 'c1');
     await pick(el, CREATE_STAFF, 's2');
     await pick(el, CREATE_SERVICE, 'sv2');
     await type(el, 'appointments-series-create-start', '2099-10-01');

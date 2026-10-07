@@ -9,6 +9,7 @@
 process.env.TZ = 'Europe/Madrid';
 
 import { beforeEach, afterAll, describe, expect, it } from 'vitest';
+import { pickCustomer } from '../../test/pick-customer';
 import esLocale from '../../../locales/es.json';
 import enLocale from '../../../locales/en.json';
 
@@ -205,7 +206,7 @@ const submitEdit = async (el: Wc) => {
 const createDisabled = (el: Wc) => (field(el, 'appointments-series-create-submit') as HTMLElement & { disabled: boolean }).hasAttribute('disabled');
 
 async function fillAllButDates(el: Wc) {
-  await choose(el, 'appointments-series-create-customer', 'c2');
+  await pickCustomer(el, 'appointments-series-create-customer', 'c2');
   await choose(el, 'appointments-series-create-service', 'sv2');
   await choose(el, 'appointments-series-create-staff', 's1');
 }

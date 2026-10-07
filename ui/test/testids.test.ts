@@ -62,6 +62,22 @@ const COVERED: Record<
     prefix: 'appointments-customer-history-',
     contract: ['appointments-customer-history-error'],
   },
+  // The customer field of the create and new-series panels (appointments#306): a search on the
+  // server instead of a list cut at 500. A spec types into the field, awaits one of its four
+  // states (searching, no match, «keep typing», the load failing + retry) and taps a result by
+  // the customer's id.
+  'components/erp-appointments-customer-picker/erp-appointments-customer-picker.ts': {
+    prefix: 'appointments-customer-picker-',
+    contract: [
+      'appointments-customer-picker-empty',
+      'appointments-customer-picker-error',
+      'appointments-customer-picker-input',
+      'appointments-customer-picker-more',
+      'appointments-customer-picker-retry',
+      'appointments-customer-picker-searching',
+    ],
+    computed: ['appointments-customer-picker-option-'],
+  },
   // The change history of ONE appointment (appointments#194), mounted in the agenda's side panel:
   // read-only, so what a spec names are the three states it has to await — loading, empty and the
   // load failing — instead of the translated copy.

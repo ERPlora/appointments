@@ -2126,7 +2126,14 @@ var es_default = {
     dayFriday: "Viernes",
     daySaturday: "S\xE1bado",
     daySunday: "Domingo",
-    reasonSeriesPatternChanged: "La cita peri\xF3dica cambi\xF3 de pauta"
+    reasonSeriesPatternChanged: "La cita peri\xF3dica cambi\xF3 de pauta",
+    customerSearchPlaceholder: "Busca por nombre o tel\xE9fono",
+    customerSearching: "Buscando\u2026",
+    customerNoMatch: "Ning\xFAn cliente coincide con lo que has escrito.",
+    customerNone: "Todav\xEDa no hay clientes. Dalos de alta en Clientes.",
+    customerMore: "Se muestran los 20 primeros. Sigue escribiendo para afinar.",
+    errLoadCustomers: "No se han podido cargar los clientes.",
+    customerRetry: "Reintentar"
   },
   errors: {
     "appointments.cannot_cancel": "Esta cita ya no se puede cancelar en su estado actual.",
@@ -2415,7 +2422,14 @@ var en_default = {
     dayFriday: "Friday",
     daySaturday: "Saturday",
     daySunday: "Sunday",
-    reasonSeriesPatternChanged: "The repeating appointment changed its pattern"
+    reasonSeriesPatternChanged: "The repeating appointment changed its pattern",
+    customerSearchPlaceholder: "Search by name or phone",
+    customerSearching: "Searching\u2026",
+    customerNoMatch: "No customer matches what you typed.",
+    customerNone: "There are no customers yet. Add them in Customers.",
+    customerMore: "Showing the first 20. Keep typing to narrow it down.",
+    errLoadCustomers: "Could not load the customers.",
+    customerRetry: "Retry"
   },
   errors: {
     "appointments.cannot_cancel": "This appointment can no longer be cancelled in its current state.",
@@ -2773,14 +2787,187 @@ __decorateClass([
 ], ErpAppointmentsCustomerHistory.prototype, "error", 2);
 define("erp-appointments-customer-history", ErpAppointmentsCustomerHistory);
 
-// ui/components/erp-appointments-history/erp-appointments-history.ts
+// ui/components/erp-appointments-customer-picker/erp-appointments-customer-picker.ts
 var CATALOG2 = { es: es_default, en: en_default };
+var CUSTOMER_PAGE = 20;
 function erplora2() {
   const c5 = globalThis.erplora;
   if (!c5) throw new Error("erplora SDK not initialised by the shell");
   return c5;
 }
 function rows2(r6) {
+  if (Array.isArray(r6)) return r6;
+  if (r6 && typeof r6 === "object" && Array.isArray(r6.rows)) return r6.rows;
+  return [];
+}
+var ErpAppointmentsCustomerPicker = class extends i3 {
+  constructor() {
+    super(...arguments);
+    this.label = "";
+    this.customer = null;
+    this.query = "";
+    this.open = false;
+    this.results = [];
+    this.searching = false;
+    this.error = "";
+    /** Ticket of the latest search: a slow answer to an older keystroke never paints over a newer one. */
+    this.seq = 0;
+    this.loadedOnce = false;
+    this.onDocClick = (e5) => {
+      if (this.open && !e5.composedPath().includes(this)) this.open = false;
+    };
+  }
+  static {
+    this.styles = i`
+    :host { display: block; position: relative; }
+    .results {
+      margin-top: .25rem;
+      border: 1px solid var(--ion-color-step-200, #d9d7cf);
+      border-radius: var(--ok-radius-sm, 10px);
+      background: var(--ion-background-color, #fff);
+      max-height: 16rem;
+      overflow-y: auto;
+    }
+    ion-list { background: transparent; padding: 0; }
+    ion-item { --background: transparent; --min-height: 2.75rem; }
+    ion-label p { color: var(--ion-color-medium, #8b897f); }
+    .note { color: var(--ion-color-medium, #8b897f); font-size: .875rem; padding: .6rem .9rem; margin: 0; }
+    .error { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem .5rem; margin-top: .35rem; }
+    .error ok-inline-feedback { flex: 1 1 12rem; min-width: 0; }
+  `;
+  }
+  /** The chosen customer's id — what the QA reads off the field, like it read the old `ion-select`. */
+  get value() {
+    return this.customer?.id ?? "";
+  }
+  connectedCallback() {
+    super.connectedCallback();
+    document.addEventListener("click", this.onDocClick);
+    if (!this.loadedOnce) {
+      this.loadedOnce = true;
+      void this.search("");
+    }
+  }
+  disconnectedCallback() {
+    document.removeEventListener("click", this.onDocClick);
+    super.disconnectedCallback();
+  }
+  async search(query) {
+    const ticket = ++this.seq;
+    this.searching = true;
+    const term = query.trim();
+    try {
+      const params = { limit: CUSTOMER_PAGE, sort: "name", dir: "asc" };
+      if (term) params.search = term;
+      const found = rows2(await erplora2().query("customers.list", params));
+      if (ticket !== this.seq) return;
+      this.results = found;
+      this.error = "";
+    } catch (e5) {
+      if (ticket !== this.seq) return;
+      const message = e5 instanceof Error ? e5.message : "";
+      this.error = message || erplora2().t(CATALOG2, "ui.errLoadCustomers");
+    } finally {
+      if (ticket === this.seq) this.searching = false;
+    }
+  }
+  onInput(value) {
+    this.query = value;
+    this.open = true;
+    void this.search(value);
+  }
+  onFocus() {
+    if (this.open) return;
+    this.open = true;
+    this.query = "";
+    void this.search("");
+  }
+  choose(c5) {
+    this.customer = c5;
+    this.open = false;
+    this.query = "";
+    this.dispatchEvent(new CustomEvent("customer-change", { detail: { customer: c5 }, bubbles: true, composed: true }));
+  }
+  onKeydown(e5) {
+    if (e5.key === "Escape" && this.open) {
+      e5.stopPropagation();
+      this.open = false;
+    } else if (e5.key === "Enter" && this.open) {
+      e5.preventDefault();
+      const first = this.results[0];
+      if (first) this.choose(first);
+    }
+  }
+  renderResults(t5) {
+    if (!this.open) return A;
+    const empty = !this.searching && !this.error && this.results.length === 0;
+    if (this.error && this.results.length === 0) return A;
+    return b2`<div class="results" role="listbox">
+      <ion-list lines="none">
+        ${this.results.map(
+      (c5) => b2`<ion-item button detail="false" role="option" data-testid=${`appointments-customer-picker-option-${c5.id}`}
+            aria-selected=${this.customer?.id === c5.id ? "true" : "false"} @click=${() => this.choose(c5)}>
+            <ion-label>
+              <h3>${c5.name}</h3>
+              ${c5.phone || c5.email ? b2`<p>${c5.phone || c5.email}</p>` : A}
+            </ion-label>
+          </ion-item>`
+    )}
+      </ion-list>
+      ${this.searching && this.results.length === 0 ? b2`<p class="note" data-testid="appointments-customer-picker-searching">${t5("ui.customerSearching")}</p>` : A}
+      ${empty ? b2`<p class="note" data-testid="appointments-customer-picker-empty">${this.query.trim() ? t5("ui.customerNoMatch") : t5("ui.customerNone")}</p>` : A}
+      ${this.results.length >= CUSTOMER_PAGE ? b2`<p class="note" data-testid="appointments-customer-picker-more">${t5("ui.customerMore")}</p>` : A}
+    </div>`;
+  }
+  render() {
+    const t5 = (k2) => erplora2().t(CATALOG2, k2);
+    const shown = this.open ? this.query : this.customer?.name ?? "";
+    return b2`
+      <ion-input data-testid="appointments-customer-picker-input" fill="outline" mode="md" label-placement="floating"
+        type="search" autocomplete="off" label=${this.label} placeholder=${t5("ui.customerSearchPlaceholder")}
+        .value=${shown}
+        @ionFocus=${() => this.onFocus()}
+        @ionInput=${(e5) => this.onInput(String(e5.detail?.value ?? e5.target.value ?? ""))}
+        @keydown=${(e5) => this.onKeydown(e5)}></ion-input>
+      ${this.error ? b2`<div class="error">
+            <ok-inline-feedback data-testid="appointments-customer-picker-error" tone="danger" icon="alert-circle-outline">${this.error}</ok-inline-feedback>
+            <ion-button data-testid="appointments-customer-picker-retry" size="small" fill="clear" @click=${() => void this.search(this.query)}>${t5("ui.customerRetry")}</ion-button>
+          </div>` : A}
+      ${this.renderResults(t5)}
+    `;
+  }
+};
+__decorateClass([
+  n4()
+], ErpAppointmentsCustomerPicker.prototype, "label", 2);
+__decorateClass([
+  n4({ attribute: false })
+], ErpAppointmentsCustomerPicker.prototype, "customer", 2);
+__decorateClass([
+  r5()
+], ErpAppointmentsCustomerPicker.prototype, "query", 2);
+__decorateClass([
+  r5()
+], ErpAppointmentsCustomerPicker.prototype, "open", 2);
+__decorateClass([
+  r5()
+], ErpAppointmentsCustomerPicker.prototype, "results", 2);
+__decorateClass([
+  r5()
+], ErpAppointmentsCustomerPicker.prototype, "searching", 2);
+__decorateClass([
+  r5()
+], ErpAppointmentsCustomerPicker.prototype, "error", 2);
+define("erp-appointments-customer-picker", ErpAppointmentsCustomerPicker);
+
+// ui/components/erp-appointments-history/erp-appointments-history.ts
+var CATALOG3 = { es: es_default, en: en_default };
+function erplora3() {
+  const c5 = globalThis.erplora;
+  if (!c5) throw new Error("erplora SDK not initialised by the shell");
+  return c5;
+}
+function rows3(r6) {
   if (Array.isArray(r6)) return r6;
   if (r6 && typeof r6 === "object" && Array.isArray(r6.rows)) return r6.rows;
   return [];
@@ -2883,28 +3070,28 @@ var ErpAppointmentsHistory = class extends i3 {
     const mySeq = this.seq += 1;
     this.loading = true;
     this.error = "";
-    const usersPromise = erplora2().query("hub.users.list").catch(() => []);
+    const usersPromise = erplora3().query("hub.users.list").catch(() => []);
     try {
       const [historyResult, users] = await Promise.all([
-        erplora2().query("appointments.appointments.history", { appointment_id: appointmentId }),
+        erplora3().query("appointments.appointments.history", { appointment_id: appointmentId }),
         usersPromise
       ]);
       if (mySeq !== this.seq) return;
-      this.entries = rows2(historyResult);
+      this.entries = rows3(historyResult);
       this.usersById = new Map(
         users.filter((u5) => u5 && u5.id && String(u5.name ?? "").trim()).map((u5) => [String(u5.id), String(u5.name).trim()])
       );
     } catch {
       if (mySeq !== this.seq) return;
       this.entries = [];
-      this.error = erplora2().t(CATALOG2, "ui.appointmentHistoryError");
+      this.error = erplora3().t(CATALOG3, "ui.appointmentHistoryError");
     } finally {
       if (mySeq === this.seq) this.loading = false;
     }
   }
   items() {
-    const t5 = (k2) => erplora2().t(CATALOG2, k2);
-    const locale = erplora2().locale;
+    const t5 = (k2) => erplora3().t(CATALOG3, k2);
+    const locale = erplora3().locale;
     return this.entries.map((row) => {
       const value = parseNewValue(row.new_value);
       const channel = typeof value.channel === "string" ? value.channel : "";
@@ -2950,7 +3137,7 @@ var ErpAppointmentsHistory = class extends i3 {
   }
   render() {
     if (!this.appointmentId) return A;
-    const t5 = (k2) => erplora2().t(CATALOG2, k2);
+    const t5 = (k2) => erplora3().t(CATALOG3, k2);
     return b2`
       ${this.hideTitle ? A : b2`<h3>${t5("ui.appointmentHistoryTitle")}</h3>`}
       ${this.error ? b2`<ok-inline-feedback data-testid="appointments-history-error" tone="danger" icon="alert-circle-outline">${this.error}</ok-inline-feedback>` : A}
@@ -4238,17 +4425,17 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
       out.push(row);
     }
     const headers = out.shift() ?? [];
-    const rows6 = out.map((r6) => Object.fromEntries(headers.map((h4, i7) => [h4, r6[i7] ?? ""])));
-    return { headers, rows: rows6 };
+    const rows7 = out.map((r6) => Object.fromEntries(headers.map((h4, i7) => [h4, r6[i7] ?? ""])));
+    return { headers, rows: rows7 };
   }
   async onImportFile(ev) {
     const input = ev.target;
     const file = input.files?.[0];
     if (!file) return;
     const text = decodeCsvBuffer(await file.arrayBuffer());
-    const { headers, rows: rows6 } = this.parseCsv(text);
-    this.emit("csvImport", { headers, rows: rows6, count: rows6.length });
-    this.emit("import", { headers, rows: rows6, count: rows6.length });
+    const { headers, rows: rows7 } = this.parseCsv(text);
+    this.emit("csvImport", { headers, rows: rows7, count: rows7.length });
+    this.emit("import", { headers, rows: rows7, count: rows7.length });
     input.value = "";
   }
   toggle(p4) {
@@ -7543,7 +7730,7 @@ function formatTypedTime(time, locale) {
 }
 
 // ui/lib/eligible-staff.ts
-function rows3(r6) {
+function rows4(r6) {
   if (Array.isArray(r6)) return r6;
   if (r6 && typeof r6 === "object" && Array.isArray(r6.rows)) {
     return r6.rows;
@@ -7555,7 +7742,7 @@ function eligibleReader(read) {
   return (serviceId) => {
     let found = byService.get(serviceId);
     if (!found) {
-      found = read(serviceId).then((r6) => rows3(r6));
+      found = read(serviceId).then((r6) => rows4(r6));
       byService.set(serviceId, found);
       found.catch(() => byService.delete(serviceId));
     }
@@ -7578,13 +7765,13 @@ function customerLabel(row, erasedLabel, fallback = "\u2014") {
 }
 
 // ui/components/erp-appointments-series/erp-appointments-series.ts
-var CATALOG3 = { es: es_default, en: en_default };
-function erplora3() {
+var CATALOG4 = { es: es_default, en: en_default };
+function erplora4() {
   const c5 = globalThis.erplora;
   if (!c5) throw new Error("erplora SDK not initialised by the shell");
   return c5;
 }
-function rows4(r6) {
+function rows5(r6) {
   if (Array.isArray(r6)) return r6;
   if (r6 && typeof r6 === "object" && Array.isArray(r6.rows)) {
     return r6.rows;
@@ -7628,7 +7815,7 @@ async function materializeWindow(selector) {
   let total = null;
   let page = {};
   for (let run = 0; run < MAX_RUNS; run++) {
-    const answer = await erplora3().command("appointments.recurring.materialize", { ...selector, ...page });
+    const answer = await erplora4().command("appointments.recurring.materialize", { ...selector, ...page });
     const report = bookingReport(answer);
     if (!report) return total;
     total = total ? {
@@ -7686,10 +7873,9 @@ var ErpAppointmentsSeries = class extends i3 {
     this.editDuration = "";
     this.editStaffId = "";
     this.editServiceId = "";
-    this.customers = [];
     this.services = [];
     this.staffMembers = [];
-    this.newCustomerId = "";
+    this.newCustomer = null;
     this.newServiceId = "";
     this.newStaffId = "";
     this.newFrequency = "weekly";
@@ -7711,7 +7897,7 @@ var ErpAppointmentsSeries = class extends i3 {
     this.eligibleRequest = { new: 0, edit: 0 };
     /** appointments#281 — the eligible professionals per service, read once per service. */
     this.eligibleFor = eligibleReader(
-      (serviceId) => erplora3().query("staff.services.eligible_for_service", { service_id: serviceId })
+      (serviceId) => erplora4().query("staff.services.eligible_for_service", { service_id: serviceId })
     );
     this.offLocale = null;
   }
@@ -7740,7 +7926,7 @@ var ErpAppointmentsSeries = class extends i3 {
   }
   async connectedCallback() {
     super.connectedCallback();
-    this.offLocale = erplora3().on("erplora:locale-changed", () => this.requestUpdate());
+    this.offLocale = erplora4().on("erplora:locale-changed", () => this.requestUpdate());
     await Promise.all([this.refresh(), this.loadCatalogs()]);
   }
   disconnectedCallback() {
@@ -7749,16 +7935,15 @@ var ErpAppointmentsSeries = class extends i3 {
     super.disconnectedCallback();
   }
   /** appointments#209 — the links a NEW series books against, read from their public queries
-   *  (never another module's tables), exactly like the create panel of `erp-appointments-list`. */
+   *  (never another module's tables), exactly like the create panel of `erp-appointments-list`.
+   *  Customers are not here: the picker searches them on the server (appointments#306). */
   async loadCatalogs() {
-    const [customers, services, staffMembers] = await Promise.all([
-      erplora3().query("customers.list", { limit: 500, sort: "name", dir: "asc" }).catch(() => []),
-      erplora3().query("services.services.list", { limit: 500 }).catch(() => []),
-      erplora3().query("staff.members.list", { limit: 500 }).catch(() => [])
+    const [services, staffMembers] = await Promise.all([
+      erplora4().query("services.services.list", { limit: 500 }).catch(() => []),
+      erplora4().query("staff.members.list", { limit: 500 }).catch(() => [])
     ]);
-    this.customers = rows4(customers);
-    this.services = rows4(services).filter((s5) => s5.is_bookable === void 0 || Number(s5.is_bookable) === 1);
-    this.staffMembers = rows4(staffMembers);
+    this.services = rows5(services).filter((s5) => s5.is_bookable === void 0 || Number(s5.is_bookable) === 1);
+    this.staffMembers = rows5(staffMembers);
   }
   /** Professionals that can receive appointments: the ones the `staff` module marks bookable. */
   get bookableStaff() {
@@ -7883,10 +8068,10 @@ var ErpAppointmentsSeries = class extends i3 {
     this.bookingReport = null;
     this.moveReport = null;
     try {
-      this.series = rows4(await erplora3().query("appointments.recurring.list"));
+      this.series = rows5(await erplora4().query("appointments.recurring.list"));
     } catch (e5) {
       this.series = [];
-      this.error = e5 instanceof Error && e5.message ? e5.message : erplora3().t(CATALOG3, "ui.seriesLoadError");
+      this.error = e5 instanceof Error && e5.message ? e5.message : erplora4().t(CATALOG4, "ui.seriesLoadError");
     } finally {
       this.loading = false;
     }
@@ -7930,8 +8115,8 @@ var ErpAppointmentsSeries = class extends i3 {
   /** Carga la plantilla AUTORITATIVA de la serie (la lista no trae los tres ids) y lo que ya está
    *  reservado, que es lo que decide dónde cae el corte y lo que hay que avisar antes de guardar. */
   async loadTemplate(recurringId) {
-    const tmpl = rows4(
-      await erplora3().query("appointments.recurring.get", { recurring_id: recurringId })
+    const tmpl = rows5(
+      await erplora4().query("appointments.recurring.get", { recurring_id: recurringId })
     )[0];
     return tmpl ?? null;
   }
@@ -7944,15 +8129,15 @@ var ErpAppointmentsSeries = class extends i3 {
     try {
       const [tmpl, occ] = await Promise.all([
         this.loadTemplate(id),
-        erplora3().query("appointments.recurring.occurrences", { recurring_id: id })
+        erplora4().query("appointments.recurring.occurrences", { recurring_id: id })
       ]);
       if (seq !== this.editSeq) return;
       if (!tmpl) {
-        this.error = erplora3().t(CATALOG3, "ui.seriesNotFound");
+        this.error = erplora4().t(CATALOG4, "ui.seriesNotFound");
         return;
       }
       this.template = tmpl;
-      this.occurrences = rows4(occ);
+      this.occurrences = rows5(occ);
       this.editingId = id;
       this.editFrequency = tmpl.frequency ?? "";
       this.editDayOfWeek = tmpl.day_of_week === null || tmpl.day_of_week === void 0 ? "" : String(tmpl.day_of_week);
@@ -7965,10 +8150,10 @@ var ErpAppointmentsSeries = class extends i3 {
       const today = todayISO();
       this.fromOccurrence = this.occurrences.map((o7) => o7.occurrence_date).find((d3) => d3 >= today) ?? today;
       await this.updateComplete;
-      this.dataTable()?.open("edit", { title: erplora3().t(CATALOG3, "ui.seriesEditTitle") });
+      this.dataTable()?.open("edit", { title: erplora4().t(CATALOG4, "ui.seriesEditTitle") });
     } catch (e5) {
       if (seq !== this.editSeq) return;
-      this.error = e5 instanceof Error && e5.message ? e5.message : erplora3().t(CATALOG3, "ui.seriesLoadError");
+      this.error = e5 instanceof Error && e5.message ? e5.message : erplora4().t(CATALOG4, "ui.seriesLoadError");
     }
   }
   closePanel() {
@@ -8027,7 +8212,7 @@ var ErpAppointmentsSeries = class extends i3 {
     this.error = "";
     try {
       const result = handlerAnswer(
-        await erplora3().command("appointments.recurring.update", {
+        await erplora4().command("appointments.recurring.update", {
           recurring_id: this.editingId,
           // appointments#236: the series' professional as SELECTOR (the handler refuses another
           // one) — every occurrence it moves is judged on HER agenda and working days.
@@ -8067,10 +8252,10 @@ var ErpAppointmentsSeries = class extends i3 {
         ...staffChange && result?.staff_changed === true ? { staff: staffChange.name } : {}
       } : null;
       if (!this.showSkipped(report) && gotItsFirstProfessional) {
-        erplora3().notify?.({ type: "success", message: erplora3().t(CATALOG3, "ui.seriesMaterialized") });
+        erplora4().notify?.({ type: "success", message: erplora4().t(CATALOG4, "ui.seriesMaterialized") });
       }
     } catch (e5) {
-      this.editError = e5 instanceof Error && e5.message ? e5.message : erplora3().t(CATALOG3, "ui.seriesSaveError");
+      this.editError = e5 instanceof Error && e5.message ? e5.message : erplora4().t(CATALOG4, "ui.seriesSaveError");
     } finally {
       this.saving = false;
     }
@@ -8078,7 +8263,7 @@ var ErpAppointmentsSeries = class extends i3 {
   /** Lo que NO se movió se DICE. Callarlo es el fallo nº1 que reportan los foros de este gesto. */
   notifyOutcome(result, leftBehind, handedTo, rescheduled) {
     if (!result) return;
-    const t5 = (k2, p4) => erplora3().t(CATALOG3, k2, p4);
+    const t5 = (k2, p4) => erplora4().t(CATALOG4, k2, p4);
     const key = handedTo === null ? "ui.seriesUpdateOutcome" : rescheduled ? "ui.seriesMovedAndHandedOutcome" : "ui.seriesHandedOutcome";
     const message = t5(key, {
       moved: Number(result.moved ?? 0),
@@ -8086,11 +8271,11 @@ var ErpAppointmentsSeries = class extends i3 {
       locked: Number(result.locked_invoiced ?? 0),
       ...handedTo === null ? {} : { staff: handedTo }
     });
-    erplora3().notify?.({ type: leftBehind ? "warning" : "success", message });
+    erplora4().notify?.({ type: leftBehind ? "warning" : "success", message });
   }
   async bookWindow(recurringId, tmpl) {
     const missing = MISSING_LINK_KEYS.find(([field]) => !tmpl[field]);
-    if (missing) throw new Error(erplora3().t(CATALOG3, missing[1]));
+    if (missing) throw new Error(erplora4().t(CATALOG4, missing[1]));
     return materializeWindow({
       recurring_id: recurringId,
       customer_id: tmpl.customer_id,
@@ -8114,14 +8299,14 @@ var ErpAppointmentsSeries = class extends i3 {
     try {
       const tmpl = await this.loadTemplate(id);
       if (!tmpl) {
-        this.error = erplora3().t(CATALOG3, "ui.seriesNotFound");
+        this.error = erplora4().t(CATALOG4, "ui.seriesNotFound");
         return;
       }
       if (!this.showSkipped(await this.bookWindow(id, tmpl))) {
-        erplora3().notify?.({ type: "success", message: erplora3().t(CATALOG3, "ui.seriesMaterialized") });
+        erplora4().notify?.({ type: "success", message: erplora4().t(CATALOG4, "ui.seriesMaterialized") });
       }
     } catch (e5) {
-      this.error = e5 instanceof Error && e5.message ? e5.message : erplora3().t(CATALOG3, "ui.seriesMaterializeError");
+      this.error = e5 instanceof Error && e5.message ? e5.message : erplora4().t(CATALOG4, "ui.seriesMaterializeError");
     }
   }
   /** appointments#207 — deleting a series asks first, like every appointment book of the sector
@@ -8131,7 +8316,7 @@ var ErpAppointmentsSeries = class extends i3 {
   async confirmDeleteSeries(row) {
     const id = String(row.id ?? "");
     if (!id) return;
-    const t5 = (k2, p4) => erplora3().t(CATALOG3, k2, p4);
+    const t5 = (k2, p4) => erplora4().t(CATALOG4, k2, p4);
     const alert = document.createElement("ion-alert");
     alert.header = t5("ui.seriesDeleteTitle", { name: customerLabel(row, t5("ui.erasedCustomer")) });
     alert.message = t5("ui.seriesDeleteMessage");
@@ -8160,10 +8345,10 @@ var ErpAppointmentsSeries = class extends i3 {
     if (!id) return;
     this.error = "";
     try {
-      await erplora3().command("appointments.recurring.delete", { recurring_id: id });
+      await erplora4().command("appointments.recurring.delete", { recurring_id: id });
       await this.refresh();
     } catch (e5) {
-      this.error = e5 instanceof Error && e5.message ? e5.message : erplora3().t(CATALOG3, "ui.seriesDeleteError");
+      this.error = e5 instanceof Error && e5.message ? e5.message : erplora4().t(CATALOG4, "ui.seriesDeleteError");
     }
   }
   /** Desactiva/reactiva una serie sin borrarla (appointments#110). Una desactivada SIGUE en la
@@ -8176,13 +8361,13 @@ var ErpAppointmentsSeries = class extends i3 {
     this.error = "";
     try {
       if (nextActive) {
-        await erplora3().command("appointments.recurring.activate", { recurring_id: id });
+        await erplora4().command("appointments.recurring.activate", { recurring_id: id });
       } else {
-        await erplora3().command("appointments.recurring.deactivate", { recurring_id: id });
+        await erplora4().command("appointments.recurring.deactivate", { recurring_id: id });
       }
       await this.refresh();
     } catch (e5) {
-      this.error = e5 instanceof Error && e5.message ? e5.message : erplora3().t(CATALOG3, "ui.seriesToggleActiveError");
+      this.error = e5 instanceof Error && e5.message ? e5.message : erplora4().t(CATALOG4, "ui.seriesToggleActiveError");
       if (toggle) toggle.checked = !nextActive;
     } finally {
       this.busySeriesId = "";
@@ -8197,16 +8382,16 @@ var ErpAppointmentsSeries = class extends i3 {
   }
   /** La pauta en una frase, que es como la lee una recepcionista («Cada semana · lunes · 11:00»). */
   patternLabel(row) {
-    const t5 = (k2) => erplora3().t(CATALOG3, k2);
+    const t5 = (k2) => erplora4().t(CATALOG4, k2);
     const parts = [t5(FREQUENCY_KEYS[row.frequency] ?? row.frequency)];
     if (ALIGNS_TO_WEEKDAY.includes(row.frequency) && row.day_of_week !== null && row.day_of_week !== void 0) {
       parts.push(t5(WEEKDAY_KEYS[row.day_of_week] ?? String(row.day_of_week)));
     }
-    if (row.time) parts.push(formatTypedTime(row.time, erplora3().locale) || row.time);
+    if (row.time) parts.push(formatTypedTime(row.time, erplora4().locale) || row.time);
     return parts.join(" \xB7 ");
   }
   get columns() {
-    const t5 = (k2) => erplora3().t(CATALOG3, k2);
+    const t5 = (k2) => erplora4().t(CATALOG4, k2);
     return [
       // pm#637: an erased customer's name is blank (APPOINTMENTS-F24); the cell says so.
       { key: "customer_name", header: t5("ui.colCustomer"), format: (r6) => customerLabel(r6, t5("ui.erasedCustomer")) },
@@ -8240,13 +8425,13 @@ var ErpAppointmentsSeries = class extends i3 {
    * only with neither.
    */
   endsLabel(row) {
-    const t5 = (k2, p4) => erplora3().t(CATALOG3, k2, p4);
+    const t5 = (k2, p4) => erplora4().t(CATALOG4, k2, p4);
     const parts = [];
     const date = this.shownDate(row.end_date);
     if (date) parts.push(date);
     const count = Math.trunc(Number(row.max_occurrences));
     if (Number.isFinite(count) && count >= 1) {
-      const plural = new Intl.PluralRules(erplora3().locale).select(count);
+      const plural = new Intl.PluralRules(erplora4().locale).select(count);
       parts.push(t5(plural === "one" ? "ui.seriesEndsAfterOne" : "ui.seriesEndsAfter", { n: count }));
     }
     return parts.join(" \xB7 ") || t5("ui.seriesNoEnd");
@@ -8254,10 +8439,10 @@ var ErpAppointmentsSeries = class extends i3 {
   /** A stored `YYYY-MM-DD` as the hub language writes it; anything unreadable is shown as stored. */
   shownDate(value) {
     const iso = typeof value === "string" ? value : "";
-    return formatTypedDate(iso, erplora3().locale) || iso;
+    return formatTypedDate(iso, erplora4().locale) || iso;
   }
   get rowActions() {
-    const t5 = (k2) => erplora3().t(CATALOG3, k2);
+    const t5 = (k2) => erplora4().t(CATALOG4, k2);
     return [
       { id: "edit", label: t5("ui.actionEditSeries"), icon: "create-outline", color: "primary" },
       { id: "materialize", label: t5("ui.actionMaterialize"), icon: "calendar-number-outline", color: "success" },
@@ -8265,7 +8450,7 @@ var ErpAppointmentsSeries = class extends i3 {
     ];
   }
   render() {
-    const t5 = (k2, p4) => erplora3().t(CATALOG3, k2, p4);
+    const t5 = (k2, p4) => erplora4().t(CATALOG4, k2, p4);
     return b2`<div class="page">
       ${this.error ? b2`<ok-inline-feedback data-testid="appointments-series-error" tone="danger" icon="alert-circle-outline">${this.error}</ok-inline-feedback>` : A}
       ${this.moveReport ? this.renderMoveReport(this.moveReport, t5) : A}
@@ -8282,7 +8467,7 @@ var ErpAppointmentsSeries = class extends i3 {
         .searchPlaceholder=${t5("ui.seriesSearchPlaceholder")}
         .actions=${this.rowActions}
         @rowAction=${(e5) => this.onRowAction(e5)}
-        .labels=${{ ...dataTableLabels(erplora3().locale), newRecord: this.editingId ? t5("ui.seriesEditTitle") : t5("ui.seriesNewTitle") }}
+        .labels=${{ ...dataTableLabels(erplora4().locale), newRecord: this.editingId ? t5("ui.seriesEditTitle") : t5("ui.seriesNewTitle") }}
         .emptyMessage=${this.loading ? t5("ui.loading") : t5("ui.seriesEmpty")}
       >
         ${this.editingId ? this.renderEditForm(t5) : this.renderCreateForm(t5)}
@@ -8471,7 +8656,7 @@ var ErpAppointmentsSeries = class extends i3 {
   onCreateStartDateKeydown(e5) {
     if (e5.key !== " " && e5.key !== "," && e5.key !== "t" && e5.key !== "T") return;
     const value = e5.target.value;
-    if (typeof value !== "string" || !parseTypedStart(value, erplora3().locale)?.date) return;
+    if (typeof value !== "string" || !parseTypedStart(value, erplora4().locale)?.date) return;
     e5.preventDefault();
     const timeField = this.renderRoot.querySelector('ion-input[data-role="series-start-time"]');
     void timeField?.setFocus?.();
@@ -8480,7 +8665,7 @@ var ErpAppointmentsSeries = class extends i3 {
    *  a whole start and fill whichever halves `parseTypedStart` recognizes. */
   onCreateStartPaste(e5) {
     const text = e5.clipboardData?.getData("text") ?? "";
-    const parsed = parseTypedStart(text, erplora3().locale);
+    const parsed = parseTypedStart(text, erplora4().locale);
     if (!parsed) return;
     e5.preventDefault();
     if (parsed.date) {
@@ -8495,14 +8680,14 @@ var ErpAppointmentsSeries = class extends i3 {
   /** appointments#217 — what a date field shows: the raw text while it is being typed, the date in
    *  the hub's day/month order otherwise. */
   dateFieldValue(field) {
-    return this.dateDraft[field] ?? formatTypedDate(field === "start" ? this.newStartDate : this.newEndDate, erplora3().locale);
+    return this.dateDraft[field] ?? formatTypedDate(field === "start" ? this.newStartDate : this.newEndDate, erplora4().locale);
   }
   /** appointments#217 — `ionInput` on a date field: the text is kept as the draft and the ISO date
    *  follows it exactly, back to `''` while it is not (yet) a date — a half-typed day never keeps
    *  the last valid one. */
   onDateFieldInput(field, text) {
     this.dateDraft = { ...this.dateDraft, [field]: text };
-    const iso = parseTypedStart(text, erplora3().locale)?.date ?? "";
+    const iso = parseTypedStart(text, erplora4().locale)?.date ?? "";
     if (field === "start") this.newStartDate = iso;
     else this.newEndDate = iso;
   }
@@ -8512,13 +8697,13 @@ var ErpAppointmentsSeries = class extends i3 {
   }
   /** appointments#217 — what a time field shows: the draft while typing, the hub clock otherwise. */
   timeFieldValue(form) {
-    return this.timeDraft[form] ?? formatTypedTime(form === "new" ? this.newStartTime : this.editTime, erplora3().locale);
+    return this.timeDraft[form] ?? formatTypedTime(form === "new" ? this.newStartTime : this.editTime, erplora4().locale);
   }
   /** appointments#217 — `ionInput` on a time field: the time follows the text exactly, `''` while it
    *  is not (yet) a time. */
   onTimeFieldInput(form, text) {
     this.timeDraft = { ...this.timeDraft, [form]: text };
-    const time = parseTypedStart(text, erplora3().locale)?.time ?? "";
+    const time = parseTypedStart(text, erplora4().locale)?.time ?? "";
     if (form === "new") this.newStartTime = time;
     else this.editTime = time;
   }
@@ -8554,7 +8739,7 @@ var ErpAppointmentsSeries = class extends i3 {
   }
   /** Everything the NEW-series draft holds, back to a blank form (appointments#209). */
   resetCreateDraft() {
-    this.newCustomerId = "";
+    this.newCustomer = null;
     this.newServiceId = "";
     this.newStaffId = "";
     this.newFrequency = "weekly";
@@ -8571,26 +8756,20 @@ var ErpAppointmentsSeries = class extends i3 {
     this.resetNarrowing("new");
   }
   renderCreateForm(t5) {
-    const customer = this.customers.find((c5) => c5.id === this.newCustomerId);
+    const customer = this.newCustomer;
     const service = this.services.find((s5) => s5.id === this.newServiceId);
     const staff = this.bookableStaff.find((m4) => m4.id === this.newStaffId);
     const duration = Math.trunc(Number(this.newDuration));
     const canSubmit = !this.saving && !!customer && !!service && !!staff && !!this.newStartDate && !!this.newStartTime && !this.endDateIncomplete && Number.isFinite(duration) && duration >= 1;
     return b2`<form slot="create" data-testid="appointments-series-create-form" data-mode="series-create" class="form" @submit=${(e5) => this.createSeries(e5)}>
       <div class="grid">
-        <ion-select
+        <erp-appointments-customer-picker
           data-testid="appointments-series-create-customer"
           data-role="series-create-customer"
-          fill="outline"
-          mode="md"
           label=${t5("ui.fieldCustomer")}
-          placeholder=${t5("ui.pickCustomer")}
-          label-placement="floating"
-          .value=${this.newCustomerId}
-          @ionChange=${(e5) => this.newCustomerId = e5.target.value ?? ""}
-        >
-          ${this.customers.map((c5) => b2`<ion-select-option .value=${c5.id}>${c5.name}</ion-select-option>`)}
-        </ion-select>
+          .customer=${this.newCustomer}
+          @customer-change=${(e5) => this.newCustomer = e5.detail.customer}
+        ></erp-appointments-customer-picker>
         <ion-select
           data-testid="appointments-series-create-service"
           data-role="series-create-service"
@@ -8668,7 +8847,7 @@ var ErpAppointmentsSeries = class extends i3 {
               <ok-calendar
                 data-testid="appointments-series-create-start-calendar-picker"
                 picker
-                locale=${erplora3().locale || "es"}
+                locale=${erplora4().locale || "es"}
                 .value=${this.newStartDate || todayISO()}
                 .labels=${this.calendarLabels(t5)}
                 @ok-date-select=${(e5) => this.onDateCalendarPick("start", e5.detail.date)}
@@ -8726,7 +8905,7 @@ var ErpAppointmentsSeries = class extends i3 {
               <ok-calendar
                 data-testid="appointments-series-create-end-calendar-picker"
                 picker
-                locale=${erplora3().locale || "es"}
+                locale=${erplora4().locale || "es"}
                 .value=${this.newEndDate || this.newStartDate || todayISO()}
                 .labels=${this.calendarLabels(t5)}
                 @ok-date-select=${(e5) => this.onDateCalendarPick("end", e5.detail.date)}
@@ -8758,7 +8937,7 @@ var ErpAppointmentsSeries = class extends i3 {
   async createSeries(ev) {
     ev.preventDefault?.();
     if (this.saving) return;
-    const customer = this.customers.find((c5) => c5.id === this.newCustomerId);
+    const customer = this.newCustomer;
     const service = this.services.find((s5) => s5.id === this.newServiceId);
     const staff = this.bookableStaff.find((m4) => m4.id === this.newStaffId);
     const duration = Math.trunc(Number(this.newDuration));
@@ -8767,10 +8946,10 @@ var ErpAppointmentsSeries = class extends i3 {
     }
     this.saving = true;
     this.createError = "";
-    const t5 = (k2, p4) => erplora3().t(CATALOG3, k2, p4);
+    const t5 = (k2, p4) => erplora4().t(CATALOG4, k2, p4);
     try {
       const occurrences = Math.trunc(Number(this.newOccurrences));
-      const result = await erplora3().command("appointments.recurring.create", {
+      const result = await erplora4().command("appointments.recurring.create", {
         customer_id: customer.id,
         customer_name: customer.name,
         service_id: service.id,
@@ -8805,7 +8984,7 @@ var ErpAppointmentsSeries = class extends i3 {
       if (notBooked) {
         this.error = t5("ui.seriesCreatedNotBooked");
       } else if (!this.showSkipped(report)) {
-        erplora3().notify?.({ type: "success", message: t5("ui.seriesCreated") });
+        erplora4().notify?.({ type: "success", message: t5("ui.seriesCreated") });
       }
     } catch (e5) {
       this.createError = e5 instanceof Error && e5.message ? e5.message : t5("ui.seriesSaveError");
@@ -8867,16 +9046,13 @@ __decorateClass([
 ], ErpAppointmentsSeries.prototype, "editServiceId", 2);
 __decorateClass([
   r5()
-], ErpAppointmentsSeries.prototype, "customers", 2);
-__decorateClass([
-  r5()
 ], ErpAppointmentsSeries.prototype, "services", 2);
 __decorateClass([
   r5()
 ], ErpAppointmentsSeries.prototype, "staffMembers", 2);
 __decorateClass([
   r5()
-], ErpAppointmentsSeries.prototype, "newCustomerId", 2);
+], ErpAppointmentsSeries.prototype, "newCustomer", 2);
 __decorateClass([
   r5()
 ], ErpAppointmentsSeries.prototype, "newServiceId", 2);
@@ -8931,7 +9107,7 @@ __decorateClass([
 define("erp-appointments-series", ErpAppointmentsSeries);
 
 // ui/components/erp-appointments-list/erp-appointments-list.ts
-var CATALOG4 = { es: es_default, en: en_default };
+var CATALOG5 = { es: es_default, en: en_default };
 var STATUS_KEYS2 = {
   pending: "ui.statusPending",
   confirmed: "ui.statusConfirmed",
@@ -8955,14 +9131,14 @@ var STARTABLE = ["confirmed"];
 var COMPLETABLE = ["confirmed", "in_progress"];
 var NO_SHOWABLE = ["pending", "confirmed"];
 var CANCELLABLE = ["pending", "confirmed", "in_progress", "no_show"];
-function erplora4() {
+function erplora5() {
   const c5 = globalThis.erplora;
   if (!c5) throw new Error("erplora SDK no inicializado por el shell");
   return c5;
 }
 function catalogError(code) {
-  for (const lang of [erplora4().locale, "en"]) {
-    const dict = CATALOG4[lang]?.errors;
+  for (const lang of [erplora5().locale, "en"]) {
+    const dict = CATALOG5[lang]?.errors;
     const text = dict?.[code];
     if (typeof text === "string" && text) return text;
   }
@@ -8975,7 +9151,7 @@ function domainErrorText(e5, fallbackKey) {
     const text = catalogError(code);
     if (text) return text;
   }
-  return message || erplora4().t(CATALOG4, fallbackKey);
+  return message || erplora5().t(CATALOG5, fallbackKey);
 }
 function wallIsPast(wall) {
   if (!wall) return false;
@@ -8992,14 +9168,14 @@ function splitWall(value) {
   const v3 = String(value ?? "");
   return [v3.slice(0, 10), v3.slice(11, 16)];
 }
-function rows5(r6) {
+function rows6(r6) {
   if (Array.isArray(r6)) return r6;
   if (r6 && typeof r6 === "object" && Array.isArray(r6.rows)) {
     return r6.rows;
   }
   return [];
 }
-var fmtTime = (iso) => formatWallTime(iso, businessTimezone(), erplora4().locale);
+var fmtTime = (iso) => formatWallTime(iso, businessTimezone(), erplora5().locale);
 var ErpAppointmentsList = class extends i3 {
   constructor() {
     super(...arguments);
@@ -9018,11 +9194,10 @@ var ErpAppointmentsList = class extends i3 {
     this.calendarOpen = "";
     this.statusFilter = "";
     this.view = "list";
-    this.customers = [];
     this.services = [];
     this.staffMembers = [];
     this.settings = {};
-    this.newCustomerId = "";
+    this.newCustomer = null;
     this.newServiceId = "";
     this.newStaffId = "";
     this.newStartDate = "";
@@ -9031,7 +9206,7 @@ var ErpAppointmentsList = class extends i3 {
     this.staffDurationUnavailable = { new: false, reschedule: false };
     /** appointments#272 — the eligible professionals per service, read once per service. */
     this.eligibleFor = eligibleReader(
-      (serviceId) => erplora4().query("staff.services.eligible_for_service", { service_id: serviceId })
+      (serviceId) => erplora5().query("staff.services.eligible_for_service", { service_id: serviceId })
     );
     this.eligibleStaffIds = { new: null, reschedule: null };
     this.eligibleStaffUnavailable = { new: false, reschedule: false };
@@ -9156,7 +9331,7 @@ var ErpAppointmentsList = class extends i3 {
   }
   statusLabel(status) {
     const key = STATUS_KEYS2[status];
-    return key ? erplora4().t(CATALOG4, key) : status;
+    return key ? erplora5().t(CATALOG5, key) : status;
   }
   /** appointments#263 — the professional + service the panel hands the appointment to, or `null`
    *  when both pickers still hold what the row had (a plain move keeps its old payload). They
@@ -9306,7 +9481,7 @@ var ErpAppointmentsList = class extends i3 {
     this.freeSlotsState = "loading";
     this.freeSlotsError = "";
     try {
-      const answer = await erplora4().command("appointments.availability.slots", {
+      const answer = await erplora5().command("appointments.availability.slots", {
         date: this.newStartDate,
         staff_id: this.newStaffId,
         duration_minutes: this.effectiveDuration,
@@ -9316,7 +9491,7 @@ var ErpAppointmentsList = class extends i3 {
       });
       if (request !== this.freeSlotsRequest) return;
       const slots = answer?.result;
-      this.freeSlots = rows5(slots).filter((slot) => typeof slot?.start_time === "string");
+      this.freeSlots = rows6(slots).filter((slot) => typeof slot?.start_time === "string");
       this.freeSlotsState = "ready";
     } catch (e5) {
       if (request !== this.freeSlotsRequest) return;
@@ -9348,7 +9523,7 @@ var ErpAppointmentsList = class extends i3 {
   }
   // Getters (no campos): se re-evalúan en cada render para seguir el idioma activo.
   get columns() {
-    const t5 = (k2) => erplora4().t(CATALOG4, k2);
+    const t5 = (k2) => erplora5().t(CATALOG5, k2);
     return [
       { key: "start_datetime", header: t5("ui.colTime"), format: (r6) => fmtTime(r6.start_datetime) },
       { key: "appointment_number", header: t5("ui.colNumber") },
@@ -9364,7 +9539,7 @@ var ErpAppointmentsList = class extends i3 {
     ];
   }
   get rowActions() {
-    const t5 = (k2) => erplora4().t(CATALOG4, k2);
+    const t5 = (k2) => erplora5().t(CATALOG5, k2);
     return [
       // COBRAR (sales#89): el eslabón que faltaba. La agenda sabía completar una cita y ahí se
       // acababa el camino; en un salón el servicio ES la venta.
@@ -9441,11 +9616,11 @@ var ErpAppointmentsList = class extends i3 {
   get schedulerResources() {
     return [
       ...this.bookableStaff.map((m4) => ({ id: m4.id, label: m4.full_name })),
-      { id: UNASSIGNED, label: erplora4().t(CATALOG4, "ui.unassigned") }
+      { id: UNASSIGNED, label: erplora5().t(CATALOG5, "ui.unassigned") }
     ];
   }
   get schedulerEvents() {
-    const erased = erplora4().t(CATALOG4, "ui.erasedCustomer");
+    const erased = erplora5().t(CATALOG5, "ui.erasedCustomer");
     return this.items.map((a3) => ({
       id: a3.id,
       resourceId: a3.staff_id || UNASSIGNED,
@@ -9465,15 +9640,15 @@ var ErpAppointmentsList = class extends i3 {
     await this.loadCatalogs();
     try {
       const offs = [
-        erplora4().on("appointments.appointment.created", () => this.refresh()),
-        erplora4().on("appointments.appointment.updated", () => this.refresh()),
-        erplora4().on("appointments.appointment.confirmed", () => this.refresh()),
-        erplora4().on("appointments.appointment.started", () => this.refresh()),
-        erplora4().on("appointments.appointment.completed", () => this.refresh()),
-        erplora4().on("appointments.appointment.cancelled", () => this.refresh()),
-        erplora4().on("appointments.appointment.no_show", () => this.refresh()),
-        erplora4().on("appointments.appointment.rescheduled", () => this.refresh()),
-        erplora4().on("appointments.appointment.deleted", () => this.refresh())
+        erplora5().on("appointments.appointment.created", () => this.refresh()),
+        erplora5().on("appointments.appointment.updated", () => this.refresh()),
+        erplora5().on("appointments.appointment.confirmed", () => this.refresh()),
+        erplora5().on("appointments.appointment.started", () => this.refresh()),
+        erplora5().on("appointments.appointment.completed", () => this.refresh()),
+        erplora5().on("appointments.appointment.cancelled", () => this.refresh()),
+        erplora5().on("appointments.appointment.no_show", () => this.refresh()),
+        erplora5().on("appointments.appointment.rescheduled", () => this.refresh()),
+        erplora5().on("appointments.appointment.deleted", () => this.refresh())
       ];
       this.unsub = () => offs.forEach((off) => off());
     } catch {
@@ -9485,22 +9660,21 @@ var ErpAppointmentsList = class extends i3 {
     this.unsub?.();
     this.settleOverlap(false);
   }
-  /** Catálogos ligados + ajustes. Se cargan una vez: el alta reserva contra registros reales
-   *  (`customers` / `services` / `staff`) vía sus queries PÚBLICAS — nunca sus tablas. */
+  /** Linked catalogs + settings, loaded once: the booking is made against real records through
+   *  their PUBLIC queries — never their tables. Customers are not here: the picker searches them on
+   *  the server as the receptionist types (appointments#306). */
   async loadCatalogs() {
     try {
-      const [customers, services, staffMembers, settings] = await Promise.all([
-        erplora4().query("customers.list", { limit: 500, sort: "name", dir: "asc" }).catch(() => []),
-        erplora4().query("services.services.list", { limit: 500 }).catch(() => []),
-        erplora4().query("staff.members.list", { limit: 500 }).catch(() => []),
-        erplora4().query("appointments.settings.get").catch(() => [])
+      const [services, staffMembers, settings] = await Promise.all([
+        erplora5().query("services.services.list", { limit: 500 }).catch(() => []),
+        erplora5().query("staff.members.list", { limit: 500 }).catch(() => []),
+        erplora5().query("appointments.settings.get").catch(() => [])
       ]);
-      this.customers = rows5(customers);
-      this.services = rows5(services).filter((s5) => s5.is_bookable === void 0 || Number(s5.is_bookable) === 1);
-      this.staffMembers = rows5(staffMembers);
-      this.settings = rows5(settings)[0] ?? {};
+      this.services = rows6(services).filter((s5) => s5.is_bookable === void 0 || Number(s5.is_bookable) === 1);
+      this.staffMembers = rows6(staffMembers);
+      this.settings = rows6(settings)[0] ?? {};
     } catch (e5) {
-      this.error = e5 instanceof Error ? e5.message : erplora4().t(CATALOG4, "ui.errLoadCatalogs");
+      this.error = e5 instanceof Error ? e5.message : erplora5().t(CATALOG5, "ui.errLoadCatalogs");
     }
   }
   /** Un día atrás o adelante (appointments#93). Aritmética de CALENDARIO: el día del salón dura
@@ -9515,16 +9689,16 @@ var ErpAppointmentsList = class extends i3 {
     this.error = "";
     try {
       const { day_start, day_end } = dayBounds(this.day);
-      const result = await erplora4().query("appointments.appointments.list", {
+      const result = await erplora5().query("appointments.appointments.list", {
         day_start,
         day_end,
         status: this.statusFilter,
         staff_id: "",
         limit: 100
       });
-      this.items = rows5(result);
+      this.items = rows6(result);
     } catch (e5) {
-      this.error = e5 instanceof Error ? e5.message : erplora4().t(CATALOG4, "ui.errLoad");
+      this.error = e5 instanceof Error ? e5.message : erplora5().t(CATALOG5, "ui.errLoad");
     } finally {
       this.loading = false;
     }
@@ -9568,7 +9742,7 @@ var ErpAppointmentsList = class extends i3 {
   onStartDateKeydown(form, e5) {
     if (e5.key !== " " && e5.key !== "," && e5.key !== "t" && e5.key !== "T") return;
     const value = e5.target.value;
-    if (typeof value !== "string" || !parseTypedStart(value, erplora4().locale)?.date) return;
+    if (typeof value !== "string" || !parseTypedStart(value, erplora5().locale)?.date) return;
     e5.preventDefault();
     const timeField = this.renderRoot.querySelector(
       form === "new" ? 'ion-input[data-role="start-time"]' : 'ion-input[data-role="reschedule-start-time"]'
@@ -9579,7 +9753,7 @@ var ErpAppointmentsList = class extends i3 {
    *  as a whole start and fills whichever halves it recognizes. */
   onStartPaste(form, e5) {
     const text = e5.clipboardData?.getData("text") ?? "";
-    const parsed = parseTypedStart(text, erplora4().locale);
+    const parsed = parseTypedStart(text, erplora5().locale);
     if (!parsed) return;
     e5.preventDefault();
     this.applyTypedStart(form, parsed);
@@ -9595,7 +9769,7 @@ var ErpAppointmentsList = class extends i3 {
    *  the hub-formatted date otherwise. */
   dateFieldValue(field) {
     const draft = this.dateDraft[field];
-    return draft ?? formatTypedDate(this.isoForDateField(field), erplora4().locale);
+    return draft ?? formatTypedDate(this.isoForDateField(field), erplora5().locale);
   }
   /** appointments#205 — `ionInput` on one of the three date text fields: the raw text is kept as
    *  the draft (so it stays on screen exactly as typed), and it is parsed in the hub's day/month
@@ -9605,7 +9779,7 @@ var ErpAppointmentsList = class extends i3 {
    *  disabled instead of silently keeping the last valid day. */
   onDateFieldInput(field, text) {
     this.dateDraft = { ...this.dateDraft, [field]: text };
-    const iso = parseTypedStart(text, erplora4().locale)?.date ?? "";
+    const iso = parseTypedStart(text, erplora5().locale)?.date ?? "";
     if (field === "day") {
       if (iso && iso !== this.day) {
         this.day = iso;
@@ -9626,14 +9800,14 @@ var ErpAppointmentsList = class extends i3 {
    *  the hub clock otherwise. */
   timeFieldValue(form) {
     const draft = this.timeDraft[form];
-    return draft ?? formatTypedTime(form === "new" ? this.newStartTime : this.rescheduleStartTime, erplora4().locale);
+    return draft ?? formatTypedTime(form === "new" ? this.newStartTime : this.rescheduleStartTime, erplora5().locale);
   }
   /** appointments#214 — `ionInput` on a time field: the text is kept as the draft and the time
    *  follows it exactly, back to `''` while it is not (yet) a time — so a half-typed hour never
    *  books the last valid one. */
   onTimeFieldInput(form, text) {
     this.timeDraft = { ...this.timeDraft, [form]: text };
-    const time = parseTypedStart(text, erplora4().locale)?.time ?? "";
+    const time = parseTypedStart(text, erplora5().locale)?.time ?? "";
     if (form === "new") this.newStartTime = time;
     else this.rescheduleStartTime = time;
   }
@@ -9689,7 +9863,7 @@ var ErpAppointmentsList = class extends i3 {
   }
   async createAppointment(ev) {
     ev.preventDefault();
-    const customer = this.customers.find((c5) => c5.id === this.newCustomerId);
+    const customer = this.newCustomer;
     const service = this.selectedService;
     const staff = this.bookableStaff.find((m4) => m4.id === this.newStaffId);
     if (!customer || !service || !staff || !this.newStart) return;
@@ -9699,7 +9873,7 @@ var ErpAppointmentsList = class extends i3 {
     try {
       const startIso = wallToBusinessIso(this.newStart);
       if (!await this.overlapAccepted(startIso, this.effectiveDuration, staff.id)) return;
-      await erplora4().command("appointments.appointments.create", {
+      await erplora5().command("appointments.appointments.create", {
         // Vínculos + su snapshot denormalizado (lo que se reservó, aunque la ficha cambie).
         customer_id: customer.id,
         customer_name: customer.name,
@@ -9724,7 +9898,7 @@ var ErpAppointmentsList = class extends i3 {
         // Only the minimum steps aside; the maximum advance, the hours and the overlap still judge.
         allow_short_notice: true
       });
-      this.newCustomerId = "";
+      this.newCustomer = null;
       this.newServiceId = "";
       this.newStaffId = "";
       this.newStart = "";
@@ -9735,7 +9909,7 @@ var ErpAppointmentsList = class extends i3 {
       await this.refresh();
     } catch (e5) {
       this.formError = domainErrorText(e5, "ui.errCreate");
-      erplora4().notify?.({ type: "error", message: this.formError });
+      erplora5().notify?.({ type: "error", message: this.formError });
     } finally {
       this.saving = false;
     }
@@ -9769,11 +9943,11 @@ var ErpAppointmentsList = class extends i3 {
     const from = toInstantMs(startIso);
     if (from === null || !Number.isFinite(minutes) || minutes < 1) return [];
     const to = from + minutes * 6e4;
-    const found = await erplora4().query("appointments.appointments.conflicting", {
+    const found = await erplora5().query("appointments.appointments.conflicting", {
       staff_id: staffId,
       start_datetime: startIso
     });
-    return rows5(found).filter((a3) => {
+    return rows6(found).filter((a3) => {
       if (a3.id === excludeId) return false;
       const s5 = toInstantMs(a3.start_datetime);
       const e5 = toInstantMs(a3.end_datetime);
@@ -9782,7 +9956,7 @@ var ErpAppointmentsList = class extends i3 {
   }
   /** Pinta el aviso y espera. La promesa la resuelven los botones del `ion-alert`. */
   askOverlap(conflicts) {
-    const t5 = (k2, p4) => erplora4().t(CATALOG4, k2, p4);
+    const t5 = (k2, p4) => erplora5().t(CATALOG5, k2, p4);
     const list = conflicts.map((a3) => `${customerLabel(a3, t5("ui.erasedCustomer"), t5("ui.colCustomer"))} \xB7 ${fmtTime(a3.start_datetime)}`).join(", ");
     return new Promise((resolve) => {
       this.overlapPrompt = t5("ui.overlapMessage", { conflicts: list });
@@ -9815,7 +9989,7 @@ var ErpAppointmentsList = class extends i3 {
     try {
       conflicts = await this.overlappingWith(startIso, minutes, staffId, excludeId);
     } catch {
-      erplora4().notify?.({ type: "warning", message: erplora4().t(CATALOG4, "ui.errOverlapCheck") });
+      erplora5().notify?.({ type: "warning", message: erplora5().t(CATALOG5, "ui.errOverlapCheck") });
       return true;
     }
     if (conflicts.length === 0) return true;
@@ -9852,22 +10026,22 @@ var ErpAppointmentsList = class extends i3 {
           return;
         // opens the panel; nothing to refresh
         case "confirm":
-          await erplora4().command("appointments.appointments.confirm", { appointment_id: id });
+          await erplora5().command("appointments.appointments.confirm", { appointment_id: id });
           break;
         case "start":
-          await erplora4().command("appointments.appointments.start", { appointment_id: id });
+          await erplora5().command("appointments.appointments.start", { appointment_id: id });
           break;
         case "complete":
-          await erplora4().command("appointments.appointments.complete", { appointment_id: id });
+          await erplora5().command("appointments.appointments.complete", { appointment_id: id });
           break;
         case "no_show":
-          await erplora4().command("appointments.appointments.no_show", { appointment_id: id });
+          await erplora5().command("appointments.appointments.no_show", { appointment_id: id });
           break;
         case "cancel":
-          await erplora4().command("appointments.appointments.cancel", { appointment_id: id, reason: "" });
+          await erplora5().command("appointments.appointments.cancel", { appointment_id: id, reason: "" });
           break;
         case "delete":
-          await erplora4().command("appointments.appointments.delete", { appointment_id: id });
+          await erplora5().command("appointments.appointments.delete", { appointment_id: id });
           break;
       }
       await this.refresh();
@@ -9925,7 +10099,7 @@ var ErpAppointmentsList = class extends i3 {
     this.error = "";
     this.view = "list";
     await this.updateComplete;
-    this.dataTable()?.open("edit", { title: erplora4().t(CATALOG4, "ui.rescheduleTitle") });
+    this.dataTable()?.open("edit", { title: erplora5().t(CATALOG5, "ui.rescheduleTitle") });
   }
   /** Opens the panel on the history of ONE appointment, without touching it (appointments#194).
    *  Reachable in every status: a cancelled or completed appointment is precisely the one whose
@@ -9936,7 +10110,7 @@ var ErpAppointmentsList = class extends i3 {
     this.error = "";
     this.view = "list";
     await this.updateComplete;
-    this.dataTable()?.open("create", { title: erplora4().t(CATALOG4, "ui.appointmentHistoryTitle") });
+    this.dataTable()?.open("create", { title: erplora5().t(CATALOG5, "ui.appointmentHistoryTitle") });
   }
   /** Bloque del timeline → mismo panel pre-rellenado.
    *
@@ -10008,7 +10182,7 @@ var ErpAppointmentsList = class extends i3 {
         revert();
         return;
       }
-      await erplora4().command("appointments.appointments.reschedule", {
+      await erplora5().command("appointments.appointments.reschedule", {
         appointment_id: id,
         start_datetime: startIso,
         duration_minutes: appointment.duration_minutes,
@@ -10023,13 +10197,13 @@ var ErpAppointmentsList = class extends i3 {
     } catch (e5) {
       revert();
       this.error = domainErrorText(e5, "ui.errReschedule");
-      erplora4().notify?.({ type: "error", message: this.error });
+      erplora5().notify?.({ type: "error", message: this.error });
     }
   }
   /** Rechazo local del arrastre: el bloque ya ha vuelto (`revert()`), queda DECIR por qué. */
   refuseDrag(key) {
-    this.error = erplora4().t(CATALOG4, key);
-    erplora4().notify?.({ type: "error", message: this.error });
+    this.error = erplora5().t(CATALOG5, key);
+    erplora5().notify?.({ type: "error", message: this.error });
   }
   /** Moves the appointment. Only keys the schema declares travel
    *  (`schemas/appointment_reschedule.json` is `additionalProperties: false`: one extra key and
@@ -10070,14 +10244,14 @@ var ErpAppointmentsList = class extends i3 {
   notifyNotMoved(answer) {
     const skipped = answer && Array.isArray(answer.skipped) ? skippedDates(answer) : [];
     if (skipped.length === 0) return;
-    const t5 = (k2, p4) => erplora4().t(CATALOG4, k2, p4);
+    const t5 = (k2, p4) => erplora5().t(CATALOG5, k2, p4);
     const lines = skipped.map(
-      (s5) => `${formatTypedDate(s5.occurrence_date, erplora4().locale) || s5.occurrence_date} \u2014 ${t5(
+      (s5) => `${formatTypedDate(s5.occurrence_date, erplora5().locale) || s5.occurrence_date} \u2014 ${t5(
         NOT_MOVED_REASON_KEYS[s5.code] ?? "ui.seriesMoveSkipOther"
       )}`
     );
     const head = t5("ui.seriesMovedSkipped", { moved: Number(answer?.moved ?? 0), skipped: skipped.length });
-    erplora4().notify?.({ type: "warning", message: `${head} ${lines.join(" \xB7 ")}` });
+    erplora5().notify?.({ type: "warning", message: `${head} ${lines.join(" \xB7 ")}` });
   }
   /** appointments#263 — the professional/service keys of `recurring.update` for «this and
    *  following». Without a handover the series' professional is only the SELECTOR (as before).
@@ -10104,11 +10278,11 @@ var ErpAppointmentsList = class extends i3 {
     this.formError = "";
     try {
       if (scope === "this_and_following") {
-        const template = rows5(
-          await erplora4().query("appointments.recurring.get", { recurring_id: this.rescheduleSeriesId })
+        const template = rows6(
+          await erplora5().query("appointments.recurring.get", { recurring_id: this.rescheduleSeriesId })
         )[0];
         const answer = handlerAnswer(
-          await erplora4().command("appointments.recurring.update", {
+          await erplora5().command("appointments.recurring.update", {
             recurring_id: this.rescheduleSeriesId,
             ...this.seriesHandover(template?.staff_id ?? "", template?.service_id ?? ""),
             scope,
@@ -10126,7 +10300,7 @@ var ErpAppointmentsList = class extends i3 {
         if (!await this.overlapAccepted(startIso, minutes, this.rescheduleStaffId, this.rescheduleId)) {
           return;
         }
-        await erplora4().command("appointments.appointments.reschedule", {
+        await erplora5().command("appointments.appointments.reschedule", {
           appointment_id: this.rescheduleId,
           start_datetime: startIso,
           duration_minutes: minutes,
@@ -10146,7 +10320,7 @@ var ErpAppointmentsList = class extends i3 {
       await this.refresh();
     } catch (e5) {
       this.formError = domainErrorText(e5, "ui.errReschedule");
-      erplora4().notify?.({ type: "error", message: this.formError });
+      erplora5().notify?.({ type: "error", message: this.formError });
     } finally {
       this.saving = false;
     }
@@ -10169,7 +10343,7 @@ var ErpAppointmentsList = class extends i3 {
   }
   // El título de la vista lo pinta el topbar del shell: repetirlo aquí lo duplicaba en pantalla.
   render() {
-    const t5 = (k2) => erplora4().t(CATALOG4, k2);
+    const t5 = (k2) => erplora5().t(CATALOG5, k2);
     const startHour = Number(this.settings.calendar_start_hour ?? 8);
     const endHour = Number(this.settings.calendar_end_hour ?? 20);
     return b2`<div class="page">
@@ -10236,7 +10410,7 @@ var ErpAppointmentsList = class extends i3 {
               <ok-calendar
                 data-testid="appointments-list-day-calendar-picker"
                 picker
-                locale=${erplora4().locale || "es"}
+                locale=${erplora5().locale || "es"}
                 .value=${this.day || ""}
                 .labels=${this.calendarLabels(t5)}
                 @ok-date-select=${(e5) => this.onDateCalendarPick("day", e5.detail.date)}
@@ -10302,7 +10476,7 @@ var ErpAppointmentsList = class extends i3 {
               .date=${this.day}
               .startHour=${startHour}
               .endHour=${endHour}
-              .locale=${erplora4().locale || "es"}
+              .locale=${erplora5().locale || "es"}
               .resources=${this.schedulerResources}
               .events=${this.schedulerEvents}
               movable
@@ -10350,7 +10524,7 @@ var ErpAppointmentsList = class extends i3 {
             <ok-calendar
               data-testid="appointments-list-reschedule-start-calendar-picker"
               picker
-              locale=${erplora4().locale || "es"}
+              locale=${erplora5().locale || "es"}
               .value=${this.rescheduleStartDate || ""}
               .labels=${this.calendarLabels(t5)}
               @ok-date-select=${(e5) => this.onDateCalendarPick("reschedule", e5.detail.date)}
@@ -10425,7 +10599,7 @@ var ErpAppointmentsList = class extends i3 {
                 fill=${chosen ? "solid" : "outline"}
                 aria-pressed=${chosen ? "true" : "false"}
                 @click=${() => this.pickFreeSlot(slot.start_time)}
-              >${formatTypedTime(slot.start_time, erplora4().locale)}</ion-button>`;
+              >${formatTypedTime(slot.start_time, erplora5().locale)}</ion-button>`;
         })}
           </div>
         </div>`;
@@ -10438,9 +10612,7 @@ var ErpAppointmentsList = class extends i3 {
    *  disponibilidad, ni pasar a la venta sin re-teclear. */
   renderCreateForm(t5) {
     return b2`<form slot="create" data-testid="appointments-list-form" data-mode="create" class="form" @submit=${(e5) => this.createAppointment(e5)}>
-            <ion-select data-testid="appointments-list-customer" data-role="customer" fill="outline" mode="md" label-placement="floating" label=${t5("ui.fieldCustomer")} placeholder=${t5("ui.pickCustomer")} .value=${this.newCustomerId} @ionChange=${(e5) => this.newCustomerId = e5.target.value}>
-              ${this.customers.map((c5) => b2`<ion-select-option .value=${c5.id}>${c5.name}</ion-select-option>`)}
-            </ion-select>
+            <erp-appointments-customer-picker data-testid="appointments-list-customer" data-role="customer" label=${t5("ui.fieldCustomer")} .customer=${this.newCustomer} @customer-change=${(e5) => this.newCustomer = e5.detail.customer}></erp-appointments-customer-picker>
             <ion-select data-testid="appointments-list-service" data-role="service" fill="outline" mode="md" label-placement="floating" label=${t5("ui.fieldService")} placeholder=${t5("ui.pickService")} .value=${this.newServiceId} @ionChange=${(e5) => this.onServiceChange(e5.target.value)}>
               ${this.services.map((s5) => b2`<ion-select-option .value=${s5.id}>${s5.name}</ion-select-option>`)}
             </ion-select>
@@ -10462,7 +10634,7 @@ var ErpAppointmentsList = class extends i3 {
                   <ok-calendar
                     data-testid="appointments-list-start-calendar-picker"
                     picker
-                    locale=${erplora4().locale || "es"}
+                    locale=${erplora5().locale || "es"}
                     .value=${this.newStartDate || this.day}
                     .labels=${this.calendarLabels(t5)}
                     @ok-date-select=${(e5) => this.onDateCalendarPick("new", e5.detail.date)}
@@ -10481,7 +10653,7 @@ var ErpAppointmentsList = class extends i3 {
                  is painted only once the chosen time has passed: a permanent notice goes unread. -->
             ${this.newStartIsPast ? b2`<ok-inline-feedback data-testid="appointments-list-past-start-notice" tone="warning" icon="time-outline">${t5("ui.pastStartNotice")}</ok-inline-feedback>` : A}
             ${this.formError ? b2`<ok-inline-feedback data-testid="appointments-list-form-error" tone="danger" icon="alert-circle-outline">${this.formError}</ok-inline-feedback>` : A}
-            <ion-button data-testid="appointments-list-submit" type="submit" size="small" ?disabled=${this.saving || !this.newCustomerId || !this.newServiceId || !this.newStaffId || !this.newStart}>${this.saving ? t5("ui.saving") : t5("ui.addAppointment")}</ion-button>
+            <ion-button data-testid="appointments-list-submit" type="submit" size="small" ?disabled=${this.saving || !this.newCustomer || !this.newServiceId || !this.newStaffId || !this.newStart}>${this.saving ? t5("ui.saving") : t5("ui.addAppointment")}</ion-button>
           </form>`;
   }
 };
@@ -10520,9 +10692,6 @@ __decorateClass([
 ], ErpAppointmentsList.prototype, "view", 2);
 __decorateClass([
   r5()
-], ErpAppointmentsList.prototype, "customers", 2);
-__decorateClass([
-  r5()
 ], ErpAppointmentsList.prototype, "services", 2);
 __decorateClass([
   r5()
@@ -10532,7 +10701,7 @@ __decorateClass([
 ], ErpAppointmentsList.prototype, "settings", 2);
 __decorateClass([
   r5()
-], ErpAppointmentsList.prototype, "newCustomerId", 2);
+], ErpAppointmentsList.prototype, "newCustomer", 2);
 __decorateClass([
   r5()
 ], ErpAppointmentsList.prototype, "newServiceId", 2);

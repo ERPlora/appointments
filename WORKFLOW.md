@@ -52,7 +52,7 @@ estado» y el conmutador **Lista · Por profesional · Periódicas** (en móvil 
 - **Por profesional**: una fila por profesional reservable y un carril «Sin asignar». Tocar un
   hueco abre el alta con ese profesional y esa hora; el bloque se arrastra a otra hora o a otra fila.
 - **Periódicas**: ver la pantalla [Periódicas](#periódicas).
-- Botón **Añadir cita** → panel de alta: Cliente, Servicio, Profesional, Día, Hora (con «Horas
+- Botón **Añadir cita** → panel de alta: Cliente (buscador «Busca por nombre o teléfono»; también encuentra por email), Servicio, Profesional, Día, Hora (con «Horas
   libres» como botones), Min.; avisos «Esta cita empieza en el pasado…», profesional que no hace
   el servicio, duración propia no leída.
 - **Editar** → panel «Editar la cita»: Día, Hora, Min., Servicio, Profesional, «Guardar cambios» y,
@@ -100,7 +100,7 @@ misma gramática y el mismo prefijo. Antes de tocar código, lee el fichero del 
 
 | ID | Flujo | Estado | Detalle |
 |---|---|---|---|
-| APPOINTMENTS-F01 | Reservar una cita desde la agenda | hecho | [`workflow/agenda.md`](workflow/agenda.md) |
+| APPOINTMENTS-F01 | Reservar una cita desde la agenda | parcial — sin alta de clienta en el formulario (appointments#318); fallo silencioso de servicios/profesionales (appointments#319) | [`workflow/agenda.md`](workflow/agenda.md) |
 | APPOINTMENTS-F02 | Ver qué horas quedan libres | hecho | [`workflow/agenda.md`](workflow/agenda.md) |
 | APPOINTMENTS-F03 | Confirmar una cita pendiente | hecho | [`workflow/agenda.md`](workflow/agenda.md) |
 | APPOINTMENTS-F04 | Mover una cita o cambiarle el profesional o el servicio | parcial | [`workflow/agenda.md`](workflow/agenda.md) |
@@ -111,7 +111,7 @@ misma gramática y el mismo prefijo. Antes de tocar código, lee el fichero del 
 | APPOINTMENTS-F09 | Marcar que la clienta no se presentó | parcial | [`workflow/agenda.md`](workflow/agenda.md) |
 | APPOINTMENTS-F10 | Ver el historial de una cita | hecho | [`workflow/agenda.md`](workflow/agenda.md) |
 | APPOINTMENTS-F11 | Borrar una cita | parcial | [`workflow/agenda.md`](workflow/agenda.md) |
-| APPOINTMENTS-F12 | Crear una cita periódica | hecho | [`workflow/periodicas.md`](workflow/periodicas.md) |
+| APPOINTMENTS-F12 | Crear una cita periódica | parcial — sin alta de clienta en el formulario (appointments#318); fallo silencioso de servicios/profesionales (appointments#319) | [`workflow/periodicas.md`](workflow/periodicas.md) |
 | APPOINTMENTS-F13 | Reservar las citas de una serie | parcial | [`workflow/periodicas.md`](workflow/periodicas.md) |
 | APPOINTMENTS-F14 | Editar una serie de esta cita en adelante | hecho | [`workflow/periodicas.md`](workflow/periodicas.md) |
 | APPOINTMENTS-F15 | Pausar, reactivar o borrar una serie | hecho | [`workflow/periodicas.md`](workflow/periodicas.md) |
@@ -142,7 +142,8 @@ misma gramática y el mismo prefijo. Antes de tocar código, lee el fichero del 
 | Bloqueos de agenda (festivo, vacaciones de un profesional) con pantalla | parcial — solo asistente o API | APPOINTMENTS-F16 |
 | Bono o paquete de sesiones | parcial — solo asistente o API | APPOINTMENTS-F21 |
 | Notas de la visita (fórmula) desde la agenda | parcial — solo asistente o API | APPOINTMENTS-F22 |
-| Alta rápida de la clienta sin ficha (walk-in) desde el formulario | no hecho — hay que crearla en Clientes | CUSTOMERS-F25 |
+| Buscar a la clienta por nombre o teléfono al reservar, entre todas las fichas | hecho | APPOINTMENTS-F01, APPOINTMENTS-F12 |
+| Alta rápida de la clienta sin ficha (walk-in) desde el formulario | no hecho — hay que crearla en Clientes (appointments#318) | CUSTOMERS-F25 |
 | Varios servicios encadenados en una cita (corte + color) | no hecho — una cita = un servicio; B-04 lo pide | — |
 | Ocupación del día por profesional en la agenda | no hecho — B-01 lo pide | — |
 | Recordatorios automáticos | no hecho — ajuste visible pero inerte; fuera del MVP según appointments#6 | — |

@@ -18,6 +18,7 @@
 //   5. a length typed while the override is loading is not overwritten;
 //   6. a failed read falls back to the catalogue AND says so.
 import { beforeEach, describe, expect, it } from 'vitest';
+import { pickCustomer } from '../../test/pick-customer';
 
 process.env.TZ = 'Europe/Madrid';
 
@@ -107,7 +108,6 @@ beforeEach(() => {
 
 type Wc = HTMLElement & {
   shadowRoot: ShadowRoot;
-  newCustomerId: string;
   newStart: string;
   newDuration: string;
   rescheduleDuration: string;
@@ -170,7 +170,7 @@ describe('the create form proposes the professional’s own length (appointments
 
   it('the proposed length is the one the create command receives', async () => {
     const el = await mount();
-    el.newCustomerId = 'c1';
+    await pickCustomer(el, 'appointments-list-customer', 'c1');
     el.newStart = '2026-08-07T10:00';
     await pick(el, createForm(el), 'staff', 's1');
     await pick(el, createForm(el), 'service', 'sv2');
@@ -281,7 +281,7 @@ describe('the other ways in and out of the forms (appointments#272)', () => {
   it('a booking saved with the warning showing leaves a clean form for the next one', async () => {
     eligibleFails = true;
     const el = await mount();
-    el.newCustomerId = 'c1';
+    await pickCustomer(el, 'appointments-list-customer', 'c1');
     el.newStart = '2026-08-07T10:00';
     await pick(el, createForm(el), 'staff', 's1');
     await pick(el, createForm(el), 'service', 'sv2');

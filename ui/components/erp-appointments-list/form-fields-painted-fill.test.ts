@@ -53,7 +53,12 @@ async function mount(): Promise<Wc> {
 function fieldsOf(el: Wc): Element[] {
   const form = el.shadowRoot.querySelector('form[slot="create"]');
   expect(form, 'the panel form must be rendered').toBeTruthy();
-  return [...form!.querySelectorAll('ion-input, ion-select, ion-textarea')];
+  const own = [...form!.querySelectorAll('ion-input, ion-select, ion-textarea')];
+  // appointments#306: the customer field is the search inside the picker's own shadow root.
+  const inPickers = [...form!.querySelectorAll('erp-appointments-customer-picker')].flatMap((p) => [
+    ...(p.shadowRoot?.querySelectorAll('ion-input, ion-select, ion-textarea') ?? []),
+  ]);
+  return [...inPickers, ...own];
 }
 
 /** A field is visible only when its `fill` is real: `outline` AND `mode="md"`, together. */
@@ -68,6 +73,9 @@ describe('appointment panels paint their field boxes in ios mode (appointments#2
     const el = await mount();
     const fields = fieldsOf(el);
     expect(fields.length).toBeGreaterThanOrEqual(6);
+    expect(fields[0].getAttribute('data-testid'), 'the customer search is one of the boxed fields').toBe(
+      'appointments-customer-picker-input',
+    );
     for (const f of fields) expectPaintedFill(f);
   });
 
