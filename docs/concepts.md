@@ -180,7 +180,9 @@ public holiday is expressed. Set a professional to block only that person's vaca
 The template describes the pattern. Nothing exists in the agenda until you **materialise** it, and
 materialising:
 
-- only fills the window you ask for (by default from today up to your maximum advance booking);
+- only fills the window you ask for (by default from now up to your maximum advance booking, to
+  the hour: on the window's last day, an occurrence later than the time you book is not refused —
+  it is booked by a later run, once it is within your maximum advance; appointments#289);
 - **skips** occurrences in the past and occurrences that would clash;
 - respects the template's end date and maximum number of occurrences;
 - creates at most **50** appointments per run.

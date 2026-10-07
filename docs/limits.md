@@ -125,7 +125,8 @@ it is given literally. It must be handed local wall-clock time, not a UTC instan
 
 **"I materialised a recurring template and got fewer appointments than expected."** Occurrences in
 the past and occurrences that clash are skipped, the window is bounded by your maximum advance
-booking. A single run creates at most 50, but «Book appointments» goes on run after run by itself;
+booking, counted to the hour from now: on its last day, an occurrence later than the time you book
+is left for a later run, not refused (appointments#289). A single run creates at most 50, but «Book appointments» goes on run after run by itself;
 if the window is still unfinished when it stops, the panel says from which date nothing is booked
 yet — tap «Book appointments» on the series again (appointments#299).
 
