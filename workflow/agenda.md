@@ -76,14 +76,14 @@ Implicados: WHATSAPP_INBOX-F23, REC_PELUQUERIA-F05, REC_PELUQUERIA-F07, REC_PELU
 QA: BD-07, W-03 (discrepa)
 
 ### APPOINTMENTS-F04 Mover una cita o cambiarle el profesional o el servicio
-Estado: parcial — arrastrar una cita de una serie la mueve sola, sin preguntar si es solo esta o también las siguientes; si no cargan los servicios o los profesionales, «Editar la cita» solo ofrece los que ya tenía, sin avisar (appointments#333); las citas de una profesional que ya no es reservable no salen en «Por profesional» (appointments#334)
+Estado: parcial — arrastrar una cita de una serie la mueve sola, sin preguntar si es solo esta o también las siguientes; si no cargan los servicios o los profesionales, «Editar la cita» solo ofrece los que ya tenía, sin avisar (appointments#333)
 Actor: responsable
 Pantalla: Agenda
 Pasos:
 1. Pulsa **Editar** en la fila (o toca el bloque en «Por profesional»): se abre «Editar la cita».
 2. Cambia Día, Hora, Min., Servicio o Profesional (profesional y servicio van en pareja; la clienta no se cambia).
 3. Pulsa **Guardar cambios**. Si la cita es de una serie, elige **Solo esta cita** o **Esta y todas las siguientes** (ver APPOINTMENTS-F14).
-4. Atajo: en «Por profesional» arrastra el bloque a otra hora o a la fila de otro profesional. Arrastrando no se puede llevar a una hora ya pasada (eso solo desde el panel), y una cita de una serie se mueve sola.
+4. Atajo: en «Por profesional» arrastra el bloque a otra hora o a la fila de otro profesional. Arrastrando no se puede llevar a una hora ya pasada (eso solo desde el panel), y una cita de una serie se mueve sola. Las citas de una profesional que ya no es reservable o está de baja siguen en su fila (con su nombre, detrás de las reservables), un aviso encima de la rejilla dice «Ana ya no admite citas nuevas: sus citas del día siguen en su fila para que puedas pasárselas a otra persona del equipo.», y de ahí se arrastran a la de otra (appointments#334); soltar una cita en esa fila, o tocar un hueco suyo, no se la da a ella: el servidor rechaza el arrastre con «Ese profesional no puede recibir citas…» y el hueco abre el alta solo con la hora.
 5. La cita conserva su número y su historial dice «Cambio de hora», «Cambio de profesional» o «Cambio de servicio».
 Entra: la cita (pendiente o confirmada) y, si cambia, el nuevo profesional y su competencia o el nuevo servicio con su precio.
 Sale: la cita movida (un servicio nuevo trae su nombre y precio; un profesional nuevo conserva el precio), su línea de historial y el aviso de cita movida (`appointments.appointment.rescheduled`).

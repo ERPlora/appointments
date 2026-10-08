@@ -2001,6 +2001,8 @@ var es_default = {
     viewList: "Lista",
     viewStaff: "Por profesional",
     unassigned: "Sin asignar",
+    staffKeptLanes: "{names} ya no admiten citas nuevas: sus citas del d\xEDa siguen en su fila para que puedas pas\xE1rselas a otra persona del equipo.",
+    staffKeptLanesOne: "{names} ya no admite citas nuevas: sus citas del d\xEDa siguen en su fila para que puedas pas\xE1rselas a otra persona del equipo.",
     prevDay: "D\xEDa anterior",
     nextDay: "D\xEDa siguiente",
     noStaff: "A\xFAn no hay profesionales reservables.",
@@ -2306,6 +2308,8 @@ var en_default = {
     viewList: "List",
     viewStaff: "By professional",
     unassigned: "Unassigned",
+    staffKeptLanes: "{names} no longer take new appointments: their appointments for the day stay on their row so you can move them to someone else.",
+    staffKeptLanesOne: "{names} no longer takes new appointments: their appointments for the day stay on their row so you can move them to someone else.",
     prevDay: "Previous day",
     nextDay: "Next day",
     noStaff: "No bookable professionals yet.",
@@ -9707,13 +9711,36 @@ var ErpAppointmentsList = class extends i3 {
       { id: "delete", label: t5("ui.actionDelete"), icon: "trash-outline", color: "danger" }
     ];
   }
-  /** Carriles del timeline: un profesional reservable por fila + el carril «sin asignar», que
-   *  se pinta SIEMPRE para que ninguna cita heredada (sin `staff_id`) quede invisible. */
+  /** Timeline lanes: one per bookable professional, then one per professional who no longer takes
+   *  bookings but still has appointments on the loaded day (appointments#334 — `ok-scheduler` only
+   *  paints the events of the lanes it gets, so without hers they vanished and the slot looked
+   *  free), then «Unassigned», ALWAYS painted so no legacy appointment (no `staff_id`) is hidden. */
   get schedulerResources() {
     return [
       ...this.bookableStaff.map((m4) => ({ id: m4.id, label: m4.full_name })),
+      ...this.keptLanes,
       { id: UNASSIGNED, label: erplora5().t(CATALOG5, "ui.unassigned") }
     ];
+  }
+  /** appointments#334 — the lanes of professionals who take no new bookings (not bookable, or
+   *  terminated: Staff soft-deletes her, so the list no longer returns her and the appointment's
+   *  copy of her name is what is left), one per professional (the Map keeps her first place). The label
+   *  is the plain name: `ok-scheduler` cuts long labels and draws the initials from the last word,
+   *  so «why is she here» is said by the note above the grid. */
+  get keptLanes() {
+    const bookable = new Set(this.bookableStaff.map((m4) => m4.id));
+    const kept = /* @__PURE__ */ new Map();
+    for (const a3 of this.items) {
+      if (!a3.staff_id || bookable.has(a3.staff_id)) continue;
+      const member = this.staffMembers.find((m4) => m4.id === a3.staff_id);
+      kept.set(a3.staff_id, member?.full_name || a3.staff_name);
+    }
+    return [...kept].map(([id, label]) => ({ id, label }));
+  }
+  /** appointments#334 — a lane kept only for the appointments already on it: its professional
+   *  takes no new bookings, so a tap there must not preselect her. */
+  isBookableLane(resourceId) {
+    return this.bookableStaff.some((m4) => m4.id === resourceId);
   }
   get schedulerEvents() {
     const erased = erplora5().t(CATALOG5, "ui.erasedCustomer");
@@ -10443,7 +10470,7 @@ var ErpAppointmentsList = class extends i3 {
     const { resourceId, time } = ev.detail;
     this.clearReschedule();
     this.historyId = "";
-    if (resourceId !== UNASSIGNED) {
+    if (this.isBookableLane(resourceId)) {
       this.onStaffChange(resourceId);
       void this.narrowStaff("new", "service");
     }
@@ -10583,7 +10610,7 @@ var ErpAppointmentsList = class extends i3 {
     ]}
               @ionAlertDidDismiss=${() => this.cancelOverlap()}
             ></ion-alert>` : A}
-        ${this.view === "series" ? b2`<erp-appointments-series></erp-appointments-series>` : this.view === "staff" && this.catalogStatus.staff !== "ready" ? this.renderStaffViewState(t5) : this.view === "staff" ? b2`${this.bookableStaff.length === 0 ? b2`<ok-inline-feedback class="staff-view-note" data-testid="appointments-list-staff-view-empty" tone="info" icon="information-circle-outline">${t5("ui.noStaff")}</ok-inline-feedback>` : A}<ok-scheduler
+        ${this.view === "series" ? b2`<erp-appointments-series></erp-appointments-series>` : this.view === "staff" && this.catalogStatus.staff !== "ready" ? this.renderStaffViewState(t5) : this.view === "staff" ? b2`${this.bookableStaff.length === 0 ? b2`<ok-inline-feedback class="staff-view-note" data-testid="appointments-list-staff-view-empty" tone="info" icon="information-circle-outline">${t5("ui.noStaff")}</ok-inline-feedback>` : A}${this.renderKeptLanesNote()}<ok-scheduler
               .date=${this.day}
               .startHour=${startHour}
               .endHour=${endHour}
@@ -10680,6 +10707,16 @@ var ErpAppointmentsList = class extends i3 {
   renderStaffDurationUnavailable(form, t5) {
     if (!this.staffDurationUnavailable[form]) return A;
     return b2`<ok-inline-feedback data-testid="appointments-list-staff-duration-unavailable" tone="warning" icon="alert-circle-outline">${t5("ui.staffDurationUnavailable")}</ok-inline-feedback>`;
+  }
+  /** appointments#334 — who the kept lanes belong to: professionals who take no new bookings but
+   *  still have appointments that day, to be handed over to someone else. */
+  renderKeptLanesNote() {
+    const names = this.keptLanes.map((l3) => l3.label);
+    if (names.length === 0) return A;
+    const locale = erplora5().locale || "es";
+    const list = new Intl.ListFormat(locale, { type: "conjunction" }).format(names);
+    const key = new Intl.PluralRules(locale).select(names.length) === "one" ? "ui.staffKeptLanesOne" : "ui.staffKeptLanes";
+    return b2`<ok-inline-feedback class="staff-view-note" data-testid="appointments-list-staff-view-kept" tone="warning" icon="alert-circle-outline">${erplora5().t(CATALOG5, key, { names: list })}</ok-inline-feedback>`;
   }
   /** appointments#323 — the «By professional» view while the team is unknown. Its lanes ARE the
    *  professionals and `ok-scheduler` only paints the appointments of the lanes it gets: drawn

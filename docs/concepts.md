@@ -51,7 +51,9 @@ There is a reason for each:
 - the **customer** is who the appointment is for.
 
 Older bookings that predate the professional requirement have none, and they appear in the
-**"unassigned"** lane so they do not become invisible.
+**"unassigned"** lane so they do not become invisible. For the same reason, a professional who
+stops being bookable keeps her row in the per-professional view on the days she still has
+appointments, with a note above the timeline saying she no longer takes new ones (appointments#334).
 
 ## A transition that does not apply is refused, not ignored
 

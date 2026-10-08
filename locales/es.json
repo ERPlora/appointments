@@ -115,6 +115,8 @@
     "viewList": "Lista",
     "viewStaff": "Por profesional",
     "unassigned": "Sin asignar",
+    "staffKeptLanes": "{names} ya no admiten citas nuevas: sus citas del día siguen en su fila para que puedas pasárselas a otra persona del equipo.",
+    "staffKeptLanesOne": "{names} ya no admite citas nuevas: sus citas del día siguen en su fila para que puedas pasárselas a otra persona del equipo.",
     "prevDay": "Día anterior",
     "nextDay": "Día siguiente",
     "noStaff": "Aún no hay profesionales reservables.",

@@ -153,7 +153,10 @@ describe('appointments#323 — the «By professional» view says when the profes
     expect(empty!.getAttribute('tone')).toBe('info');
     expect(empty!.textContent).toContain('ui.noStaff');
     expect(hook(el, 'appointments-list-staff-view-error')).toBeNull();
-    expect(scheduler(el)!.resources.map((r) => r.id), 'a row without a professional stays visible').toEqual(['unassigned']);
+    // appointments#334 — Eva is not bookable but has an appointment that day: it keeps her lane
+    // instead of vanishing (this line used to expect only «Unassigned», which pinned that bug).
+    expect(scheduler(el)!.resources.map((r) => r.id), 'a row without a professional stays visible').toEqual(['s1', 'unassigned']);
+    expect(scheduler(el)!.events.find((e) => e.id === 'a1')?.resourceId).toBe('s1');
   });
 
   it('with the team loaded the view shows only the timeline', async () => {

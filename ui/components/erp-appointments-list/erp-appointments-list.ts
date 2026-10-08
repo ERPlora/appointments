@@ -839,13 +839,38 @@ export class ErpAppointmentsList extends LitElement {
     ];
   }
 
-  /** Carriles del timeline: un profesional reservable por fila + el carril «sin asignar», que
-   *  se pinta SIEMPRE para que ninguna cita heredada (sin `staff_id`) quede invisible. */
+  /** Timeline lanes: one per bookable professional, then one per professional who no longer takes
+   *  bookings but still has appointments on the loaded day (appointments#334 — `ok-scheduler` only
+   *  paints the events of the lanes it gets, so without hers they vanished and the slot looked
+   *  free), then «Unassigned», ALWAYS painted so no legacy appointment (no `staff_id`) is hidden. */
   private get schedulerResources() {
     return [
       ...this.bookableStaff.map((m) => ({ id: m.id, label: m.full_name })),
+      ...this.keptLanes,
       { id: UNASSIGNED, label: erplora().t(CATALOG, 'ui.unassigned') },
     ];
+  }
+
+  /** appointments#334 — the lanes of professionals who take no new bookings (not bookable, or
+   *  terminated: Staff soft-deletes her, so the list no longer returns her and the appointment's
+   *  copy of her name is what is left), one per professional (the Map keeps her first place). The label
+   *  is the plain name: `ok-scheduler` cuts long labels and draws the initials from the last word,
+   *  so «why is she here» is said by the note above the grid. */
+  private get keptLanes(): { id: string; label: string }[] {
+    const bookable = new Set(this.bookableStaff.map((m) => m.id));
+    const kept = new Map<string, string>();
+    for (const a of this.items) {
+      if (!a.staff_id || bookable.has(a.staff_id)) continue;
+      const member = this.staffMembers.find((m) => m.id === a.staff_id);
+      kept.set(a.staff_id, member?.full_name || a.staff_name);
+    }
+    return [...kept].map(([id, label]) => ({ id, label }));
+  }
+
+  /** appointments#334 — a lane kept only for the appointments already on it: its professional
+   *  takes no new bookings, so a tap there must not preselect her. */
+  private isBookableLane(resourceId: string): boolean {
+    return this.bookableStaff.some((m) => m.id === resourceId);
   }
 
   private get schedulerEvents() {
@@ -1694,7 +1719,7 @@ export class ErpAppointmentsList extends LitElement {
     const { resourceId, time } = ev.detail;
     this.clearReschedule(); // an empty slot is a CREATE, not a move
     this.historyId = ''; // …nor the history left open before switching to the timeline
-    if (resourceId !== UNASSIGNED) {
+    if (this.isBookableLane(resourceId)) {
       this.onStaffChange(resourceId);
       // appointments#279 — the tapped professional is the latest choice: a service she does not
       // perform is the stale one.
@@ -1854,7 +1879,7 @@ export class ErpAppointmentsList extends LitElement {
           : this.view === 'staff'
           ? html`${this.bookableStaff.length === 0
               ? html`<ok-inline-feedback class="staff-view-note" data-testid="appointments-list-staff-view-empty" tone="info" icon="information-circle-outline">${t('ui.noStaff')}</ok-inline-feedback>`
-              : nothing}<ok-scheduler
+              : nothing}${this.renderKeptLanesNote()}<ok-scheduler
               .date=${this.day}
               .startHour=${startHour}
               .endHour=${endHour}
@@ -1975,6 +2000,18 @@ export class ErpAppointmentsList extends LitElement {
   private renderStaffDurationUnavailable(form: DurationForm, t: (k: string) => string) {
     if (!this.staffDurationUnavailable[form]) return nothing;
     return html`<ok-inline-feedback data-testid="appointments-list-staff-duration-unavailable" tone="warning" icon="alert-circle-outline">${t('ui.staffDurationUnavailable')}</ok-inline-feedback>`;
+  }
+
+  /** appointments#334 — who the kept lanes belong to: professionals who take no new bookings but
+   *  still have appointments that day, to be handed over to someone else. */
+  private renderKeptLanesNote() {
+    const names = this.keptLanes.map((l) => l.label);
+    if (names.length === 0) return nothing;
+    const locale = erplora().locale || 'es';
+    const list = new Intl.ListFormat(locale, { type: 'conjunction' }).format(names);
+    // One name reads in the singular («Bea … no longer takes»), several in the plural.
+    const key = new Intl.PluralRules(locale).select(names.length) === 'one' ? 'ui.staffKeptLanesOne' : 'ui.staffKeptLanes';
+    return html`<ok-inline-feedback class="staff-view-note" data-testid="appointments-list-staff-view-kept" tone="warning" icon="alert-circle-outline">${erplora().t(CATALOG, key, { names: list })}</ok-inline-feedback>`;
   }
 
   /** appointments#323 — the «By professional» view while the team is unknown. Its lanes ARE the

@@ -49,8 +49,13 @@ estado» y el conmutador **Lista · Por profesional · Periódicas** (en móvil 
   servicio…»; por fila **Cobrar, Editar, Confirmar, Iniciar, Completar, No-show, Cancelar,
   Historial, Borrar** (la que no aplica al estado sale en gris, no se esconde; **Cobrar** en gris si
   la cita ya está cobrada).
-- **Por profesional**: una fila por profesional reservable y un carril «Sin asignar». Tocar un
-  hueco abre el alta con ese profesional y esa hora; el bloque se arrastra a otra hora o a otra fila.
+- **Por profesional**: una fila por profesional reservable y un carril «Sin asignar». Una
+  profesional que ya no es reservable (o está de baja) conserva su fila, con su nombre, los días en
+  que aún tiene citas, detrás de las reservables, y encima de la rejilla un aviso «Ana ya no admite
+  citas nuevas: sus citas del día siguen en su fila para que puedas pasárselas a otra persona del
+  equipo.» (con varias, «Ana y Luis ya no admiten…»), para que esas citas se vean y se puedan pasar
+  a otra (appointments#334). Tocar un hueco abre el alta con ese profesional y esa hora (en la fila
+  de quien ya no admite citas, solo con la hora); el bloque se arrastra a otra hora o a otra fila.
   Mientras Personal contesta, «Cargando profesionales…»; si la lista no se puede leer, «No se han
   podido cargar los profesionales.» con **Reintentar**, en lugar de la rejilla (sin el equipo no se
   sabe en qué fila va cada cita, y no se toca ni se arrastra a ciegas); sin ninguno reservable, «Aún
@@ -115,7 +120,7 @@ misma gramática y el mismo prefijo. Antes de tocar código, lee el fichero del 
 | APPOINTMENTS-F01 | Reservar una cita desde la agenda | parcial — sin alta de clienta en el formulario (appointments#318); solo los 500 primeros servicios y profesionales, sin decirlo (appointments#324) | [`workflow/agenda.md`](workflow/agenda.md) |
 | APPOINTMENTS-F02 | Ver qué horas quedan libres | hecho | [`workflow/agenda.md`](workflow/agenda.md) |
 | APPOINTMENTS-F03 | Confirmar una cita pendiente | hecho | [`workflow/agenda.md`](workflow/agenda.md) |
-| APPOINTMENTS-F04 | Mover una cita o cambiarle el profesional o el servicio | parcial — editar no avisa si no cargan servicios o profesionales (appointments#333); las citas de una profesional que ya no es reservable no salen en «Por profesional» (appointments#334) | [`workflow/agenda.md`](workflow/agenda.md) |
+| APPOINTMENTS-F04 | Mover una cita o cambiarle el profesional o el servicio | parcial — editar no avisa si no cargan servicios o profesionales (appointments#333) | [`workflow/agenda.md`](workflow/agenda.md) |
 | APPOINTMENTS-F05 | Cancelar una cita desde la agenda | parcial | [`workflow/agenda.md`](workflow/agenda.md) |
 | APPOINTMENTS-F06 | La clienta cancela o mueve su propia cita | parcial | [`workflow/canales.md`](workflow/canales.md) |
 | APPOINTMENTS-F07 | Marcar la llegada y empezar el servicio | hecho | [`workflow/agenda.md`](workflow/agenda.md) |
@@ -140,7 +145,7 @@ misma gramática y el mismo prefijo. Antes de tocar código, lee el fichero del 
 ## Cobertura contra la referencia
 | Elemento (Fresha, Vagaro, Mangomint, Square Appointments) | Estado | Flujo |
 |---|---|---|
-| Agenda del día por profesional, arrastrar a otra hora o a otra columna | parcial — las citas de una profesional que ya no es reservable no salen (appointments#334) | APPOINTMENTS-F04 |
+| Agenda del día por profesional, arrastrar a otra hora o a otra columna | hecho | APPOINTMENTS-F04 |
 | Reserva ligada a clienta, servicio y profesional con horas libres reales | hecho | APPOINTMENTS-F01, APPOINTMENTS-F02 |
 | Profesionales filtrados por servicio y duración propia del profesional | hecho | APPOINTMENTS-F01 |
 | Aviso antes de reservar encima (solape permitido) | hecho | APPOINTMENTS-F01, APPOINTMENTS-F04 |
@@ -228,8 +233,9 @@ misma gramática y el mismo prefijo. Antes de tocar código, lee el fichero del 
 ## Lo que NO hace, a propósito
 - No guarda el horario del negocio (es de Horarios) ni el turno del profesional (es de Personal).
 - No escucha nada de Personal: desactivar o dar de baja a una profesional, o aprobarle una ausencia,
-  no toca sus citas ya reservadas, que siguen en la agenda sin aviso (en «Lista»; en «Por profesional»
-  no salen, appointments#334); solo las reservas nuevas se rechazan (STAFF-F05, STAFF-F06, STAFF-F18).
+  no toca sus citas ya reservadas, que siguen en la agenda (en «Por profesional», en su fila y con
+  el aviso «… ya no admite citas nuevas», appointments#334); solo las reservas nuevas se rechazan
+  (STAFF-F05, STAFF-F06, STAFF-F18).
 - No cobra ni arma ventas: Cobrar abre el TPV; Citas solo anota que se cobró.
 - No envía mensajes ni recordatorios: eso es de WhatsApp y de las automatizaciones.
 - No cambia todas las citas de una serie: solo **Solo esta cita** o **Esta y todas las siguientes**.
