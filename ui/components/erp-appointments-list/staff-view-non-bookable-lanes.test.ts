@@ -136,6 +136,14 @@ describe('appointments#334 — appointments of a professional who is no longer b
     expect(hook(el, KEPT)!.textContent).toContain('ui.staffKeptLanes(Eva Pro, Bea Pro y Gone Pro)');
   });
 
+  it('in an English hub the names are joined in English, not with the Spanish «y»', async () => {
+    (globalThis as { erplora: { locale: string } }).erplora.locale = 'en';
+    staffRows = [{ ...EVA, is_bookable: 0 }, { ...BEA, status: 'terminated' }];
+    dayRows = [...dayRows, appointment('a3', 's9', 'Gone Pro', 11)];
+    const el = await mountStaffView();
+    expect(hook(el, KEPT)!.textContent).toContain('ui.staffKeptLanes(Eva Pro, Bea Pro, and Gone Pro)');
+  });
+
   it('every appointment of the day lands on a painted lane', async () => {
     staffRows = [{ ...EVA, is_bookable: 0 }, { ...BEA, status: 'terminated' }];
     dayRows = [...dayRows, appointment('a3', 's9', 'Gone Pro', 11), appointment('a4', '', '', 12)];
