@@ -54,7 +54,7 @@ Implicados: CUSTOMERS-F30, SCHEDULES-F11, STAFF-F12, STAFF-F16
 QA: ninguno
 
 ### APPOINTMENTS-F14 Editar una serie de esta cita en adelante
-Estado: hecho
+Estado: parcial — si no cargan los servicios o los profesionales, el panel solo ofrece los que ya tenía la serie, sin avisar (appointments#333)
 Actor: responsable
 Pantalla: Periódicas
 Pasos:

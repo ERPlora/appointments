@@ -36,7 +36,12 @@ Three ways of looking at the agenda, with a switch between them:
   and the state of each.
 - **Per professional** — a timeline with **one row per bookable professional**, plus an
   **"unassigned"** lane for older bookings that have no professional. Tapping an empty gap
-  pre-fills a new booking with that professional and that time.
+  pre-fills a new booking with that professional and that time. While the professionals are being
+  read it says **"Loading professionals…"**; if they cannot be read, it says **"The professionals
+  could not be loaded."** with **Retry** instead of the timeline (its rows are the professionals:
+  without them the day's appointments would be hidden and the day would look free). With no
+  bookable professional it says **"No bookable professionals yet."** above the timeline, which
+  keeps the "unassigned" lane.
 - **Repeating** — the repeating appointments themselves, not their occurrences
   (see [Repeating appointments](#repeating-appointments) below). The day stepper and the status
   filter are the scope of the *day's* query, so they are hidden here rather than left promising a

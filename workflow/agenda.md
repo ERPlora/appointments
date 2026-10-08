@@ -76,7 +76,7 @@ Implicados: WHATSAPP_INBOX-F23, REC_PELUQUERIA-F05, REC_PELUQUERIA-F07, REC_PELU
 QA: BD-07, W-03 (discrepa)
 
 ### APPOINTMENTS-F04 Mover una cita o cambiarle el profesional o el servicio
-Estado: parcial — arrastrar una cita de una serie la mueve sola, sin preguntar si es solo esta o también las siguientes
+Estado: parcial — arrastrar una cita de una serie la mueve sola, sin preguntar si es solo esta o también las siguientes; si no cargan los servicios o los profesionales, «Editar la cita» solo ofrece los que ya tenía, sin avisar (appointments#333); las citas de una profesional que ya no es reservable no salen en «Por profesional» (appointments#334)
 Actor: responsable
 Pantalla: Agenda
 Pasos:
@@ -87,7 +87,7 @@ Pasos:
 5. La cita conserva su número y su historial dice «Cambio de hora», «Cambio de profesional» o «Cambio de servicio».
 Entra: la cita (pendiente o confirmada) y, si cambia, el nuevo profesional y su competencia o el nuevo servicio con su precio.
 Sale: la cita movida (un servicio nuevo trae su nombre y precio; un profesional nuevo conserva el precio), su línea de historial y el aviso de cita movida (`appointments.appointment.rescheduled`).
-Si falla: el motivo sale en el panel y en un aviso; un bloque arrastrado vuelve a su sitio. Solo se mueven citas Pendiente o Confirmada: una en curso, completada, cancelada o no presentada no se mueve (**Editar** sale en gris).
+Si falla: el motivo sale en el panel y en un aviso; un bloque arrastrado vuelve a su sitio. Solo se mueven citas Pendiente o Confirmada: una en curso, completada, cancelada o no presentada no se mueve (**Editar** sale en gris). Si la lista de profesionales no se puede leer, «Por profesional» no pinta la rejilla (sus filas son los profesionales: sin ellos las citas quedarían escondidas y el día parecería libre) y dice «No se han podido cargar los profesionales.» con **Reintentar**, que vuelve a leer solo esa lista; mientras se lee, «Cargando profesionales…» (appointments#323). Los paneles de edición aún no avisan si no cargan los servicios o los profesionales (appointments#333).
 Implicados: SCHEDULES-F11, SERVICES-F10, STAFF-F05, STAFF-F06, STAFF-F11, STAFF-F12, STAFF-F16, REC_PELUQUERIA-F08, REC_PELUQUERIA-F12
 QA: B-02, B-04, B-08, BD-06
 
