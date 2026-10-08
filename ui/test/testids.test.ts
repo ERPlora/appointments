@@ -156,9 +156,11 @@ const COVERED: Record<
       'appointments-list-staff-duration-unavailable',
       // appointments#279 — the chosen professional does not perform the new service: she is cleared.
       'appointments-list-staff-not-for-service',
-      // appointments#323 — the «By professional» view while its team is unknown or empty.
+      // appointments#323/#334 — the «By professional» view while its team is unknown or empty, and the
+      // note naming the professionals whose rows are kept although they no longer take bookings.
       'appointments-list-staff-view-empty',
       'appointments-list-staff-view-error',
+      'appointments-list-staff-view-kept',
       'appointments-list-staff-view-loading',
       'appointments-list-staff-view-retry',
       'appointments-list-start',
