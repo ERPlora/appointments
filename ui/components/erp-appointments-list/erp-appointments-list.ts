@@ -853,14 +853,14 @@ export class ErpAppointmentsList extends LitElement {
 
   /** appointments#334 — the lanes of professionals who take no new bookings (not bookable, or
    *  terminated: Staff soft-deletes her, so the list no longer returns her and the appointment's
-   *  copy of her name is what is left), one per professional, in order of appearance. The label
+   *  copy of her name is what is left), one per professional (the Map keeps her first place). The label
    *  is the plain name: `ok-scheduler` cuts long labels and draws the initials from the last word,
    *  so «why is she here» is said by the note above the grid. */
   private get keptLanes(): { id: string; label: string }[] {
     const bookable = new Set(this.bookableStaff.map((m) => m.id));
     const kept = new Map<string, string>();
     for (const a of this.items) {
-      if (!a.staff_id || bookable.has(a.staff_id) || kept.has(a.staff_id)) continue;
+      if (!a.staff_id || bookable.has(a.staff_id)) continue;
       const member = this.staffMembers.find((m) => m.id === a.staff_id);
       kept.set(a.staff_id, member?.full_name || a.staff_name);
     }
