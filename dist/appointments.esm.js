@@ -2001,6 +2001,8 @@ var es_default = {
     viewList: "Lista",
     viewStaff: "Por profesional",
     unassigned: "Sin asignar",
+    staffLaneNotBookable: "{name} \xB7 no reservable",
+    staffLaneLeft: "{name} \xB7 de baja",
     prevDay: "D\xEDa anterior",
     nextDay: "D\xEDa siguiente",
     noStaff: "A\xFAn no hay profesionales reservables.",
@@ -2306,6 +2308,8 @@ var en_default = {
     viewList: "List",
     viewStaff: "By professional",
     unassigned: "Unassigned",
+    staffLaneNotBookable: "{name} \xB7 not bookable",
+    staffLaneLeft: "{name} \xB7 no longer on the team",
     prevDay: "Previous day",
     nextDay: "Next day",
     noStaff: "No bookable professionals yet.",
@@ -9707,13 +9711,27 @@ var ErpAppointmentsList = class extends i3 {
       { id: "delete", label: t5("ui.actionDelete"), icon: "trash-outline", color: "danger" }
     ];
   }
-  /** Carriles del timeline: un profesional reservable por fila + el carril «sin asignar», que
-   *  se pinta SIEMPRE para que ninguna cita heredada (sin `staff_id`) quede invisible. */
+  /** Timeline lanes: one per bookable professional, then one per professional who no longer takes
+   *  bookings but still has appointments on the loaded day (appointments#334 — `ok-scheduler` only
+   *  paints the events of the lanes it gets, so without hers they vanished and the slot looked
+   *  free), then «Unassigned», ALWAYS painted so no legacy appointment (no `staff_id`) is hidden. */
   get schedulerResources() {
-    return [
-      ...this.bookableStaff.map((m4) => ({ id: m4.id, label: m4.full_name })),
-      { id: UNASSIGNED, label: erplora5().t(CATALOG5, "ui.unassigned") }
-    ];
+    const lanes = this.bookableStaff.map((m4) => ({ id: m4.id, label: m4.full_name }));
+    const painted = new Set(lanes.map((l3) => l3.id));
+    for (const a3 of this.items) {
+      if (!a3.staff_id || painted.has(a3.staff_id)) continue;
+      painted.add(a3.staff_id);
+      const member = this.staffMembers.find((m4) => m4.id === a3.staff_id);
+      const name = member?.full_name || a3.staff_name;
+      const key = member?.status === "terminated" ? "ui.staffLaneLeft" : "ui.staffLaneNotBookable";
+      lanes.push({ id: a3.staff_id, label: erplora5().t(CATALOG5, key, { name }) });
+    }
+    return [...lanes, { id: UNASSIGNED, label: erplora5().t(CATALOG5, "ui.unassigned") }];
+  }
+  /** appointments#334 — a lane kept only for the appointments already on it: its professional
+   *  takes no new bookings, so a tap there must not preselect her. */
+  isBookableLane(resourceId) {
+    return this.bookableStaff.some((m4) => m4.id === resourceId);
   }
   get schedulerEvents() {
     const erased = erplora5().t(CATALOG5, "ui.erasedCustomer");
@@ -10443,7 +10461,7 @@ var ErpAppointmentsList = class extends i3 {
     const { resourceId, time } = ev.detail;
     this.clearReschedule();
     this.historyId = "";
-    if (resourceId !== UNASSIGNED) {
+    if (this.isBookableLane(resourceId)) {
       this.onStaffChange(resourceId);
       void this.narrowStaff("new", "service");
     }
