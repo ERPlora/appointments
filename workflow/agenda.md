@@ -76,7 +76,7 @@ Implicados: WHATSAPP_INBOX-F23, REC_PELUQUERIA-F05, REC_PELUQUERIA-F07, REC_PELU
 QA: BD-07, W-03 (discrepa)
 
 ### APPOINTMENTS-F04 Mover una cita o cambiarle el profesional o el servicio
-Estado: parcial — arrastrar una cita de una serie la mueve sola, sin preguntar si es solo esta o también las siguientes; si no cargan los servicios o los profesionales, «Editar la cita» solo ofrece los que ya tenía, sin avisar (appointments#333)
+Estado: parcial — arrastrar una cita de una serie la mueve sola, sin preguntar si es solo esta o también las siguientes; si no cargan los servicios o los profesionales, «Editar la cita» solo ofrece los que ya tenía, sin avisar (appointments#333); las citas de una profesional que ya no es reservable no salen en «Por profesional» (appointments#334)
 Actor: responsable
 Pantalla: Agenda
 Pasos:
