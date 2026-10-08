@@ -36,10 +36,12 @@ Three ways of looking at the agenda, with a switch between them:
   and the state of each.
 - **Per professional** — a timeline with **one row per bookable professional**, plus an
   **"unassigned"** lane for older bookings that have no professional. A professional who no longer
-  takes bookings (switched to not bookable, or no longer on the team) keeps her row on any day she
-  still has appointments, marked **"· not bookable"** or **"· no longer on the team"**, so those
-  appointments stay visible and can be moved to someone else (appointments#334). Tapping an empty
-  gap pre-fills a new booking with that professional and that time (on a marked row, only the time).
+  takes bookings (switched to not bookable, or no longer on the team) keeps her row, under her name
+  and after the bookable ones, on any day she still has appointments, and a note above the timeline
+  says **"Ana no longer takes new appointments: their appointments for the day stay on their row so
+  you can move them to someone else."**, so those appointments stay visible and can be moved to
+  someone else (appointments#334). Tapping an empty gap pre-fills a new booking with that
+  professional and that time (on the row of someone who no longer takes bookings, only the time).
   While the professionals are being
   read it says **"Loading professionals…"**; if they cannot be read, it says **"The professionals
   could not be loaded."** with **Retry** instead of the timeline (its rows are the professionals:
