@@ -339,6 +339,7 @@ export class ErpAppointmentsList extends LitElement {
     /* appointments#323 · the «By professional» view without its team: the state takes the place of the grid. */
     .staff-view-state { display:flex; flex-direction:column; align-items:flex-start; gap:.35rem; padding:.75rem 0; }
     .staff-view-note { display:block; margin:0 0 .5rem; }
+    .staff-view-loading { padding:.75rem 0; }
     .err { color:#d9480f; font-weight:600; }
     /* appointments#205 — the inline ok-calendar of a date field: no ion-popover/
        ion-modal (an overlay would teleport out of the shadow root and lose its styles, hub#2162),
@@ -1986,7 +1987,7 @@ export class ErpAppointmentsList extends LitElement {
           <ok-inline-feedback data-testid="appointments-list-staff-view-error" tone="danger" icon="alert-circle-outline">${t('ui.errLoadStaff')}</ok-inline-feedback>
           <ion-button data-testid="appointments-list-staff-view-retry" type="button" size="small" fill="clear" @click=${() => void this.loadStaff()}>${t('ui.catalogRetry')}</ion-button>
         </div>`
-      : html`<div class="slots-hint staff-view-state" data-testid="appointments-list-staff-view-loading" role="status">
+      : html`<div class="slots-hint staff-view-loading" data-testid="appointments-list-staff-view-loading" role="status">
           <ion-spinner name="dots"></ion-spinner><span>${t('ui.staffLoading')}</span>
         </div>`;
   }
