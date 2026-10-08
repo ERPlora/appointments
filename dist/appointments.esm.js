@@ -2001,7 +2001,7 @@ var es_default = {
     viewList: "Lista",
     viewStaff: "Por profesional",
     unassigned: "Sin asignar",
-    staffKeptLanes: "{names} ya no admiten citas nuevas: sus citas del d\xEDa siguen en su fila para que puedas pas\xE1rselas a otra profesional.",
+    staffKeptLanes: "{names} ya no admiten citas nuevas: sus citas del d\xEDa siguen en su fila para que puedas pas\xE1rselas a otra persona del equipo.",
     prevDay: "D\xEDa anterior",
     nextDay: "D\xEDa siguiente",
     noStaff: "A\xFAn no hay profesionales reservables.",
