@@ -2002,6 +2002,7 @@ var es_default = {
     viewStaff: "Por profesional",
     unassigned: "Sin asignar",
     staffKeptLanes: "{names} ya no admiten citas nuevas: sus citas del d\xEDa siguen en su fila para que puedas pas\xE1rselas a otra persona del equipo.",
+    staffKeptLanesOne: "{names} ya no admite citas nuevas: sus citas del d\xEDa siguen en su fila para que puedas pas\xE1rselas a otra persona del equipo.",
     prevDay: "D\xEDa anterior",
     nextDay: "D\xEDa siguiente",
     noStaff: "A\xFAn no hay profesionales reservables.",
@@ -2308,6 +2309,7 @@ var en_default = {
     viewStaff: "By professional",
     unassigned: "Unassigned",
     staffKeptLanes: "{names} no longer take new appointments: their appointments for the day stay on their row so you can move them to someone else.",
+    staffKeptLanesOne: "{names} no longer takes new appointments: their appointments for the day stay on their row so you can move them to someone else.",
     prevDay: "Previous day",
     nextDay: "Next day",
     noStaff: "No bookable professionals yet.",
@@ -10711,8 +10713,10 @@ var ErpAppointmentsList = class extends i3 {
   renderKeptLanesNote() {
     const names = this.keptLanes.map((l3) => l3.label);
     if (names.length === 0) return A;
-    const list = new Intl.ListFormat(erplora5().locale || "es", { type: "conjunction" }).format(names);
-    return b2`<ok-inline-feedback class="staff-view-note" data-testid="appointments-list-staff-view-kept" tone="warning" icon="alert-circle-outline">${erplora5().t(CATALOG5, "ui.staffKeptLanes", { names: list })}</ok-inline-feedback>`;
+    const locale = erplora5().locale || "es";
+    const list = new Intl.ListFormat(locale, { type: "conjunction" }).format(names);
+    const key = new Intl.PluralRules(locale).select(names.length) === "one" ? "ui.staffKeptLanesOne" : "ui.staffKeptLanes";
+    return b2`<ok-inline-feedback class="staff-view-note" data-testid="appointments-list-staff-view-kept" tone="warning" icon="alert-circle-outline">${erplora5().t(CATALOG5, key, { names: list })}</ok-inline-feedback>`;
   }
   /** appointments#323 — the «By professional» view while the team is unknown. Its lanes ARE the
    *  professionals and `ok-scheduler` only paints the appointments of the lanes it gets: drawn
