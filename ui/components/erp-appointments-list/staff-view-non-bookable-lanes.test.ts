@@ -1,11 +1,15 @@
 // appointments#334 — in «By professional», the appointments of a professional who no longer takes
-// bookings stay on the day, on a lane of her own that says she is not bookable.
+// bookings stay on the day, on a lane of her own, and a note above the grid says who she is.
 //
 // Regression: the lanes were only the bookable professionals plus «Unassigned». `ok-scheduler`
 // only paints the events of the lanes it gets, so when a professional was switched to «not
 // bookable» in Staff (or left the team) every appointment she already had vanished from the
 // grid — still listed in «List», but in «By professional» the slot looked free, inviting a
 // booking on top of it and hiding the appointments that need handing over to someone else.
+//
+// The lane keeps her plain name: `ok-scheduler` has no subtitle, cuts a long label in its narrow
+// name column («Bea Pro · no r…») and draws the avatar initials from the label's last word, so the
+// «no longer takes bookings» part is said once, whole, in a note above the grid.
 process.env.TZ = 'Europe/Madrid';
 
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -89,6 +93,8 @@ async function mountStaffView(): Promise<Wc> {
   return el;
 }
 
+const hook = (el: Wc, testid: string) => el.shadowRoot.querySelector(`[data-testid="${testid}"]`) as HTMLElement | null;
+const KEPT = 'appointments-list-staff-view-kept';
 type Lane = { id: string; label: string };
 type Scheduler = HTMLElement & { resources: Lane[]; events: { id: string; resourceId: string }[] };
 const scheduler = (el: Wc) => el.shadowRoot.querySelector('ok-scheduler') as Scheduler;
@@ -96,35 +102,37 @@ const lane = (el: Wc, id: string) => scheduler(el).resources.find((r) => r.id ==
 const laneOf = (el: Wc, appointmentId: string) => scheduler(el).events.find((e) => e.id === appointmentId)?.resourceId;
 
 describe('appointments#334 — appointments of a professional who is no longer bookable stay in «By professional»', () => {
-  it('a professional switched to «not bookable» keeps a lane with her appointment, marked as not bookable', async () => {
+  it('a professional switched to «not bookable» keeps her lane with her appointment, and the note names her', async () => {
     staffRows = [EVA, { ...BEA, is_bookable: 0 }, LUIS];
-    // The appointment keeps the name it was booked with; the lane shows her name as Staff has it now.
+    // The appointment keeps the name it was booked with; Staff's current name is the one shown.
     dayRows = [dayRows[0], appointment('a2', 's2', 'Bea Old-Name', 9)];
     const el = await mountStaffView();
 
     expect(laneOf(el, 'a2'), 'her appointment sits on her own lane').toBe('s2');
-    expect(lane(el, 's2'), 'her lane is painted').toBeTruthy();
-    expect(lane(el, 's2')!.label, 'the lane says who and that she takes no new bookings').toBe('ui.staffLaneNotBookable(Bea Pro)');
-    expect(lane(el, 's1')!.label, 'a bookable professional keeps her plain name').toBe('Eva Pro');
+    expect(lane(el, 's2')?.label, 'her lane carries her plain name, like every lane').toBe('Bea Pro');
+    const note = hook(el, KEPT);
+    expect(note, 'the grid says why she is there').toBeTruthy();
+    expect(note!.tagName.toLowerCase()).toBe('ok-inline-feedback');
+    expect(note!.getAttribute('tone')).toBe('warning');
+    expect(note!.textContent).toContain('ui.staffKeptLanes(Bea Pro)');
   });
 
-  it('a professional who left the team keeps a lane with her appointment, marked as having left', async () => {
-    staffRows = [EVA, { ...BEA, status: 'terminated' }, LUIS];
-    const el = await mountStaffView();
-
-    expect(laneOf(el, 'a2')).toBe('s2');
-    expect(lane(el, 's2')!.label).toBe('ui.staffLaneLeft(Bea Pro)');
-  });
-
-  // In Staff, «terminate» (`staff.members.delete`) is the only way out of `staff.members.list`: it
-  // soft-deletes the member, so the list no longer returns her and the appointment's own copy of
-  // her name is all that is left.
-  it('a professional the staff list no longer returns has left the team: her lane is named after the appointment', async () => {
+  it('a professional who left the team (no longer in the staff list) keeps a lane named after the appointment', async () => {
+    // In Staff, «terminate» (`staff.members.delete`) soft-deletes the member: the list stops
+    // returning her, and the appointment's own copy of her name is all that is left.
     staffRows = [EVA, LUIS];
     const el = await mountStaffView();
 
     expect(laneOf(el, 'a2')).toBe('s2');
-    expect(lane(el, 's2')!.label).toBe('ui.staffLaneLeft(Bea Pro)');
+    expect(lane(el, 's2')?.label).toBe('Bea Pro');
+    expect(hook(el, KEPT)!.textContent).toContain('ui.staffKeptLanes(Bea Pro)');
+  });
+
+  it('the note names every kept professional once, in lane order, as a list in the hub language', async () => {
+    staffRows = [{ ...EVA, is_bookable: 0 }, { ...BEA, status: 'terminated' }];
+    dayRows = [...dayRows, appointment('a3', 's9', 'Gone Pro', 11), appointment('a5', 's9', 'Gone Pro', 13)];
+    const el = await mountStaffView();
+    expect(hook(el, KEPT)!.textContent).toContain('ui.staffKeptLanes(Eva Pro, Bea Pro y Gone Pro)');
   });
 
   it('every appointment of the day lands on a painted lane', async () => {
@@ -147,10 +155,11 @@ describe('appointments#334 — appointments of a professional who is no longer b
     expect(laneOf(el, 'a3')).toBe('s2');
   });
 
-  it('a professional who is not bookable and has nothing that day gets no lane', async () => {
+  it('a professional who is not bookable and has nothing that day gets no lane and no note', async () => {
     staffRows = [EVA, BEA, { ...LUIS, is_bookable: 0 }];
     const el = await mountStaffView();
     expect(scheduler(el).resources.map((r) => r.id)).toEqual(['s1', 's2', 'unassigned']);
+    expect(hook(el, KEPT)).toBeNull();
   });
 
   it('the bookable team comes first, then the lanes kept for their appointments, then «Unassigned»', async () => {
@@ -170,13 +179,11 @@ describe('appointments#334 — appointments of a professional who is no longer b
     expect(el.newStart, 'the tapped hour is kept').toMatch(/T11:00$/);
   });
 
-  it('every lane label has its en and its es, with the name', () => {
+  it('the note has its en and its es, with the names', () => {
     const en = (enLocale as { ui: Record<string, string> }).ui;
     const es = (esLocale as { ui: Record<string, string> }).ui;
-    for (const key of ['staffLaneNotBookable', 'staffLaneLeft']) {
-      expect(en[key], `en ${key}`).toContain('{name}');
-      expect(es[key], `es ${key}`).toContain('{name}');
-      expect(es[key], `es ${key} is translated`).not.toBe(en[key]);
-    }
+    expect(en.staffKeptLanes).toContain('{names}');
+    expect(es.staffKeptLanes).toContain('{names}');
+    expect(es.staffKeptLanes, 'es is translated').not.toBe(en.staffKeptLanes);
   });
 });

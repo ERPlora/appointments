@@ -844,19 +844,27 @@ export class ErpAppointmentsList extends LitElement {
    *  paints the events of the lanes it gets, so without hers they vanished and the slot looked
    *  free), then «Unassigned», ALWAYS painted so no legacy appointment (no `staff_id`) is hidden. */
   private get schedulerResources() {
-    const lanes = this.bookableStaff.map((m) => ({ id: m.id, label: m.full_name }));
-    const painted = new Set(lanes.map((l) => l.id));
+    return [
+      ...this.bookableStaff.map((m) => ({ id: m.id, label: m.full_name })),
+      ...this.keptLanes,
+      { id: UNASSIGNED, label: erplora().t(CATALOG, 'ui.unassigned') },
+    ];
+  }
+
+  /** appointments#334 — the lanes of professionals who take no new bookings (not bookable, or
+   *  terminated: Staff soft-deletes her, so the list no longer returns her and the appointment's
+   *  copy of her name is what is left), one per professional, in order of appearance. The label
+   *  is the plain name: `ok-scheduler` cuts long labels and draws the initials from the last word,
+   *  so «why is she here» is said by the note above the grid. */
+  private get keptLanes(): { id: string; label: string }[] {
+    const bookable = new Set(this.bookableStaff.map((m) => m.id));
+    const kept = new Map<string, string>();
     for (const a of this.items) {
-      if (!a.staff_id || painted.has(a.staff_id)) continue;
-      painted.add(a.staff_id);
+      if (!a.staff_id || bookable.has(a.staff_id) || kept.has(a.staff_id)) continue;
       const member = this.staffMembers.find((m) => m.id === a.staff_id);
-      const name = member?.full_name || a.staff_name;
-      // Terminating her in Staff soft-deletes her, so the list no longer returns her at all.
-      const left = !member || member.status === 'terminated';
-      const key = left ? 'ui.staffLaneLeft' : 'ui.staffLaneNotBookable';
-      lanes.push({ id: a.staff_id, label: erplora().t(CATALOG, key, { name }) });
+      kept.set(a.staff_id, member?.full_name || a.staff_name);
     }
-    return [...lanes, { id: UNASSIGNED, label: erplora().t(CATALOG, 'ui.unassigned') }];
+    return [...kept].map(([id, label]) => ({ id, label }));
   }
 
   /** appointments#334 — a lane kept only for the appointments already on it: its professional
@@ -1871,7 +1879,7 @@ export class ErpAppointmentsList extends LitElement {
           : this.view === 'staff'
           ? html`${this.bookableStaff.length === 0
               ? html`<ok-inline-feedback class="staff-view-note" data-testid="appointments-list-staff-view-empty" tone="info" icon="information-circle-outline">${t('ui.noStaff')}</ok-inline-feedback>`
-              : nothing}<ok-scheduler
+              : nothing}${this.renderKeptLanesNote()}<ok-scheduler
               .date=${this.day}
               .startHour=${startHour}
               .endHour=${endHour}
@@ -1992,6 +2000,15 @@ export class ErpAppointmentsList extends LitElement {
   private renderStaffDurationUnavailable(form: DurationForm, t: (k: string) => string) {
     if (!this.staffDurationUnavailable[form]) return nothing;
     return html`<ok-inline-feedback data-testid="appointments-list-staff-duration-unavailable" tone="warning" icon="alert-circle-outline">${t('ui.staffDurationUnavailable')}</ok-inline-feedback>`;
+  }
+
+  /** appointments#334 — who the kept lanes belong to: professionals who take no new bookings but
+   *  still have appointments that day, to be handed over to someone else. */
+  private renderKeptLanesNote() {
+    const names = this.keptLanes.map((l) => l.label);
+    if (names.length === 0) return nothing;
+    const list = new Intl.ListFormat(erplora().locale || 'es', { type: 'conjunction' }).format(names);
+    return html`<ok-inline-feedback class="staff-view-note" data-testid="appointments-list-staff-view-kept" tone="warning" icon="alert-circle-outline">${erplora().t(CATALOG, 'ui.staffKeptLanes', { names: list })}</ok-inline-feedback>`;
   }
 
   /** appointments#323 — the «By professional» view while the team is unknown. Its lanes ARE the
