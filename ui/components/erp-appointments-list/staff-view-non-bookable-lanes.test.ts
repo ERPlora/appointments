@@ -116,12 +116,15 @@ describe('appointments#334 — appointments of a professional who is no longer b
     expect(lane(el, 's2')!.label).toBe('ui.staffLaneLeft(Bea Pro)');
   });
 
-  it('a professional the staff list no longer returns keeps a lane named after the appointment', async () => {
+  // In Staff, «terminate» (`staff.members.delete`) is the only way out of `staff.members.list`: it
+  // soft-deletes the member, so the list no longer returns her and the appointment's own copy of
+  // her name is all that is left.
+  it('a professional the staff list no longer returns has left the team: her lane is named after the appointment', async () => {
     staffRows = [EVA, LUIS];
     const el = await mountStaffView();
 
     expect(laneOf(el, 'a2')).toBe('s2');
-    expect(lane(el, 's2')!.label).toBe('ui.staffLaneNotBookable(Bea Pro)');
+    expect(lane(el, 's2')!.label).toBe('ui.staffLaneLeft(Bea Pro)');
   });
 
   it('every appointment of the day lands on a painted lane', async () => {

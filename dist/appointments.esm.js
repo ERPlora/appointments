@@ -9723,7 +9723,8 @@ var ErpAppointmentsList = class extends i3 {
       painted.add(a3.staff_id);
       const member = this.staffMembers.find((m4) => m4.id === a3.staff_id);
       const name = member?.full_name || a3.staff_name;
-      const key = member?.status === "terminated" ? "ui.staffLaneLeft" : "ui.staffLaneNotBookable";
+      const left = !member || member.status === "terminated";
+      const key = left ? "ui.staffLaneLeft" : "ui.staffLaneNotBookable";
       lanes.push({ id: a3.staff_id, label: erplora5().t(CATALOG5, key, { name }) });
     }
     return [...lanes, { id: UNASSIGNED, label: erplora5().t(CATALOG5, "ui.unassigned") }];

@@ -851,7 +851,9 @@ export class ErpAppointmentsList extends LitElement {
       painted.add(a.staff_id);
       const member = this.staffMembers.find((m) => m.id === a.staff_id);
       const name = member?.full_name || a.staff_name;
-      const key = member?.status === 'terminated' ? 'ui.staffLaneLeft' : 'ui.staffLaneNotBookable';
+      // Terminating her in Staff soft-deletes her, so the list no longer returns her at all.
+      const left = !member || member.status === 'terminated';
+      const key = left ? 'ui.staffLaneLeft' : 'ui.staffLaneNotBookable';
       lanes.push({ id: a.staff_id, label: erplora().t(CATALOG, key, { name }) });
     }
     return [...lanes, { id: UNASSIGNED, label: erplora().t(CATALOG, 'ui.unassigned') }];
