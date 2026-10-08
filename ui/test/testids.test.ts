@@ -156,6 +156,11 @@ const COVERED: Record<
       'appointments-list-staff-duration-unavailable',
       // appointments#279 — the chosen professional does not perform the new service: she is cleared.
       'appointments-list-staff-not-for-service',
+      // appointments#323 — the «By professional» view while its team is unknown or empty.
+      'appointments-list-staff-view-empty',
+      'appointments-list-staff-view-error',
+      'appointments-list-staff-view-loading',
+      'appointments-list-staff-view-retry',
       'appointments-list-start',
       // appointments#205 — same calendar, on the create panel's date field.
       'appointments-list-start-calendar',

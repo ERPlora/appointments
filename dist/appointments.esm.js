@@ -9396,6 +9396,9 @@ var ErpAppointmentsList = class extends i3 {
     .form .slots-grid ion-button { align-self:auto; margin:0; min-width:4.5rem; }
     .slots-hint { display:flex; align-items:center; gap:.4rem; margin:0; font-size:.85rem; color: var(--ion-color-medium, #92949c); }
     .slots-state { display:flex; flex-direction:column; gap:.35rem; }
+    /* appointments#323 · the «By professional» view without its team: the state takes the place of the grid. */
+    .staff-view-state { display:flex; flex-direction:column; align-items:flex-start; gap:.35rem; padding:.75rem 0; }
+    .staff-view-note { display:block; margin:0 0 .5rem; }
     .err { color:#d9480f; font-weight:600; }
     /* appointments#205 — the inline ok-calendar of a date field: no ion-popover/
        ion-modal (an overlay would teleport out of the shadow root and lose its styles, hub#2162),
@@ -10579,7 +10582,7 @@ var ErpAppointmentsList = class extends i3 {
     ]}
               @ionAlertDidDismiss=${() => this.cancelOverlap()}
             ></ion-alert>` : A}
-        ${this.view === "series" ? b2`<erp-appointments-series></erp-appointments-series>` : this.view === "staff" ? b2`<ok-scheduler
+        ${this.view === "series" ? b2`<erp-appointments-series></erp-appointments-series>` : this.view === "staff" && this.catalogStatus.staff !== "ready" ? this.renderStaffViewState(t5) : this.view === "staff" ? b2`${this.bookableStaff.length === 0 ? b2`<ok-inline-feedback class="staff-view-note" data-testid="appointments-list-staff-view-empty" tone="info" icon="information-circle-outline">${t5("ui.noStaff")}</ok-inline-feedback>` : A}<ok-scheduler
               .date=${this.day}
               .startHour=${startHour}
               .endHour=${endHour}
@@ -10676,6 +10679,18 @@ var ErpAppointmentsList = class extends i3 {
   renderStaffDurationUnavailable(form, t5) {
     if (!this.staffDurationUnavailable[form]) return A;
     return b2`<ok-inline-feedback data-testid="appointments-list-staff-duration-unavailable" tone="warning" icon="alert-circle-outline">${t5("ui.staffDurationUnavailable")}</ok-inline-feedback>`;
+  }
+  /** appointments#323 — the «By professional» view while the team is unknown. Its lanes ARE the
+   *  professionals and `ok-scheduler` only paints the appointments of the lanes it gets: drawn
+   *  without them, the day looked free (every appointment hidden) and stayed tappable and
+   *  draggable. So no grid until the list arrives — the spinner, or the reason plus «Retry». */
+  renderStaffViewState(t5) {
+    return this.catalogStatus.staff === "error" ? b2`<div class="staff-view-state">
+          <ok-inline-feedback data-testid="appointments-list-staff-view-error" tone="danger" icon="alert-circle-outline">${t5("ui.errLoadStaff")}</ok-inline-feedback>
+          <ion-button data-testid="appointments-list-staff-view-retry" type="button" size="small" fill="clear" @click=${() => void this.loadStaff()}>${t5("ui.catalogRetry")}</ion-button>
+        </div>` : b2`<div class="slots-hint staff-view-state" data-testid="appointments-list-staff-view-loading" role="status">
+          <ion-spinner name="dots"></ion-spinner><span>${t5("ui.staffLoading")}</span>
+        </div>`;
   }
   /** appointments#319 — the services list under its picker, painted like the free times: a spinner
    *  while it is on its way, the reason plus «Retry» when it could not be read, a note when there

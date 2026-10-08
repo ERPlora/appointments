@@ -51,6 +51,11 @@ estado» y el conmutador **Lista · Por profesional · Periódicas** (en móvil 
   la cita ya está cobrada).
 - **Por profesional**: una fila por profesional reservable y un carril «Sin asignar». Tocar un
   hueco abre el alta con ese profesional y esa hora; el bloque se arrastra a otra hora o a otra fila.
+  Mientras Personal contesta, «Cargando profesionales…»; si la lista no se puede leer, «No se han
+  podido cargar los profesionales.» con **Reintentar**, en lugar de la rejilla (sin el equipo no se
+  sabe en qué fila va cada cita, y no se toca ni se arrastra a ciegas); sin ninguno reservable, «Aún
+  no hay profesionales reservables.» encima de la rejilla, que conserva el carril «Sin asignar»
+  (appointments#323).
 - **Periódicas**: ver la pantalla [Periódicas](#periódicas).
 - Botón **Añadir cita** → panel de alta: Cliente (buscador «Busca por nombre o teléfono»; también encuentra por email), Servicio, Profesional, Día, Hora (con «Horas
   libres» como botones), Min.; avisos «Esta cita empieza en el pasado…», profesional que no hace
@@ -64,7 +69,9 @@ estado» y el conmutador **Lista · Por profesional · Periódicas** (en móvil 
 - Diálogos: «Cita solapada» (**Reservar igual** / **Elegir otra hora**) y «Editar cita periódica»
   (**Solo esta cita** / **Esta y todas las siguientes**).
 - Vacía: «Sin citas para este día.» · Cargando: «Cargando…» · Error: «Error cargando citas» o el
-  motivo concreto · sin profesionales: «Aún no hay profesionales reservables.» · dispositivo en otra
+  motivo concreto · sin profesionales (en Por profesional): «Aún no hay profesionales reservables.» ·
+  profesionales que no se pueden leer (en Por profesional): «No se han podido cargar los
+  profesionales.» con **Reintentar** · dispositivo en otra
   zona: aviso con el reloj del negocio.
 - La campana del hub muestra **Citas por confirmar** (reservas de la clienta pendientes) y lleva aquí.
 
@@ -108,7 +115,7 @@ misma gramática y el mismo prefijo. Antes de tocar código, lee el fichero del 
 | APPOINTMENTS-F01 | Reservar una cita desde la agenda | parcial — sin alta de clienta en el formulario (appointments#318); solo los 500 primeros servicios y profesionales, sin decirlo (appointments#324) | [`workflow/agenda.md`](workflow/agenda.md) |
 | APPOINTMENTS-F02 | Ver qué horas quedan libres | hecho | [`workflow/agenda.md`](workflow/agenda.md) |
 | APPOINTMENTS-F03 | Confirmar una cita pendiente | hecho | [`workflow/agenda.md`](workflow/agenda.md) |
-| APPOINTMENTS-F04 | Mover una cita o cambiarle el profesional o el servicio | parcial | [`workflow/agenda.md`](workflow/agenda.md) |
+| APPOINTMENTS-F04 | Mover una cita o cambiarle el profesional o el servicio | parcial — editar no avisa si no cargan servicios o profesionales (appointments#333) | [`workflow/agenda.md`](workflow/agenda.md) |
 | APPOINTMENTS-F05 | Cancelar una cita desde la agenda | parcial | [`workflow/agenda.md`](workflow/agenda.md) |
 | APPOINTMENTS-F06 | La clienta cancela o mueve su propia cita | parcial | [`workflow/canales.md`](workflow/canales.md) |
 | APPOINTMENTS-F07 | Marcar la llegada y empezar el servicio | hecho | [`workflow/agenda.md`](workflow/agenda.md) |
@@ -118,7 +125,7 @@ misma gramática y el mismo prefijo. Antes de tocar código, lee el fichero del 
 | APPOINTMENTS-F11 | Borrar una cita | parcial | [`workflow/agenda.md`](workflow/agenda.md) |
 | APPOINTMENTS-F12 | Crear una cita periódica | parcial — sin alta de clienta en el formulario (appointments#318); solo los 500 primeros servicios y profesionales, sin decirlo (appointments#324) | [`workflow/periodicas.md`](workflow/periodicas.md) |
 | APPOINTMENTS-F13 | Reservar las citas de una serie | parcial — con una antelación máxima de más de unos 400 días, una próxima fecha tan lejana da error en vez de avisar (appointments#331) | [`workflow/periodicas.md`](workflow/periodicas.md) |
-| APPOINTMENTS-F14 | Editar una serie de esta cita en adelante | hecho | [`workflow/periodicas.md`](workflow/periodicas.md) |
+| APPOINTMENTS-F14 | Editar una serie de esta cita en adelante | parcial — no avisa si no cargan servicios o profesionales (appointments#333) | [`workflow/periodicas.md`](workflow/periodicas.md) |
 | APPOINTMENTS-F15 | Pausar, reactivar o borrar una serie | hecho | [`workflow/periodicas.md`](workflow/periodicas.md) |
 | APPOINTMENTS-F16 | Bloquear tiempo en la agenda | parcial | [`workflow/canales.md`](workflow/canales.md) |
 | APPOINTMENTS-F17 | Cobrar la cita en el TPV | parcial | [`workflow/agenda.md`](workflow/agenda.md) |
