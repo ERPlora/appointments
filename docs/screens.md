@@ -35,8 +35,12 @@ Three ways of looking at the agenda, with a switch between them:
 - **List** — the appointments of the scope you chose (day, status), with the customer, the service
   and the state of each.
 - **Per professional** — a timeline with **one row per bookable professional**, plus an
-  **"unassigned"** lane for older bookings that have no professional. Tapping an empty gap
-  pre-fills a new booking with that professional and that time. While the professionals are being
+  **"unassigned"** lane for older bookings that have no professional. A professional who no longer
+  takes bookings (switched to not bookable, or no longer on the team) keeps her row on any day she
+  still has appointments, marked **"· not bookable"** or **"· no longer on the team"**, so those
+  appointments stay visible and can be moved to someone else (appointments#334). Tapping an empty
+  gap pre-fills a new booking with that professional and that time (on a marked row, only the time).
+  While the professionals are being
   read it says **"Loading professionals…"**; if they cannot be read, it says **"The professionals
   could not be loaded."** with **Retry** instead of the timeline (its rows are the professionals:
   without them the day's appointments would be hidden and the day would look free). With no

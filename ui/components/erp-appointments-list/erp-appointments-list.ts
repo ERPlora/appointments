@@ -839,13 +839,28 @@ export class ErpAppointmentsList extends LitElement {
     ];
   }
 
-  /** Carriles del timeline: un profesional reservable por fila + el carril «sin asignar», que
-   *  se pinta SIEMPRE para que ninguna cita heredada (sin `staff_id`) quede invisible. */
+  /** Timeline lanes: one per bookable professional, then one per professional who no longer takes
+   *  bookings but still has appointments on the loaded day (appointments#334 — `ok-scheduler` only
+   *  paints the events of the lanes it gets, so without hers they vanished and the slot looked
+   *  free), then «Unassigned», ALWAYS painted so no legacy appointment (no `staff_id`) is hidden. */
   private get schedulerResources() {
-    return [
-      ...this.bookableStaff.map((m) => ({ id: m.id, label: m.full_name })),
-      { id: UNASSIGNED, label: erplora().t(CATALOG, 'ui.unassigned') },
-    ];
+    const lanes = this.bookableStaff.map((m) => ({ id: m.id, label: m.full_name }));
+    const painted = new Set(lanes.map((l) => l.id));
+    for (const a of this.items) {
+      if (!a.staff_id || painted.has(a.staff_id)) continue;
+      painted.add(a.staff_id);
+      const member = this.staffMembers.find((m) => m.id === a.staff_id);
+      const name = member?.full_name || a.staff_name;
+      const key = member?.status === 'terminated' ? 'ui.staffLaneLeft' : 'ui.staffLaneNotBookable';
+      lanes.push({ id: a.staff_id, label: erplora().t(CATALOG, key, { name }) });
+    }
+    return [...lanes, { id: UNASSIGNED, label: erplora().t(CATALOG, 'ui.unassigned') }];
+  }
+
+  /** appointments#334 — a lane kept only for the appointments already on it: its professional
+   *  takes no new bookings, so a tap there must not preselect her. */
+  private isBookableLane(resourceId: string): boolean {
+    return this.bookableStaff.some((m) => m.id === resourceId);
   }
 
   private get schedulerEvents() {
@@ -1694,7 +1709,7 @@ export class ErpAppointmentsList extends LitElement {
     const { resourceId, time } = ev.detail;
     this.clearReschedule(); // an empty slot is a CREATE, not a move
     this.historyId = ''; // …nor the history left open before switching to the timeline
-    if (resourceId !== UNASSIGNED) {
+    if (this.isBookableLane(resourceId)) {
       this.onStaffChange(resourceId);
       // appointments#279 — the tapped professional is the latest choice: a service she does not
       // perform is the stale one.

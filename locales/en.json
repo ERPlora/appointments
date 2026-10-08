@@ -114,6 +114,8 @@
     "viewList": "List",
     "viewStaff": "By professional",
     "unassigned": "Unassigned",
+    "staffLaneNotBookable": "{name} · not bookable",
+    "staffLaneLeft": "{name} · no longer on the team",
     "prevDay": "Previous day",
     "nextDay": "Next day",
     "noStaff": "No bookable professionals yet.",

@@ -115,6 +115,8 @@
     "viewList": "Lista",
     "viewStaff": "Por profesional",
     "unassigned": "Sin asignar",
+    "staffLaneNotBookable": "{name} · no reservable",
+    "staffLaneLeft": "{name} · de baja",
     "prevDay": "Día anterior",
     "nextDay": "Día siguiente",
     "noStaff": "Aún no hay profesionales reservables.",
