@@ -83,8 +83,8 @@ las citas periódicas.»; un rechazo al guardar sale dentro del panel, encima de
 
 ### Ajustes de Citas
 Menú → **Citas** → pestaña **Ajustes**, que el hub añade sola porque el módulo declara sus ajustes.
-La ve todo el que entra en Citas; quien no es administrador la ve en solo lectura con «Solo un
-administrador puede cambiar estos ajustes.». Campos: «Duración por defecto (minutos)», «Antelación
+Solo la ve quien tiene el permiso de cambiarlos (`appointments.manage_settings`; de fábrica, solo el
+administrador): a los demás el hub no les enseña la pestaña (HUB_SHELL-F43, hub#2588). Campos: «Duración por defecto (minutos)», «Antelación
 mínima para reservar (minutos)», «Reservar como máximo con esta antelación (días)», «Permitir citas
 solapadas», «Enviar recordatorios» y «Enviar el recordatorio con estas horas de antelación» (los dos
 se guardan pero no envían nada), «Permitir que el cliente cancele su cita», «Antelación mínima para
