@@ -2007,8 +2007,11 @@ export class ErpAppointmentsList extends LitElement {
   private renderKeptLanesNote() {
     const names = this.keptLanes.map((l) => l.label);
     if (names.length === 0) return nothing;
-    const list = new Intl.ListFormat(erplora().locale || 'es', { type: 'conjunction' }).format(names);
-    return html`<ok-inline-feedback class="staff-view-note" data-testid="appointments-list-staff-view-kept" tone="warning" icon="alert-circle-outline">${erplora().t(CATALOG, 'ui.staffKeptLanes', { names: list })}</ok-inline-feedback>`;
+    const locale = erplora().locale || 'es';
+    const list = new Intl.ListFormat(locale, { type: 'conjunction' }).format(names);
+    // One name reads in the singular («Bea … no longer takes»), several in the plural.
+    const key = new Intl.PluralRules(locale).select(names.length) === 'one' ? 'ui.staffKeptLanesOne' : 'ui.staffKeptLanes';
+    return html`<ok-inline-feedback class="staff-view-note" data-testid="appointments-list-staff-view-kept" tone="warning" icon="alert-circle-outline">${erplora().t(CATALOG, key, { names: list })}</ok-inline-feedback>`;
   }
 
   /** appointments#323 — the «By professional» view while the team is unknown. Its lanes ARE the

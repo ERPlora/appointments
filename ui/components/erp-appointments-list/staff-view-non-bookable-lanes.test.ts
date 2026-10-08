@@ -114,7 +114,8 @@ describe('appointments#334 — appointments of a professional who is no longer b
     expect(note, 'the grid says why she is there').toBeTruthy();
     expect(note!.tagName.toLowerCase()).toBe('ok-inline-feedback');
     expect(note!.getAttribute('tone')).toBe('warning');
-    expect(note!.textContent).toContain('ui.staffKeptLanes(Bea Pro)');
+    // One name takes the singular sentence («Bea … no longer takes»), never «Bea … no longer take».
+    expect(note!.textContent).toContain('ui.staffKeptLanesOne(Bea Pro)');
   });
 
   it('a professional who left the team (no longer in the staff list) keeps a lane named after the appointment', async () => {
@@ -125,7 +126,7 @@ describe('appointments#334 — appointments of a professional who is no longer b
 
     expect(laneOf(el, 'a2')).toBe('s2');
     expect(lane(el, 's2')?.label).toBe('Bea Pro');
-    expect(hook(el, KEPT)!.textContent).toContain('ui.staffKeptLanes(Bea Pro)');
+    expect(hook(el, KEPT)!.textContent).toContain('ui.staffKeptLanesOne(Bea Pro)');
   });
 
   it('the note names every kept professional once, in lane order, as a list in the hub language', async () => {
@@ -185,5 +186,16 @@ describe('appointments#334 — appointments of a professional who is no longer b
     expect(en.staffKeptLanes).toContain('{names}');
     expect(es.staffKeptLanes).toContain('{names}');
     expect(es.staffKeptLanes, 'es is translated').not.toBe(en.staffKeptLanes);
+  });
+
+  it('a single kept professional reads in the singular, in en and in es', () => {
+    const en = (enLocale as { ui: Record<string, string> }).ui;
+    const es = (esLocale as { ui: Record<string, string> }).ui;
+    expect(en.staffKeptLanesOne).toContain('{names}');
+    expect(es.staffKeptLanesOne).toContain('{names}');
+    expect(en.staffKeptLanesOne).toMatch(/no longer takes /);
+    expect(es.staffKeptLanesOne).toMatch(/ya no admite /);
+    expect(en.staffKeptLanes).toMatch(/no longer take /);
+    expect(es.staffKeptLanes).toMatch(/ya no admiten /);
   });
 });

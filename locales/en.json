@@ -115,6 +115,7 @@
     "viewStaff": "By professional",
     "unassigned": "Unassigned",
     "staffKeptLanes": "{names} no longer take new appointments: their appointments for the day stay on their row so you can move them to someone else.",
+    "staffKeptLanesOne": "{names} no longer takes new appointments: their appointments for the day stay on their row so you can move them to someone else.",
     "prevDay": "Previous day",
     "nextDay": "Next day",
     "noStaff": "No bookable professionals yet.",
