@@ -191,7 +191,7 @@ Estado: parcial — sin ajustes guardados cada pieza usa un valor distinto: la r
 Actor: administrador
 Pantalla: Ajustes de Citas
 Pasos:
-1. En **Citas**, abre la pestaña **Ajustes** (sin ser administrador solo se puede leer).
+1. En **Citas**, abre la pestaña **Ajustes** (solo la ve quien tiene el permiso `appointments.manage_settings`; de fábrica, solo el administrador: a los demás el hub no les enseña la pestaña, HUB_SHELL-F43, hub#2588).
 2. Cambia la duración por defecto, la antelación mínima y máxima, el solape, la cancelación por la
    clienta, la ventana del calendario, el intervalo entre huecos o la confirmación automática.
 3. Pulsa **Guardar**: sale «Ajustes guardados.» y las reservas siguientes ya usan las reglas nuevas. «Enviar recordatorios» y «Enviar el recordatorio con estas horas de antelación» se guardan pero hoy no envían nada.
